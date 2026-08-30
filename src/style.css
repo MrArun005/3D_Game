@@ -1,0 +1,40 @@
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#05070c;
+  font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;color:#cfd6e0}
+canvas{display:block}
+#gl{width:100%;height:100%}
+
+/* The vignette / grade / grain used to live here as DOM overlays. They are
+   rendered into the canvas now (core/grade.js) so screenshots and video carry
+   the same look the screen does. */
+
+/* filming hides the instruments for a clean frame */
+body.filming #cluster, body.filming #minimap, body.filming #stats { opacity: 0; }
+#cluster, #minimap, #stats { transition: opacity .45s ease; }
+
+#cluster{position:fixed;right:26px;bottom:22px;z-index:20;display:flex;align-items:flex-end;gap:14px}
+#dials{filter:drop-shadow(0 6px 22px rgba(0,0,0,.65))}
+#readout{margin-bottom:16px;text-align:right;line-height:1}
+#kph{font-size:52px;font-weight:200;letter-spacing:-.03em;font-variant-numeric:tabular-nums;
+  color:#eaf0f8;text-shadow:0 0 26px rgba(150,190,255,.30)}
+#kph small{font-size:15px;font-weight:400;letter-spacing:.20em;color:#7d8a9c;margin-left:7px}
+#gear{margin-top:10px;font-size:13px;letter-spacing:.30em;color:#8d9aac}
+#gear b{color:#e6c489;font-weight:600}
+
+#minimap{position:fixed;left:22px;bottom:22px;z-index:20;border-radius:6px;
+  background:rgba(8,11,18,.62);border:1px solid rgba(150,170,200,.13);
+  box-shadow:0 6px 22px rgba(0,0,0,.5)}
+#stats{position:fixed;left:24px;top:18px;z-index:20;font-size:10.5px;letter-spacing:.16em;
+  color:#5c6676;font-variant-numeric:tabular-nums}
+
+#hud{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
+  background:rgba(5,7,12,.80);backdrop-filter:blur(4px);transition:opacity .6s}
+#hud.gone{opacity:0;pointer-events:none}
+#hud .card{width:100%;padding:0 32px;text-align:center}
+#hud h1{font-size:clamp(30px,5.4vw,58px);font-weight:200;letter-spacing:.30em;
+  text-transform:uppercase;color:#e8eef8;text-shadow:0 0 40px rgba(140,180,255,.28)}
+#hud p{margin-top:16px;font-size:14px;letter-spacing:.10em;color:#8b97a8}
+#hud .keys{margin-top:26px;font-size:12px;letter-spacing:.16em;color:#78859a;line-height:2.1}
+kbd{border:1px solid #39414f;border-radius:4px;padding:3px 8px;font-family:inherit;
+  font-size:11px;color:#b3bfd0;background:rgba(255,255,255,.035)}
+#hud .go{margin-top:30px;color:#e6c489;letter-spacing:.20em;font-size:13px}

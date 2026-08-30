@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>&#128663;</text></svg>" />
+  <title>Nightfall Drive</title>
+</head>
+<body>
+  <canvas id="gl"></canvas>
+
+  <div id="stats"></div>
+  <canvas id="minimap" width="150" height="150"></canvas>
+
+  <div id="cluster">
+    <div id="readout">
+      <div id="kph">0<small>KM/H</small></div>
+      <div id="gear">GEAR <b>N</b></div>
+    </div>
+    <canvas id="dials" width="230" height="230"></canvas>
+  </div>
+
+  <div id="hud">
+    <div class="card">
+      <h1>Nightfall Drive</h1>
+      <p>Blue hour. Rain on the glass. Nobody waiting for you.</p>
+      <div class="keys">
+        <kbd>W</kbd> throttle &nbsp; <kbd>S</kbd> brake / reverse &nbsp; <kbd>A</kbd><kbd>D</kbd> steer<br />
+        <kbd>Space</kbd> handbrake &nbsp; <kbd>Shift</kbd> hold gear &nbsp;
+        <kbd>C</kbd> camera &nbsp; <kbd>H</kbd> lights &nbsp; <kbd>R</kbd> reset &nbsp; <kbd>M</kbd> mute<br />
+        <kbd>F</kbd> get out / steal a car &nbsp; <kbd>E</kbd> or <kbd>LMB</kbd> fire &nbsp;
+        <kbd>G</kbd> start a run &nbsp; <kbd>J</kbd> play with a friend<br />
+        Mouse look after clicking &nbsp;·&nbsp; in a helicopter: <kbd>Space</kbd> up, <kbd>Shift</kbd> down<br />
+        Pad: RT throttle · LT brake · left stick steer · A handbrake · LB hold gear<br />
+        Y camera · X lights · B enter/exit · RT+RB fire · View reset · Start run
+      </div>
+      <div class="go">click once, then drive</div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

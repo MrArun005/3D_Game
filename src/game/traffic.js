@@ -1,0 +1,760 @@
+import * as THREE from 'three';
+import { CELL, LANE, ROAD_HALF } from '../world/metrics.js';
+import { signalState, STOP_LINE } from '../world/signals.js';
+import { mulberry32 } from '../core/rng.js';
+import { personGeometry } from '../world/beach.js';
+import { PAINT_COLOURS, BODY_KEYS, BODY_TYPES } from '../vehicle/config.js';
+
+const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+
+/** Free-flow speed by road class, m/s. A street is not a bypass. */
+const CLASS_SPEED = { freeway: 27, ramp: 14, arterial: 17, boundary: 13, street: 10.5 };
+const LOOKAHEAD = 150;               // metres of path kept in front of a car
+export const ZEBRA_DEPTH = 4.2;      // shared with the crossing paint in the world
+/* Shirts. A street where every driver wears the same colour reads as clones,
+   and you see straight into these cabins now. */
+const OCCUPANT = [0x2c3a4e, 0x6d4630, 0x3f5b45, 0x7a3540, 0x4a4a55, 0x8a7a58, 0x2f4f6b];
+const rightOf = (d) => [-d[1], d[0]];
+const axisOf = (d) => (d[0] !== 0 ? 0 : 1);
+
+/** A point on the lane line for direction `d` through junction (i,j). */
+function lanePoint(i, j, d, lane) {
+  const r = rightOf(d);
+  return [i * CELL + r[0] * lane * LANE, j * CELL + r[1] * lane * LANE];
+}
+
+/**
+ * Traffic that lives on the grid.
+ *
+ * Each car follows a polyline that is extended one junction at a time. As a
+ * segment is appended it records a "gate": the distance along the path at
+ * which the car meets a stop line, and which junction and axis govern it. The
+ * car then only ever has to look at the next gate to know whether to stop —
+ * no per-frame search of the world, and it keeps working when the cell it is
+ * driving through streams out behind it.
+ */
+export class Traffic {
+  constructor(scene, assets, count = 18) {
+    this.scene = scene;
+    this.assets = assets;
+    this.rand = mulberry32(4242);
+    this.cars = [];
+    this.time = 0;
+
+    /* Wanted level.
+       Kept here rather than in its own system because the pursuit fleet is
+       just traffic with a different opinion about where to go and whether red
+       means stop -- all the path, gate and leader machinery is already here. */
+    this.wanted = 0;
+    this.cool = 0;                    // seconds of clean driving
+    this.bustT = 0;                   // how long they have had you surrounded
+    this.police = [];
+    for (let i = 0; i < count; i++) this.cars.push(this.#makeCar());
+  }
+
+  /** Report a collision. `tag` says what was hit; `force` is closing speed. */
+  reportCrime(tag, force) {
+    const worth = tag === 'police' ? 1.3
+                : tag === 'person' ? 1.5
+                : tag === 'traffic' ? 0.55
+                : 0;                                  // walls and parked cars: nobody cares
+    if (!worth) return;
+    // one pedestrian is about two stars, not five: `force` is m/s, so the
+    // multiplier has to be gentle or a single hit at speed maxes the meter
+    const gain = worth * Math.min(1.4, 0.5 + force * 0.05);
+    this.wanted = Math.min(5, this.wanted + gain);
+    this.cool = 0;
+  }
+
+  /** How many cars should be hunting at this wanted level. */
+  #wantedCars() {
+    return Math.min(6, Math.floor(this.wanted));
+  }
+
+  #makePolice() {
+    const c = this.#makeCar('sedan');
+    c.mesh.material.color.setHex(0x0d1526);
+    c.mesh.material.metalness = 0.35;
+    c.hunt = true;
+    c.mode = 'road';
+    c.lost = 0;
+    c.best = Infinity;
+    c.stale = 0;
+    c.cruise = 26 + this.rand() * 5;
+
+    // the doors and the bar are what make it read as police in one glance
+    const decal = liveryTexture();
+    for (const side of [-1, 1]) {
+      const panel = new THREE.Mesh(
+        new THREE.PlaneGeometry(c.spec.L * 0.42, c.spec.bonnetY * 0.5),
+        new THREE.MeshStandardMaterial({
+          map: decal, transparent: true, roughness: 0.45,
+          polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
+        }),
+      );
+      // one plane per flank, facing outward, riding just proud of the paint
+      // wMax is a HALF width, so *0.5 put both decals inside the car
+      panel.position.set(c.spec.L * 0.03, c.spec.bonnetY * 0.66, side * (c.spec.wMax + 0.015));
+      panel.rotation.y = side > 0 ? 0 : Math.PI;
+      c.mesh.add(panel);
+    }
+    // roof band, so it reads as police from directly behind too
+    const roof = new THREE.Mesh(
+      new THREE.BoxGeometry(c.spec.L * 0.22, 0.05, c.spec.wMax * 1.5),
+      new THREE.MeshStandardMaterial({ color: 0xeef1f6, roughness: 0.45 }));
+    roof.position.set(0, c.spec.roofY ?? c.spec.bonnetY * 1.34, 0);
+    c.mesh.add(roof);
+    const bar = [];
+    for (const [i, hex] of [[-1, 0xff2a1c], [1, 0x2f6dff]]) {
+      const lens = new THREE.Mesh(
+        new THREE.BoxGeometry(0.34, 0.16, 0.42),
+        new THREE.MeshStandardMaterial({ color: hex, emissive: hex, emissiveIntensity: 0.4 }),
+      );
+      lens.position.set(0, (c.spec.roofY ?? c.spec.bonnetY * 1.34) + 0.11, i * 0.26);
+      c.mesh.add(lens);
+      bar.push(lens.material);
+    }
+    c.bar = bar;
+
+    /* The officer rides in the car and gets out when the chase stops being a
+       chase. Kept in the scene rather than parented to the cruiser, because
+       the whole point is that they leave it. */
+    const officer = new THREE.Group();
+    const body = new THREE.Mesh(personGeometry(),
+      new THREE.MeshStandardMaterial({ color: 0x1b2740, roughness: 0.75 }));
+    const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.135, 1),
+      new THREE.MeshStandardMaterial({ color: 0xd7a878, roughness: 0.85 }));
+    head.position.y = 1.53;
+    const flash = new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0xfff0c0, toneMapped: false }));
+    flash.position.set(0.42, 1.12, 0.14);
+    flash.visible = false;
+    officer.add(body, head, flash);
+    officer.castShadow = true;
+    officer.visible = false;
+    this.scene.add(officer);
+    c.officer = officer;
+    c.flash = flash;
+    c.deployT = 0;
+    c.holdT = 0;
+    c.fireT = 0;
+    c.deployed = false;
+    return c;
+  }
+
+  /** Send everyone home: used when the player is arrested. */
+  standDown() {
+    this.wanted = 0;
+    this.cool = 0;
+    this.bustT = 0;
+    for (const c of this.police) {
+      c.live = false;
+      c.mesh.visible = false;
+      c.mode = 'road';
+      c.deployed = false;
+      c.deployT = 0; c.holdT = 0;
+      if (c.officer) c.officer.visible = false;
+    }
+  }
+
+  #makeCar(force) {
+    const rand = this.rand;
+    const style = force || BODY_KEYS[Math.floor(rand() * BODY_KEYS.length)];
+    const spec = BODY_TYPES[style];
+    const mat = this.assets.mat.parked.clone();
+    mat.color.setHex(PAINT_COLOURS[Math.floor(rand() * PAINT_COLOURS.length)]);
+    const kit = this.assets.geo.stunt[style];
+    const mesh = new THREE.Mesh(kit.body, mat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    // glazing, and somebody sitting behind it
+    mesh.add(new THREE.Mesh(kit.glass, this.assets.mat.carGlass));
+    const who = new THREE.Mesh(kit.occupant, this.assets.mat.parked.clone());
+    who.material.color.setHex(OCCUPANT[Math.floor(rand() * OCCUPANT.length)]);
+    who.material.metalness = 0.0;
+    who.material.roughness = 0.85;
+    mesh.add(who);
+
+    mesh.visible = false;
+
+    const brakeMat = this.assets.mat.tailDim.clone();
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.12, spec.wMax * 1.3), brakeMat);
+    tail.position.set(spec.L * 0.5 - 0.06, spec.bonnetY * 0.86, 0);
+    mesh.add(tail);
+    this.scene.add(mesh);
+
+    return {
+      mesh, brakeMat, spec, live: false,
+      path: [], gates: [], s: 0, pathLen: 0,
+      speed: 0, cruise: 11 + rand() * 7,
+      node: [0, 0], dir: DIRS[0], lane: 0.5,
+      offsets: [-spec.L * 0.31, 0, spec.L * 0.31],
+      radius: Math.max(0.92, spec.wMax * 1.02),
+      reach: spec.L * 0.5 + 0.6,
+      x: 0, z: 0, yaw: 0, stopped: false,
+    };
+  }
+
+  /**
+   * Move the whole fleet off the procedural grid and onto Halstead Bay's road
+   * graph. Only route-finding changes: the path/gate/leader machinery below is
+   * already geometry-agnostic, so signals, queueing and collision come along
+   * untouched.
+   */
+  useGraph(district) {
+    this.E = district.graph.edges;
+    this.N = new Map(district.graph.nodes.map((n) => [n.id, n]));
+    this.adj = new Map();
+    this.E.forEach((e, i) => {
+      for (const id of [e.a, e.b]) {
+        const list = this.adj.get(id);
+        if (list) list.push(i); else this.adj.set(id, [i]);
+      }
+    });
+    for (const car of this.cars) { car.live = false; car.mesh.visible = false; }
+  }
+
+  /** The edge's polyline, guaranteed to start at `fromId`. Export order is not
+      reliably a->b: 55 of the first 400 edges store their points backwards. */
+  #oriented(e, fromId) {
+    const n = this.N.get(fromId);
+    const p = e.points;
+    const head = Math.hypot(p[0][0] - n.x, p[0][1] - n.y);
+    const tail = Math.hypot(p[p.length - 1][0] - n.x, p[p.length - 1][1] - n.y);
+    return head <= tail ? p : p.slice().reverse();
+  }
+
+  /** Centre of lane `i` measured right of the centreline. */
+  #laneOffset(e, i) {
+    const lanes = Math.max(1, e.lanes || 1);
+    const k = Math.min(i, lanes - 1);
+    return (e.width / 2) * ((2 * k + 1) / (2 * lanes));
+  }
+
+  /** Shift a centreline right by `off`, one normal per segment. */
+  #shift(pts, off) {
+    const out = [];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[Math.min(i, pts.length - 2)], b = pts[Math.min(i, pts.length - 2) + 1];
+      const dx = b[0] - a[0], dz = b[1] - a[1];
+      const l = Math.hypot(dx, dz) || 1;
+      out.push([pts[i][0] - (dz / l) * off, pts[i][1] + (dx / l) * off]);
+    }
+    return out;
+  }
+
+  /** Drive the current edge, stop-line to stop-line, then turn at its far end. */
+  #extendGraph(car) {
+    const e = this.E[car.edge];
+    const line = this.#shift(this.#oriented(e, car.node), this.#laneOffset(e, car.lane));
+    const far = e.a === car.node ? e.b : e.a;
+    const node = this.N.get(far);
+    const L = this.#edgeLen(line);
+    /* Stop clear of the junction AND clear of the crossing in front of it.
+       Clamping this to a fraction of the edge length instead -- which is what
+       it used to do -- parked cars in the middle of short links, nowhere near
+       a junction, waiting at a stop line that was 65% of the way down a 20m
+       stub of road. */
+    const back = e.width / 2 + 1.2 + ZEBRA_DEPTH + 1.0;
+    const cut = L - back;
+    const gated = cut > 3;                      // no room on this stub: no gate
+
+    // run the edge, stopping `back` short of the junction it feeds
+    let run = 0;
+    for (let i = 1; i < line.length; i++) {
+      const seg = Math.hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]);
+      const total = run + seg;
+      if (gated && total > cut) {
+        const t = Math.max(0, (cut - run) / (seg || 1));
+        this.#push(car, [line[i - 1][0] + (line[i][0] - line[i - 1][0]) * t,
+                         line[i - 1][1] + (line[i][1] - line[i - 1][1]) * t]);
+        break;
+      }
+      run = total;
+      this.#push(car, line[i]);
+    }
+
+    const stopAt = car.path[car.path.length - 1];
+    // signalled junctions only: a quay or a dead end has nothing to obey
+    if (gated && node && (node.kind === 'cross' || node.kind === 'tee')) {
+      const dx = stopAt[0] - line[0][0], dz = stopAt[1] - line[0][1];
+      car.gates.push({ s: car.pathLen, node: [far, 0], axis: Math.abs(dx) > Math.abs(dz) ? 0 : 1 });
+    }
+
+    // choose a way out: never double back unless the junction is a dead end
+    const cand = (this.adj.get(far) ?? []).filter((id) => id !== car.edge);
+    const heading = Math.atan2(stopAt[1] - line[0][1], stopAt[0] - line[0][0]);
+    const next = cand.length ? this.#pickExit(cand, far, heading, car.hunt ? this.player : null) : car.edge;
+
+    const ne = this.E[next];
+    car.lane = Math.min(car.lane, Math.max(1, ne.lanes || 1) - 1);
+    const nline = this.#shift(this.#oriented(ne, far), this.#laneOffset(ne, car.lane));
+    const entry = this.#advance(nline, Math.min(ne.width / 2 + 1.2, (ne.length || 20) * 0.35));
+
+    // one quadratic through the junction centre: sharp enough to read as a
+    // corner, smooth enough that the leader check does not see a wall
+    for (let k = 1; k <= 6; k++) {
+      const t = k / 6, u = 1 - t;
+      this.#push(car, [
+        u * u * stopAt[0] + 2 * u * t * node.x + t * t * entry[0],
+        u * u * stopAt[1] + 2 * u * t * node.y + t * t * entry[1],
+      ]);
+    }
+
+    car.node = far;
+    car.edge = next;
+  }
+
+  #edgeLen(line) {
+    let L = 0;
+    for (let i = 1; i < line.length; i++) L += Math.hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]);
+    return L;
+  }
+
+  /** Point `d` metres in from the start of a polyline. */
+  #advance(line, d) {
+    let run = 0;
+    for (let i = 1; i < line.length; i++) {
+      const seg = Math.hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]);
+      if (run + seg >= d) {
+        const t = (d - run) / (seg || 1);
+        return [line[i - 1][0] + (line[i][0] - line[i - 1][0]) * t,
+                line[i - 1][1] + (line[i][1] - line[i - 1][1]) * t];
+      }
+      run += seg;
+    }
+    return line[line.length - 1];
+  }
+
+  /** Mostly straight on, the way real traffic distributes -- unless hunting,
+      in which case take whichever exit closes on the target. */
+  #pickExit(cand, from, heading, target) {
+    const n = this.N.get(from);
+    let best = cand[0], bestW = -Infinity;
+    for (const id of cand) {
+      const e = this.E[id];
+      const p = this.#oriented(e, from);
+      const far = this.N.get(e.a === from ? e.b : e.a);
+      const out = Math.atan2(p[1][1] - n.y, p[1][0] - n.x);
+      const turn = Math.abs(((out - heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+      let w;
+      if (target && far) {
+        // greedy descent on the graph: the exit that ends up nearest the player
+        w = -Math.hypot(far.x - target.x, far.y - target.z) - turn * 6;
+      } else {
+        // weight straight-ahead heavily, then jitter so the fleet does not convoy
+        w = (Math.PI - turn) * 2 + this.rand() * 1.4;
+      }
+      if (w > bestW) { bestW = w; best = id; }
+    }
+    return best;
+  }
+
+  /** Drop a car onto a random edge in a ring around the player. */
+  #spawnGraph(car, player) {
+    let pick = -1;
+    for (let tries = 0; tries < 60 && pick < 0; tries++) {
+      const id = Math.floor(this.rand() * this.E.length);
+      const p = this.E[id].points[0];
+      const d = Math.hypot(p[0] - player.x, p[1] - player.z);
+      if (d > 55 && d < 260) pick = id;
+    }
+    if (pick < 0) return;                       // nothing in range this frame
+
+    const e = this.E[pick];
+    car.edge = pick;
+    car.node = e.a;
+    car.lane = this.rand() < 0.65 ? 0 : 1;
+    car.cruise = (CLASS_SPEED[e.class] ?? 11) * (0.85 + this.rand() * 0.3);
+    car.path = []; car.gates = []; car.pathLen = 0; car.s = 0;
+    const line = this.#shift(this.#oriented(e, e.a), this.#laneOffset(e, car.lane));
+    this.#push(car, line[0]);
+    let guard = 0;
+    while (car.pathLen < LOOKAHEAD && guard++ < 40) this.#extendGraph(car);
+    car.speed = car.cruise * 0.7;
+    car.live = true;
+    car.mesh.visible = true;
+    this.#place(car);
+  }
+
+  /** Append the next block plus the manoeuvre through the junction at its end. */
+  #extend(car) {
+    const rand = this.rand;
+    const { node, dir, lane } = car;
+    const next = [node[0] + dir[0], node[1] + dir[1]];
+
+    // run up to the stop line of the next junction
+    const entry = lanePoint(next[0], next[1], dir, lane);
+    const stop = [entry[0] - dir[0] * STOP_LINE, entry[1] - dir[1] * STOP_LINE];
+    this.#push(car, stop);
+    car.gates.push({ s: car.pathLen, node: next.slice(), axis: axisOf(dir) });
+
+    // pick a way through: mostly straight, and never a U-turn
+    const roll = rand();
+    const turn = roll < 0.62 ? 0 : roll < 0.81 ? 1 : 3;      // straight / right / left
+    const nd = DIRS[(DIRS.indexOf(dir) + turn) % 4];
+
+    if (turn === 0) {
+      this.#push(car, lanePoint(next[0], next[1], dir, lane));
+      this.#push(car, [
+        lanePoint(next[0], next[1], dir, lane)[0] + dir[0] * (ROAD_HALF + 2),
+        lanePoint(next[0], next[1], dir, lane)[1] + dir[1] * (ROAD_HALF + 2),
+      ]);
+    } else {
+      // both radii must stay inside the stop line, or the path doubles back:
+      // the arc would start further out than the point the car stops at
+      const radius = turn === 1 ? 6.5 : 9.2;                // right is tighter
+      const pd = lanePoint(next[0], next[1], dir, lane);
+      const pe = lanePoint(next[0], next[1], nd, lane);
+      const C = dir[0] !== 0 ? [pe[0], pd[1]] : [pd[0], pe[1]];
+      const start = [C[0] - dir[0] * radius, C[1] - dir[1] * radius];
+      const centre = [start[0] + nd[0] * radius, start[1] + nd[1] * radius];
+      this.#push(car, start);
+      let a0 = Math.atan2(-nd[1], -nd[0]);
+      let a1 = Math.atan2(dir[1], dir[0]);
+      while (a1 - a0 > Math.PI) a1 -= Math.PI * 2;
+      while (a1 - a0 < -Math.PI) a1 += Math.PI * 2;
+      for (let k = 1; k <= 8; k++) {
+        const a = a0 + (a1 - a0) * (k / 8);
+        this.#push(car, [centre[0] + Math.cos(a) * radius, centre[1] + Math.sin(a) * radius]);
+      }
+      this.#push(car, [
+        C[0] + nd[0] * (radius + ROAD_HALF), C[1] + nd[1] * (radius + ROAD_HALF),
+      ]);
+    }
+    car.node = next;
+    car.dir = nd;
+  }
+
+  #push(car, p) {
+    const last = car.path[car.path.length - 1];
+    if (last) car.pathLen += Math.hypot(p[0] - last[0], p[1] - last[1]);
+    car.path.push([p[0], p[1], car.pathLen]);
+  }
+
+  spawn(car, player, first) {
+    if (this.E) return this.#spawnGraph(car, player);
+    const rand = this.rand;
+    const pi = Math.round(player.x / CELL), pj = Math.round(player.z / CELL);
+    const ring = first ? 1 : 2;
+    const i = pi + Math.round((rand() * 2 - 1) * ring);
+    const j = pj + Math.round((rand() * 2 - 1) * ring);
+    car.dir = DIRS[Math.floor(rand() * 4)];
+    car.lane = rand() < 0.5 ? 0.5 : 1.5;
+    car.node = [i, j];
+    car.path = []; car.gates = []; car.pathLen = 0; car.s = 0;
+    const p0 = lanePoint(i, j, car.dir, car.lane);
+    // start mid-block, never inside a junction box
+    const back = CELL * 0.42;
+    this.#push(car, [p0[0] - car.dir[0] * back, p0[1] - car.dir[1] * back]);
+    this.#extend(car);
+    this.#extend(car);
+    car.speed = car.cruise * 0.7;
+    car.live = true;
+    car.mesh.visible = true;
+    this.#place(car);
+  }
+
+  /** Position and heading at the current distance along the path. */
+  #place(car) {
+    const path = car.path;
+    let k = 1;
+    while (k < path.length - 1 && path[k][2] < car.s) k++;
+    const a = path[k - 1], b = path[k];
+    const seg = Math.max(1e-4, b[2] - a[2]);
+    const t = Math.max(0, Math.min(1, (car.s - a[2]) / seg));
+    car.x = a[0] + (b[0] - a[0]) * t;
+    car.z = a[1] + (b[1] - a[1]) * t;
+    car.yaw = Math.atan2(-(b[1] - a[1]), b[0] - a[0]);
+    car.mesh.position.set(car.x, 0, car.z);
+    car.mesh.rotation.y = car.yaw;
+  }
+
+  bodies() {
+    const out = [];
+    for (const c of this.police) {
+      if (!c.live) continue;
+      out.push({ x: c.x, z: c.z, yaw: c.yaw, offsets: c.offsets, radius: c.radius, reach: c.reach, tag: 'police' });
+    }
+    for (const c of this.cars) {
+      if (!c.live) continue;
+      out.push({ x: c.x, z: c.z, yaw: c.yaw, offsets: c.offsets, radius: c.radius, reach: c.reach, tag: 'traffic' });
+    }
+    return out;
+  }
+
+  update(player, dt, time) {
+    this.time = time !== undefined ? time : this.time + dt;
+    const t = this.time;
+    this.player = player;
+    this.#updateWanted(player, dt, t);
+
+    for (const car of this.cars) {
+      if (!car.live) { this.spawn(car, player, false); continue; }
+
+      // keep at least a junction of path in front of us
+      let guard = 0;
+      while (car.pathLen - car.s < (this.E ? LOOKAHEAD : CELL * 1.2) && guard++ < 40) {
+        if (this.E) this.#extendGraph(car); else this.#extend(car);
+      }
+      while (car.gates.length && car.gates[0].s < car.s - 2) car.gates.shift();
+
+      let limit = car.cruise;
+
+      /* --- the light at the next junction ---
+         The deceleration curve alone is not enough: braking asymptotically
+         still trickles a car over the line at walking pace, and once the gate
+         is behind it the check stops applying and it bolts across. A stop line
+         is a hard constraint, so it is enforced as one below. */
+      let hold = null;
+      const gate = car.gates[0];
+      if (gate) {
+        const gap = gate.s - car.s;
+        if (gap < 60) {
+          const state = signalState(gate.node[0], gate.node[1], gate.axis, t);
+          // amber only stops you if you could still pull up for it
+          const mustStop = state === 'red'
+            || (state === 'amber' && gap > car.speed * 1.1);
+          if (mustStop && gap > -0.05) {      // never drag a committed car back
+            hold = gate.s;
+            limit = Math.min(limit, Math.sqrt(Math.max(0, gap) * 2 * 4.5));
+          }
+        }
+      }
+
+      /* --- whatever is in front, including the player --- */
+      limit = Math.min(limit, this.#leaderLimit(car, player));
+
+      const accel = limit > car.speed ? 4.5 : 9.0;
+      car.speed += Math.max(-accel, Math.min(accel, limit - car.speed)) * dt * 2.2;
+      car.speed = Math.max(0, Math.min(car.cruise, car.speed));
+      car.stopped = car.speed < 0.4;
+      car.brakeMat.emissiveIntensity = limit < car.speed - 0.3 || car.stopped ? 2.4 : 0.35;
+
+      car.s += car.speed * dt;
+      if (hold !== null && car.s > hold) { car.s = hold; car.speed = 0; }
+      this.#place(car);
+
+      if (Math.hypot(car.x - player.x, car.z - player.z) > 320) {
+        car.live = false;
+        car.mesh.visible = false;
+      }
+    }
+  }
+
+  /**
+   * The chase.
+   *
+   * Two modes, because neither alone works. On the graph a pursuit car can
+   * navigate a 4km city but can never follow you onto a beach; free-driving
+   * straight at you looks right up close but has no idea where the roads are.
+   * So: graph at range, direct pursuit inside 70m, and a respawn on the graph
+   * near you if it loses you badly enough that re-acquiring an edge would be
+   * guesswork.
+   */
+  #updateWanted(player, dt, t) {
+    // heat bleeds off once you stop hitting things and get clear
+    const nearest = this.police.reduce((d, c) => (c.live
+      ? Math.min(d, Math.hypot(c.x - player.x, c.z - player.z)) : d), Infinity);
+    if (this.wanted > 0) {
+      // air support does not lose you: breaking line of sight from the cars
+      // is not enough while something is circling overhead
+      this.cool = (nearest > 240 && !this.eyesOn) ? this.cool + dt : 0;
+      if (this.cool > 9) { this.wanted = Math.max(0, this.wanted - dt * 0.55); }
+    }
+
+    /* The arrest is the fleet's, not the first car's.
+       Running the clock per-cop meant whoever arrived first ended it before
+       anyone else had climbed out -- you were nicked by one officer while
+       four cruisers were still parking. Now it only counts while at least
+       two are out, or one if that is all there is. */
+    const out = this.police.filter((c) => c.live && c.deployed);
+    const enough = out.length >= Math.min(2, this.#wantedCars());
+    const near = out.some((c) => Math.hypot(c.x - player.x, c.z - player.z) < 13);
+    this.bustT = (enough && near) ? this.bustT + dt : Math.max(0, this.bustT - dt);
+    if (this.bustT > 5.5 && this.onBust) { this.bustT = 0; this.onBust(); return; }
+
+    const want = this.#wantedCars();
+    while (this.police.length < want) this.police.push(this.#makePolice());
+    for (let i = 0; i < this.police.length; i++) {
+      const c = this.police[i];
+      if (i >= want) { c.live = false; c.mesh.visible = false; continue; }
+      if (!c.live) { this.#spawnGraph(c, player); c.best = Infinity; c.stale = 0; continue; }
+
+      const dx = player.x - c.x, dz = player.z - c.z;
+      const gap = Math.hypot(dx, dz);
+
+      // lightbar: alternating, and fast enough to read as urgent
+      if (c.bar) {
+        const flash = Math.floor(t * 6) % 2;
+        c.bar[0].emissiveIntensity = flash ? 5.5 : 0.15;
+        c.bar[1].emissiveIntensity = flash ? 0.15 : 5.5;
+      }
+
+      /* ponytail: greedy descent, not A*. It closes on the player from
+         anywhere connected, but it can sit in a local minimum -- across the
+         river from you with the nearest bridge in the wrong direction. Rather
+         than pathfind properly, notice a cop that has stopped closing and
+         re-deploy it. Swap in A* over `edges` if pursuit routing ever needs
+         to be more than plausible. */
+      if (c.mode === 'road') {
+        if (gap < (c.best ?? Infinity) - 4) { c.best = gap; c.stale = 0; }
+        else c.stale += dt;
+        if (c.stale > 11) { c.live = false; c.mesh.visible = false; c.best = Infinity; c.stale = 0; continue; }
+      }
+
+      if (c.mode === 'road' && gap < 70) c.mode = 'free';
+      if (c.mode === 'free' && gap > 150) { c.lost += dt; } else { c.lost = 0; }
+      if (c.lost > 3) { c.live = false; c.mesh.visible = false; c.mode = 'road'; c.lost = 0; continue; }
+
+      /* --- out of the car ---
+         A pursuit that ends with four cars idling around you is not an
+         arrest. Once you have stopped and they have you, officers get out,
+         open fire, and if you stay put you are nicked. */
+      /* Decay rather than reset. Five cruisers boxing you in are also
+         constantly nudging you, so an instant "are you stopped?" test never
+         held true for the second it needed -- nobody ever got out. */
+      const stopped = (player.speed ?? 0) < 3.4;
+      const close = gap < 16;
+      if (c.mode === 'free' && stopped && close) c.deployT += dt;
+      else c.deployT = Math.max(0, c.deployT - dt * 0.8);
+      if (!c.deployed && c.deployT > 1.0) { c.deployed = true; c.fireT = 0.5; }
+      if (c.deployed && (gap > 30 || c.deployT <= 0)) {
+        c.deployed = false;
+        c.officer.visible = false;
+        c.holdT = 0;
+      }
+
+      if (c.deployed) {
+        // stand at the driver's door, facing you
+        const sx = c.x + Math.cos(c.yaw + Math.PI / 2) * 1.9;
+        const sz = c.z - Math.sin(c.yaw + Math.PI / 2) * 1.9;
+        const face = Math.atan2(-(player.z - sz), player.x - sx);
+        c.officer.position.set(sx, 0, sz);
+        c.officer.rotation.y = -face + Math.PI / 2;
+        c.officer.visible = true;
+        c.speed = 0;
+
+        c.fireT -= dt;
+        c.flash.visible = c.fireT > -0.06 && c.fireT < 0;
+        if (c.fireT <= -0.06) {
+          c.fireT = 0.75 + this.rand() * 0.8;
+          if (this.onShot) this.onShot(gap);
+        }
+        c.holdT += dt;
+        continue;
+      }
+
+      if (c.mode === 'free') {
+        /* Each car takes a different side.
+           All of them steering at the same point produced a scrum: four
+           cruisers converging on one spot, shunting each other off the road
+           and shoving the player's car through a wall. They aim for a slot
+           around you instead, and hold each other at arm's length. */
+        const live = this.police.filter((q) => q.live && q.mode === 'free');
+        const slot = live.indexOf(c);
+        const bearing = Math.atan2(-dz, dx);
+        const spread = live.length > 1 ? ((slot / live.length) - 0.5) * 2.2 : 0;
+        const standoff = Math.max(3.4, Math.min(11, gap * 0.55));
+        const aimX = player.x - Math.cos(bearing + spread) * standoff;
+        const aimZ = player.z + Math.sin(bearing + spread) * standoff;
+
+        const want = Math.atan2(-(aimZ - c.z), aimX - c.x);
+        let d = ((want - c.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+        c.yaw += Math.max(-2.2 * dt, Math.min(2.2 * dt, d));
+        const reach = Math.hypot(aimX - c.x, aimZ - c.z);
+        // stop shoving once you are cornered: a pursuit that keeps ramming a
+        // stationary car can never resolve into an arrest
+        const target = gap < 7 ? 0 : reach < 8 ? reach * 1.1 : c.cruise;
+        c.speed += Math.max(-14 * dt, Math.min(9 * dt, target - c.speed));
+        c.x += Math.cos(c.yaw) * c.speed * dt;
+        c.z -= Math.sin(c.yaw) * c.speed * dt;
+
+        // keep the fleet out of each other's paint
+        for (const q of live) {
+          if (q === c) continue;
+          const ox = c.x - q.x, oz = c.z - q.z;
+          const od = Math.hypot(ox, oz);
+          if (od > 4.6 || od < 1e-3) continue;
+          const push = (4.6 - od) * 0.5;
+          c.x += (ox / od) * push;
+          c.z += (oz / od) * push;
+        }
+
+        c.mesh.position.set(c.x, 0, c.z);
+        c.mesh.rotation.y = c.yaw;
+        continue;
+      }
+
+      // road mode: the civilian machinery, minus any respect for signals
+      let guard = 0;
+      while (c.pathLen - c.s < LOOKAHEAD && guard++ < 40) this.#extendGraph(c);
+      while (c.gates.length && c.gates[0].s < c.s - 2) c.gates.shift();
+      const limit = Math.min(c.cruise, this.#leaderLimit(c, player));
+      const accel = limit > c.speed ? 6.5 : 11;
+      c.speed += Math.max(-accel, Math.min(accel, limit - c.speed)) * dt * 2.4;
+      c.speed = Math.max(0, Math.min(c.cruise, c.speed));
+      c.s += c.speed * dt;
+      this.#place(c);
+    }
+  }
+
+  /** Distance-keeping: look down our own path for anything sitting on it. */
+  #leaderLimit(car, player) {
+    const look = 4 + car.speed * 1.6;
+    let nearest = Infinity;
+
+    const ahead = (x, z) => {
+      const dx = x - car.x, dz = z - car.z;
+      const fx = Math.cos(car.yaw), fz = -Math.sin(car.yaw);
+      const along = dx * fx + dz * fz;
+      const side = Math.abs(dx * -fz + dz * fx);
+      return along > 0 && along < look && side < 2.0 ? along : Infinity;
+    };
+
+    for (const other of this.cars) {
+      if (other === car || !other.live) continue;
+      nearest = Math.min(nearest, ahead(other.x, other.z));
+    }
+    nearest = Math.min(nearest, ahead(player.x, player.z));
+
+    if (nearest === Infinity) return Infinity;
+    const gap = nearest - (car.spec.L * 0.5 + 2.2);
+    if (gap <= 0) return 0;
+    return Math.sqrt(gap * 2 * 4.0);
+  }
+}
+
+/** KARNATAKA POLICE, painted once and shared by the whole fleet. */
+let _livery = null;
+function liveryTexture() {
+  if (_livery) return _livery;
+  const W = 512, H = 128;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, W, H);
+
+  // the white flank band the lettering sits on
+  g.fillStyle = 'rgba(238,241,246,0.97)';
+  g.fillRect(0, 26, W, 76);
+  g.fillStyle = 'rgba(47,109,255,0.92)';
+  g.fillRect(0, 26, W, 7);
+  g.fillStyle = 'rgba(255,42,28,0.9)';
+  g.fillRect(0, 95, W, 7);
+
+  g.fillStyle = '#12203c';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = '700 40px ui-sans-serif,system-ui,sans-serif';
+  g.fillText('KARNATAKA', W / 2, 55);
+  g.font = '700 30px ui-sans-serif,system-ui,sans-serif';
+  g.letterSpacing = '6px';
+  g.fillText('POLICE', W / 2, 86);
+
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  _livery = t;
+  return t;
+}

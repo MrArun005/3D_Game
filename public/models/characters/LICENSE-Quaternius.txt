@@ -1,0 +1,24 @@
+Quaternius Animated Men Pack + Animated Women Pack
+==================================================
+
+License: CC0 1.0 Universal (Public Domain Dedication)
+Author:  Quaternius (https://quaternius.com)
+Source:  https://poly.pizza/bundle/Animated-Men-Pack-DAC9SDgMQT
+         https://poly.pizza/bundle/Animated-Women-Pack-HHSKxnk1mY
+
+These models are dedicated to the public domain (CC0). They may be used,
+modified, and distributed freely for any purpose, including commercial,
+with no attribution required.
+
+Files in this directory (downloaded via poly.pizza static CDN):
+  civilian_man.glb         mesh "BaseHuman"      (Animated Men Pack)
+  civilian_suit.glb        mesh "BaseHuman"      (Animated Men Pack)
+  civilian_longsleeve.glb  mesh "BaseHuman"      (Animated Men Pack)
+  civilian_casual.glb      mesh "BaseHuman"      (Animated Men Pack)
+  civilian_woman.glb       mesh "Female"         (Animated Women Pack)
+  civilian_woman2.glb      mesh "BaseHuman.000"  (Animated Women Pack)
+
+Each model is a single rigged human (SKINS=1) with embedded animation clips
+including Idle, Walk, Run, Jump, Sitting, Standing, Clapping, Punch, Death.
+Clip names are prefixed "HumanArmature|Man_*" (men) or "HumanArmature|Female_*"
+(women), e.g. "HumanArmature|Man_Idle", "HumanArmature|Man_Walk".

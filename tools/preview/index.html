@@ -1,0 +1,24 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Halstead Bay — kit preview</title><style>
+*{box-sizing:border-box}
+body{margin:0;background:#15171a;color:#d6d9de;font:13px/1.4 system-ui,sans-serif}
+#bar{position:fixed;top:0;left:0;right:0;padding:8px 12px;background:#1d2025cc;
+  backdrop-filter:blur(8px);display:flex;gap:6px;align-items:center;z-index:10}
+button{background:#2a2e35;color:#d6d9de;border:1px solid #3a3f47;border-radius:5px;
+  padding:5px 11px;font:inherit;cursor:pointer}
+button:hover{background:#343943}button.on{background:#4a6fa5;border-color:#5b83bd;color:#fff}
+#stats{margin-left:auto;color:#8b929c;font-variant-numeric:tabular-nums}
+canvas{display:block}
+</style></head><body>
+<div id="bar">
+  <span style="color:#8b929c;margin-right:4px">scene</span>
+  <button data-s="block">block</button>
+  <button data-s="street">street</button>
+  <button data-s="building">building</button>
+  <button data-s="park">park</button>
+  <button data-s="harbour">harbour</button>
+  <button id="night">night</button>
+  <span id="stats"></span>
+</div>
+<script type="module" src="./main.mjs"></script>
+</body></html>

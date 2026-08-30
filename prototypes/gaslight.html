@@ -1,0 +1,1370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Gaslight — Victorian Street</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:#05060a;
+    font-family:ui-serif,Georgia,"Times New Roman",serif;color:#d8cbb4}
+  canvas{display:block;width:100%;height:100%}
+
+  /* --- lens stack: vignette + blue-hour grade + grain --- */
+  .fx{position:fixed;inset:0;pointer-events:none;z-index:10}
+  #vignette{background:
+      radial-gradient(ellipse 78% 68% at 50% 52%,
+        rgba(0,0,0,0) 38%, rgba(0,0,0,.28) 68%, rgba(0,0,0,.72) 100%);
+    mix-blend-mode:multiply}
+  #grade{background:
+      linear-gradient(to bottom, rgba(28,44,84,.20) 0%, rgba(20,26,44,.05) 42%,
+        rgba(58,36,14,.13) 100%);
+    mix-blend-mode:soft-light}
+  #grain{opacity:.10;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'>\
+<filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/>\
+<feColorMatrix type='saturate' values='0'/></filter>\
+<rect width='140' height='140' filter='url(%23n)'/></svg>");
+    animation:grainshift .55s steps(1) infinite}
+  @keyframes grainshift{
+    0%{background-position:0 0}20%{background-position:-30px 12px}
+    40%{background-position:18px -26px}60%{background-position:-14px -18px}
+    80%{background-position:26px 20px}100%{background-position:0 0}}
+
+  /* --- ui --- */
+  #hud{position:fixed;inset:0;z-index:20;display:flex;align-items:center;
+    justify-content:center;background:rgba(4,5,9,.78);
+    backdrop-filter:blur(3px);transition:opacity .7s ease}
+  #hud.gone{opacity:0;pointer-events:none}
+  #hud .card{width:100%;padding:0 32px;text-align:center}
+  #hud h1{font-size:clamp(28px,5vw,54px);font-weight:400;letter-spacing:.34em;
+    text-transform:uppercase;color:#e8d5ad;text-shadow:0 0 34px rgba(232,180,96,.32)}
+  #hud p{margin-top:18px;font-size:15px;letter-spacing:.13em;color:#9c8f79}
+  #hud .keys{margin-top:26px;font-size:13px;letter-spacing:.22em;color:#7d715f}
+  kbd{border:1px solid #4a4238;border-radius:3px;padding:2px 7px;
+    font-family:inherit;color:#b7a88f;background:rgba(255,255,255,.03)}
+  #reticle{position:fixed;left:50%;top:50%;width:3px;height:3px;margin:-1.5px;
+    border-radius:50%;background:rgba(226,200,150,.42);z-index:15;
+    box-shadow:0 0 6px rgba(226,200,150,.35)}
+  #stats{position:fixed;left:14px;bottom:12px;z-index:20;font-size:11px;
+    letter-spacing:.16em;color:#5f5749;font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<div class="fx" id="grade"></div>
+<div class="fx" id="vignette"></div>
+<div class="fx" id="grain"></div>
+<div id="reticle"></div>
+<div id="stats"></div>
+<div id="hud"><div class="card">
+  <h1>Gaslight</h1>
+  <p>A street in London, some hour past midnight.</p>
+  <div class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk &nbsp;·&nbsp;
+    <kbd>Shift</kbd> hurry &nbsp;·&nbsp; mouse to look &nbsp;·&nbsp; <kbd>Esc</kbd> release</div>
+  <p style="margin-top:30px;color:#c9a86a;letter-spacing:.2em">click to step outside</p>
+</div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+/* ============================================================
+   GASLIGHT — Victorian street, Phase 1.5
+   §0 grade · §1 sky+fog · §2 facades · §3 shopfronts
+   §4 roofline · §5 street life
+   ============================================================ */
+
+// ---------- world constants (metres) ----------
+const ROAD_W   = 11.0;
+const WALK_W   = 3.6;
+const CURB_H   = 0.16;
+const FACE_X   = ROAD_W / 2 + WALK_W;   // building frontage plane
+const DEPTH    = 11.0;                  // building depth
+const BACK_X   = FACE_X + DEPTH;        // where the backdrop rank starts
+const CHUNK    = 40.0;
+const GROUND_H = 3.8;                   // ground-floor band height
+const LAMP_GAP = 16.0;
+
+// ---------- §0 RENDER GRADE ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputEncoding      = THREE.sRGBEncoding;
+renderer.toneMapping         = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+document.body.appendChild(renderer.domElement);
+const MAXA = renderer.capabilities.getMaxAnisotropy();
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 900);
+
+// §1 fog: sampled between horizon amber and the mid band
+const FOG_HEX = 0x141420;
+scene.fog = new THREE.FogExp2(FOG_HEX, 0.0235);
+
+// Two lights only — no per-lamp lights, no shadow maps.
+scene.add(new THREE.HemisphereLight(0x2c3350, 0x120e0a, 0.62));
+const moonlight = new THREE.DirectionalLight(0x8fa4d8, 0.30);
+moonlight.position.set(-0.45, 1.0, 0.62);
+scene.add(moonlight);
+
+// ---------- deterministic rng ----------
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+let PR = mulberry32(1);                       // painter rng (reseeded per texture)
+const rp   = () => PR();
+const rr   = (a, b) => a + PR() * (b - a);
+const ri   = (a, b) => Math.floor(a + PR() * (b - a + 1));
+const pick = (arr) => arr[Math.floor(PR() * arr.length)];
+
+// ---------- canvas helpers ----------
+function cv(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+function toTex(c, srgb) {
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = MAXA;
+  if (srgb !== false) t.encoding = THREE.sRGBEncoding;
+  return t;
+}
+// hex -> [r,g,b]
+function rgbOf(hex) { return [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255]; }
+// lighten/darken by amount in [-1,1]; returns css
+function sh(hex, k) {
+  let [r, g, b] = rgbOf(hex);
+  const f = (v) => Math.max(0, Math.min(255, Math.round(k > 0 ? v + (255 - v) * k : v * (1 + k))));
+  return `rgb(${f(r)},${f(g)},${f(b)})`;
+}
+function rgba(hex, a) { const [r, g, b] = rgbOf(hex); return `rgba(${r},${g},${b},${a})`; }
+
+// text that fits a box, with manual tracking (ctx.letterSpacing is unreliable)
+function trackedText(g, txt, cx, cy, maxW, px, track, fill, blur) {
+  let size = px;
+  const measure = (s) => {
+    g.font = `bold ${s}px Georgia, "Times New Roman", serif`;
+    let w = 0; for (const ch of txt) w += g.measureText(ch).width + track;
+    return w - track;
+  };
+  let w = measure(size);
+  while (w > maxW && size > 7) { size -= 1; w = measure(size); }
+  g.save();
+  g.fillStyle = fill;
+  if (blur) { g.shadowColor = fill; g.shadowBlur = blur; }
+  g.textBaseline = 'middle';
+  let x = cx - w / 2;
+  for (const ch of txt) { g.fillText(ch, x, cy); x += g.measureText(ch).width + track; }
+  g.restore();
+  return size;
+}
+
+// ============================================================
+//  §2  FACADE PAINTER v2 — one generator, four archetypes
+// ============================================================
+const CW = 256, CH = 640;                 // canvas is the WHOLE facade, ground floor included
+
+// archetype table -------------------------------------------------
+const ARCH = {
+  georgian: {
+    h: 14.6, aspect: 0.42, cols: 3, rows: 5, lit: 0.40, pitched: true,
+    brick: 0xa08363, mortar: 0x6f5e4c, jit: 0.10, chim: [2, 3],
+  },
+  warehouse: {
+    h: 15.2, aspect: 0.44, cols: 2, rows: 4, lit: 0.15, pitched: false,
+    brick: 0x6d3a2c, mortar: 0x4a352a, jit: 0.13, chim: [1, 2],
+  },
+  shop: {
+    h: 11.8, aspect: 0.46, cols: 2, rows: 3, lit: 0.35, pitched: true,
+    brick: 0x8e7a63, mortar: 0x635548, jit: 0.09, chim: [1, 2],
+  },
+  tenement: {
+    h: 16.2, aspect: 0.44, cols: 4, rows: 7, lit: 0.55, pitched: false,
+    brick: 0x5f4a3c, mortar: 0x3f3229, jit: 0.14, chim: [2, 3],
+  },
+};
+const ARCH_KEYS = Object.keys(ARCH);
+
+// §3 trade palettes + name pool ----------------------------------
+const TRADES = {
+  'BAKER & SONS':            0x2e2018,
+  'APOTHECARY':              0x1e3a2a,
+  'BOOKSELLER & STATIONER':  0x1f2a44,
+  'IRONMONGER':              0x141210,
+  'GASFITTER':               0x1f2a44,
+  'CHOP HOUSE':              0x5a1f1a,
+  'TOBACCONIST':             0x2e2018,
+  'MILLINER':                0x5a1f1a,
+  'PAWNBROKER':              0x141210,
+  'CLOCKMAKER':              0x2e2018,
+  'TAILOR':                  0x1f2a44,
+  'PRINTER':                 0x141210,
+};
+const TRADE_NAMES = Object.keys(TRADES);
+
+// ---- layer: brick ----------------------------------------------
+function layerBrick(g, spec, tint) {
+  const courseH = 9, brickW = 26;                    // tiles: 640/9≈71 rows, 256/26 rows offset
+  g.fillStyle = sh(spec.mortar, tint * 0.5);
+  g.fillRect(0, 0, CW, CH);
+  for (let y = 0, row = 0; y < CH; y += courseH, row++) {
+    const off = (row % 2) ? brickW / 2 : 0;
+    for (let x = -brickW; x < CW + brickW; x += brickW) {
+      g.fillStyle = sh(spec.brick, tint + (rp() - 0.5) * spec.jit * 2);
+      g.fillRect(x + off + 1, y + 1, brickW - 2, courseH - 2);
+    }
+  }
+}
+// ---- layer: baked ground AO + roofline soot --------------------
+function layerGrime(g) {
+  let ao = g.createLinearGradient(0, CH, 0, CH * 0.72);      // ground contact darkening
+  ao.addColorStop(0, 'rgba(6,7,10,0.62)');
+  ao.addColorStop(1, 'rgba(6,7,10,0)');
+  g.fillStyle = ao; g.fillRect(0, CH * 0.72, CW, CH * 0.28);
+
+  let soot = g.createLinearGradient(0, 0, 0, CH * 0.14);      // roofline soot band
+  soot.addColorStop(0, 'rgba(10,9,8,0.66)');
+  soot.addColorStop(1, 'rgba(10,9,8,0)');
+  g.fillStyle = soot; g.fillRect(0, 0, CW, CH * 0.14);
+
+  for (let i = 0; i < 26; i++) {                              // vertical rain-streak grime
+    const x = rp() * CW, w = rr(2, 9), y0 = rr(0, CH * 0.7), len = rr(40, 190);
+    const st = g.createLinearGradient(0, y0, 0, y0 + len);
+    st.addColorStop(0, 'rgba(14,12,10,0.20)');
+    st.addColorStop(1, 'rgba(14,12,10,0)');
+    g.fillStyle = st; g.fillRect(x, y0, w, len);
+  }
+}
+// ---- layer: one window (+ its painted bloom on the emissive) ----
+function paintWindow(g, e, x, y, w, h, o) {
+  const arched = !!o.arched, lit = !!o.lit;
+  const path = () => {
+    g.beginPath();
+    if (arched) {
+      const r = w / 2;
+      g.moveTo(x, y + h); g.lineTo(x, y + r); g.arc(x + r, y + r, r, Math.PI, 0); g.lineTo(x + w, y + h);
+    } else { g.rect(x, y, w, h); }
+    g.closePath();
+  };
+  // stone lintel / arch surround
+  g.fillStyle = o.stone || '#7d7264';
+  if (arched) {
+    g.beginPath();
+    const r = w / 2 + 5;
+    g.moveTo(x - 5, y + h); g.lineTo(x - 5, y + r); g.arc(x + w / 2, y + r, r, Math.PI, 0); g.lineTo(x + w + 5, y + h);
+    g.closePath(); g.fill();
+  } else {
+    g.fillRect(x - 4, y - 7, w + 8, 7);                     // flat arch lintel
+  }
+  g.fillStyle = o.stone || '#7d7264';
+  g.fillRect(x - 5, y + h, w + 10, 5);                       // sill
+  // reveal (white-painted on Georgian)
+  if (o.reveal) { g.fillStyle = '#c9c0ac'; path(); g.fill(); }
+  // recess
+  g.save(); path(); g.clip();
+  const inset = o.reveal ? 3 : 2;
+  g.fillStyle = '#141017';
+  g.fillRect(x - 2, y - 2, w + 4, h + 4);
+  const gx = x + inset, gy = y + inset, gw = w - inset * 2, gh = h - inset * 2;
+  if (lit) {
+    const lg = g.createLinearGradient(0, gy, 0, gy + gh);
+    lg.addColorStop(0, o.warm || '#ffd9a0');
+    lg.addColorStop(1, o.warm2 || '#c87a2c');
+    g.fillStyle = lg;
+  } else {
+    const dg = g.createLinearGradient(0, gy, 0, gy + gh);
+    dg.addColorStop(0, '#1b2130'); dg.addColorStop(1, '#0a0c12');
+    g.fillStyle = dg;
+  }
+  g.fillRect(gx, gy, gw, gh);
+  if (lit && rp() < 0.35) {                                   // occupant silhouette / curtain
+    g.fillStyle = 'rgba(20,10,4,0.70)';
+    if (rp() < 0.5) g.fillRect(gx, gy, gw * rr(0.25, 0.45), gh);          // half-drawn curtain
+    else { const cx2 = gx + gw / 2, r = gw * 0.17;                        // figure at the glass
+      g.beginPath(); g.arc(cx2, gy + gh * 0.42, r, 0, 7); g.fill();
+      g.fillRect(cx2 - r * 1.3, gy + gh * 0.55, r * 2.6, gh * 0.45); }
+  }
+  // glazing bars
+  g.strokeStyle = o.reveal ? 'rgba(200,192,172,0.85)' : 'rgba(30,26,22,0.9)';
+  g.lineWidth = 1.6;
+  const cols = o.bars ? o.bars[0] : 2, rows = o.bars ? o.bars[1] : 3;
+  for (let i = 1; i < cols; i++) { const bx = gx + gw * i / cols; g.beginPath(); g.moveTo(bx, gy); g.lineTo(bx, gy + gh); g.stroke(); }
+  for (let j = 1; j < rows; j++) { const by = gy + gh * j / rows; g.beginPath(); g.moveTo(gx, by); g.lineTo(gx + gw, by); g.stroke(); }
+  g.restore();
+
+  // ---- the fake bloom: painted halo behind every lit window ----
+  if (lit) {
+    e.save(); e.globalCompositeOperation = 'lighter';
+    const cx = x + w / 2, cy = y + h / 2, R = Math.max(w, h) * 1.6;
+    const hg = e.createRadialGradient(cx, cy, Math.min(w, h) * 0.18, cx, cy, R);
+    hg.addColorStop(0, 'rgba(255,190,110,0.26)');
+    hg.addColorStop(0.35, 'rgba(255,190,110,0.09)');
+    hg.addColorStop(1, 'rgba(255,190,110,0)');
+    e.fillStyle = hg; e.beginPath(); e.arc(cx, cy, R, 0, 7); e.fill();
+    const cg = e.createLinearGradient(0, y, 0, y + h);       // the pane itself, emitting
+    cg.addColorStop(0, 'rgba(255,214,158,0.58)');
+    cg.addColorStop(1, 'rgba(206,124,44,0.40)');
+    e.fillStyle = cg; e.fillRect(x + 2, y + 2, w - 4, h - 4);
+    e.globalCompositeOperation = 'source-over';       // mullions block their own glow
+    e.strokeStyle = '#000'; e.lineWidth = 2.0;
+    for (let i = 1; i < cols; i++) { const bx = x + w * i / cols;
+      e.beginPath(); e.moveTo(bx, y); e.lineTo(bx, y + h); e.stroke(); }
+    for (let j = 1; j < rows; j++) { const by = y + h * j / rows;
+      e.beginPath(); e.moveTo(x, by); e.lineTo(x + w, by); e.stroke(); }
+    e.lineWidth = 3.0; e.strokeRect(x + 1, y + 1, w - 2, h - 2);
+    e.restore();
+  }
+}
+
+// ---- §3 merchandise silhouette library -------------------------
+const MERCH = {
+  bottle(g, x, y, s) {
+    g.beginPath();
+    g.rect(x - s * 0.22, y - s * 0.55, s * 0.44, s * 0.55);          // body
+    g.rect(x - s * 0.09, y - s * 0.92, s * 0.18, s * 0.40);          // neck
+    g.rect(x - s * 0.13, y - s * 1.0, s * 0.26, s * 0.10);           // cork
+    g.fill();
+  },
+  books(g, x, y, s) {
+    let yy = y;
+    for (let i = 0; i < 4; i++) {
+      const w = s * rr(0.55, 0.95), h = s * 0.15;
+      g.fillRect(x - w / 2 + (rp() - 0.5) * s * 0.18, yy - h, w, h - 1.5);
+      yy -= h;
+    }
+  },
+  ham(g, x, y, s) {
+    g.fillRect(x - 0.8, y - s * 1.15, 1.6, s * 0.45);                // hook line
+    g.beginPath(); g.ellipse(x, y - s * 0.48, s * 0.26, s * 0.40, 0, 0, 7); g.fill();
+  },
+  scale(g, x, y, s) {
+    g.fillRect(x - 1, y - s * 0.95, 2, s * 0.95);                    // column
+    g.fillRect(x - s * 0.42, y - s * 0.95, s * 0.84, 2);             // beam
+    g.beginPath();                                                    // two pans
+    g.moveTo(x - s * 0.42, y - s * 0.72); g.lineTo(x - s * 0.20, y - s * 0.72); g.lineTo(x - s * 0.31, y - s * 0.60);
+    g.moveTo(x + s * 0.20, y - s * 0.72); g.lineTo(x + s * 0.42, y - s * 0.72); g.lineTo(x + s * 0.31, y - s * 0.60);
+    g.fill();
+  },
+  clock(g, x, y, s) {
+    g.beginPath(); g.arc(x, y - s * 0.62, s * 0.30, 0, 7); g.fill();
+    g.fillRect(x - 1.2, y - s * 0.62, 2.4, s * 0.62);
+  },
+};
+const MERCH_KEYS = Object.keys(MERCH);
+
+// ---- §3 SHOPFRONT ground band ----------------------------------
+function groundShop(g, e, gy, gh, tint, closed) {
+  const pad = 10;
+  const boardH = Math.round(gh * 0.29);                 // signboard strip
+  const winY   = gy + boardH + 4;
+  const winH   = gh - boardH - 4 - Math.round(gh * 0.13);   // leave a stall riser
+  const riserY = winY + winH;
+
+  const name = pick(TRADE_NAMES);
+  const pal  = TRADES[name];
+
+  // pilasters + stall riser in trade colour
+  g.fillStyle = sh(pal, 0.04 + tint * 0.4);
+  g.fillRect(0, gy, CW, gh);
+  g.fillStyle = sh(pal, -0.35);
+  g.fillRect(0, riserY, CW, gh - (riserY - gy));                    // stall riser
+  g.fillStyle = sh(pal, 0.16);
+  g.fillRect(2, riserY + 3, CW - 4, 3);                             // riser bead
+
+  // ---- shop window: warm gradient #ffd28a -> #b8641e ----
+  const wx = pad, ww = CW - pad * 2;
+  const wg = g.createLinearGradient(0, winY, 0, winY + winH);
+  wg.addColorStop(0, '#ffd28a'); wg.addColorStop(0.55, '#e79a45'); wg.addColorStop(1, '#b8641e');
+  g.fillStyle = wg; g.fillRect(wx, winY, ww, winH);
+
+  // merchandise silhouettes against the glow
+  g.save(); g.beginPath(); g.rect(wx, winY, ww, winH); g.clip();
+  g.fillStyle = 'rgba(18,8,4,0.62)';
+  const n = ri(3, 5), floor = winY + winH * 0.86;
+  for (let i = 0; i < n; i++) {
+    const sx = wx + ww * (i + 0.5) / n + (rp() - 0.5) * ww * 0.08;
+    MERCH[pick(MERCH_KEYS)](g, sx, floor, winH * rr(0.32, 0.50));
+  }
+  g.fillStyle = 'rgba(18,8,4,0.55)';                                 // counter line
+  g.fillRect(wx, floor, ww, winH * 0.05);
+  g.restore();
+
+  // dark inset frame + mullions
+  g.strokeStyle = '#1a120c'; g.lineWidth = 8;
+  g.strokeRect(wx + 4, winY + 4, ww - 8, winH - 8);
+  g.lineWidth = 3.5;
+  for (let i = 1; i < 4; i++) { const mx = wx + ww * i / 4; g.beginPath(); g.moveTo(mx, winY); g.lineTo(mx, winY + winH); g.stroke(); }
+  const tr = winY + winH * 0.30;                                     // transom
+  g.beginPath(); g.moveTo(wx, tr); g.lineTo(wx + ww, tr); g.stroke();
+
+  // ---- signboard: trade ground, 2px gold border, real lettering ----
+  g.fillStyle = sh(pal, -0.12);
+  g.fillRect(0, gy, CW, boardH);
+  const bh = g.createLinearGradient(0, gy, 0, gy + boardH);
+  bh.addColorStop(0, 'rgba(255,220,150,0.10)'); bh.addColorStop(1, 'rgba(0,0,0,0.28)');
+  g.fillStyle = bh; g.fillRect(0, gy, CW, boardH);
+  g.strokeStyle = '#c9a44a'; g.lineWidth = 2;
+  g.strokeRect(4, gy + 3, CW - 8, boardH - 6);
+  trackedText(g, name, CW / 2, gy + boardH / 2, CW - 26,
+              Math.round(boardH * 0.46), 1.2, '#c9a44a', 3);
+
+  // ---- shut up for the night: timber shutters over the glass ----
+  if (closed) {
+    g.fillStyle = '#241a12'; g.fillRect(wx, winY, ww, winH);
+    g.strokeStyle = 'rgba(12,9,6,0.85)'; g.lineWidth = 2;
+    for (let yy = winY + 7; yy < winY + winH; yy += 11) {
+      g.beginPath(); g.moveTo(wx, yy); g.lineTo(wx + ww, yy); g.stroke(); }
+    g.fillStyle = '#181c22';                                   // iron bar + padlock
+    g.fillRect(wx, winY + winH * 0.52, ww, 5);
+    g.fillRect(wx + ww / 2 - 5, winY + winH * 0.50, 10, 12);
+    g.fillStyle = 'rgba(255,196,120,0.28)';                    // a sliver under the door
+    g.fillRect(wx + 4, winY + winH - 4, ww - 8, 3);
+    e.save(); e.globalCompositeOperation = 'lighter';
+    e.fillStyle = 'rgba(255,180,100,0.30)';
+    e.fillRect(wx + 4, winY + winH - 4, ww - 8, 3);
+    e.fillStyle = 'rgba(201,164,74,0.10)'; e.fillRect(4, gy + 3, CW - 8, boardH - 6);
+    e.restore();
+    return name;
+  }
+
+  // ---- emissive: the shop spills onto the street ----
+  e.save(); e.globalCompositeOperation = 'lighter';
+  e.globalCompositeOperation = 'source-over';
+  e.drawImage(g.canvas, wx, winY, ww, winH, wx, winY, ww, winH);   // merch stays black
+  e.fillStyle = 'rgba(0,0,0,0.38)'; e.fillRect(wx, winY, ww, winH);
+  e.globalCompositeOperation = 'lighter';
+  const spill = e.createRadialGradient(CW / 2, winY + winH * 0.5, ww * 0.12,
+                                       CW / 2, winY + winH * 0.5, ww * 0.95);
+  spill.addColorStop(0, 'rgba(255,190,110,0.24)');
+  spill.addColorStop(0.4, 'rgba(255,175,95,0.07)');
+  spill.addColorStop(1, 'rgba(255,175,95,0)');
+  e.fillStyle = spill; e.fillRect(0, gy - gh * 0.5, CW, gh * 1.6);
+  e.fillStyle = 'rgba(201,164,74,0.26)';                             // lamplit gilt on the board
+  e.fillRect(4, gy + 3, CW - 8, boardH - 6);
+  e.restore();
+  return name;
+}
+
+// ---- other ground floors ---------------------------------------
+function groundGeorgian(g, e, gy, gh) {
+  g.fillStyle = '#6f6759'; g.fillRect(0, gy - 6, CW, 7);             // stone band
+  g.fillStyle = 'rgba(120,112,98,0.30)'; g.fillRect(0, gy, CW, gh);  // stucco render
+  const dw = CW * 0.30, dx = CW * 0.14, dh = gh * 0.74, dy = gy + gh - dh;
+  const fanH = dh * 0.20;
+  g.fillStyle = '#5d554a'; g.fillRect(dx - 8, dy - 10, dw + 16, dh + 10);   // door case
+  g.fillStyle = '#101018'; g.fillRect(dx, dy, dw, dh);                      // opening
+  const lit = rp() < 0.5;
+  g.beginPath(); g.moveTo(dx, dy + fanH); g.arc(dx + dw / 2, dy + fanH, dw / 2, Math.PI, 0); g.closePath();
+  g.fillStyle = lit ? '#ffc98a' : '#161a24'; g.fill();                      // fanlight
+  g.strokeStyle = '#4a4238'; g.lineWidth = 1.4;
+  for (let i = 1; i < 5; i++) { const a = Math.PI + Math.PI * i / 5;
+    g.beginPath(); g.moveTo(dx + dw / 2, dy + fanH);
+    g.lineTo(dx + dw / 2 + Math.cos(a) * dw / 2, dy + fanH + Math.sin(a) * dw / 2); g.stroke(); }
+  g.fillStyle = '#22303c'; g.fillRect(dx + 3, dy + fanH + 3, dw - 6, dh - fanH - 3);  // door leaf
+  g.strokeStyle = 'rgba(10,14,18,0.9)'; g.lineWidth = 2;                    // panels
+  for (let r2 = 0; r2 < 3; r2++) {
+    const py = dy + fanH + 8 + r2 * (dh - fanH - 14) / 3;
+    g.strokeRect(dx + 9, py, dw - 18, (dh - fanH - 14) / 3 - 6);
+  }
+  g.fillStyle = '#c9a44a'; g.beginPath();
+  g.arc(dx + dw - 12, dy + dh * 0.55, 3, 0, 7); g.fill();                    // knob
+  // two flanking windows
+  const fw = CW * 0.20, fh = gh * 0.52;
+  paintWindow(g, e, CW * 0.52, gy + gh * 0.20, fw, fh, { reveal: true, lit: rp() < 0.5, bars: [2, 3] });
+  paintWindow(g, e, CW * 0.77, gy + gh * 0.20, fw, fh, { reveal: true, lit: rp() < 0.5, bars: [2, 3] });
+  // area railings
+  g.strokeStyle = '#0f1116'; g.lineWidth = 2.2;
+  for (let x = 4; x < CW; x += 11) { g.beginPath(); g.moveTo(x, gy + gh); g.lineTo(x, gy + gh * 0.66); g.stroke(); }
+  g.beginPath(); g.moveTo(0, gy + gh * 0.66); g.lineTo(CW, gy + gh * 0.66); g.stroke();
+  if (lit) {
+    e.save(); e.globalCompositeOperation = 'lighter';
+    const fg = e.createRadialGradient(dx + dw / 2, dy + fanH, 4, dx + dw / 2, dy + fanH, dw * 1.3);
+    fg.addColorStop(0, 'rgba(255,200,130,0.42)'); fg.addColorStop(1, 'rgba(255,200,130,0)');
+    e.fillStyle = fg; e.fillRect(dx - dw, dy - dw, dw * 3, dw * 3);
+    e.restore();
+  }
+}
+function groundWarehouse(g, e, gy, gh) {
+  const dw = CW * 0.56, dx = (CW - dw) / 2, dy = gy + gh * 0.10, dh = gh - gh * 0.10;
+  const r = dw / 2;
+  g.fillStyle = '#4e392e';                                            // rusticated arch
+  g.beginPath(); g.moveTo(dx - 9, dy + dh); g.lineTo(dx - 9, dy + r);
+  g.arc(dx + r, dy + r, r + 9, Math.PI, 0); g.lineTo(dx + dw + 9, dy + dh); g.closePath(); g.fill();
+  g.strokeStyle = 'rgba(20,14,10,0.55)'; g.lineWidth = 1.6;
+  for (let i = 0; i <= 7; i++) { const a = Math.PI + Math.PI * i / 7;
+    g.beginPath(); g.moveTo(dx + r + Math.cos(a) * r, dy + r + Math.sin(a) * r);
+    g.lineTo(dx + r + Math.cos(a) * (r + 9), dy + r + Math.sin(a) * (r + 9)); g.stroke(); }
+  g.save(); g.beginPath(); g.moveTo(dx, dy + dh); g.lineTo(dx, dy + r);
+  g.arc(dx + r, dy + r, r, Math.PI, 0); g.lineTo(dx + dw, dy + dh); g.closePath(); g.clip();
+  g.fillStyle = '#1a1410'; g.fillRect(dx, dy, dw, dh);                 // timber doors
+  g.strokeStyle = 'rgba(46,34,26,0.9)'; g.lineWidth = 2;
+  for (let x = dx + 8; x < dx + dw; x += 13) { g.beginPath(); g.moveTo(x, dy); g.lineTo(x, dy + dh); g.stroke(); }
+  g.strokeStyle = 'rgba(30,32,36,0.95)'; g.lineWidth = 4;              // iron straps
+  g.beginPath(); g.moveTo(dx, dy + dh * 0.30); g.lineTo(dx + dw, dy + dh * 0.30);
+  g.moveTo(dx, dy + dh * 0.72); g.lineTo(dx + dw, dy + dh * 0.72); g.stroke();
+  g.beginPath(); g.moveTo(dx + dw / 2, dy); g.lineTo(dx + dw / 2, dy + dh); g.stroke();
+  g.restore();
+  g.fillStyle = '#3a2b22';                                             // bollards
+  g.fillRect(6, gy + gh * 0.72, 9, gh * 0.28);
+  g.fillRect(CW - 15, gy + gh * 0.72, 9, gh * 0.28);
+}
+function groundTenement(g, e, gy, gh) {
+  g.fillStyle = 'rgba(12,10,9,0.34)'; g.fillRect(0, gy, CW, gh);       // soot
+  for (let d = 0; d < 2; d++) {
+    const dw = CW * 0.22, dx = CW * (0.10 + d * 0.46), dh = gh * 0.72, dy = gy + gh - dh;
+    const lit = d === 0 ? rp() < 0.75 : rp() < 0.25;
+    g.fillStyle = '#4b4238'; g.fillRect(dx - 5, dy - 8, dw + 10, dh + 8);
+    g.fillStyle = lit ? '#ffcf94' : '#171b24';                          // transom light
+    g.fillRect(dx, dy, dw, gh * 0.10);
+    g.fillStyle = '#1d232c'; g.fillRect(dx, dy + gh * 0.10, dw, dh - gh * 0.10);
+    g.strokeStyle = 'rgba(8,10,14,0.9)'; g.lineWidth = 1.6;
+    g.strokeRect(dx + 5, dy + gh * 0.16, dw - 10, dh - gh * 0.24);
+    if (lit) {
+      e.save(); e.globalCompositeOperation = 'lighter';
+      const tg = e.createRadialGradient(dx + dw / 2, dy + gh * 0.05, 3, dx + dw / 2, dy + gh * 0.05, dw * 1.5);
+      tg.addColorStop(0, 'rgba(255,200,132,0.45)'); tg.addColorStop(1, 'rgba(255,200,132,0)');
+      e.fillStyle = tg; e.fillRect(dx - dw, dy - dw, dw * 3, dw * 3);
+      e.fillStyle = 'rgba(255,207,148,0.55)'; e.fillRect(dx, dy, dw, gh * 0.10);
+      e.restore();
+    }
+  }
+  const ww = CW * 0.16;                                                 // one grimy window
+  paintWindow(g, e, CW * 0.38, gy + gh * 0.30, ww, gh * 0.40, { lit: rp() < 0.4, bars: [2, 2] });
+}
+
+// ---- the one generator ------------------------------------------
+function paintFacade(key, variant) {
+  const spec = ARCH[key];
+  PR = mulberry32(key.length * 7919 + variant * 104729 + 17);
+  const tint = ((variant % 3) - 1) * 0.065;
+
+  const mc = cv(CW, CH), g = mc.getContext('2d');
+  const ec = cv(CW, CH), e = ec.getContext('2d');
+  e.fillStyle = '#000'; e.fillRect(0, 0, CW, CH);
+
+  layerBrick(g, spec, tint);
+
+  const gh = Math.round(CH * (GROUND_H / spec.h));      // ground band, true to scale
+  const gy = CH - gh;
+  const upperTop = CH * 0.075;                          // room for cornice / roofline
+  const bandH = (gy - upperTop) / spec.rows;
+
+  // cornice / string course between shop and flats
+  if (key === 'shop') { g.fillStyle = '#8a7f6d'; g.fillRect(0, gy - 11, CW, 9);
+                        g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(0, gy - 2, CW, 3); }
+  if (key === 'georgian') { g.fillStyle = '#6f6759'; g.fillRect(0, gy - bandH - 5, CW, 5); }
+
+  // upper window grid
+  const litP = spec.lit;
+  for (let r2 = 0; r2 < spec.rows; r2++) {
+    const rowY = upperTop + r2 * bandH;
+    for (let c = 0; c < spec.cols; c++) {
+      const cw2 = CW / spec.cols;
+      let w, h, ox, oy, opt = { lit: rp() < litP, arched: false, reveal: false, bars: [2, 3] };
+      const flame = pick([['#ffd9a0', '#c87a2c'],      // tallow candle
+                          ['#fff0cc', '#d9a24e'],      // gas mantle, whiter
+                          ['#f0b070', '#9e4a1c'],      // banked hearth, red
+                          ['#ffe2b4', '#b96f28']]);
+      opt.warm = flame[0]; opt.warm2 = flame[1];
+      if (key === 'georgian') {
+        h = bandH * (r2 === 0 ? 0.60 : r2 >= spec.rows - 1 ? 0.44 : 0.56);   // piano nobile tallest
+        w = cw2 * 0.42; opt.reveal = true; opt.bars = [2, 3];
+      } else if (key === 'warehouse') {
+        h = bandH * 0.60; w = cw2 * 0.46; opt.arched = true; opt.bars = [3, 4];
+        opt.stone = '#5a463a';
+      } else if (key === 'shop') {
+        h = bandH * 0.55; w = cw2 * 0.40; opt.reveal = true; opt.bars = [2, 3];
+      } else {
+        h = bandH * 0.46; w = cw2 * 0.44; opt.bars = [2, 2]; opt.stone = '#5b5044';
+      }
+      ox = c * cw2 + (cw2 - w) / 2;
+      oy = rowY + (bandH - h) * 0.44;
+      paintWindow(g, e, ox, oy, w, h, opt);
+    }
+  }
+
+  // archetype tells --------------------------------------------
+  if (key === 'warehouse') {                              // hoist beam silhouette
+    g.fillStyle = '#171410';
+    g.fillRect(CW * 0.42, upperTop * 0.18, CW * 0.16, 7);
+    g.fillRect(CW * 0.46, upperTop * 0.18, 6, upperTop * 0.55);
+    g.fillStyle = '#0f0d0b'; g.fillRect(CW * 0.30, upperTop * 0.30, CW * 0.40, 5);
+    g.strokeStyle = '#0d0b09'; g.lineWidth = 2;           // chain
+    g.beginPath(); g.moveTo(CW * 0.30, upperTop * 0.30); g.lineTo(CW * 0.30, upperTop * 1.4); g.stroke();
+    g.fillStyle = 'rgba(28,24,20,0.5)';                   // painted trade name, faded
+    trackedText(g, 'BONDED  STORES', CW / 2, gy - bandH * 0.34, CW - 30, 20, 3, 'rgba(196,176,140,0.30)', 0);
+  }
+  if (key === 'tenement') {                               // washing line on a random floor
+    const r2 = ri(1, spec.rows - 2), yy = upperTop + r2 * bandH + bandH * 0.90;
+    g.strokeStyle = 'rgba(12,12,14,0.85)'; g.lineWidth = 1.6;
+    g.beginPath(); g.moveTo(0, yy - 6); g.quadraticCurveTo(CW / 2, yy + 7, CW, yy - 6); g.stroke();
+    g.fillStyle = 'rgba(14,14,17,0.82)';
+    for (let i = 0; i < 6; i++) {
+      const t = (i + 0.5) / 6, xx = t * CW;
+      const sag = yy - 6 + (1 - Math.abs(t - 0.5) * 2) * 13;
+      const w = rr(11, 20), h = rr(15, 30);
+      g.fillRect(xx - w / 2, sag, w, h);
+    }
+  }
+  if (key === 'georgian' || key === 'shop') {             // eaves cornice
+    g.fillStyle = '#6b6252'; g.fillRect(0, upperTop - 9, CW, 9);
+    g.fillStyle = 'rgba(0,0,0,0.45)'; g.fillRect(0, upperTop, CW, 4);
+  } else {                                                // parapet coping
+    g.fillStyle = '#4d4438'; g.fillRect(0, 0, CW, upperTop * 0.55);
+    g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(0, upperTop * 0.55, CW, 4);
+  }
+
+  // ground floor
+  let shopName = null;
+  if (key === 'shop')            shopName = groundShop(g, e, gy, gh, tint, variant === 4);
+  else if (key === 'georgian')   groundGeorgian(g, e, gy, gh);
+  else if (key === 'warehouse')  groundWarehouse(g, e, gy, gh);
+  else                           groundTenement(g, e, gy, gh);
+
+  layerGrime(g);
+  return { map: toTex(mc), emis: toTex(ec), shop: shopName };
+}
+
+// build 4 archetypes x 3 variants = 12 materials
+const FACADE = {};
+ARCH_KEYS.forEach((k) => {
+  const nv = k === 'shop' ? 5 : 3;          // shops carry the trade name, so need more rolls
+  FACADE[k] = Array.from({ length: nv }, (_, v) => {
+    const t = paintFacade(k, v);
+    const m = new THREE.MeshLambertMaterial({
+      map: t.map, emissive: 0xffffff, emissiveMap: t.emis, emissiveIntensity: 0.85,
+    });
+    m.userData.shop = t.shop;
+    return m;
+  });
+});
+
+// ============================================================
+//  street + sky textures
+// ============================================================
+function texCobble() {
+  PR = mulberry32(4242);
+  const S = 512, c = cv(S, S), g = c.getContext('2d');
+  g.fillStyle = '#0e1014'; g.fillRect(0, 0, S, S);
+  const rows = 26, rh = S / rows;
+  for (let r2 = 0; r2 < rows; r2++) {
+    const off = (r2 % 2) * 9, cwid = 17;
+    for (let x = -cwid; x < S + cwid; x += cwid) {
+      const px = x + off + rr(-1.4, 1.4), py = r2 * rh + rr(-1.2, 1.2);
+      const v = rr(-0.42, 0.10);
+      g.fillStyle = sh(0x2b2f38, v);
+      g.beginPath(); g.ellipse(px + cwid / 2, py + rh / 2, cwid * 0.44, rh * 0.42, rr(-0.2, 0.2), 0, 7); g.fill();
+      g.fillStyle = sh(0x3d434f, v + 0.16);                    // wet highlight on the crown
+      g.beginPath(); g.ellipse(px + cwid / 2, py + rh * 0.36, cwid * 0.26, rh * 0.16, 0, 0, 7); g.fill();
+    }
+  }
+  for (let i = 0; i < 40; i++) {                                // puddle darkening
+    const x = rp() * S, y = rp() * S, r = rr(18, 66);
+    const pg = g.createRadialGradient(x, y, 0, x, y, r);
+    pg.addColorStop(0, 'rgba(6,8,12,0.55)'); pg.addColorStop(1, 'rgba(6,8,12,0)');
+    g.fillStyle = pg; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+  }
+  return toTex(c);
+}
+function texFlag() {
+  PR = mulberry32(99);
+  const S = 512, c = cv(S, S), g = c.getContext('2d');
+  g.fillStyle = '#23262c'; g.fillRect(0, 0, S, S);
+  const cols = 4, rows = 8, w = S / cols, h = S / rows;
+  for (let r2 = 0; r2 < rows; r2++) for (let cx = 0; cx < cols; cx++) {
+    g.fillStyle = sh(0x3a3e46, rr(-0.22, 0.12));
+    g.fillRect(cx * w + 1.6, r2 * h + 1.6, w - 3.2, h - 3.2);
+    g.fillStyle = 'rgba(255,255,255,0.025)';
+    g.fillRect(cx * w + 1.6, r2 * h + 1.6, w - 3.2, 2);
+  }
+  for (let i = 0; i < 60; i++) {                                // grime + cracks
+    g.strokeStyle = `rgba(8,9,12,${rr(0.1, 0.3)})`; g.lineWidth = rr(0.6, 2);
+    g.beginPath(); const x = rp() * S, y = rp() * S;
+    g.moveTo(x, y); g.lineTo(x + rr(-40, 40), y + rr(-40, 40)); g.stroke();
+  }
+  return toTex(c);
+}
+function texSlate() {
+  PR = mulberry32(7);
+  const S = 256, c = cv(S, S), g = c.getContext('2d');
+  g.fillStyle = '#101218'; g.fillRect(0, 0, S, S);
+  const rh = 16, sw = 22;
+  for (let r2 = 0, i = 0; r2 < S; r2 += rh, i++) {
+    const off = (i % 2) * sw / 2;
+    for (let x = -sw; x < S + sw; x += sw) {
+      g.fillStyle = sh(0x1b1f27, rr(-0.30, 0.22));
+      g.fillRect(x + off + 0.8, r2, sw - 1.6, rh * 1.4);
+      g.fillStyle = 'rgba(0,0,0,0.35)';
+      g.fillRect(x + off, r2 + rh * 1.4 - 2, sw, 2);
+    }
+  }
+  return toTex(c);
+}
+// §5 single halo: hot core rgba(255,225,170,1) -> rgba(255,150,50,0)
+function texHalo() {
+  const S = 128, c = cv(S, S), g = c.getContext('2d');
+  const gr = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  gr.addColorStop(0.00, 'rgba(255,244,222,1)');
+  gr.addColorStop(0.07, 'rgba(255,225,170,1)');
+  gr.addColorStop(0.20, 'rgba(255,196,112,0.60)');
+  gr.addColorStop(0.45, 'rgba(255,168,72,0.20)');
+  gr.addColorStop(0.72, 'rgba(255,150,50,0.06)');
+  gr.addColorStop(1.00, 'rgba(255,150,50,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, S, S);
+  return toTex(c);
+}
+// §5 wet streak: bright at lamp-side, smeared away
+function texStreak() {
+  PR = mulberry32(31);
+  const W2 = 64, H2 = 256, c = cv(W2, H2), g = c.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, W2, H2);
+  g.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 14; i++) {                                 // broken vertical smears
+    const x = rr(6, W2 - 6), w = rr(1.5, 7), top = rr(0, 40), len = rr(90, 250);
+    const lg = g.createLinearGradient(0, top, 0, top + len);
+    lg.addColorStop(0, `rgba(255,196,120,${rr(0.35, 0.85)})`);
+    lg.addColorStop(0.35, 'rgba(255,170,86,0.22)');
+    lg.addColorStop(1, 'rgba(255,150,50,0)');
+    g.fillStyle = lg; g.fillRect(x - w / 2, top, w, len);
+  }
+  const side = g.createLinearGradient(0, 0, W2, 0);              // feather the edges
+  side.addColorStop(0, 'rgba(0,0,0,1)'); side.addColorStop(0.5, 'rgba(0,0,0,0)');
+  side.addColorStop(1, 'rgba(0,0,0,1)');
+  g.globalCompositeOperation = 'destination-out';
+  g.fillStyle = side; g.fillRect(0, 0, W2, H2);
+  return toTex(c);
+}
+// soft light pool on the pavement
+function texPool() {
+  const S = 128, c = cv(S, S), g = c.getContext('2d');
+  const gr = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  gr.addColorStop(0, 'rgba(255,196,124,0.85)');
+  gr.addColorStop(0.35, 'rgba(255,170,90,0.30)');
+  gr.addColorStop(1, 'rgba(255,150,50,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, S, S);
+  return toTex(c);
+}
+// §1 sky: 64x512 vertical gradient
+function texSky() {
+  const c = cv(64, 512), g = c.getContext('2d');
+  const gr = g.createLinearGradient(0, 512, 0, 0);   // v=0 is the bottom of the sphere
+  gr.addColorStop(0.00, '#120d0a');
+  gr.addColorStop(0.42, '#2a2019');
+  gr.addColorStop(0.50, '#3a2c22');   // horizon: coal-smog amber
+  gr.addColorStop(0.58, '#2c2630');
+  gr.addColorStop(0.72, '#1a1c2c');   // transition
+  gr.addColorStop(1.00, '#0a0c1a');   // night blue-black
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 512);
+  return toTex(c);
+}
+function texDisc(inner, outer) {
+  const S = 128, c = cv(S, S), g = c.getContext('2d');
+  const gr = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  gr.addColorStop(0, inner); gr.addColorStop(0.5, outer); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, S, S);
+  return toTex(c);
+}
+function texMist() {
+  PR = mulberry32(555);
+  const S = 512, c = cv(S, S), g = c.getContext('2d');
+  g.fillStyle = 'rgba(0,0,0,0)'; g.clearRect(0, 0, S, S);
+  for (let i = 0; i < 70; i++) {
+    const x = rp() * S, y = rp() * S, r = rr(40, 150);
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, `rgba(150,146,158,${rr(0.05, 0.14)})`);
+    gr.addColorStop(1, 'rgba(150,146,158,0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+  }
+  return toTex(c);
+}
+const T = {
+  cobble: texCobble(), flag: texFlag(), slate: texSlate(),
+  halo: texHalo(), streak: texStreak(), pool: texPool(),
+  sky: texSky(), mist: texMist(),
+  moon: texDisc('rgba(226,232,246,1)', 'rgba(150,168,214,0.35)'),
+  star: texDisc('rgba(255,255,255,1)', 'rgba(190,206,255,0.4)'),
+};
+T.cobble.repeat.set(ROAD_W / 3.2, CHUNK / 3.2);
+T.flag.repeat.set(WALK_W / 2.4, CHUNK / 2.4);
+T.slate.repeat.set(3, 2);
+
+// ============================================================
+//  GEOMETRY — primitives decomposed, then merged to one draw call
+// ============================================================
+
+/* merge a list of {geo, mat?} into ONE non-indexed BufferGeometry.
+   ~25 lines instead of a second CDN dependency (BufferGeometryUtils). */
+function mergeGeos(list) {
+  const P = [], N = [], U = [];
+  for (const g0 of list) {
+    let g = g0.index ? g0.toNonIndexed() : g0.clone();
+    if (!g.attributes.uv) {
+      const n = g.attributes.position.count;
+      g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
+    }
+    P.push(g.attributes.position.array);
+    N.push(g.attributes.normal.array);
+    U.push(g.attributes.uv.array);
+    g.dispose();
+  }
+  const cat = (arrs) => {
+    let n = 0; for (const a of arrs) n += a.length;
+    const out = new Float32Array(n); let o = 0;
+    for (const a of arrs) { out.set(a, o); o += a.length; }
+    return out;
+  };
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(cat(P), 3));
+  out.setAttribute('normal',   new THREE.BufferAttribute(cat(N), 3));
+  out.setAttribute('uv',       new THREE.BufferAttribute(cat(U), 2));
+  return out;
+}
+const M4 = (x, y, z, rx, ry, rz, sx, sy, sz) => new THREE.Matrix4().compose(
+  new THREE.Vector3(x, y, z),
+  new THREE.Quaternion().setFromEuler(new THREE.Euler(rx || 0, ry || 0, rz || 0)),
+  new THREE.Vector3(sx === undefined ? 1 : sx, sy === undefined ? 1 : sy, sz === undefined ? 1 : sz));
+
+// ---- hand-built pitched roof (triangular prism) -----------------
+// unit: x -0.5..0.5, y 0..1, z -0.5..0.5, ridge along +Z at x=0
+function makeRoofGeo() {
+  const v = [
+    // west slope
+    -.5,0,-.5,  -.5,0,.5,   0,1,.5,
+    -.5,0,-.5,   0,1,.5,    0,1,-.5,
+    // east slope
+     .5,0,.5,    .5,0,-.5,  0,1,-.5,
+     .5,0,.5,    0,1,-.5,   0,1,.5,
+    // gable -Z
+    -.5,0,-.5,   0,1,-.5,   .5,0,-.5,
+    // gable +Z
+     .5,0,.5,    0,1,.5,   -.5,0,.5,
+  ];
+  const uv = [
+    0,0, 1,0, 1,1,  0,0, 1,1, 0,1,
+    0,0, 1,0, 1,1,  0,0, 1,1, 0,1,
+    0,0, .5,1, 1,0,
+    0,0, .5,1, 1,0,
+  ];
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(v), 3));
+  g.setAttribute('uv',       new THREE.BufferAttribute(new Float32Array(uv), 2));
+  g.computeVertexNormals();
+  return g;
+}
+
+// ---- the gas lamp, as real geometry -----------------------------
+// lathe profile (radius, height) — plinth flare, tapered shaft, collar
+const LAMP_H = 3.15;
+function makeLampIron() {
+  const prof = [
+    [0.000, 0.00], [0.230, 0.00], [0.230, 0.09], [0.185, 0.15],
+    [0.160, 0.24], [0.135, 0.34], [0.115, 0.46], [0.100, 0.62],
+    [0.078, 1.00], [0.068, 2.30], [0.066, 2.58], [0.086, 2.66],
+    [0.140, 2.78], [0.112, 2.86], [0.080, 2.92], [0.072, 3.02],
+  ].map((p) => new THREE.Vector2(p[0], p[1]));
+  const parts = [];
+  parts.push(new THREE.LatheGeometry(prof, 12));
+  // lantern frame: 4 corner colonnettes
+  for (let i = 0; i < 4; i++) {
+    const a = i * Math.PI / 2 + Math.PI / 4;
+    const b = new THREE.BoxGeometry(0.032, 0.54, 0.032);
+    b.applyMatrix4(M4(Math.cos(a) * 0.185, LAMP_H + 0.29, Math.sin(a) * 0.185, 0, -a, 0));
+    parts.push(b);
+  }
+  const base = new THREE.ConeGeometry(0.235, 0.13, 4);   // lantern underplate
+  base.applyMatrix4(M4(0, LAMP_H + 0.05, 0, Math.PI, Math.PI / 4, 0));
+  parts.push(base);
+  const cap = new THREE.ConeGeometry(0.29, 0.21, 4);     // pyramidal cap
+  cap.applyMatrix4(M4(0, LAMP_H + 0.66, 0, 0, Math.PI / 4, 0));
+  parts.push(cap);
+  const vent = new THREE.CylinderGeometry(0.05, 0.075, 0.07, 8);
+  vent.applyMatrix4(M4(0, LAMP_H + 0.79, 0, 0, 0, 0));
+  parts.push(vent);
+  const fin = new THREE.SphereGeometry(0.052, 8, 6);     // finial
+  fin.applyMatrix4(M4(0, LAMP_H + 0.86, 0, 0, 0, 0));
+  parts.push(fin);
+  const bar = new THREE.BoxGeometry(0.66, 0.034, 0.034); // lamplighter's crossbar
+  bar.applyMatrix4(M4(0, 2.46, 0, 0, 0, 0));
+  parts.push(bar);
+  for (const s of [-1, 1]) {                              // crossbar finials
+    const k = new THREE.SphereGeometry(0.038, 6, 5);
+    k.applyMatrix4(M4(s * 0.33, 2.46, 0, 0, 0, 0)); parts.push(k);
+  }
+  return mergeGeos(parts);
+}
+function makeLampGlass() {
+  // four panes = one 4-sided open cylinder; cheaper than four boxes, same silhouette
+  const g = new THREE.CylinderGeometry(0.165, 0.205, 0.52, 4, 1, true);
+  g.applyMatrix4(M4(0, LAMP_H + 0.33, 0, 0, Math.PI / 4, 0));
+  return g;
+}
+// ---- chimney stack + pots, merged --------------------------------
+function makeChimney() {
+  const parts = [];
+  const stack = new THREE.BoxGeometry(0.86, 1.55, 0.62);
+  stack.applyMatrix4(M4(0, 0.775, 0, 0, 0, 0));
+  parts.push(stack);
+  const cap = new THREE.BoxGeometry(0.98, 0.12, 0.74);
+  cap.applyMatrix4(M4(0, 1.60, 0, 0, 0, 0));
+  parts.push(cap);
+  for (let i = 0; i < 3; i++) {
+    const pot = new THREE.CylinderGeometry(0.105, 0.125, 0.46, 7, 1, true);
+    pot.applyMatrix4(M4(-0.26 + i * 0.26, 1.88, 0, 0, 0, 0));
+    parts.push(pot);
+  }
+  return mergeGeos(parts);
+}
+// ---- swing-sign bracket ------------------------------------------
+function makeBracket() {
+  const parts = [];
+  const arm = new THREE.BoxGeometry(0.66, 0.045, 0.045);
+  arm.applyMatrix4(M4(0.33, 0, 0, 0, 0, 0)); parts.push(arm);
+  const stay = new THREE.BoxGeometry(0.40, 0.035, 0.035);
+  stay.applyMatrix4(M4(0.16, -0.14, 0, 0, 0, -0.62)); parts.push(stay);
+  const scroll = new THREE.TorusGeometry(0.09, 0.018, 5, 10, Math.PI * 1.4);
+  scroll.applyMatrix4(M4(0.60, -0.09, 0, Math.PI / 2, 0, 0)); parts.push(scroll);
+  return mergeGeos(parts);
+}
+
+// ---- shared geometry + materials ---------------------------------
+const G = {
+  box:   (() => { const g = new THREE.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; })(),
+  roof:  makeRoofGeo(),
+  iron:  makeLampIron(),
+  glass: makeLampGlass(),
+  chim:  makeChimney(),
+  brack: makeBracket(),
+  plane: new THREE.PlaneGeometry(1, 1),
+  sign:  (() => { const g = new THREE.PlaneGeometry(0.94, 1.14); g.translate(0, -0.57, 0); return g; })(),
+};
+const MAT = {
+  road:    new THREE.MeshLambertMaterial({ map: T.cobble }),
+  walk:    new THREE.MeshLambertMaterial({ map: T.flag }),
+  curb:    new THREE.MeshLambertMaterial({ color: 0x2a2d34 }),
+  slate:   new THREE.MeshLambertMaterial({ map: T.slate, color: 0xc2cadd }),
+  brickd:  new THREE.MeshLambertMaterial({ color: 0x382c21 }),
+  iron:    new THREE.MeshLambertMaterial({ color: 0x14161b }),
+  glass:   new THREE.MeshBasicMaterial({ color: 0xffce8e, fog: true }),
+  skyline: new THREE.MeshLambertMaterial({ color: 0x0d0f16 }),
+  pool:    new THREE.MeshBasicMaterial({ map: T.pool, transparent: true, blending: THREE.AdditiveBlending,
+             depthWrite: false, opacity: 0.85, fog: true }),
+  streak:  new THREE.MeshBasicMaterial({ map: T.streak, transparent: true, blending: THREE.AdditiveBlending,
+             depthWrite: false, opacity: 0.72, fog: true }),
+};
+
+// ---- swing-sign board textures (pictorial, per period) ------------
+const SIGN_SYMBOL = {
+  pestle(g, w, h) {                                       // apothecary
+    g.beginPath(); g.moveTo(w * .32, h * .70); g.quadraticCurveTo(w * .50, h * .34, w * .68, h * .70);
+    g.closePath(); g.fill();
+    g.fillRect(w * .30, h * .70, w * .40, h * .07);
+    g.save(); g.translate(w * .60, h * .40); g.rotate(0.5);
+    g.fillRect(-w * .035, -h * .26, w * .07, h * .30); g.restore();
+  },
+  boot(g, w, h) {                                         // cobbler / tailor
+    g.beginPath(); g.moveTo(w * .38, h * .26); g.lineTo(w * .54, h * .26);
+    g.lineTo(w * .56, h * .58); g.lineTo(w * .74, h * .64); g.lineTo(w * .74, h * .74);
+    g.lineTo(w * .34, h * .74); g.lineTo(w * .36, h * .40); g.closePath(); g.fill();
+  },
+  key(g, w, h) {                                          // ironmonger / pawnbroker
+    g.beginPath(); g.arc(w * .36, h * .48, w * .11, 0, 7); g.fill();
+    g.globalCompositeOperation = 'destination-out';
+    g.beginPath(); g.arc(w * .36, h * .48, w * .045, 0, 7); g.fill();
+    g.globalCompositeOperation = 'source-over';
+    g.fillRect(w * .45, h * .44, w * .28, h * .075);
+    g.fillRect(w * .64, h * .44, w * .05, h * .17);
+    g.fillRect(w * .71, h * .44, w * .05, h * .12);
+  },
+  loaf(g, w, h) {                                         // baker
+    g.beginPath(); g.ellipse(w * .50, h * .54, w * .22, h * .13, 0, 0, 7); g.fill();
+    g.strokeStyle = g.fillStyle; g.lineWidth = 2;
+    for (let i = -1; i <= 1; i++) { g.beginPath();
+      g.moveTo(w * .50 + i * w * .10, h * .46); g.lineTo(w * .50 + i * w * .10 + w * .04, h * .60); g.stroke(); }
+  },
+  clock(g, w, h) {                                        // clockmaker
+    g.beginPath(); g.arc(w * .50, h * .52, w * .20, 0, 7); g.fill();
+    g.globalCompositeOperation = 'destination-out';
+    g.beginPath(); g.arc(w * .50, h * .52, w * .155, 0, 7); g.fill();
+    g.globalCompositeOperation = 'source-over';
+    g.fillRect(w * .49, h * .40, w * .02, h * .14);
+    g.fillRect(w * .50, h * .51, w * .13, h * .02);
+  },
+};
+const SYM_KEYS = Object.keys(SIGN_SYMBOL);
+function texSign(seed) {
+  PR = mulberry32(seed * 1013 + 5);
+  const W2 = 128, H2 = 156, c = cv(W2, H2), g = c.getContext('2d');
+  g.clearRect(0, 0, W2, H2);
+  const chainTop = 30;
+  g.strokeStyle = '#0e1014'; g.lineWidth = 3;             // two chains
+  g.beginPath(); g.moveTo(W2 * .22, 2); g.lineTo(W2 * .26, chainTop);
+  g.moveTo(W2 * .78, 2); g.lineTo(W2 * .74, chainTop); g.stroke();
+  const pal = TRADES[pick(TRADE_NAMES)];
+  const bh = H2 - chainTop - 4;
+  g.fillStyle = sh(pal, -0.10); g.fillRect(4, chainTop, W2 - 8, bh);
+  const sheen = g.createLinearGradient(0, chainTop, 0, chainTop + bh);
+  sheen.addColorStop(0, 'rgba(255,220,150,0.13)'); sheen.addColorStop(1, 'rgba(0,0,0,0.32)');
+  g.fillStyle = sheen; g.fillRect(4, chainTop, W2 - 8, bh);
+  g.strokeStyle = '#c9a44a'; g.lineWidth = 2.5;
+  g.strokeRect(8, chainTop + 4, W2 - 16, bh - 8);
+  g.save(); g.translate(0, chainTop); g.fillStyle = '#c9a44a';
+  SIGN_SYMBOL[pick(SYM_KEYS)](g, W2, bh); g.restore();
+  return toTex(c);
+}
+const SIGN_MATS = [0, 1, 2, 3].map((i) => new THREE.MeshLambertMaterial({
+  map: texSign(i), transparent: true, alphaTest: 0.4, side: THREE.DoubleSide,
+  emissive: 0x2a1c0c, emissiveIntensity: 1.0,
+}));
+
+// ============================================================
+//  CHUNKS — terrace runs, not dice rolls
+// ============================================================
+const chunks = new Map();
+const swingSigns = [];      // {mesh, i, phase, pos}
+const lamps = [];           // {glass, halo, pool, phase, y}
+
+function addInst(parent, geo, mat, mats, count) {
+  const im = new THREE.InstancedMesh(geo, mat, count);
+  im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  // ponytail: r128 culls an InstancedMesh by its GEOMETRY's bounding sphere (a unit
+  // box at the chunk origin), not by where the instances actually are — so every
+  // building vanished. Disabling culling is correct here because we only ever keep
+  // 6 chunks alive; upgrade path is a per-mesh bounding sphere if the pool grows.
+  im.frustumCulled = false;
+  parent.add(im);
+  return im;
+}
+
+function buildChunk(ci) {
+  const grp = new THREE.Group();
+  const z0 = ci * CHUNK, zc = z0 + CHUNK / 2;
+  const R = mulberry32(ci * 2654435761 >>> 0 || 7);
+
+  // ---- ground: road, two pavements, two curbs ----
+  const road = new THREE.Mesh(G.plane, MAT.road);
+  road.rotation.x = -Math.PI / 2; road.scale.set(ROAD_W, CHUNK, 1);
+  road.position.set(0, 0, zc); grp.add(road);
+  for (const s of [-1, 1]) {
+    const wk = new THREE.Mesh(G.plane, MAT.walk);
+    wk.rotation.x = -Math.PI / 2; wk.scale.set(WALK_W, CHUNK, 1);
+    wk.position.set(s * (ROAD_W / 2 + WALK_W / 2), CURB_H, zc); grp.add(wk);
+    const cb = new THREE.Mesh(G.box, MAT.curb);
+    cb.scale.set(0.22, CURB_H, CHUNK);
+    cb.position.set(s * (ROAD_W / 2 + 0.11), 0, zc); grp.add(cb);
+  }
+
+  // ---- terrace-run placement ----
+  const facades = {};   // "arch|variant" -> [Matrix4]
+  const roofs = [], parapets = [], chimneys = [], brackets = [], signs = [], skyline = [];
+  const landmarkAt = (ci % 2 === 0) ? z0 + R() * CHUNK : -1e9;
+  let shopIdx = Math.abs(ci) % 5;
+
+  for (const side of [-1, 1]) {
+    let z = z0, runLeft = 0, runArch = 'georgian', runH = 0, runVar = 0;
+    while (z < z0 + CHUNK - 3) {
+      if (runLeft <= 0) {
+        runArch = ARCH_KEYS[Math.floor(R() * ARCH_KEYS.length)];
+        runVar  = Math.floor(R() * FACADE[runArch].length);
+        runH    = ARCH[runArch].h;
+        runLeft = 2 + Math.floor(R() * 3);                 // runs of 2–4
+        if (z > z0 && R() < 0.14) { z += 1.0 + R() * 1.2; continue; }  // alley gap
+      }
+      const spec = ARCH[runArch];
+      let h = runH + (R() - 0.5) * 0.8;                     // ±0.4u within the run
+      let w = spec.h * spec.aspect * (0.94 + R() * 0.12);
+      const isLandmark = Math.abs(z - landmarkAt) < 6 && side === (ci % 4 < 2 ? -1 : 1);
+      if (isLandmark) {
+        if (runArch === 'georgian' || runArch === 'shop') w *= 1.65;   // double-width
+        else h *= 1.26;                                                // tall warehouse
+      }
+      if (z + w > z0 + CHUNK) w = z0 + CHUNK - z;
+      if (w < 3.2) break;
+
+      const cz = z + w / 2, cx = side * (FACE_X + DEPTH / 2);
+      const useVar = runArch === 'shop' ? (shopIdx++ % FACADE.shop.length) : runVar;
+      const key = runArch + '|' + useVar;
+      (facades[key] || (facades[key] = [])).push(M4(cx, 0, cz, 0, 0, 0, DEPTH, h, w));
+
+      if (spec.pitched) {
+        const rh = 2.2 + R() * 0.9;
+        roofs.push(M4(cx, h, cz, 0, 0, 0, DEPTH + 0.5, rh, w + 0.28));
+      } else {
+        parapets.push(M4(cx, h, cz, 0, 0, 0, DEPTH + 0.4, 0.75 + R() * 0.35, w + 0.24));
+      }
+      const nch = spec.chim[0] + Math.floor(R() * (spec.chim[1] - spec.chim[0] + 1));
+      for (let i = 0; i < nch; i++) {
+        const t = (i + 0.5) / nch;
+        chimneys.push(M4(side * (FACE_X + 0.5 + R() * 1.3), h + (spec.pitched ? 0.35 : 0.2),
+                         z + w * t, 0, (R() - 0.5) * 0.35, 0, 1, 0.85 + R() * 0.6, 1));
+      }
+      if (runArch === 'shop' && R() < 0.72) {               // §5 swing sign
+        const bx = side * (FACE_X - 0.03);
+        brackets.push(M4(bx, 4.30, cz, 0, side > 0 ? Math.PI : 0, 0));
+        signs.push({ m: M4(bx + side * -0.60, 4.27, cz), phase: R() * 6.28,
+                     x: bx + side * -0.60, y: 4.27, z: cz });
+      }
+      z += w + 0.06;
+      runLeft--;
+    }
+
+    // ---- backdrop skyline rank ----
+    let bz = z0 - 4;
+    while (bz < z0 + CHUNK) {
+      const bw = 7 + R() * 9, bh = 19 + R() * 15;
+      const sx = side * (BACK_X + 8 + R() * 7);
+      skyline.push(M4(sx, 0, bz + bw / 2, 0, 0, 0, 12, bh, bw));
+      const nb = 1 + Math.floor(R() * 3);
+      for (let i = 0; i < nb; i++)
+        chimneys.push(M4(sx - side * (5 + R() * 4), bh - 0.1, bz + bw * (i + 0.5) / nb,
+                         0, (R() - 0.5) * 0.4, 0, 1, 0.9 + R() * 0.7, 1));
+      bz += bw + R() * 2.5;
+    }
+  }
+
+  // ---- realise the instanced meshes ----
+  for (const key in facades) {
+    const [a, v] = key.split('|');
+    const list = facades[key];
+    const im = addInst(grp, G.box, FACADE[a][+v], null, list.length);
+    list.forEach((m, i) => im.setMatrixAt(i, m));
+    im.instanceMatrix.needsUpdate = true;
+  }
+  const mk = (geo, mat, list) => {
+    if (!list.length) return null;
+    const im = addInst(grp, geo, mat, null, list.length);
+    list.forEach((m, i) => im.setMatrixAt(i, m));
+    im.instanceMatrix.needsUpdate = true; return im;
+  };
+  mk(G.roof,  MAT.slate,   roofs);
+  mk(G.box,   MAT.brickd,  parapets);
+  mk(G.chim,  MAT.brickd,  chimneys);
+  mk(G.box,   MAT.skyline, skyline);
+  mk(G.brack, MAT.iron,    brackets);
+
+  if (signs.length) {
+    grp.userData.signIMs = [];
+    const bucket = new Map();
+    signs.forEach((s, n) => {
+      const k = (Math.abs(ci) * 3 + n) % SIGN_MATS.length;
+      (bucket.get(k) || bucket.set(k, []).get(k)).push(s);
+    });
+    for (const [k, list] of bucket) {
+      const im = addInst(grp, G.sign, SIGN_MATS[k], null, list.length);
+      list.forEach((s, i) => { im.setMatrixAt(i, s.m);
+        swingSigns.push({ mesh: im, i, phase: s.phase, x: s.x, y: s.y, z: s.z }); });
+      im.instanceMatrix.needsUpdate = true;
+      grp.userData.signIMs.push(im);
+    }
+  }
+
+  // ---- lamps: real geometry, alternating sides ----
+  const lampZ = [];
+  for (let z = z0 + LAMP_GAP / 2; z < z0 + CHUNK; z += LAMP_GAP) lampZ.push(z);
+  const iron  = addInst(grp, G.iron,  MAT.iron,  null, lampZ.length);
+  const glass = addInst(grp, G.glass, MAT.glass, null, lampZ.length);
+  const pools = addInst(grp, G.plane, MAT.pool,  null, lampZ.length);
+  const strk  = addInst(grp, G.plane, MAT.streak, null, lampZ.length);
+  lampZ.forEach((z, i) => {
+    const side = (Math.floor(z / LAMP_GAP) % 2) ? 1 : -1;
+    const x = side * (ROAD_W / 2 + 0.95);
+    iron.setMatrixAt(i,  M4(x, CURB_H, z, 0, side > 0 ? 0.2 : -0.2, 0));
+    glass.setMatrixAt(i, M4(x, CURB_H, z, 0, side > 0 ? 0.2 : -0.2, 0));
+    pools.setMatrixAt(i, M4(x, CURB_H + 0.02, z, -Math.PI / 2, 0, 0, 7.5, 7.5, 1));
+    strk.setMatrixAt(i,  M4(x - side * 1.5, 0.02, z, -Math.PI / 2, 0, 0, 3.0, 10.0, 1));
+    // the halo — one sprite, the gradient does the two-layer job
+    const sm = new THREE.SpriteMaterial({ map: T.halo, transparent: true,
+      blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.95, fog: true });
+    const sp = new THREE.Sprite(sm);
+    sp.position.set(x, CURB_H + LAMP_H + 0.33, z);
+    sp.scale.set(5.2, 5.2, 1);
+    grp.add(sp);
+    lamps.push({ sprite: sp, phase: Math.random() * 6.28, base: 5.2 });
+  });
+  [iron, glass, pools, strk].forEach((m) => { m.instanceMatrix.needsUpdate = true; });
+
+  grp.userData.ci = ci;
+  scene.add(grp);
+  chunks.set(ci, grp);
+}
+
+function dropChunk(ci) {
+  const g = chunks.get(ci); if (!g) return;
+  scene.remove(g);
+  g.traverse((o) => {
+    if (o.isSprite) { o.material.dispose(); for (let i = lamps.length - 1; i >= 0; i--) if (lamps[i].sprite === o) lamps.splice(i, 1); }
+  });
+  const ims = g.userData.signIMs;
+  if (ims) for (let i = swingSigns.length - 1; i >= 0; i--)
+    if (ims.indexOf(swingSigns[i].mesh) >= 0) swingSigns.splice(i, 1);
+  chunks.delete(ci);
+}
+
+// ============================================================
+//  §1  SKY DOME · STARS · MOON · GROUND MIST
+// ============================================================
+const skyRig = new THREE.Group(); scene.add(skyRig);
+
+const dome = new THREE.Mesh(
+  new THREE.SphereGeometry(500, 16, 12),
+  new THREE.MeshBasicMaterial({ map: T.sky, side: THREE.BackSide, fog: false, depthWrite: false })
+);
+dome.renderOrder = -1; skyRig.add(dome);
+
+// stars only above 40% elevation — none down in the smog
+(function stars() {
+  PR = mulberry32(2026);
+  const N = 900, pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
+  let n = 0;
+  while (n < N) {
+    const u = rr(-1, 1), th = rp() * Math.PI * 2, s = Math.sqrt(1 - u * u);
+    if (u < 0.58) continue;                                  // elevation gate
+    const R2 = 460;
+    pos[n * 3] = Math.cos(th) * s * R2; pos[n * 3 + 1] = u * R2; pos[n * 3 + 2] = Math.sin(th) * s * R2;
+    const w = rr(0.55, 1.0), b = rr(0.75, 1.0);
+    col[n * 3] = w * b; col[n * 3 + 1] = w * b * 0.96; col[n * 3 + 2] = b;
+    n++;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  skyRig.add(new THREE.Points(g, new THREE.PointsMaterial({
+    size: 2.1, sizeAttenuation: false, vertexColors: true, transparent: true,
+    opacity: 0.62, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })));
+})();
+
+const moon = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: T.moon, transparent: true, blending: THREE.AdditiveBlending,
+  depthWrite: false, opacity: 0.85, fog: false }));
+moon.position.set(-215, 300, 300); moon.scale.set(78, 78, 1); skyRig.add(moon);
+
+const mist = [];
+for (let i = 0; i < 3; i++) {
+  const t = T.mist.clone(); t.needsUpdate = true;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(2.2, 2.2);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(150, 150),
+    new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false,
+      opacity: [0.55, 0.40, 0.26][i], color: 0x8b8f9e, fog: true }));
+  m.rotation.x = -Math.PI / 2;
+  m.position.y = [0.45, 1.15, 2.10][i];
+  m.renderOrder = 3;
+  scene.add(m); mist.push(m);
+}
+
+// ============================================================
+//  CONTROLS — pointer-lock first person
+// ============================================================
+const player = { pos: new THREE.Vector3(0, 1.68, 0), vel: new THREE.Vector3(), yaw: 0, pitch: 0, bob: 0 };
+const keys = Object.create(null);
+addEventListener('keydown', (e) => { keys[e.code] = true; });
+addEventListener('keyup',   (e) => { keys[e.code] = false; });
+
+const hud = document.getElementById('hud');
+const el = renderer.domElement;
+hud.addEventListener('click', () => el.requestPointerLock());
+el.addEventListener('click', () => { if (document.pointerLockElement !== el) el.requestPointerLock(); });
+document.addEventListener('pointerlockchange', () => {
+  hud.classList.toggle('gone', document.pointerLockElement === el);
+});
+addEventListener('mousemove', (e) => {
+  if (document.pointerLockElement !== el) return;
+  player.yaw   -= e.movementX * 0.0022;
+  player.pitch -= e.movementY * 0.0022;
+  player.pitch = Math.max(-1.35, Math.min(1.35, player.pitch));
+});
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ============================================================
+//  STREAMING + LOOP
+// ============================================================
+const KEEP_BACK = 2, KEEP_FWD = 3;
+function stream() {
+  const pi = Math.floor(player.pos.z / CHUNK);
+  for (let i = pi - KEEP_BACK; i <= pi + KEEP_FWD; i++) if (!chunks.has(i)) buildChunk(i);
+  for (const ci of Array.from(chunks.keys()))
+    if (ci < pi - KEEP_BACK || ci > pi + KEEP_FWD) dropChunk(ci);
+}
+stream();
+
+const WALK_LIMIT = ROAD_W / 2 + WALK_W - 0.55;
+const statsEl = document.getElementById('stats');
+const tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(),
+      tmpE = new THREE.Euler(), tmpV = new THREE.Vector3(1, 1, 1), tmpP = new THREE.Vector3();
+const clock = new THREE.Clock();
+let acc = 0, frames = 0, fps = 0;
+
+function tick() {
+  requestAnimationFrame(tick);
+  const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
+
+  // --- movement ---
+  const locked = document.pointerLockElement === el;
+  let fwd = 0, str = 0;
+  if (locked) {
+    if (keys.KeyW || keys.ArrowUp)    fwd += 1;
+    if (keys.KeyS || keys.ArrowDown)  fwd -= 1;
+    if (keys.KeyD || keys.ArrowRight) str += 1;
+    if (keys.KeyA || keys.ArrowLeft)  str -= 1;
+  }
+  const speed = (keys.ShiftLeft || keys.ShiftRight) ? 5.4 : 2.5;
+  const sy = Math.sin(player.yaw), cy = Math.cos(player.yaw);
+  const wish = new THREE.Vector3(str * cy - fwd * sy, 0, -str * sy - fwd * cy);
+  if (wish.lengthSq() > 0) wish.normalize().multiplyScalar(speed);
+  player.vel.lerp(wish, 1 - Math.pow(0.0015, dt));
+  player.pos.addScaledVector(player.vel, dt);
+  player.pos.x = Math.max(-WALK_LIMIT, Math.min(WALK_LIMIT, player.pos.x));
+
+  // head bob, tied to actual speed
+  const sp = player.vel.length();
+  player.bob += dt * sp * 2.1;
+  const bobY = Math.sin(player.bob) * 0.035 * Math.min(sp / 2.5, 1.4);
+  const bobR = Math.cos(player.bob * 0.5) * 0.011 * Math.min(sp / 2.5, 1.4);
+
+  camera.position.set(player.pos.x, player.pos.y + bobY, player.pos.z);
+  camera.rotation.set(player.pitch, player.yaw, bobR, 'YXZ');
+
+  // --- §5 gas flicker: 0.92 + 0.08·sin(t·7+φ), plus a slow breath ---
+  for (const L of lamps) {
+    const f = 0.92 + 0.08 * Math.sin(t * 7 + L.phase)
+                   + 0.04 * Math.sin(t * 2.3 + L.phase * 1.7)
+                   + 0.03 * Math.sin(t * 17.3 + L.phase * 3.1);
+    L.sprite.scale.set(L.base * f, L.base * f, 1);
+    L.sprite.material.opacity = 0.72 + 0.28 * f;
+  }
+  MAT.pool.opacity   = 0.72 + 0.10 * Math.sin(t * 2.1);
+  MAT.streak.opacity = 0.50 + 0.08 * Math.sin(t * 3.3 + 1.1);
+
+  // --- §5 swing signs: per-instance sway, 16 matrix writes/frame ---
+  for (const S of swingSigns) {
+    tmpE.set(0.09 * Math.sin(t * 1.3 + S.phase), 0, 0.03 * Math.sin(t * 0.9 + S.phase));
+    tmpQ.setFromEuler(tmpE);
+    tmpP.set(S.x, S.y, S.z);
+    tmpM.compose(tmpP, tmpQ, tmpV);
+    S.mesh.setMatrixAt(S.i, tmpM);
+    S.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  // --- sky + mist follow the walker ---
+  skyRig.position.set(player.pos.x, 0, player.pos.z);
+  mist.forEach((m, i) => {
+    m.position.x = player.pos.x; m.position.z = player.pos.z;
+    const k = 0.006 * (i + 1);
+    m.material.map.offset.set(t * k, t * k * 0.35 + player.pos.z * 0.0022);
+  });
+
+  stream();
+  renderer.render(scene, camera);
+
+  frames++; acc += dt;
+  if (acc > 0.5) { fps = Math.round(frames / acc); frames = 0; acc = 0;
+    statsEl.textContent = fps + ' FPS  ·  ' + renderer.info.render.calls + ' DRAWS  ·  '
+      + (renderer.info.render.triangles / 1000).toFixed(0) + 'K TRIS'; }
+}
+tick();
+</script>
+</body>
+</html>
