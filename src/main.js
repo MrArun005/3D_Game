@@ -47,8 +47,17 @@ const DAY = !new URLSearchParams(location.search).has('night');
 
 const canvas = document.getElementById('gl');
 const renderer = createRenderer(canvas);
+/* WebGPU acquires its adapter and device asynchronously, and nothing that
+   touches the backend -- PMREM for the sky's environment map, the first
+   render, a render target -- may run before that resolves. Top-level await is
+   the honest expression of it: the module simply does not finish evaluating
+   until the GPU is ready. Vite is on an es2022 target, so this ships. */
+await renderer.init();
 const resolution = autoResolution(renderer);
-setAnisotropy(renderer.capabilities.getMaxAnisotropy());
+/* WebGPURenderer exposes no capabilities.getMaxAnisotropy(); 16 is the
+   guaranteed WebGPU maximum and the value the WebGL path was returning here
+   anyway. */
+setAnisotropy(renderer.capabilities?.getMaxAnisotropy?.() ?? 16);
 
 const scene = createScene(DAY);
 /* 900m of far plane was enough for a fogged night grid. Daylight sees the

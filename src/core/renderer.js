@@ -4,7 +4,11 @@ export const FOG_COLOUR = 0x222a3a;
 export const FOG_DAY = 0xb7c9dd;
 
 export function createRenderer(canvas) {
-  const renderer = new THREE.WebGLRenderer({
+  /* WebGPURenderer, from the three/webgpu build the vite alias points at.
+     It picks a WebGPU device where one exists and a WebGL2 backend where one
+     does not, so this is not a hardware requirement -- it is the node-based
+     material system, which is what Tier 1's post stack needs. */
+  const renderer = new THREE.WebGPURenderer({
     canvas, antialias: true, powerPreference: 'high-performance',
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
