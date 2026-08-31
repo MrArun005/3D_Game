@@ -1,4 +1,12 @@
 import * as THREE from 'three';
+import { mrt, vec4 } from 'three/tsl';
+
+/* The post stack's scene pass carries a normal MRT target, and blending
+   applies to every target at once — additive rain smeared its sprite normals
+   over everything behind it and GTAO read the wreckage as occlusion: dark
+   speckles across the whole night frame, sky included. A zero normal is the
+   additive identity, so the pixels underneath keep the normals they had. */
+const NO_NORMAL = mrt({ normal: vec4(0) });
 
 /** Vertical dash used as a rain streak. */
 function streakMap() {
@@ -53,6 +61,7 @@ export function createWeather(scene) {
     depthWrite: false, fog: true, sizeAttenuation: true,
     blending: THREE.AdditiveBlending, color: 0xc5d6ee,
   }));
+  rain.material.mrtNode = NO_NORMAL;
   rain.frustumCulled = false;
   rain.renderOrder = 4;
   scene.add(rain);
@@ -65,6 +74,7 @@ export function createWeather(scene) {
     depthWrite: false, fog: true, sizeAttenuation: true,
     blending: THREE.AdditiveBlending, color: 0xb8c4d2,
   }));
+  spray.material.mrtNode = NO_NORMAL;
   spray.frustumCulled = false;
   spray.renderOrder = 5;
   scene.add(spray);

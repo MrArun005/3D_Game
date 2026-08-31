@@ -55,9 +55,10 @@ export class Stats {
   }
 
   /**
-   * Read `renderer.info` BEFORE the grade pass overwrites it -- three resets
-   * the counters on every render() call, so reading after post gives you the
-   * stats for a fullscreen quad.
+   * Read `renderer.info` AFTER grade.render() -- the counters accumulate
+   * across every pass in the frame (the renderer's own animation pump resets
+   * them once per rAF), and since Tier 1.1 the pipeline render IS the frame:
+   * scene MRT pass, shadows, GTAO, bloom chain, output quad, all of it.
    */
   sample(renderer) {
     /* WebGPU counts differently: `render.calls` includes every pass three

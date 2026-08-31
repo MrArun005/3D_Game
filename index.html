@@ -7,6 +7,20 @@
   <title>Nightfall Drive</title>
 </head>
 <body>
+  <!-- Boot overlay: static HTML + a compositor-thread spinner, so it paints
+       before any module loads and keeps moving even while the main thread is
+       pinned by shader compilation. main.js updates #bootmsg per phase and
+       removes the whole thing on the first rendered frame. -->
+  <div id="boot" style="position:fixed;inset:0;z-index:99;background:#0b0e14;
+       display:flex;flex-direction:column;align-items:center;justify-content:center;
+       gap:18px;color:#cfe0f5;font:14px/1.5 system-ui,sans-serif;letter-spacing:.22em">
+    <div style="font-size:26px;font-weight:200;letter-spacing:.45em">NIGHTFALL&nbsp;DRIVE</div>
+    <div style="width:34px;height:34px;border-radius:50%;border:2px solid #2a3346;
+         border-top-color:#cfe0f5;animation:bootspin 0.9s linear infinite"></div>
+    <span id="bootmsg">loading modules…</span>
+    <style>@keyframes bootspin{to{transform:rotate(360deg)}}</style>
+  </div>
+
   <canvas id="gl"></canvas>
 
   <div id="stats"></div>
