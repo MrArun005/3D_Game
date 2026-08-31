@@ -114,6 +114,38 @@ export class District {
     return near.distance - near.half;
   }
 
+  /**
+   * Placement-time tarmac test: metres outside the kerb line of the nearest
+   * OVERLAPPING road — the minimum (distance - half) over every segment near
+   * the point. roadDepth() answers with the nearest CENTRELINE only, which is
+   * the right (and fast) contract for physics but blind to a wide road whose
+   * centreline is further away than a narrow one's — exactly the case
+   * placement cares about, because segments run straight through junctions.
+   * Cold path: chunk build only. `exclude` skips one segment by identity —
+   * parked cars are legitimately on their own street's tarmac.
+   */
+  tarmacDepth(x, z, exclude = null) {
+    let best = 60;
+    const ix = Math.floor(x / CELL), iz = Math.floor(z / CELL);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        const ids = this.grid.get(key(ix + dx, iz + dz));
+        if (!ids) continue;
+        for (const id of ids) {
+          const s = this.segments[id];
+          if (s === exclude) continue;
+          const vx = s.bx - s.ax, vz = s.bz - s.az;
+          const l = vx * vx + vz * vz;
+          let t = l ? ((x - s.ax) * vx + (z - s.az) * vz) / l : 0;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const d = Math.hypot(x - s.ax - vx * t, z - s.az - vz * t) - s.half;
+          if (d < best) best = d;
+        }
+      }
+    }
+    return best;
+  }
+
   /** Blocks whose footprint touches a radius — the streamer's unit of work. */
   blocksNear(x, z, radius) {
     const out = new Set();
