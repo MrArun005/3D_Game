@@ -105,10 +105,17 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   regex; a plain string alias would also rewrite `three/tsl`. `main.js` has a
   top-level `await renderer.init()` — nothing may touch the backend before
   the device resolves.
-- Tier 1's post stack is now within reach for free: three ships `BloomNode`,
-  `GTAONode`, `FXAANode`, `MotionBlur` and `DepthOfFieldNode` in
-  `three/examples/jsm/tsl/display/`. The hand-rolled bloom chain was deleted
-  rather than ported; `grade.setBloom()` is a no-op stub pending that work.
+- Tier 1.1 post stack is LIVE (2026-08-31): one `RenderPipeline` owns the frame
+  — scene MRT pass (colour/normal/emissive) → GTAO (denoised) → bloom fed by
+  the emissive channel → tone map → SMAA → sRGB → the grade folded in as
+  display-space node maths. `core/grade.js` is that stack; the old second-pass
+  quad grade is gone and `setBloom()` is real again. Read grade.js's header
+  before touching it — it records the double-tonemap trap, the
+  depth-reconstruction dead end and the rain-vs-normal-target corruption.
+  Escape hatches: `?noao ?nobloom ?noaa ?nopost`. Night runs at
+  `toneMappingExposure` 1.15 (day 1.0), and headlights default to night-only.
+- The state of play, reviewed in full with ranked issues and next steps:
+  `docs/REVIEW-2026-08-31.md`.
 - ~900-1000 draw calls and ~4.1M triangles facing downtown with the full
   authored kit placed (budgets: 1400 draws, 4.0M triangles). Triangles came
   DOWN from 5.7M while the city gained ~14,000 props, because the profile
@@ -120,18 +127,37 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   taken under Playwright is an artefact of the harness. Report draws and
   triangles, which are deterministic, and measure fps by hand.
 
+- Avatar customiser (2026-08-31): `tools/avatar/` + `public/models/avatar/`
+  (male/female RPM-schema wardrobe GLBs, 67-joint Mixamo-named rig, 63
+  blendshapes, 11 generated wardrobe parts hidden at load). Wired as player
+  characters 6 and 7 — `?me=6`/`?me=7`, K cycles. They ship no clips;
+  `character.js` retargets the Quaternius man's clips onto them at load
+  (SkeletonUtils.retargetClip; mixer must sit ON the SkinnedMesh — the
+  retargeted tracks are `.bones[…]` paths). Read AVATAR-PIPELINE.md before
+  touching; hair shells are known-failed. ⚠ The two vendor source GLBs in
+  `assets/source/avatar/vendor/` are unlicensed RPM exports — dev fixtures
+  only, see NOTICE.md; do not ship them (the generated wardrobe GLBs derive
+  from them, so a licensed base mesh must replace them before any release).
+
 ## Known bugs — do not "discover" these again, just fix them when in the area
 
 ### Open
 
-- `core/geometry.js:mergeGeos` writes an all-zero UV attribute, so the car hull
-  and every merged prop can never take a normal map, decal or livery. Blocks
-  Tier 2 outright.
-- Multiplayer walks the checkpoint course from each player's own position, so a
-  shared seed still yields two different courses; `{k:'stop'}` is never sent, so
-  a race has no finish condition.
-- `character.js` loads `hit` and `punch` clips that are never played. Five of the
-  six shipped GLB characters are never loaded (Tier 3.5 covers the pool).
+- `core/geometry.js:mergeGeos` still zero-fills UVs for input geometries that
+  carry none of their own (loft() and fromTris() now emit real UVs — see the
+  2026-08-31 fixed list). Anything built purely from mergeGeos over UV-less
+  inputs still can't take a normal map or decal.
+- Debris scope: only the PLAYER's car breaks street furniture
+  (`world/breakables.js`); traffic and police shove through it un-physically,
+  as they always did. Broken props also respawn pristine when their chunk
+  streams back in — GTA does the same, but it is worth knowing.
+- `district.roadDepth()` measures the nearest CENTRELINE only, so a point on a
+  wide arterial whose centreline is further away than a narrow lane's reports
+  as off-road. Physics, camera and traffic all consume it; placement now uses
+  `district.tarmacDepth()` (min over all nearby segments) instead. Whether the
+  physics callers want the same fix is an open question — measure before
+  changing grip behaviour.
+- `character.js` loads `hit` and `punch` clips that are never played.
 - LODs in the manifest are worthless: across all 91 assets lod2 saves 2.5% of
   lod0's triangles, and 62 of them are byte-identical. The props are already
   84-300 triangles, so there is nothing for a decimator to remove. Distance
@@ -139,6 +165,44 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   expecting it to pay.
 - KTX2 is still not generated — `tools/ingest.mjs` skips it without the `toktx`
   binary, so the 97 texture PNGs ship uncompressed (~18 MB).
+
+### Fixed 2026-08-31 evening (verified, kept here so they are not re-reported)
+
+- **Street furniture breaks now** (`world/breakables.js` + break-tracking in
+  `catalogue.js:InstanceBatch`). The merged batches record each breakable
+  placement's vertex ranges; a hit zeroes them in place (no extra draws) and
+  spawns a tumbling debris body reusing the shared geometry. Light props
+  (bins, cones, meters, hydrants…) sweep aside at any speed; heavy ones
+  (lamps, poles, phone boxes) hold below ~30 km/h and tear off above it,
+  removing their collision solid pre-physics so the car smashes through
+  instead of eating a dead stop. Hydrants raise a 20s water jet, lamps spark;
+  breaks report through car.hitTag so damage and wanted work unchanged.
+  Verified: lamp felled at 45-48 km/h with sparks + topple in-shot, hydrant
+  fountain in-shot, 20/20 tests. Cost: ≤26 transient debris meshes + ≤6
+  one-draw particle systems; static props stay zero-cost. `Debris.breakNear()`
+  is the hook for bullets/explosions later.
+- **The night rain AO speckles are gone.** Additive sprites were smearing
+  garbage into the MRT normal target (blending applies to every target);
+  GTAO read it as occlusion. Every additive particle material now carries
+  `mrtNode = mrt({ normal: vec4(0) })` — the additive identity — so the
+  pixels behind keep their real normals (weather rain + spray, debris sparks
+  + water). Verified on a night run: clean sky, rain reads as pale streaks.
+
+- **Props, trees and parked cars no longer stand in the road.** Road polylines
+  flatten into segments that run straight through junctions, and placement only
+  measured distance from its OWN street's kerb — so 9,447 of 27,825 kerbside
+  props (34%, worst: a lamp 14.9m inside an arterial) and 1,995 of 6,305
+  parked bays (32%) sat on some other road's tarmac. `district.tarmacDepth()`
+  (min depth over ALL nearby segments, optional own-segment exclusion) now
+  gates every kerbside row, the billboard, roadworks, parked bays and the
+  legacy lamp path. Verified by replaying the placement maths over the whole
+  district file: zero offenders after the guard.
+- **The HUD banner's draw-call figure was a lie.** `renderer.info.render.calls`
+  counts render-pass invocations SINCE LOAD and is never reset — the famous
+  "907 DRAWS" just happened to look plausible. The banner now reports
+  `drawCalls` (per-frame, resets each rAF) and matches the F3 overlay.
+  Post-stack cost, measured same-viewpoint: GTAO +1 draw call, bloom +12,
+  ~5 MB of render targets.
 
 ### Fixed 2026-08-31 (verified, kept here so they are not re-reported)
 
