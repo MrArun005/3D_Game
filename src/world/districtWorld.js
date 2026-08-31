@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import { KERB_H } from './metrics.js';
+import { InstanceBatch } from './catalogue.js';
+import { dressChunk, dressRoofs, dressFacades } from './dressing.js';
+import { KERB_H, roadDepth } from './metrics.js';
 import { ARCH, TOWER, MID, LOFT, PODIUM, DECK } from './facades.js';
 import { mulberry32 } from '../core/rng.js';
 import { PAINT_COLOURS } from '../vehicle/config.js';
@@ -66,6 +68,14 @@ export class DistrictWorld {
     this.queue = [];          // chunks waiting to be built
     this.pending = new Set(); // ...and their keys, so we never queue twice
     this.primed = false;
+    /* The authored asset catalogue. Optional on purpose: if the manifest or
+       the texture library fails to load, the city falls back to the procedural
+       props it shipped with rather than appearing empty. */
+    this.catalogue = opts.catalogue ?? null;
+    this.propGroups = new Map();
+    this.facadeGroups = new Map();
+    this.parkedLod = new Map();
+    this.propRadius = 2;
     this.nodeById = new Map(district.graph.nodes.map((n) => [n.id, n]));
     this.radius = 2;   // 5x5 x 256m ~= 1.2km of full-detail street
 
@@ -251,6 +261,39 @@ export class DistrictWorld {
       if (this.onChunkBuilt) this.onChunkBuilt(performance.now() - started);
     }
     this.primed = true;
+
+    /* Dressing is visible only in the near ring. Props are small, numerous and
+       the single biggest contributor to the draw count; at 400m they are a few
+       pixels each and cost exactly as much as they do at 10m. One boolean per
+       chunk is the whole LOD system for them. */
+    for (const [key, g] of this.propGroups) {
+      const [a, b] = key.split(',').map(Number);
+      const d = Math.max(Math.abs(a - ix), Math.abs(b - iz));
+      g.visible = d <= this.propRadius;
+      const fg = this.facadeGroups.get(key);
+      if (fg) fg.visible = d <= 1;
+      const pl = this.parkedLod.get(key);
+      if (pl) {
+        pl.near.visible = d <= 1;
+        pl.far.visible = d > 1;
+        /* Shadows from the chunk you are standing in, and nowhere else.
+           389 near parked cars were casting 950k triangles into the cascades
+           -- more than the entire authored prop kit -- to draw a row of
+           smudges under cars a street away. */
+        pl.near.castShadow = d === 0;
+      }
+      /* Shadows only from the ring you are standing in.
+         A shadow-casting mesh is drawn once per camera and once per cascade,
+         so the 733k triangles of street furniture were costing 2.2M. You
+         cannot see a bollard's shadow from the next chunk over, and the
+         cascade that would contain it covers 460m at 4.5 texels/m -- the
+         shadow is sub-pixel long before the prop is. */
+      if (g.userData.shadowRing !== d) {
+        g.userData.shadowRing = d;
+        const cast = d === 0;
+        for (const m of g.children) m.castShadow = cast;
+      }
+    }
     for (const [k, g] of [...this.chunks]) {
       const [a, b] = k.split(',').map(Number);
       if (Math.abs(a - ix) > this.radius || Math.abs(b - iz) > this.radius) {
@@ -258,6 +301,9 @@ export class DistrictWorld {
         /* Only geometry this chunk built. The old sweep disposed shared
            assets.geo.* buffers that 24 other live chunks were still drawing
            from, forcing a silent GPU re-upload at every chunk boundary. */
+        this.propGroups.delete(k);
+        this.facadeGroups.delete(k);
+        this.parkedLod.delete(k);
         g.traverse((o) => {
           if (!o.isMesh) return;
           if (o.isInstancedMesh) o.dispose();      // frees the instance buffers
@@ -679,6 +725,7 @@ export class DistrictWorld {
        without a single one, which is why Halstead Bay looked like a dark plain
        rather than a lit street. */
     const lamps = [], heads = [], pools = [], parked = [], parkedCol = [], solidParked = [];
+    const dressed = !!this.catalogue;
     // one bucket per species, so a street never plants the same tree twice over
     const trees = { plane: [], pine: [], poplar: [], palm: [] };
     const leafCol = { plane: [], pine: [], poplar: [], palm: [] };
@@ -696,6 +743,10 @@ export class DistrictWorld {
         const pz = s2.az + uz * t + nz * off * side;
         const yaw = Math.atan2(-nz * side, -nx * side);
         const ly = this.district.elevationAt(px, pz);
+        /* With a catalogue loaded the authored lamp and its light pool come
+           from dressing.js instead, placed by the same loop -- keeping both
+           would stand a box lamp inside every real one. */
+        if (dressed) continue;
         lamps.push(mat4(px, KERB_H + ly, pz, -yaw, 1, 1, 1));
         solidParked.push({ x: px, z: pz, yaw: 0, offsets: [0],
                            radius: 0.22, reach: 0.6, tag: 'prop' });
@@ -739,6 +790,45 @@ export class DistrictWorld {
       }
     }
 
+    /* --- authored dressing ---------------------------------------------
+       91 ingested assets, placed from the tables in dressing.js. They go into
+       their own child group so the whole lot can be hidden by distance in one
+       assignment: props are the bulk of the draw calls and nobody reads a
+       parking meter from 400m. */
+    if (this.catalogue) {
+      const props = new THREE.Group();
+      props.name = 'dressing';
+      group.add(props);
+      this.propGroups.set(k, props);
+      const batch = new InstanceBatch(this.catalogue);
+      const dressPools = [];
+      dressChunk(batch, {
+        segments: segs.map((id) => this.district.segments[id]),
+        blocks, district: this.district, solids: solidParked, pools: dressPools,
+      });
+      dressRoofs(batch, boxes, this.district);
+
+      /* Facades are their own batch and their own group. They are far and away
+         the most expensive thing in the kit -- a dressed frontage is roughly a
+         thousand triangles -- so they get a tighter visibility ring than the
+         street furniture, set in update(). */
+      const faces = new THREE.Group();
+      faces.name = 'facades';
+      group.add(faces);
+      this.facadeGroups.set(k, faces);
+      const fbatch = new InstanceBatch(this.catalogue);
+      dressFacades(fbatch, boxes, this.district, roadDepth);
+      fbatch.emit(faces, { shadow: false })
+        .catch((e) => console.warn('facades failed:', e.message));
+      // fire and forget: the chunk is usable now, the props land a frame later
+      if (typeof window !== 'undefined') {   // TEMP probe
+        window.__batches = window.__batches || new Map();
+        if (batch.buckets.size) window.__batches.set(k, batch);
+      }
+      batch.emit(props).catch((e) => console.warn('dressing failed:', e.message));
+      for (const p of dressPools) pools.push(flat(p.x, p.y, p.z, p.size));
+    }
+
     const inst = (geo, mat, list, shadow, colours) => {
       if (!list.length) return;
       const m = new THREE.InstancedMesh(geo, mat, list.length);
@@ -767,7 +857,19 @@ export class DistrictWorld {
     /* No glazing on the parked fleet. There are ~390 of them in the streaming
        radius and nobody ever looks into a parked car; adding their windows
        took the scene from 4.9M triangles to 7.5M. */
+    /* Two versions of the kerbside fleet, and the ring decides which you see.
+       Both are built once with the chunk; only the instance matrices cost
+       anything to keep, and the geometry is shared. */
     inst(A.geo.stunt.sedan.body, A.mat.parked, parked, true, parkedCol);
+    const nearParked = group.children[group.children.length - 1];
+    if (nearParked) nearParked.name = 'parkedNear';
+    inst(A.geo.stunt.sedan.lodBody ?? A.geo.stunt.sedan.body, A.mat.parked, parked, false, parkedCol);
+    const farParked = group.children[group.children.length - 1];
+    if (farParked && farParked !== nearParked) {
+      farParked.name = 'parkedFar';
+      farParked.visible = false;
+      this.parkedLod.set(k, { near: nearParked, far: farParked });
+    }
     if (pools.length) {
       const pm = new THREE.InstancedMesh(A.geo.plane, A.mat.pool, pools.length);
       pm.frustumCulled = false; pm.renderOrder = 2;

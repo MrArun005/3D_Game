@@ -64,6 +64,29 @@ export class Hud {
     this.roomEl.textContent = url;
   }
 
+  /**
+   * Black screen either side of a respawn.
+   *
+   * `at` runs at full black, which is the whole point: the player never sees
+   * the world jump. Built here rather than in CSS because the HUD already owns
+   * every other overlay and there is no stylesheet to add a class to.
+   */
+  blackout(at, hold = 420) {
+    if (!this.fadeEl) {
+      const el = document.createElement('div');
+      el.style.cssText = 'position:fixed;inset:0;background:#000;opacity:0;'
+        + 'pointer-events:none;z-index:60;transition:opacity .34s linear';
+      document.body.appendChild(el);
+      this.fadeEl = el;
+    }
+    const el = this.fadeEl;
+    el.style.opacity = '1';
+    setTimeout(() => {
+      at();
+      setTimeout(() => { el.style.opacity = '0'; }, hold);
+    }, 360);
+  }
+
   /** Switch the big banner between BUSTED and WASTED. */
   setDead(on) { this.deadMode = on; if (this.bustEl) this.bustEl.textContent = on ? 'WASTED' : 'BUSTED'; }
 

@@ -6,6 +6,7 @@ import { createSky } from './core/sky.js';
 import { createGrade } from './core/grade.js';
 import { setAnisotropy } from './world/textures.js';
 import { createAssets } from './world/assets.js';
+import { Catalogue } from './world/catalogue.js';
 import { City } from './world/city.js';
 import { DistrictWorld } from './world/districtWorld.js';
 import { loadDistrict } from './world/district.js';
@@ -131,6 +132,11 @@ async function joinRoom(id) {
   hud.setRoom(url.toString());
 }
 let damage = 0;
+/* The middle of Kingsway, the downtown grid. The spawn already used this point
+   and death now returns you to it, so it is a constant rather than the same
+   pair of magic numbers written out twice. */
+const CITY_CENTRE = { x: 2350, z: 1350 };
+let dying = 0;
 
 /* Being shot at, and being nicked. Damage is deliberately cosmetic for now --
    a shot rocks the car and marks it; there is no health bar to lose. */
@@ -184,14 +190,13 @@ function onDeath() {
   traffic.standDown();
   if (mission && mission.active) mission.stop('WASTED');
   health = 1; hud.setHealth(1);
-  const beds = (districtRef?.places || []).filter((p) => p.type === 'hosp');
-  const at = beds.reduce((best, p) => {
-    const d = Math.hypot(p.x - car.x, p.y - car.z);
-    return d < best.d ? { d, p } : best;
-  }, { d: Infinity, p: null }).p;
-  respawnCar(at ? at.x : car.x, at ? at.y + 14 : car.z);
+  /* Back to the middle of the city. It used to be the nearest hospital, which
+     meant dying in the hills put you back in the hills with the same problem
+     waiting for you; downtown is somewhere you can always drive out of. */
+  respawnCar(CITY_CENTRE.x, CITY_CENTRE.z);
   if (onFoot.active) onFoot.enter();
   hero.visible = true;
+  chase.shake = 0;
 }
 
 function onBust() {
@@ -358,14 +363,24 @@ function useVehicle() {
 }
 const city = world;                       // legacy alias, same object
 
-loadDistrict().then((district) => {
+/* The authored asset catalogue, loaded alongside the district.
+   Failing to load it is survivable -- the city falls back to the procedural
+   props -- so this resolves to null rather than rejecting. */
+const catalogueReady = new Catalogue().load(renderer)
+  .then((c) => {
+    console.info(`catalogue: ${c.assets.size} assets, ${c.materials.size} materials`);
+    return c;
+  })
+  .catch((e) => { console.warn('catalogue unavailable:', e.message); return null; });
+
+Promise.all([loadDistrict(), catalogueReady]).then(([district, catalogue]) => {
   useDistrict(district);                  // roadDepth() now answers from the file
   traffic.useGraph(district);
   useGraphForRoutes(district);             // and the fleet drives the real streets
   hud.useDistrict(district);              // minimap draws real streets, not a lattice
   for (const g of city.cells.values()) scene.remove(g);
   city.cells.clear();
-  world = new DistrictWorld(scene, assets, district, { day: DAY });
+  world = new DistrictWorld(scene, assets, district, { day: DAY, catalogue });
   world.onChunkBuilt = (ms) => stats.reportChunkBuild(ms);
   water = buildWater(scene, district, DAY);
   buildSurrounds(scene, district.bounds, DAY);
@@ -383,7 +398,8 @@ loadDistrict().then((district) => {
   districtRef = district;
   // put the car on a real road: the Kingsway node nearest the district centre
   const n = district.graph.nodes.reduce((best, q) =>
-    Math.hypot(q.x - 2350, q.y - 1350) < Math.hypot(best.x - 2350, best.y - 1350) ? q : best);
+    Math.hypot(q.x - CITY_CENTRE.x, q.y - CITY_CENTRE.z)
+      < Math.hypot(best.x - CITY_CENTRE.x, best.y - CITY_CENTRE.z) ? q : best);
   resetCar(car);
   car.x = n.x; car.z = n.y; car.y = 0.62;
   world.update(car.x, car.z);
@@ -396,6 +412,8 @@ loadDistrict().then((district) => {
 const car = createCarState();
 const hero = buildCar(assets.carMats, 0x5b636d);
 scene.add(hero);
+// the damage model marks the real bodywork, so it needs the real meshes
+damageModel.attach(hero);
 
 const NOSE_X = CG_X;          // distance from the CG forward to the nose
 const headlightBeams = [];
@@ -603,13 +621,19 @@ function frame() {
   hero.position.set(car.x, 0, car.z);
   hero.rotation.set(0, car.yaw, 0);
   const body = hero.userData.body;
-  body.position.y = car.heave;
+  /* A flat tyre drops the CAR, not just the wheel. Lowering the hub alone
+     pushed the tyre through the tarmac and left the shell at full ride
+     height, so the sag has to land on the sprung mass too. */
+  let sag = 0;
+  for (const w of hero.userData.wheels) sag += (w.flat || 0);
+  body.position.y = car.heave - (sag / 4) * WHEEL_R * 0.3;
   // local x is forward and local z is lateral, so roll goes on x and pitch on z
   body.rotation.set(car.roll, 0, car.pitch);
   for (const w of hero.userData.wheels) {
     if (w.front) w.steer.rotation.y = car.steer;
     const idx = (w.front ? 0 : 2) + (w.side > 0 ? 1 : 0);
-    w.steer.position.y = (car.wheelGround ? car.wheelGround[idx] : 0) + WHEEL_R;
+    w.steer.position.y = (car.wheelGround ? car.wheelGround[idx] : 0)
+      + WHEEL_R * (1 - (w.flat || 0) * 0.3);
     w.spin.rotation.z += car.wheelW[idx] * dt;
   }
 
@@ -718,10 +742,11 @@ function frame() {
 
   if (car.hitTag) {
     traffic.reportCrime(car.hitTag, car.hitForce || 0);
-    damageModel.hit(car.hitForce || 0);
+    damageModel.hit(car.hitForce || 0, car.hitAt);
     car.hitTag = null; car.hitForce = 0;
   }
-  if (car.impact > 2.4) damageModel.hit(car.impact);
+  if (car.impact > 2.4) damageModel.hit(car.impact, car.hitAt);
+  car.hitAt = null;
 
   /* Burning, then gone.
      The car warns you and starts a clock. Get out and you live; the wreck
@@ -751,8 +776,20 @@ function frame() {
       chase.shake = 0.9;
       respawnCar(car.x + 30, car.z + 30);
     } else {
-      onDeath();
+      /* You do not blink and reappear downtown. The blast plays, you watch the
+         car you were sitting in come apart, and only then does the screen go
+         black. Cutting on the same frame as the explosion hid the one piece of
+         feedback that explains why you died. */
+      dying = 1.15;
+      chase.shake = 1.4;
+      hero.visible = false;
     }
+  }
+
+  if (dying > 0) {
+    dying -= dt;
+    car.throttle = 0; car.brake = 1;
+    if (dying <= 0) { dying = 0; hud.blackout(onDeath); }
   }
   car.impact *= Math.exp(-dt * 8);
 

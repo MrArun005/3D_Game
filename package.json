@@ -12,7 +12,9 @@
     "ingest": "node tools/ingest.mjs",
     "ingest:check": "node tools/ingest.mjs --check",
     "genkit": "node tools/genkit.mjs",
-    "genkit:list": "node tools/genkit.mjs --list"
+    "genkit:list": "node tools/genkit.mjs --list",
+    "gentex": "node tools/materials.mjs",
+    "genchar": "node tools/characters.mjs"
   },
   "dependencies": {
     "three": "^0.185.1",

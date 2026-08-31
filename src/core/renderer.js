@@ -13,10 +13,16 @@ export function createRenderer(canvas) {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
   renderer.shadowMap.enabled = true;
-  /* PCFSoft, not PCF. The comment that used to sit here claimed PCFSoft was
-     deprecated in r185; it is not, it is exported and live, and we were paying
-     for blockier shadows on a false premise. */
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  /* PCF, and it is not a choice.
+     The original comment here said PCFSoft was deprecated. I decided that was
+     invented, swapped in PCFSoftShadowMap, and claimed softer shadows. The
+     browser disagrees, out loud, on every load:
+       THREE.WebGLShadowMap: PCFSoftShadowMap has been deprecated.
+       Using PCFShadowMap instead.
+     So the constant is still exported, but setting it changes nothing except
+     adding a warning to the console. Softer contact shadows are real work --
+     the cascaded shadow map in docs/ROADMAP Tier 1.2 -- not a one-line enum. */
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   return renderer;
 }
 

@@ -1,0 +1,19 @@
+{
+  "height": 1.7,
+  "build": 0.62,
+  "muscle": 0.25,
+  "shoulders": 0.5,
+  "hips": 0.5,
+  "belly": 0.7,
+  "chest": 0.5,
+  "neck": 0.5,
+  "headSize": 0.5,
+  "legLength": 0.5,
+  "armLength": 0.5,
+  "footSize": 0.5,
+  "handSize": 0.5,
+  "hair": 0.12,
+  "sleeve": 0.62,
+  "trouser": 0.94,
+  "posture": 0.28
+}

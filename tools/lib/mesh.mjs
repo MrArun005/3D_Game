@@ -312,6 +312,97 @@ export class Mesh {
     return this.box(mat, { size, pos, rot, base: true });
   }
 
+  /**
+   * Loft a chain of rings with SMOOTH normals around each ring.
+   *
+   * Boxes and profiles want hard edges; a body does not. Each ring is a list
+   * of {p, n} — position and outward normal — and consecutive rings are
+   * stitched into quads carrying their own per-vertex normals, so a limb
+   * shades as a tube rather than as a faceted prism.
+   *
+   * UVs: u runs around the ring in metres, v along the loft in metres, so the
+   * same texel density rule holds as everywhere else.
+   */
+  loftRings(mat, rings, { capStart = true, capEnd = true } = {}) {
+    if (rings.length < 2) return this;
+    const g = this.#group(mat);
+    const N = rings[0].length;
+
+    // occluder AABB over the whole loft
+    const pts = [];
+    for (const r of rings) for (const v of r) pts.push(v.p);
+    this.#occlude(pts);
+
+    let vRun = 0;
+    for (let i = 0; i < rings.length - 1; i++) {
+      const a = rings[i], b = rings[i + 1];
+      const step = Math.hypot(
+        b[0].p[0] - a[0].p[0], b[0].p[1] - a[0].p[1], b[0].p[2] - a[0].p[2]);
+      // Decide the winding ONCE per ring pair, from the loft axis and the ring's
+      // own tangential direction. Deciding per quad lets tiny numerical
+      // differences flip neighbours against each other, which leaves half the
+      // surface backfacing and destroys the averaged normals downstream.
+      const cen = (r) => {
+        const c = [0, 0, 0];
+        for (const v of r) { c[0] += v.p[0] / r.length; c[1] += v.p[1] / r.length; c[2] += v.p[2] / r.length; }
+        return c;
+      };
+      const ca = cen(a), cb = cen(b);
+      const ax = [cb[0] - ca[0], cb[1] - ca[1], cb[2] - ca[2]];
+      // radial x tangential should point along the loft axis for CCW rings
+      const r0 = [a[0].p[0] - ca[0], a[0].p[1] - ca[1], a[0].p[2] - ca[2]];
+      const t0 = [a[1].p[0] - a[0].p[0], a[1].p[1] - a[0].p[1], a[1].p[2] - a[0].p[2]];
+      const cx = r0[1] * t0[2] - r0[2] * t0[1];
+      const cy = r0[2] * t0[0] - r0[0] * t0[2];
+      const cz = r0[0] * t0[1] - r0[1] * t0[0];
+      const flip = (cx * ax[0] + cy * ax[1] + cz * ax[2]) < 0;
+
+      let uRun = 0;
+      for (let k = 0; k < N; k++) {
+        const k2 = (k + 1) % N;
+        const seg = Math.hypot(
+          a[k2].p[0] - a[k].p[0], a[k2].p[1] - a[k].p[1], a[k2].p[2] - a[k].p[2]);
+        const base = g.pos.length / 3;
+        const quad = flip
+          ? [[a[k2], uRun + seg, vRun], [a[k], uRun, vRun],
+             [b[k], uRun, vRun + step], [b[k2], uRun + seg, vRun + step]]
+          : [[a[k], uRun, vRun], [a[k2], uRun + seg, vRun],
+             [b[k2], uRun + seg, vRun + step], [b[k], uRun, vRun + step]];
+        for (const [v, u, w] of quad) {
+          g.pos.push(v.p[0], v.p[1], v.p[2]);
+          g.nrm.push(v.n[0], v.n[1], v.n[2]);
+          g.uv.push(u, w); g.ao.push(1);
+        }
+        g.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+        uRun += seg;
+      }
+      vRun += step;
+    }
+
+    const cap = (ring, flip) => {
+      const c = [0, 0, 0];
+      for (const v of ring) { c[0] += v.p[0] / ring.length; c[1] += v.p[1] / ring.length; c[2] += v.p[2] / ring.length; }
+      for (let k = 0; k < ring.length; k++) {
+        const k2 = (k + 1) % ring.length;
+        const tri = flip ? [c, ring[k2].p, ring[k].p] : [c, ring[k].p, ring[k2].p];
+        const base = g.pos.length / 3;
+        // flat normal from the winding
+        const ux = tri[1][0] - tri[0][0], uy = tri[1][1] - tri[0][1], uz = tri[1][2] - tri[0][2];
+        const vx = tri[2][0] - tri[0][0], vy = tri[2][1] - tri[0][1], vz = tri[2][2] - tri[0][2];
+        let a1 = uy * vz - uz * vy, b1 = uz * vx - ux * vz, c1 = ux * vy - uy * vx;
+        const l = Math.hypot(a1, b1, c1) || 1; a1 /= l; b1 /= l; c1 /= l;
+        for (const t of tri) {
+          g.pos.push(t[0], t[1], t[2]); g.nrm.push(a1, b1, c1);
+          g.uv.push(t[0], t[2]); g.ao.push(1);
+        }
+        g.idx.push(base, base + 1, base + 2);
+      }
+    };
+    if (capStart) cap(rings[0], true);
+    if (capEnd) cap(rings[rings.length - 1], false);
+    return this;
+  }
+
   /** Repeat a builder along X. Railings, fences, colonnades. */
   repeatX(count, step, fn) {
     const span = (count - 1) * step;
@@ -385,6 +476,49 @@ export class Mesh {
       }
     }
     this.aoBaked = true;
+    return this;
+  }
+
+  /**
+   * Recompute vertex normals by averaging adjacent face normals across shared
+   * positions. Ring normals are an approximation — they ignore the taper and
+   * the squash — and this replaces them with what the surface actually does.
+   * Only for organic lofts: running it over a chamfered box would destroy the
+   * split normals that make the chamfers read.
+   */
+  smoothNormals(materials) {
+    const want = new Set(materials);
+    for (const [mat, g] of this.groups) {
+      if (!want.has(mat)) continue;
+      // exact key, not a rounded one: adjacent quads share the same ring vertex
+      // object, so coincident positions are bit-identical. Rounding to a grid
+      // drops pairs that straddle a bucket boundary, which leaves a scatter of
+      // un-averaged vertices and reads as faceted noise.
+      const key = (i) => `${g.pos[i * 3]},${g.pos[i * 3 + 1]},${g.pos[i * 3 + 2]}`;
+      const acc = new Map();
+      for (let t = 0; t < g.idx.length; t += 3) {
+        const [i0, i1, i2] = [g.idx[t], g.idx[t + 1], g.idx[t + 2]];
+        const p = (i) => [g.pos[i * 3], g.pos[i * 3 + 1], g.pos[i * 3 + 2]];
+        const A = p(i0), B = p(i1), C = p(i2);
+        const ux = B[0] - A[0], uy = B[1] - A[1], uz = B[2] - A[2];
+        const vx = C[0] - A[0], vy = C[1] - A[1], vz = C[2] - A[2];
+        // not normalised: the cross product's length is twice the triangle
+        // area, which is the weighting we want
+        const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        for (const i of [i0, i1, i2]) {
+          const k = key(i);
+          const e = acc.get(k) ?? [0, 0, 0];
+          e[0] += nx; e[1] += ny; e[2] += nz;
+          acc.set(k, e);
+        }
+      }
+      for (let i = 0; i < g.pos.length / 3; i++) {
+        const e = acc.get(key(i));
+        if (!e) continue;
+        const l = Math.hypot(e[0], e[1], e[2]) || 1;
+        g.nrm[i * 3] = e[0] / l; g.nrm[i * 3 + 1] = e[1] / l; g.nrm[i * 3 + 2] = e[2] / l;
+      }
+    }
     return this;
   }
 

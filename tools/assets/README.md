@@ -81,3 +81,20 @@ Three things happen automatically and you mostly should not fight them:
 handrail *is* a moulded section run to a length — a stack of boxes cannot make
 one, which is why the first pass of toppers read as plain bars. Use it for
 anything with a run and a section.
+
+## Materials are bound at runtime, not baked into assets
+
+An asset ships with material **names**, not textures. `tools/preview/materials.mjs`
+loads the library once and swaps every mesh's placeholder material for the
+library one of the same name. 91 assets therefore share 27 materials: one
+texture set in memory, and far fewer state changes than embedding per asset.
+`districtWorld` should do exactly this.
+
+Two consequences worth knowing:
+
+- **A material name that is not in the library renders untextured.** `ingest`
+  fails on unknown names for exactly this reason.
+- **UVs are load-bearing.** `ingest` runs `prune({ keepAttributes: true })`,
+  because prune cannot tell that a UV is used by a material that will not exist
+  until runtime — without it, every `TEXCOORD_0` is deleted and the whole kit
+  renders flat. There is a validation that fails on a primitive with no UVs.

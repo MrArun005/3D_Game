@@ -1,0 +1,262 @@
+{
+  "version": 1,
+  "generated": "2026-08-30T19:21:00.246Z",
+  "materials": {
+    "brick_red": {
+      "albedo": "/textures/brick_red_albedo.png",
+      "orm": "/textures/brick_red_orm.png",
+      "normal": "/textures/brick_red_normal.png",
+      "tile": 1,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "brick_painted": {
+      "albedo": "/textures/brick_painted_albedo.png",
+      "orm": "/textures/brick_painted_orm.png",
+      "normal": "/textures/brick_painted_normal.png",
+      "tile": 1,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "concrete_cast": {
+      "albedo": "/textures/concrete_cast_albedo.png",
+      "orm": "/textures/concrete_cast_orm.png",
+      "normal": "/textures/concrete_cast_normal.png",
+      "tile": 2,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "concrete_precast": {
+      "albedo": "/textures/concrete_precast_albedo.png",
+      "orm": "/textures/concrete_precast_orm.png",
+      "normal": "/textures/concrete_precast_normal.png",
+      "tile": 2.4,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "plaster_worn": {
+      "albedo": "/textures/plaster_worn_albedo.png",
+      "orm": "/textures/plaster_worn_orm.png",
+      "normal": "/textures/plaster_worn_normal.png",
+      "tile": 2,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "stone_dressed": {
+      "albedo": "/textures/stone_dressed_albedo.png",
+      "orm": "/textures/stone_dressed_orm.png",
+      "normal": "/textures/stone_dressed_normal.png",
+      "tile": 1.5,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "kerb_stone": {
+      "albedo": "/textures/kerb_stone_albedo.png",
+      "orm": "/textures/kerb_stone_orm.png",
+      "normal": "/textures/kerb_stone_normal.png",
+      "tile": 1,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "pavement_slab": {
+      "albedo": "/textures/pavement_slab_albedo.png",
+      "orm": "/textures/pavement_slab_orm.png",
+      "normal": "/textures/pavement_slab_normal.png",
+      "tile": 1.8,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "asphalt": {
+      "albedo": "/textures/asphalt_albedo.png",
+      "orm": "/textures/asphalt_orm.png",
+      "normal": "/textures/asphalt_normal.png",
+      "tile": 2,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "asphalt_wet": {
+      "albedo": "/textures/asphalt_wet_albedo.png",
+      "orm": "/textures/asphalt_wet_orm.png",
+      "normal": "/textures/asphalt_wet_normal.png",
+      "tile": 2,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "metal_painted": {
+      "albedo": "/textures/metal_painted_albedo.png",
+      "orm": "/textures/metal_painted_orm.png",
+      "normal": "/textures/metal_painted_normal.png",
+      "tile": 1,
+      "metalness": 0,
+      "normalScale": 1
+    },
+    "metal_galv": {
+      "albedo": "/textures/metal_galv_albedo.png",
+      "orm": "/textures/metal_galv_orm.png",
+      "normal": "/textures/metal_galv_normal.png",
+      "tile": 1,
+      "metalness": 1,
+      "normalScale": 1
+    },
+    "metal_rust": {
+      "albedo": "/textures/metal_rust_albedo.png",
+      "orm": "/textures/metal_rust_orm.png",
+      "normal": "/textures/metal_rust_normal.png",
+      "tile": 1,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "alloy_polished": {
+      "albedo": "/textures/alloy_polished_albedo.png",
+      "orm": "/textures/alloy_polished_orm.png",
+      "normal": "/textures/alloy_polished_normal.png",
+      "tile": 1,
+      "metalness": 1,
+      "normalScale": 1
+    },
+    "chrome_trim": {
+      "albedo": "/textures/chrome_trim_albedo.png",
+      "orm": "/textures/chrome_trim_orm.png",
+      "normal": "/textures/chrome_trim_normal.png",
+      "tile": 1,
+      "metalness": 1,
+      "normalScale": 1
+    },
+    "glass_curtain": {
+      "albedo": "/textures/glass_curtain_albedo.png",
+      "orm": "/textures/glass_curtain_orm.png",
+      "normal": "/textures/glass_curtain_normal.png",
+      "tile": 1.5,
+      "metalness": 0,
+      "normalScale": 1
+    },
+    "glass_shop": {
+      "albedo": "/textures/glass_shop_albedo.png",
+      "orm": "/textures/glass_shop_orm.png",
+      "normal": "/textures/glass_shop_normal.png",
+      "tile": 1.5,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "car_glass": {
+      "albedo": "/textures/car_glass_albedo.png",
+      "orm": "/textures/car_glass_orm.png",
+      "normal": "/textures/car_glass_normal.png",
+      "tile": 1,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "timber_bare": {
+      "albedo": "/textures/timber_bare_albedo.png",
+      "orm": "/textures/timber_bare_orm.png",
+      "normal": "/textures/timber_bare_normal.png",
+      "tile": 1,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "timber_painted": {
+      "albedo": "/textures/timber_painted_albedo.png",
+      "orm": "/textures/timber_painted_orm.png",
+      "normal": "/textures/timber_painted_normal.png",
+      "tile": 1,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "fabric_awning": {
+      "albedo": "/textures/fabric_awning_albedo.png",
+      "orm": "/textures/fabric_awning_orm.png",
+      "normal": "/textures/fabric_awning_normal.png",
+      "tile": 1,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "plastic_signage": {
+      "albedo": "/textures/plastic_signage_albedo.png",
+      "orm": "/textures/plastic_signage_orm.png",
+      "normal": "/textures/plastic_signage_normal.png",
+      "tile": 1,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "car_paint": {
+      "albedo": "/textures/car_paint_albedo.png",
+      "orm": "/textures/car_paint_orm.png",
+      "normal": "/textures/car_paint_normal.png",
+      "tile": 1,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "tyre_rubber": {
+      "albedo": "/textures/tyre_rubber_albedo.png",
+      "orm": "/textures/tyre_rubber_orm.png",
+      "normal": "/textures/tyre_rubber_normal.png",
+      "tile": 0.4,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "foliage": {
+      "albedo": "/textures/foliage_albedo.png",
+      "orm": "/textures/foliage_orm.png",
+      "normal": "/textures/foliage_normal.png",
+      "tile": 0.8,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "grass": {
+      "albedo": "/textures/grass_albedo.png",
+      "orm": "/textures/grass_orm.png",
+      "normal": "/textures/grass_normal.png",
+      "tile": 1,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "bark": {
+      "albedo": "/textures/bark_albedo.png",
+      "orm": "/textures/bark_orm.png",
+      "normal": "/textures/bark_normal.png",
+      "tile": 0.6,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "skin": {
+      "albedo": "/textures/skin_albedo.png",
+      "orm": "/textures/skin_orm.png",
+      "normal": "/textures/skin_normal.png",
+      "tile": 0.6,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "hair": {
+      "albedo": "/textures/hair_albedo.png",
+      "orm": "/textures/hair_orm.png",
+      "normal": "/textures/hair_normal.png",
+      "tile": 0.35,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "cloth_shirt": {
+      "albedo": "/textures/cloth_shirt_albedo.png",
+      "orm": "/textures/cloth_shirt_orm.png",
+      "normal": "/textures/cloth_shirt_normal.png",
+      "tile": 0.5,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "cloth_trouser": {
+      "albedo": "/textures/cloth_trouser_albedo.png",
+      "orm": "/textures/cloth_trouser_orm.png",
+      "normal": "/textures/cloth_trouser_normal.png",
+      "tile": 0.5,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "shoe_leather": {
+      "albedo": "/textures/shoe_leather_albedo.png",
+      "orm": "/textures/shoe_leather_orm.png",
+      "normal": "/textures/shoe_leather_normal.png",
+      "tile": 0.3,
+      "metalness": null,
+      "normalScale": 1
+    }
+  }
+}

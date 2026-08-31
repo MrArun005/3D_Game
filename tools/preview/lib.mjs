@@ -10,14 +10,22 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
+import { loadMaterials, applyMaterials } from './materials.mjs';
 
 // the ingest step Meshopt-compresses every asset, so the loader needs the
 // decoder or nothing in public/models/ will parse
 const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
 const cache = new Map();
 
-export async function loadManifest(base = '/models') {
-  const m = await (await fetch(`${base}/manifest.json`)).json();
+let materials = null;
+
+export async function loadManifest(base = '/models', { textures = '/textures' } = {}) {
+  const [m, lib] = await Promise.all([
+    (await fetch(`${base}/manifest.json`)).json(),
+    textures ? loadMaterials(textures) : null,
+  ]);
+  materials = lib;
   return { base, ...m };
 }
 
@@ -30,9 +38,16 @@ export async function asset(manifest, key) {
     const gltf = await loader.loadAsync(url);
     const root = gltf.scene;
     root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    if (materials) applyMaterials(root, materials);
     cache.set(key, root);
   }
-  return cache.get(key).clone(true);
+  const root = cache.get(key);
+  // Object3D.clone() copies a SkinnedMesh but not its skeleton binding, so every
+  // clone ends up driven by the original's bones — they all stack at the origin.
+  // SkeletonUtils.clone rebuilds the bone graph per instance.
+  let skinned = false;
+  root.traverse((o) => { if (o.isSkinnedMesh) skinned = true; });
+  return skinned ? cloneSkinned(root) : root.clone(true);
 }
 
 /** Ask the manifest, not the mesh. */

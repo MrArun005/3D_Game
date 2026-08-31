@@ -12,7 +12,7 @@ import path from 'node:path';
 /* Greybox tints. Deliberately desaturated and close in value: a blockout you
  * can read the FORM of, not a colour rehearsal. Halstead Bay's palette is set
  * in ART_BIBLE.md and gets applied when real materials land. */
-const TINT = {
+export const TINT = {
   concrete_cast: [0.62, 0.62, 0.60], concrete_precast: [0.70, 0.70, 0.68],
   brick_red: [0.52, 0.36, 0.30], brick_painted: [0.66, 0.62, 0.58],
   plaster_worn: [0.72, 0.70, 0.66], stone_dressed: [0.68, 0.66, 0.61],
@@ -26,6 +26,9 @@ const TINT = {
   car_paint: [0.40, 0.42, 0.46], car_glass: [0.30, 0.34, 0.38],
   tyre_rubber: [0.12, 0.12, 0.13], chrome_trim: [0.75, 0.76, 0.78],
   foliage: [0.13, 0.19, 0.10], bark: [0.19, 0.15, 0.12], grass: [0.17, 0.23, 0.12],
+  skin: [0.23, 0.14, 0.10], hair: [0.05, 0.04, 0.03],
+  cloth_shirt: [0.12, 0.13, 0.16], cloth_trouser: [0.05, 0.06, 0.09],
+  shoe_leather: [0.04, 0.035, 0.03],
 };
 
 const METAL = new Set(['metal_painted', 'metal_galv', 'metal_rust', 'alloy_polished', 'chrome_trim']);

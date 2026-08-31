@@ -65,6 +65,7 @@ const MATERIALS = new Set([
   'timber_painted', 'timber_bare', 'fabric_awning', 'plastic_signage',
   'car_paint', 'car_glass', 'tyre_rubber', 'chrome_trim',
   'foliage', 'bark', 'grass',
+  'skin', 'hair', 'cloth_shirt', 'cloth_trouser', 'shoe_leather',
 ]);
 
 /* Assets predating the pipeline. Warned about, not failed. Empty this as the
@@ -151,6 +152,17 @@ function validate(doc, { category, name, tags }) {
     }
   }
 
+  // UVs are load-bearing: materials are bound at runtime and every one of them
+  // is textured, so a primitive without TEXCOORD_0 renders untextured
+  for (const mesh of doc.getRoot().listMeshes()) {
+    for (const prim of mesh.listPrimitives()) {
+      if (!prim.getAttribute('TEXCOORD_0')) {
+        errors.push('a primitive has no TEXCOORD_0 - it cannot take a material');
+        break;
+      }
+    }
+  }
+
   // transforms applied
   for (const node of doc.getRoot().listNodes()) {
     const s = node.getScale();
@@ -176,7 +188,7 @@ async function makeLod(io, srcPath, ratio) {
   await doc.transform(
     weld(),
     simplify({ simplifier: MeshoptSimplifier, ratio, error: 0.05, lockBorder: false }),
-    prune(),
+    prune({ keepAttributes: true }),
   );
   return doc;
 }
@@ -228,7 +240,14 @@ async function main() {
       continue;
     }
 
-    await doc.transform(weld(), dedup(), prune(), meshopt({ encoder: MeshoptEncoder }));
+    await doc.transform(
+      weld(),
+      dedup(),
+      // keepAttributes: the materials are bound at runtime from the library, so
+      // ingest cannot tell a UV is "unused" - it would delete every TEXCOORD_0
+      prune({ keepAttributes: true }),
+      meshopt({ encoder: MeshoptEncoder }),
+    );
 
     const outDir = path.join(OUT, category);
     await mkdir(outDir, { recursive: true });
@@ -242,7 +261,7 @@ async function main() {
       const lodDoc = existsSync(authored)
         ? await io.read(authored)
         : await makeLod(io, srcPath, ratio);
-      await lodDoc.transform(dedup(), prune(), meshopt({ encoder: MeshoptEncoder }));
+      await lodDoc.transform(dedup(), prune({ keepAttributes: true }), meshopt({ encoder: MeshoptEncoder }));
       await io.write(path.join(outDir, `${name}.${suffix}.glb`), lodDoc);
       lodTris[suffix] = triCount(lodDoc);
     }

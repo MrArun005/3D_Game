@@ -123,3 +123,38 @@ npm run ingest              # validate, optimise, LOD, manifest
 These are the starting point for authoring, not the finished article. When you
 refine one in Blender, **delete its generator file** or the next `genkit` run
 overwrites your work. `docs/kit-contact-sheet.png` shows all 91.
+
+## The material library
+
+27 procedural PBR materials in `tools/materials.mjs`, generated into
+`public/textures/` as albedo (sRGB) + normal (linear) + ORM (occlusion,
+roughness, metalness packed into R/G/B — three channels, one sampler, one
+upload).
+
+```bash
+npm run gentex               # build every material
+npm run gentex -- brick_red  # rebuild one
+```
+
+Each material is a **height field plus a shading function**. The normal map,
+the cavity AO and much of the albedo variation all fall out of that one height
+field, which is why brick mortar is simultaneously recessed, darker and rougher
+without any of those being specified three times.
+
+Colours are authored in **linear** and encoded to sRGB on write, because the
+renderer linearises on sample. They are darker than they look as swatches on
+purpose: ACES plus a bright sky washes pale albedo to near-white.
+
+`tile` is metres per texture tile, and it is the only place tiling is decided.
+Mesh UVs are already in metres, so the loader sets `repeat = 1 / tile` and
+nothing else in the codebase touches a repeat.
+
+**Binding.** Assets ship with material *names*. `tools/preview/materials.mjs`
+loads the library once and swaps each mesh's placeholder material for the
+library one of the same name, so 91 assets share 27 materials. districtWorld
+should do the same.
+
+**Texture memory:** 27 x 3 x 512px ≈ 18 MB uncompressed on disk. KTX2/Basis is
+still outstanding and is what makes this shippable at 1024px.
+
+**Reference renders** live in `assets/renders/`.

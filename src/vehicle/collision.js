@@ -22,10 +22,13 @@ const HULL_PROBES = [
  * part. bite = 1.0 is a dead stop against the normal; anything above 1 adds
  * restitution, which on a building reads as the car bouncing across the street.
  */
-function absorb(car, nx, nz, bite = 1.0) {
+function absorb(car, nx, nz, bite = 1.0, px = 0, pz = 0) {
   const into = car.vx * nx + car.vz * nz;
   if (into <= 0) return 0;
-  if (into > 1.2) car.impact = Math.max(car.impact || 0, into);
+  if (into > 1.2) {
+    if (into > (car.impact || 0)) car.hitAt = { x: px, z: pz };
+    car.impact = Math.max(car.impact || 0, into);
+  }
   car.vx -= nx * into * bite;
   car.vz -= nz * into * bite;
   return into;
@@ -56,7 +59,7 @@ export function resolveBuildings(car) {
     const push = (worst - BUILD_LINE) * 1.02;
     car.x -= nx * push;
     car.z -= nz * push;
-    absorb(car, nx, nz, 1.0);
+    absorb(car, nx, nz, 1.0, wpx, wpz);
     car.yawRate *= 0.55;
     car.vx *= 0.86; car.vz *= 0.86;      // masonry does not give anything back
   }
@@ -106,7 +109,7 @@ export function resolveBoxes(car, boxes) {
 
         car.x += nx * pen;
         car.z += nz * pen;
-        absorb(car, -nx, -nz, 1.0);
+        absorb(car, -nx, -nz, 1.0, px, pz);
         car.yawRate *= 0.6;
         car.vx *= 0.88; car.vz *= 0.88;
         hit = true;
@@ -153,6 +156,7 @@ export function resolveObstacles(car, obstacles) {
         const into = -(car.vx * nx + car.vz * nz);
         if (into > 0) {
           if (into > 1.2) {
+            if (into > (car.impact || 0)) car.hitAt = { x: sx, z: sz };
             car.impact = Math.max(car.impact || 0, into);
             // who you hit decides whether anyone comes looking for you
             if (into > (car.hitForce || 0)) { car.hitForce = into; car.hitTag = o.tag || 'prop'; }

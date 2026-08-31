@@ -4,6 +4,8 @@ import { ROAD_HALF, PARKING, LANE } from './metrics.js';
 
 let anisotropy = 4;
 export const setAnisotropy = (n) => { anisotropy = n; };
+/** The value toTex() is handing out, for loaders that bypass the canvas path. */
+export const anisotropyOf = () => anisotropy;
 
 export function cv(w, h) {
   const c = document.createElement('canvas');

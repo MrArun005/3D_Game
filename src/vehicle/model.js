@@ -210,7 +210,12 @@ export function buildCar(mats, paintHex) {
   // the loudest daylight tell was a car driving through a tower's shadow
   // fully lit -- nothing outside src/world ever set this
   bodyMesh.receiveShadow = true;
-  shell.add(bodyMesh, new THREE.Mesh(hull.glass, mats.glass));
+  /* The hero's glazing is cloned because the damage model frosts it as the
+     car is wrecked -- shared with traffic, one bad crash would shatter the
+     windows of every car in the city. */
+  const glassMat = mats.glass.clone();
+  const glassMesh = new THREE.Mesh(hull.glass, glassMat);
+  shell.add(bodyMesh, glassMesh);
 
   // panel shutlines — a car without them reads as one moulded lump
   shell.add(new THREE.Mesh(
@@ -354,11 +359,16 @@ export function buildCar(mats, paintHex) {
       spin.add(tyre, rim, new THREE.Mesh(discG, mats.disc));
       steer.add(spin);
       group.add(steer);                 // unsprung: never leans with the body
-      wheels.push({ steer, spin, front, side: s });
+      // `tyre` is exposed so damage can deflate the rubber without
+      // shrinking the rim inside it
+      wheels.push({ steer, spin, tyre, front, side: s, flat: 0 });
     }
   }
 
-  group.userData = { heads, headMat, tailMat, wheels, paint, interior, body, driver };
+  group.userData = {
+    heads, headMat, tailMat, wheels, paint, interior, body, driver,
+    hull: bodyMesh, glass: glassMesh, shell,
+  };
   return group;
 }
 
@@ -397,7 +407,20 @@ export function buildStuntGeometries() {
     glass.translate(-spec.L / 2, 0, 0);
     glass.rotateY(Math.PI);
 
-    out[key] = { body, glass, occupant: buildOccupant(spec) };
+    /* A real LOD for the kerbside fleet.
+       748 parked cars at 2444 triangles each was 1.83M triangles -- 54% of
+       everything visible -- for cars you drive past at 200m and never look
+       at. The loft's cost is set by its STATION count, not its radial
+       count (radial only controls how the cross-sections are swept), so
+       every third station gives a 492-triangle hull that keeps the
+       silhouette. No wheels: at the distance this is used the tyres were
+       1152 of those triangles and about two pixels. */
+    const lodStations = stations.filter((_, i) => i % 3 === 0 || i === stations.length - 1);
+    const lodBody = loft(lodStations, stuntClassify(spec), 10).body;
+    lodBody.translate(-spec.L / 2, 0, 0);
+    lodBody.rotateY(Math.PI);
+
+    out[key] = { body, glass, lodBody, occupant: buildOccupant(spec) };
   }
   return out;
 }
