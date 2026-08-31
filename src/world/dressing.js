@@ -22,9 +22,13 @@ const hash = (x, z) => {
 const _e = new THREE.Euler(), _q = new THREE.Quaternion();
 const _v = new THREE.Vector3(), _s = new THREE.Vector3();
 
-/** Assets are authored Y-up with the origin at the base, so placement is a
- *  position, a yaw and a uniform scale. */
-function place(x, y, z, yaw, scale = 1) {
+/**
+ * Assets are authored Y-up with the origin at the base and the outward face
+ * looking down +Z, so placing one is a position, a yaw and a uniform scale.
+ * Exported because districtWorld places the authored signal mast itself --
+ * the lenses on it have to stay an InstancedMesh it can recolour per frame.
+ */
+export function place(x, y, z, yaw, scale = 1) {
   _e.set(0, yaw, 0);
   return new THREE.Matrix4().compose(
     _v.set(x, y, z), _q.setFromEuler(_e), _s.set(scale, scale, scale),
@@ -200,6 +204,19 @@ function kerbside(batch, segments, district, solids, pools) {
       }
     }
 
+    /* A hoarding on open ground beside a fast road. Sited off the segment
+       rather than off a block so it lands on whatever is there -- which is
+       what an advertiser does. */
+    if (s.cls === 'arterial' && L > 90 && hash(s.ax * 1.9, s.bz) < 0.3) {
+      const t = 40 + hash(s.bx, s.ax) * (L - 70);
+      const side = hash(s.bz, s.ax + t) < 0.5 ? 1 : -1;
+      const off = (s.half + 9) * side;
+      const px = s.ax + ux * t + nx * off, pz = s.az + uz * t + nz * off;
+      batch.add('props/billboard_freestanding', place(px,
+        KERB_H + district.elevationAt(px, pz), pz,
+        Math.atan2(nx * -side, nz * -side)));
+    }
+
     if (works > 0) {
       for (let i = 0; i < 7; i++) {
         const t = works + i * 3.4;
@@ -290,6 +307,16 @@ function blockDressing(batch, blocks, district, solids) {
         batch.add(lm.asset, place(px, KERB_H + district.elevationAt(px, pz), pz,
           hash(pz, px) * 6.283));
         solids.push({ x: px, z: pz, yaw: 0, offsets: [0], radius: 2.2, reach: 3.0, tag: 'prop' });
+      }
+      if (span > 30 && hash(bl.x + 3, bl.y + 3) < 0.4) {
+        // a row of stalls, because one stall on a green is not a market
+        const [mx0, mz0] = toWorld(-bl.w * 0.2, bl.h * 0.22);
+        for (let i = 0; i < 5; i++) {
+          const sx = mx0 + i * 4.2 * Math.cos(bl.angle);
+          const sz = mz0 + i * 4.2 * Math.sin(bl.angle);
+          batch.add('props/market_stall',
+            place(sx, KERB_H + district.elevationAt(sx, sz), sz, bl.angle));
+        }
       }
       if (span > 40 && hash(bl.y, bl.x + 7) < 0.5) {
         const [px, pz] = toWorld(bl.w * 0.24, -bl.h * 0.24);
@@ -486,6 +513,14 @@ export function dressFacades(batch, boxes, district, roadNear) {
         if (style.balcony && r < 0.34) {
           batch.add(style.balcony, place(mx, base + GROUND_H + 1.0, mz, yaw));
         }
+      }
+
+      /* Signage on the wall itself. A blank flank above a shopfront is the
+         loudest "this is a box with a texture on it" tell there is. */
+      if (r < 0.2 && height > GROUND_H + 4) {
+        batch.add('props/billboard_wall', place(mx, base + GROUND_H + 0.4, mz, yaw));
+      } else if (r > 0.86) {
+        batch.add('props/sign_wall_box', place(mx, base + 3.1, mz, yaw));
       }
 
       /* Toppers only where the roofline is in shot. Above about 22m you are

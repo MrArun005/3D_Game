@@ -18,6 +18,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildBody, DEFAULTS } from './lib/body.mjs';
+
 import { PREFIX } from './lib/rig.mjs';
 import { TINT } from './lib/gltf.mjs';
 
@@ -40,6 +41,20 @@ export const PRESETS = {
 };
 
 /* -------------------------------------------------------------- exporter -- */
+
+/** Emit the quad cage for the Blender pipeline instead of a finished mesh. */
+async function writeCage(name, params) {
+  const { mesh, rig, cage } = buildBody(params);
+  const drop = mesh.bounds().min[1];
+  for (const c of cage.chains) for (const r of c.rings) for (const p of r) p[1] -= drop;
+  for (const j of cage.joints) j.world = [j.world[0], j.world[1] - drop, j.world[2]];
+  const dir = path.join(SRC, name);
+  await mkdir(dir, { recursive: true });
+  await writeFile(path.join(dir, `${name}.cage.json`), JSON.stringify(cage));
+  await writeFile(path.join(dir, 'tags.json'), JSON.stringify(['character', 'crowd']) + '\n');
+  await writeFile(path.join(dir, 'params.json'), JSON.stringify({ ...DEFAULTS, ...params }, null, 2) + '\n');
+  return { rings: cage.chains.length, joints: cage.joints.length };
+}
 
 async function writeCharacter(name, params) {
   const { mesh, rig } = buildBody(params);
@@ -116,11 +131,17 @@ async function main() {
       .map(([k, v]) => `  ${k.padEnd(12)} ${v}`).join('\n'));
     return;
   }
+  const CAGE = process.argv.includes('--cage');
   const only = new Set(process.argv.slice(2).filter((a) => !a.startsWith('--')));
   for (const [name, p] of Object.entries(PRESETS)) {
     if (only.size && !only.has(name)) continue;
-    const r = await writeCharacter(name, p);
-    console.log(`${name.padEnd(12)} ${String(r.tris).padStart(5)}t  ${r.joints} joints`);
+    if (CAGE) {
+      const r = await writeCage(name, p);
+      console.log(`${name.padEnd(12)} cage: ${r.rings} chains, ${r.joints} joints`);
+    } else {
+      const r = await writeCharacter(name, p);
+      console.log(`${name.padEnd(12)} ${String(r.tris).padStart(5)}t  ${r.joints} joints`);
+    }
   }
   console.log(`\n-> ${path.relative(ROOT, SRC)}/`);
 }

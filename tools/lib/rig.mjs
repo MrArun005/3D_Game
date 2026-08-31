@@ -47,6 +47,13 @@ export const REST = [
   ['RightFoot',               'RightLeg',          -0.100, 0.085, 0],
   ['RightToeBase',            'RightFoot',         -0.100, 0.022, 0.105],
   ['RightToe_End',            'RightToeBase',      -0.100, 0.020, 0.185],
+
+  // thumbs only. Four more finger chains per hand would double the joint count
+  // for geometry that is three pixels wide at any distance the player sees it.
+  ['LeftHandThumb1',          'LeftHand',           0.745, 1.400, 0.030],
+  ['LeftHandThumb2',          'LeftHandThumb1',     0.795, 1.392, 0.055],
+  ['RightHandThumb1',         'RightHand',         -0.745, 1.400, 0.030],
+  ['RightHandThumb2',         'RightHandThumb1',   -0.795, 1.392, 0.055],
 ];
 
 export const PREFIX = 'mixamorig:';
@@ -62,6 +69,7 @@ const SEGMENTS = [
   ['LeftForeArm', 'LeftHand'], ['LeftHand', 'LeftHand_End'],
   ['RightShoulder', 'RightArm'], ['RightArm', 'RightForeArm'],
   ['RightForeArm', 'RightHand'], ['RightHand', 'RightHand_End'],
+  ['LeftHandThumb1', 'LeftHandThumb2'], ['RightHandThumb1', 'RightHandThumb2'],
   ['LeftUpLeg', 'LeftLeg'], ['LeftLeg', 'LeftFoot'], ['LeftFoot', 'LeftToeBase'],
   ['RightUpLeg', 'RightLeg'], ['RightLeg', 'RightFoot'], ['RightFoot', 'RightToeBase'],
 ];
@@ -89,22 +97,44 @@ export class Rig {
   }
 
   /**
-   * Weights for one vertex: the two nearest bone segments, inverse-distance
-   * blended. `stiff` biases toward a single bone, which keeps a forearm from
-   * picking up shoulder influence.
+   * Weights for one vertex.
+   *
+   * Four influences with a soft falloff, not two with a hard one. Two-influence
+   * skinning is what collapses a shoulder: every vertex on the deltoid belongs
+   * either to the arm or to the spine, and when the arm drops, the boundary
+   * folds into a crease. Spreading the same vertex across arm, shoulder, spine
+   * and neck lets the surface rotate progressively instead of hinging.
+   *
+   * `stiff` is the falloff exponent. Lower is smoother and softer; higher keeps
+   * a limb interior rigid. 1.8 is a compromise that holds the forearm without
+   * pinching the elbow.
    */
-  weigh(p, { stiff = 3.2, maxInfluence = 2 } = {}) {
+  weigh(p, { stiff = 1.8, maxInfluence = 4, cutoff = 0.045 } = {}) {
     const scored = [];
     for (const seg of SEGMENTS) {
       const a = this.world[seg[0]], b = this.world[seg[1]];
       scored.push({ bone: segmentBone(seg), d: distToSegment(p, a, b) });
     }
     scored.sort((x, y) => x.d - y.d);
-    const take = scored.slice(0, maxInfluence);
+
+    // drop influences far weaker than the nearest, or a knee picks up a shoulder
+    const near = Math.max(scored[0].d, 0.004);
+    const take = scored.slice(0, maxInfluence).filter((s, i) => i === 0 || s.d < near * 4.5);
+
     const w = take.map((s) => 1 / Math.pow(Math.max(s.d, 0.004), stiff));
-    const sum = w.reduce((a, b) => a + b, 0) || 1;
+    const peak = Math.max(...w);
+    // prune dust: a 2% influence costs a slot and buys nothing
+    const kept = take.map((s, i) => ({ s, w: w[i] })).filter((e) => e.w / peak > cutoff);
+    const sum = kept.reduce((a, e) => a + e.w, 0) || 1;
+
     const joints = [0, 0, 0, 0], weights = [0, 0, 0, 0];
-    take.forEach((s, i) => { joints[i] = this.index[s.bone]; weights[i] = w[i] / sum; });
+    kept.slice(0, 4).forEach((e, i) => {
+      joints[i] = this.index[e.s.bone];
+      weights[i] = e.w / sum;
+    });
+    // renormalise after the slice, or the last influence silently shrinks
+    const total = weights.reduce((a, b) => a + b, 0) || 1;
+    for (let i = 0; i < 4; i++) weights[i] /= total;
     return { joints, weights };
   }
 

@@ -14,7 +14,9 @@
     "genkit": "node tools/genkit.mjs",
     "genkit:list": "node tools/genkit.mjs --list",
     "gentex": "node tools/materials.mjs",
-    "genchar": "node tools/characters.mjs"
+    "genchar": "node tools/characters.mjs",
+    "genchar:cage": "node tools/characters.mjs --cage",
+    "genchar:blender": "python3 tools/blender/build.py"
   },
   "dependencies": {
     "three": "^0.185.1",

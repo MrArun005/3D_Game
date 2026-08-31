@@ -15,5 +15,11 @@
   "hair": 0.2,
   "sleeve": 0.62,
   "trouser": 0.94,
-  "posture": 0.8
+  "posture": 0.8,
+  "brow": 0.5,
+  "nose": 0.5,
+  "jaw": 0.5,
+  "cheek": 0.5,
+  "chin": 0.5,
+  "ears": 0.5
 }

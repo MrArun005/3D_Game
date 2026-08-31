@@ -38,6 +38,7 @@ import { Cinematic } from './game/cinematic.js';
 import { Recorder } from './game/recorder.js';
 import { createAudio } from './game/audio.js';
 import { createWeather } from './world/weather.js';
+import { buildHuman } from './world/human.js';
 
 /* Day first. Night is still fully built -- ?night in the URL brings it back --
    but daylight is the honest view: nothing hides behind a lamp glow. */
@@ -101,6 +102,8 @@ function daylightAssets(A) {
 
 let world = new City(scene, assets);
 let beach = null, water = null, crowd = null, heli = null, districtRef = null, drowning = 0;
+const person = buildHuman();
+scene.add(person.root);
 let muted = false;
 let firing = false;
 let mission = null;
@@ -403,6 +406,10 @@ Promise.all([loadDistrict(), catalogueReady]).then(([district, catalogue]) => {
   resetCar(car);
   car.x = n.x; car.z = n.y; car.y = 0.62;
   world.update(car.x, car.z);
+  {
+    const rx = Math.sin(car.yaw), rz = Math.cos(car.yaw);
+    person.place(car.x + rx * 7.5, car.z + rz * 7.5, car.yaw + Math.PI);
+  }
   // now the car is on its spawn node, lay the film route from where it stands
   ROUTE = buildRoute(null, car.x, car.z);
   console.info(`Halstead Bay loaded — spawn at node ${n.id} (${n.x}, ${n.y})`);

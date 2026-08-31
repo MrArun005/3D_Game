@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { InstanceBatch } from './catalogue.js';
-import { dressChunk, dressRoofs, dressFacades } from './dressing.js';
+import { dressChunk, dressRoofs, dressFacades, place as placeAsset } from './dressing.js';
 import { KERB_H, roadDepth } from './metrics.js';
 import { ARCH, TOWER, MID, LOFT, PODIUM, DECK } from './facades.js';
 import { mulberry32 } from '../core/rng.js';
@@ -532,6 +532,8 @@ export class DistrictWorld {
     const A = this.assets;
     const posts = [], arms = [], lens = [], meta = [], zebra = [];
     const seen = new Set();
+    const sigBatch = this.catalogue ? new InstanceBatch(this.catalogue) : null;
+    const ly = (x, z) => this.district.elevationAt(x, z);
 
     for (const ei of edgeIds) {
       const e = this.district.graph.edges[ei];
@@ -566,13 +568,33 @@ export class DistrictWorld {
           zebra.push(flatRect(bx, 0.02, bz, yaw, ZEBRA_DEPTH, 0.62));
         }
 
-        posts.push(mat4(px, KERB_H, pz, -yaw, 0.11, 3.9, 0.11));
-        arms.push(mat4(px + dx * 1.1, KERB_H + 3.75, pz + dz * 1.1, -yaw, 2.4, 0.1, 0.1));
-        // backing box, so a lens reads as a lamp rather than a floating dot
-        arms.push(mat4(px + dx * 2.24, KERB_H + 2.62, pz + dz * 2.24, -yaw, 0.1, 1.06, 0.34));
         const axis = Math.abs(dx) > Math.abs(dz) ? 0 : 1;
-        for (let k = 0; k < 3; k++) {
-          lens.push(mat4(px + dx * 2.1, KERB_H + 3.35 - k * 0.3, pz + dz * 2.1, -yaw, 1, 1, 1));
+        if (sigBatch) {
+          /* The authored mast, with the lenses this file already drives sitting
+             on its head. Only the POSTS become an asset -- the lens cluster
+             stays an InstancedMesh because updateSignals() rewrites its
+             colours every frame from the same phase function the traffic
+             reads, and an authored lamp cannot be recoloured per instance. */
+          sigBatch.add('props/traffic_signal',
+            placeAsset(px, KERB_H + ly(px, pz), pz, Math.atan2(-dx, -dz)));
+          for (let k = 0; k < 3; k++) {
+            lens.push(mat4(px + dx * 0.24, KERB_H + 3.82 - k * 0.32, pz + dz * 0.24,
+              -yaw, 1, 1, 1));
+          }
+          // a gantry where the approach is wide enough to need one
+          if (e.width > 26 && hash(node.x + ei, node.y) < 0.4) {
+            sigBatch.add('props/sign_gantry', placeAsset(
+              node.x - dx * (back + 3), KERB_H + ly(node.x, node.y), node.y - dz * (back + 3),
+              Math.atan2(-dx, -dz)));
+          }
+        } else {
+          posts.push(mat4(px, KERB_H, pz, -yaw, 0.11, 3.9, 0.11));
+          arms.push(mat4(px + dx * 1.1, KERB_H + 3.75, pz + dz * 1.1, -yaw, 2.4, 0.1, 0.1));
+          // backing box, so a lens reads as a lamp rather than a floating dot
+          arms.push(mat4(px + dx * 2.24, KERB_H + 2.62, pz + dz * 2.24, -yaw, 0.1, 1.06, 0.34));
+          for (let k = 0; k < 3; k++) {
+            lens.push(mat4(px + dx * 2.1, KERB_H + 3.35 - k * 0.3, pz + dz * 2.1, -yaw, 1, 1, 1));
+          }
         }
         meta.push({ node: node.id, axis, base: lens.length - 3 });
       }
@@ -588,6 +610,8 @@ export class DistrictWorld {
       group.add(mesh);
       return mesh;
     };
+    if (sigBatch) sigBatch.emit(group, { shadow: false })
+      .catch((e) => console.warn('signals failed:', e.message));
     inst(posts, A.mat.pole);
     inst(arms, A.mat.pole);
     if (zebra.length) {
@@ -821,10 +845,6 @@ export class DistrictWorld {
       fbatch.emit(faces, { shadow: false })
         .catch((e) => console.warn('facades failed:', e.message));
       // fire and forget: the chunk is usable now, the props land a frame later
-      if (typeof window !== 'undefined') {   // TEMP probe
-        window.__batches = window.__batches || new Map();
-        if (batch.buckets.size) window.__batches.set(k, batch);
-      }
       batch.emit(props).catch((e) => console.warn('dressing failed:', e.message));
       for (const p of dressPools) pools.push(flat(p.x, p.y, p.z, p.size));
     }

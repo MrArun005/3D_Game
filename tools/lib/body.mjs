@@ -1,91 +1,130 @@
 /**
  * Parametric humanoid body.
  *
- * Built the same way the car is: cross-sections lofted into a surface. A limb
- * is a chain of elliptical rings; the torso is a chain of rings whose width,
- * depth and profile change with the shape parameters. That is why every
- * parameter below is continuous — there is no morph-target library, the mesh
- * is rebuilt from the numbers.
+ * Built the way the car is: cross-sections lofted into a surface. A limb is a
+ * chain of rings; the torso is a chain whose width, depth and section shape
+ * change with the parameters. Every parameter is continuous because the mesh is
+ * rebuilt from the numbers — there is no morph-target library.
+ *
+ * Three things separate this from the first pass, and all three were driven by
+ * what the deformation test showed:
+ *
+ * 1. **Superelliptical sections.** A torso is not an ellipse in plan — it is
+ *    flatter at the front and back than a circle. One exponent per station.
+ * 2. **Rings clustered at the joints.** Linear blend skinning creases wherever
+ *    a bend has no geometry to distribute across. The shoulder, elbow, hip and
+ *    knee each get three rings instead of one.
+ * 3. **A face.** Displacement over (angle, height) on the head rings — brow,
+ *    nose, eye sockets, cheeks, mouth, chin, jaw, occiput — plus ears. It is
+ *    not a portrait, but it reads as a face rather than a blank ovoid.
  *
  * Rest pose is a T-pose so Mixamo clips retarget straight onto the rig.
  */
 import { Mesh } from './mesh.mjs';
 import { Rig } from './rig.mjs';
 
-/** Every parameter is 0..1 unless noted. Defaults are the reference figure. */
 export const DEFAULTS = {
   height: 1.75,       // metres, 1.45 – 2.05
   build: 0.5,         // slight ← → heavy
   muscle: 0.5,        // soft ← → defined
-  shoulders: 0.5,     // narrow ← → broad
+  shoulders: 0.5,
   hips: 0.5,
   belly: 0.35,
   chest: 0.5,
   neck: 0.5,
   headSize: 0.5,
-  legLength: 0.5,     // shifts the hip height within the same total height
+  legLength: 0.5,
   armLength: 0.5,
   footSize: 0.5,
   handSize: 0.5,
-  hair: 0.6,          // 0 = none, 1 = full
-  sleeve: 0.62,       // how far down the arm the shirt runs, 0..1
-  trouser: 0.94,      // how far down the leg
-  posture: 0.5,       // 0 = stooped, 1 = upright
+  hair: 0.6,          // 0 = bald, 1 = full
+  sleeve: 0.62,
+  trouser: 0.94,
+  posture: 0.5,
+  // face
+  brow: 0.5,          // shallow ← → heavy
+  nose: 0.5,          // small ← → prominent
+  jaw: 0.5,           // narrow ← → square
+  cheek: 0.5,
+  chin: 0.5,
+  ears: 0.5,
 };
 
+const SEG = 20;                       // segments around every ring
 const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a = 0, b = 1) => (v < a ? a : v > b ? b : v);
+/** Smooth bump, 1 at `c`, 0 beyond `w`. The shaping primitive for the face. */
+const bump = (x, c, w) => {
+  const t = Math.abs(x - c) / w;
+  return t >= 1 ? 0 : Math.pow(Math.cos(t * Math.PI / 2), 2);
+};
+/** Angular distance on a circle, so a feature at the front wraps correctly. */
+const angDist = (a, b) => {
+  let d = Math.abs(a - b) % (Math.PI * 2);
+  return d > Math.PI ? Math.PI * 2 - d : d;
+};
 
-/** Elliptical ring in a plane, with outward normals. */
-function ring(centre, axis, rx, rz, seg, squash = 1, lean = 0) {
+/**
+ * Superelliptical section. n = 2 is an ellipse; higher is squarer. A human
+ * torso sits around 2.6 — noticeably flatter front and back than a tube.
+ */
+function sect(t, a, b, n = 2) {
+  const c = Math.cos(t), s = Math.sin(t);
+  const e = 2 / n;
+  return [
+    a * Math.sign(c) * Math.pow(Math.abs(c), e),
+    b * Math.sign(s) * Math.pow(Math.abs(s), e),
+  ];
+}
+
+/** Ring in the XZ plane at height y, optionally displaced per-vertex. */
+function ringY(y, a, b, n, { z0 = 0, disp = null } = {}) {
   const out = [];
-  for (let k = 0; k < seg; k++) {
-    const t = (k / seg) * Math.PI * 2;
-    const cx = Math.cos(t), cz = Math.sin(t);
-    // squash flattens the back/front; a torso is not a cylinder
-    const sx = cx * rx, sz = cz * rz * (cz < 0 ? squash : 1);
-    let p, n;
-    if (axis === 'y') { p = [centre[0] + sx, centre[1], centre[2] + sz + lean]; n = [cx, 0, cz]; }
-    else if (axis === 'x') { p = [centre[0], centre[1] + sx, centre[2] + sz]; n = [0, cx, cz]; }
-    else { p = [centre[0] + sx, centre[1] + sz, centre[2]]; n = [cx, cz, 0]; }
-    out.push({ p, n });
+  for (let k = 0; k < SEG; k++) {
+    const t = (k / SEG) * Math.PI * 2;
+    let [x, z] = sect(t, a, b, n);
+    if (disp) { const d = disp(t, x, z); x = d[0]; z = d[1]; }
+    out.push({ p: [x, y, z + z0], n: [Math.cos(t), 0, Math.sin(t)] });
   }
   return out;
 }
 
-/** Mirror a ring chain across X — the body is symmetric, the code should be. */
-const mirrorX = (rings) => rings.map((r) => r.map((v) => ({
-  p: [-v.p[0], v.p[1], v.p[2]], n: [-v.n[0], v.n[1], v.n[2]],
-})).reverse());
+/** Ring in the YZ plane at x — for arms, which run along X in a T-pose. */
+function ringX(x, cy, cz, a, b, n = 2) {
+  const out = [];
+  for (let k = 0; k < SEG; k++) {
+    const t = (k / SEG) * Math.PI * 2;
+    const [u, v] = sect(t, a, b, n);
+    out.push({ p: [x, cy + u, cz + v], n: [0, Math.cos(t), Math.sin(t)] });
+  }
+  return out;
+}
 
 export function buildBody(paramsIn = {}) {
   const P = { ...DEFAULTS, ...paramsIn };
-  const S = P.height / 1.75;                    // uniform scale from the reference
-  const fat = lerp(0.86, 1.34, P.build);        // girth multiplier
-  const mus = lerp(0.92, 1.14, P.muscle);
-  const SEG = 12;
+  const S = P.height / 1.75;
+  const fat = lerp(0.86, 1.34, P.build);
+  const mus = lerp(0.9, 1.16, P.muscle);
 
-  /* ----- rest pose, moved by the shape parameters ------------------------ */
   const hipY = lerp(0.94, 1.02, P.legLength);
   const armR = lerp(0.94, 1.08, P.armLength);
   const headS = lerp(0.88, 1.12, P.headSize);
   const neckL = lerp(0.94, 1.08, P.neck);
   const shoulderW = lerp(0.86, 1.18, P.shoulders);
   const hipW = lerp(0.88, 1.16, P.hips);
+  const stoop = (1 - P.posture) * 0.055;
 
   const place = (name, [x, y, z]) => {
     let nx = x, ny = y, nz = z;
     if (name.includes('Leg') || name.includes('Foot') || name.includes('Toe')) {
-      ny *= hipY / 0.98;
-      nx *= hipW;
+      ny *= hipY / 0.98; nx *= hipW;
     } else if (name === 'Hips') { ny = hipY; }
-    else if (name.includes('Arm') || name.includes('Hand') || name.includes('Shoulder')) {
+    else if (name.includes('Arm') || name.includes('Hand') || name.includes('Shoulder') || name.includes('Thumb')) {
       nx *= shoulderW * armR;
-      ny = lerp(y, 1.415, 1) + (hipY - 0.98) * 0.55;
+      ny = y + (hipY - 0.98) * 0.55;
     } else if (name === 'Neck' || name === 'Head' || name === 'HeadTop_End') {
       ny = 1.455 + (y - 1.455) * headS + (neckL - 1) * 0.09 + (hipY - 0.98) * 0.55;
     } else { ny = y + (hipY - 0.98) * 0.55; }
-    // posture: a slight forward lean through the spine
-    const stoop = (1 - P.posture) * 0.055;
     if (ny > hipY) nz += stoop * ((ny - hipY) / 0.6) ** 2;
     return [nx * S, ny * S, nz * S];
   };
@@ -94,104 +133,234 @@ export function buildBody(paramsIn = {}) {
   const J = rig.world;
   const m = new Mesh();
 
-  /* ----- torso ----------------------------------------------------------- */
-  // stations from crotch to neck: width, depth, squash
-  const torso = [
-    [J.Hips[1] - 0.10 * S, 0.145 * hipW, 0.105, 1.0],
-    [J.Hips[1] + 0.01 * S, 0.152 * hipW, 0.112 * lerp(0.9, 1.35, P.belly), 0.95],
-    [J.Spine[1],           0.148,        0.108 * lerp(0.9, 1.4, P.belly),  0.92],
-    [J.Spine1[1],          0.152,        0.112 * lerp(0.95, 1.25, P.chest), 0.9],
-    [J.Spine2[1],          0.168 * shoulderW, 0.116 * lerp(0.95, 1.3, P.chest), 0.9],
-    [J.LeftArm[1] + 0.02 * S, 0.205 * shoulderW, 0.108, 0.92],
-    [J.Neck[1] - 0.02 * S, 0.115,        0.092, 0.95],
+  // Record every ring chain as it is lofted. The triangulated Mesh is what the
+  // JS preview draws; the chains are the QUAD CAGE that the Blender pipeline
+  // subdivides. One source of truth for the body shape, two consumers.
+  const chains = [];
+  const rawLoft = m.loftRings.bind(m);
+  m.loftRings = (mat, rings, opts = {}) => {
+    chains.push({ mat, rings: rings.map((r) => r.map((v) => v.p)), ...opts });
+    return rawLoft(mat, rings, opts);
+  };
+  const leanAt = (y) => (y > J.Hips[1] ? stoop * S * ((y - J.Hips[1]) / (0.6 * S)) ** 2 : 0);
+
+  /* ------------------------------------------------------------- torso --- */
+  // [y (unscaled), halfWidth, halfDepth, exponent]. Rings bunch at the shoulder
+  // because that is where the mesh has to survive the largest rotation.
+  const shoulderY = 1.415;
+  const T = [
+    [0.86, 0.150 * hipW, 0.112, 2.5],
+    [0.94, 0.152 * hipW, 0.116 * lerp(0.92, 1.3, P.belly), 2.5],
+    [1.02, 0.150, 0.116 * lerp(0.92, 1.4, P.belly), 2.5],
+    [1.10, 0.140, 0.108 * lerp(0.92, 1.35, P.belly), 2.6],   // waist
+    [1.19, 0.148, 0.110 * lerp(0.95, 1.2, P.chest), 2.7],
+    [1.27, 0.162, 0.118 * lerp(0.95, 1.3, P.chest), 2.8],    // chest
+    [1.34, 0.176 * shoulderW, 0.116, 2.8],
+    [1.385, 0.196 * shoulderW, 0.110, 2.7],                  // deltoid shelf
+    [shoulderY, 0.206 * shoulderW, 0.105, 2.6],
+    [1.44, 0.176 * shoulderW, 0.098, 2.4],                   // trapezius
+    [1.47, 0.118, 0.088, 2.2],
   ];
-  const torsoRings = torso.map(([y, rx, rz, sq]) =>
-    ring([0, y, torsoLean(y)], 'y', rx * fat * S, rz * fat * S, SEG, sq));
-  function torsoLean(y) {
-    const stoop = (1 - P.posture) * 0.055 * S;
-    return y > J.Hips[1] ? stoop * ((y - J.Hips[1]) / (0.6 * S)) ** 2 : 0;
-  }
+  const torsoRings = T.map(([y, a, b, n]) =>
+    ringY(y * S, a * fat * S, b * fat * S, n, { z0: leanAt(y * S) }));
   m.loftRings('cloth_shirt', torsoRings, { capStart: false, capEnd: false });
 
-  // hips block, so the trousers meet the torso rather than floating
   m.loftRings('cloth_trouser', [
-    ring([0, J.Hips[1] - 0.16 * S, 0], 'y', 0.150 * hipW * fat * S, 0.108 * fat * S, SEG, 1),
-    ring([0, J.Hips[1] - 0.02 * S, torsoLean(J.Hips[1])], 'y', 0.152 * hipW * fat * S, 0.112 * fat * S, SEG, 0.95),
+    ringY((hipY - 0.18) * S, 0.152 * hipW * fat * S, 0.112 * fat * S, 2.4),
+    ringY(0.86 * S, 0.150 * hipW * fat * S, 0.112 * fat * S, 2.5, { z0: leanAt(0.86 * S) }),
   ], { capStart: false, capEnd: false });
 
-  /* ----- neck and head --------------------------------------------------- */
+  /* -------------------------------------------------------------- head --- */
+  const chinY = J.Head[1] + 0.012 * S;
+  const crown = J.HeadTop_End[1];
+  const hz = leanAt(J.Head[1]) + 0.006 * S;
+  const HR = 0.093 * headS * S;                 // head half-width reference
+
+  // face displacement over (angle, heightFrac). Front is +Z, i.e. t = PI/2.
+  const FRONT = Math.PI / 2;
+  // Subdivision pulls each vertex toward its neighbours, so a feature authored
+  // at its finished depth comes out roughly half as deep. Author it oversized
+  // and let the subdivision bring it back.
+  const SUB = 2.1;
+  const face = (hv) => (t, x, z) => {
+    const fd = angDist(t, FRONT);               // 0 at the face, PI at the back
+    const front = bump(fd, 0, 1.5);             // how "facing forward" we are
+    let k = 1;
+
+    // jaw: narrow the whole head below the cheekbones
+    k *= 1 - 0.30 * bump(hv, 0.02, 0.34) * lerp(1.15, 0.8, P.jaw);   // jaw taper is a scale, not a push
+    // cranium: widen slightly above the ears
+    k *= 1 + 0.05 * bump(hv, 0.60, 0.30);
+
+    let out = [x * k, z * k];
+    const push = (amt, dirZ = 1) => { out[1] += amt * SUB * dirZ; };
+
+    // brow ridge
+    push(HR * 0.10 * lerp(0.4, 1.2, P.brow) * bump(hv, 0.60, 0.09) * bump(fd, 0, 0.85));
+    // eye sockets, either side of the midline
+    const eye = Math.max(bump(fd, 0.42, 0.30), 0) * bump(hv, 0.545, 0.075);
+    push(-HR * 0.16 * eye);
+    // nose: bridge, then the tip
+    const mid = bump(fd, 0, 0.22);
+    push(HR * 0.16 * lerp(0.5, 1.5, P.nose) * mid * bump(hv, 0.47, 0.16));
+    push(HR * 0.14 * lerp(0.5, 1.5, P.nose) * bump(fd, 0, 0.15) * bump(hv, 0.40, 0.06));
+    // cheekbones
+    push(HR * 0.09 * lerp(0.5, 1.4, P.cheek) * bump(fd, 0.70, 0.36) * bump(hv, 0.46, 0.13));
+    // mouth: a recess with a lip below it
+    push(-HR * 0.07 * bump(fd, 0, 0.55) * bump(hv, 0.30, 0.055));
+    push(HR * 0.05 * bump(fd, 0, 0.42) * bump(hv, 0.255, 0.035));
+    // chin
+    push(HR * 0.13 * lerp(0.5, 1.4, P.chin) * bump(fd, 0, 0.42) * bump(hv, 0.135, 0.10));
+    // occiput — the back of a skull is not a hemisphere
+    push(-HR * 0.10 * bump(fd, Math.PI, 0.9) * bump(hv, 0.52, 0.30), -1);
+    // temples
+    out[0] *= 1 - 0.06 * bump(fd, 1.35, 0.5) * bump(hv, 0.62, 0.18);
+    return out;
+  };
+
+  const headStations = [
+    [0.00, 0.42, 0.44], [0.10, 0.62, 0.70], [0.20, 0.76, 0.84],
+    [0.32, 0.88, 0.94], [0.44, 0.96, 1.00], [0.56, 1.00, 1.02],
+    [0.68, 0.99, 1.00], [0.79, 0.92, 0.93], [0.88, 0.78, 0.80],
+    [0.95, 0.55, 0.57], [1.00, 0.22, 0.24],
+  ];
+  const headRings = headStations.map(([hv, wa, wb]) =>
+    ringY(lerp(chinY, crown, hv), HR * wa, HR * 1.09 * wb, 2.3,
+      { z0: hz, disp: face(hv) }));
+
+  // neck, blended into the jaw
   m.loftRings('skin', [
-    ring([0, J.Neck[1] - 0.05 * S, torsoLean(J.Neck[1])], 'y', 0.062 * S, 0.058 * S, SEG),
-    ring([0, J.Head[1] - 0.02 * S, torsoLean(J.Head[1])], 'y', 0.058 * S, 0.056 * S, SEG),
+    ringY((1.455 - 0.03) * S + (hipY - 0.98) * 0.55 * S, 0.066 * neckL * S, 0.062 * S, 2.2,
+      { z0: leanAt(J.Neck[1]) }),
+    ringY(J.Neck[1] + 0.03 * S, 0.062 * neckL * S, 0.060 * S, 2.2, { z0: hz }),
+    headRings[0],
   ], { capStart: false, capEnd: false });
-
-  const hz = torsoLean(J.Head[1]);
-  const headTop = J.HeadTop_End[1];
-  const headRings = [
-    [J.Head[1] - 0.02 * S, 0.058, 0.056],
-    [J.Head[1] + 0.03 * S, 0.078, 0.086],
-    [lerp(J.Head[1], headTop, 0.34), 0.090, 0.104],
-    [lerp(J.Head[1], headTop, 0.62), 0.089, 0.100],
-    [lerp(J.Head[1], headTop, 0.86), 0.070, 0.078],
-    [headTop, 0.028, 0.030],
-  ].map(([y, rx, rz]) => ring([0, y, hz + 0.008 * S], 'y', rx * headS * S, rz * headS * S, SEG));
   m.loftRings('skin', headRings, { capStart: false, capEnd: true });
 
+  // ears
+  if (P.ears > 0.05) {
+    const er = HR * lerp(0.20, 0.30, P.ears);
+    for (const sx of [-1, 1]) {
+      const ey = lerp(chinY, crown, 0.52);
+      m.loftRings('skin', [
+        ringX(sx * HR * 0.80, ey, hz - HR * 0.10, er * 0.72, er * 0.44, 2.4),
+        ringX(sx * HR * 1.02, ey + er * 0.06, hz - HR * 0.14, er, er * 0.6, 2.4),
+        ringX(sx * HR * 1.10, ey + er * 0.04, hz - HR * 0.16, er * 0.72, er * 0.42, 2.4),
+      ], { capStart: false, capEnd: true });
+    }
+  }
+
   if (P.hair > 0.05) {
-    const cut = lerp(0.25, 0.72, P.hair);
-    const hairRings = headRings
-      .map((r, i) => ({ r, t: i / (headRings.length - 1) }))
-      .filter(({ t }) => t > 1 - cut - 0.25)
-      .map(({ r }) => r.map((v) => ({
-        p: [v.p[0] * 1.055, v.p[1] + 0.004 * S, v.p[2] * 1.055 - 0.004 * S], n: v.n,
-      })));
+    // Hair is a shell over the skull, offset along each vertex's own outward
+    // direction rather than scaled about the head centre — scaling pushed it
+    // forward over the brow and read as a visor.
+    const lowest = lerp(0.74, 0.50, P.hair);       // how far down the skull it comes
+    const hairRings = headStations
+      .map(([hv], i) => ({ hv, i }))
+      .filter(({ hv }) => hv >= lowest)
+      .map(({ hv, i }) => headRings[i].map((v) => {
+        const dx = v.p[0], dz = v.p[2] - hz;
+        const len = Math.hypot(dx, dz) || 1;
+        const t = Math.atan2(dz, dx);
+        const back = 0.5 + 0.5 * Math.cos(t - FRONT + Math.PI);
+        // thin at the hairline, thicker over the crown and occiput
+        const thick = HR * (0.02 + 0.05 * back) * clamp((hv - lowest) / 0.2);
+        return { p: [dx + (dx / len) * thick, v.p[1] + thick * 0.35, hz + dz + (dz / len) * thick], n: v.n };
+      }));
     if (hairRings.length > 1) m.loftRings('hair', hairRings, { capStart: false, capEnd: true });
   }
 
-  /* ----- limbs ----------------------------------------------------------- */
-  const limb = (a, b, c, d, r0, r1, r2, r3, matA, matB, split) => {
-    // a..d are joints; r* are radii. `split` is where matA becomes matB.
-    const chain = [
-      [a, r0], [lerpV(a, b, 0.5), r1 * mus], [b, r1 * 0.92],
-      [lerpV(b, c, 0.5), r2 * mus], [c, r2 * 0.9], [d, r3],
-    ];
-    const rings = chain.map(([p, r]) => ring(p, axisOf(a, d), r * fat * S, r * fat * S * 0.94, SEG));
-    const cutAt = Math.max(1, Math.round(split * (rings.length - 1)));
-    m.loftRings(matA, rings.slice(0, cutAt + 1), { capStart: false, capEnd: false });
-    m.loftRings(matB, rings.slice(cutAt), { capStart: false, capEnd: false });
-    return rings;
-  };
+  /* ------------------------------------------------------------- limbs --- */
   const lerpV = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
-  const axisOf = (a, b) => (Math.abs(b[0] - a[0]) > Math.abs(b[1] - a[1]) ? 'x' : 'y');
 
-  for (const side of ['Left', 'Right']) {
-    limb(J[side + 'Arm'], J[side + 'ForeArm'], J[side + 'Hand'], J[side + 'Hand_End'],
-      0.058, 0.048, 0.038, 0.030, 'cloth_shirt', 'skin', P.sleeve);
-    limb(J[side + 'UpLeg'], J[side + 'Leg'], J[side + 'Foot'], J[side + 'Foot'],
-      0.086, 0.062, 0.044, 0.040, 'cloth_trouser', 'skin', P.trouser);
+  /** An arm runs along X, so its rings live in YZ. Stations bunch at the elbow. */
+  const arm = (side) => {
+    const sx = side === 'Left' ? 1 : -1;
+    const A = J[side + 'Arm'], F = J[side + 'ForeArm'], H = J[side + 'Hand'];
+    const st = [
+      [-0.10, 0.070, 2.3], [0.06, 0.062, 2.2], [0.30, 0.055 * mus, 2.1],
+      [0.62, 0.049, 2.1], [0.88, 0.044, 2.1], [1.00, 0.042, 2.1],   // elbow
+      [1.12, 0.043, 2.1], [1.40, 0.041 * mus, 2.2], [1.75, 0.034, 2.3],
+      [2.00, 0.029, 2.4],
+    ];
+    const rings = st.map(([u, r, n]) => {
+      const p = u <= 1 ? lerpV(A, F, u) : lerpV(F, H, u - 1);
+      return ringX(p[0], p[1], p[2], r * fat * S, r * fat * S * 0.92, n);
+    });
+    const cut = Math.max(1, Math.round(P.sleeve * (rings.length - 1)));
+    m.loftRings('cloth_shirt', rings.slice(0, cut + 1), { capStart: false, capEnd: false });
+    m.loftRings('skin', rings.slice(cut), { capStart: false, capEnd: false });
 
-    // foot: a lofted wedge rather than a box, so it has an instep
-    const f = J[side + 'Foot'], t = J[side + 'Toe_End'];
-    const fw = lerp(0.040, 0.052, P.footSize) * S, fl = lerp(0.9, 1.12, P.footSize);
-    m.loftRings('shoe_leather', [
-      ring([f[0], f[1] + 0.005 * S, f[2] - 0.035 * S], 'y', fw * 0.9, 0.030 * S, SEG),
-      ring([f[0], f[1] - 0.01 * S, f[2] + 0.02 * S], 'y', fw, 0.055 * S, SEG),
-      ring([f[0], f[1] - 0.03 * S, lerp(f[2], t[2], 0.6 * fl)], 'y', fw * 0.96, 0.048 * S, SEG),
-      ring([f[0], f[1] - 0.038 * S, lerp(f[2], t[2], 1.0 * fl)], 'y', fw * 0.7, 0.024 * S, SEG),
-    ], { capStart: true, capEnd: true });
-
-    // hand: a flattened stub. Fingers are beyond what this technique can do.
-    const h = J[side + 'Hand'], he = J[side + 'Hand_End'];
+    /* hand: palm, four fingers, a thumb */
     const hs = lerp(0.9, 1.12, P.handSize) * S;
+    const HE = J[side + 'Hand_End'];
+    const palmL = Math.abs(HE[0] - H[0]) * 0.52;
     m.loftRings('skin', [
-      ring(h, 'x', 0.032 * hs, 0.024 * hs, SEG),
-      ring(lerpV(h, he, 0.55), 'x', 0.040 * hs, 0.020 * hs, SEG),
-      ring(lerpV(h, he, 1.0), 'x', 0.026 * hs, 0.014 * hs, SEG),
+      ringX(H[0], H[1], H[2], 0.030 * hs, 0.024 * hs, 2.4),
+      ringX(H[0] + sx * palmL * 0.5, H[1], H[2], 0.042 * hs, 0.019 * hs, 2.8),
+      ringX(H[0] + sx * palmL, H[1], H[2], 0.040 * hs, 0.017 * hs, 2.8),
+    ], { capStart: false, capEnd: false });
+
+    const fx = H[0] + sx * palmL;
+    for (let i = 0; i < 4; i++) {
+      const off = (i - 1.5) * 0.019 * hs;
+      const len = (i === 0 ? 0.052 : i === 1 ? 0.060 : i === 2 ? 0.057 : 0.046) * hs;
+      const rad = 0.0082 * hs;
+      m.loftRings('skin', [
+        ringX(fx, H[1] + off, H[2], rad, rad * 0.92, 2.2),
+        ringX(fx + sx * len * 0.55, H[1] + off, H[2] + 0.004 * hs, rad * 0.94, rad * 0.86, 2.2),
+        ringX(fx + sx * len, H[1] + off, H[2] + 0.010 * hs, rad * 0.6, rad * 0.56, 2.2),
+      ], { capStart: false, capEnd: true });
+    }
+    const T1 = J[side + 'HandThumb1'], T2 = J[side + 'HandThumb2'];
+    m.loftRings('skin', [
+      ringX(T1[0], T1[1], T1[2], 0.011 * hs, 0.010 * hs, 2.2),
+      ringX(lerp(T1[0], T2[0], 0.6), lerp(T1[1], T2[1], 0.6), lerp(T1[2], T2[2], 0.6), 0.0098 * hs, 0.0092 * hs, 2.2),
+      ringX(T2[0] + sx * 0.016 * hs, T2[1] - 0.003 * hs, T2[2] + 0.008 * hs, 0.0062 * hs, 0.0058 * hs, 2.2),
     ], { capStart: false, capEnd: true });
-  }
+  };
 
-  // ring normals ignore taper and squash; let the surface decide
+  /** A leg runs along Y. Stations bunch at the knee for the same reason. */
+  const leg = (side) => {
+    const U = J[side + 'UpLeg'], K = J[side + 'Leg'], F = J[side + 'Foot'];
+    const st = [
+      [-0.06, 0.098, 2.3], [0.10, 0.092, 2.3], [0.34, 0.082 * mus, 2.2],
+      [0.66, 0.070, 2.2], [0.90, 0.062, 2.2], [1.00, 0.059, 2.2],   // knee
+      [1.10, 0.060, 2.2], [1.28, 0.064 * mus, 2.2], [1.58, 0.050, 2.3],
+      [1.85, 0.038, 2.4], [2.00, 0.034, 2.5],
+    ];
+    const rings = st.map(([u, r, n]) => {
+      const p = u <= 1 ? lerpV(U, K, u) : lerpV(K, F, u - 1);
+      return ringY(p[1], r * fat * S, r * fat * S * 0.94, n, { z0: p[2] });
+    }).map((ring, i) => ring.map((v) => ({ p: [v.p[0] + (st[i][0] <= 1
+      ? lerp(U[0], K[0], st[i][0]) : lerp(K[0], F[0], st[i][0] - 1)), v.p[1], v.p[2]], n: v.n })));
+    const cut = Math.max(1, Math.round(P.trouser * (rings.length - 1)));
+    m.loftRings('cloth_trouser', rings.slice(0, cut + 1), { capStart: false, capEnd: false });
+    m.loftRings('skin', rings.slice(cut), { capStart: false, capEnd: false });
+
+    const f = J[side + 'Foot'], t = J[side + 'Toe_End'];
+    const fw = lerp(0.042, 0.054, P.footSize) * S, fl = lerp(0.92, 1.12, P.footSize);
+    m.loftRings('shoe_leather', [
+      ringY(f[1] + 0.020 * S, fw * 0.88, 0.030 * S, 2.4, { z0: f[2] - 0.038 * S })
+        .map((v) => ({ p: [v.p[0] + f[0], v.p[1], v.p[2]], n: v.n })),
+      ringY(f[1] - 0.006 * S, fw, 0.052 * S, 2.6, { z0: f[2] + 0.016 * S })
+        .map((v) => ({ p: [v.p[0] + f[0], v.p[1], v.p[2]], n: v.n })),
+      ringY(f[1] - 0.030 * S, fw * 0.97, 0.050 * S, 3.0, { z0: lerp(f[2], t[2], 0.62 * fl) })
+        .map((v) => ({ p: [v.p[0] + f[0], v.p[1], v.p[2]], n: v.n })),
+      ringY(f[1] - 0.040 * S, fw * 0.66, 0.024 * S, 3.0, { z0: lerp(f[2], t[2], 1.02 * fl) })
+        .map((v) => ({ p: [v.p[0] + f[0], v.p[1], v.p[2]], n: v.n })),
+    ], { capStart: true, capEnd: true });
+  };
+
+  for (const side of ['Left', 'Right']) { arm(side); leg(side); }
+
   m.smoothNormals(['skin', 'hair', 'cloth_shirt', 'cloth_trouser', 'shoe_leather']);
-
-  return { mesh: m, rig, params: P };
+  return {
+    mesh: m, rig, params: P,
+    // the cage, for tools/blender/build.py
+    cage: {
+      chains,
+      joints: rig.order.map((n) => ({ name: n, parent: rig.parent[n], world: rig.world[n] })),
+    },
+  };
 }
