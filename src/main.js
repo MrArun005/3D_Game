@@ -128,7 +128,9 @@ async function joinRoom(id) {
     if (!mission) return;
     // both ends lay the same course from the room's own seed
     if (msg.k === 'start') mission.start(car, msg.seed);
-    if (msg.k === 'stop') mission.stop('OPPONENT FINISHED');
+    if (msg.k === 'stop') {
+      mission.stop(`BEATEN · ${(msg.t ?? 0).toFixed(1)}s`);
+    }
   };
   const url = new URL(location.href);
   url.searchParams.set('room', room);
@@ -407,6 +409,10 @@ Promise.all([loadDistrict(), catalogueReady]).then(([district, catalogue]) => {
   heli.nearbyBuildings = (x, z) => (world.nearbyBuildings ? world.nearbyBuildings(x, z) : []);
   heli.onArrive = () => hud.flash('AIR SUPPORT INBOUND');
   mission = new Mission(scene, district);
+  /* The other half of the race handshake: say when YOU finish. Set here
+     rather than on join, because the room can be joined before the district
+     has loaded and there would be no mission to hang it on. */
+  mission.onFinish = (t) => { if (net) net.race({ k: 'stop', t }); };
   traffic.onShot = onShot;
   traffic.onBust = onBust;
   window.district = district;

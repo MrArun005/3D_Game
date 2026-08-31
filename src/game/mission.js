@@ -82,7 +82,14 @@ export class Mission {
     };
 
     const pts = [];
-    let from = { x: car.x, y: car.z };
+    /* The FIRST point has to come out of the seeded stream too.
+       It used to be the player's own position, so two players sharing a room
+       -- and therefore sharing a seed -- still walked two different courses
+       from two different starts and raced each other on separate routes. The
+       anchor is now a seeded node, so the same seed is the same course
+       wherever either player happens to be standing. */
+    const anchor = nodes[(rnd() * nodes.length) | 0];
+    let from = { x: anchor.x, y: anchor.y };
     for (let i = 0; i < COUNT; i++) {
       let best = null, bestScore = -Infinity;
       for (let k = 0; k < 220; k++) {
@@ -147,6 +154,9 @@ export class Mission {
       const record = !this.best || t < this.best;
       if (record) { this.best = t; try { localStorage.setItem('hb.best', String(t)); } catch { /* private mode */ } }
       this.stop(`${record ? 'NEW BEST' : 'FINISHED'} · ${t.toFixed(1)}s`);
+      /* Tell the room. Without this a race had no finish condition at all:
+         both players ran the course and nothing ever ended for the loser. */
+      if (this.onFinish) this.onFinish(t);
       return;
     }
     this.#say(`CHECKPOINT ${this.index}/${this.points.length}`);
