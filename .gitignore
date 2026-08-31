@@ -10,12 +10,12 @@ assets/source/**/*.blend1
 # city is dressed from those 91 assets, so a fresh clone without them renders a
 # different game. They are 1.7 MB. They ship.
 
-# debug screenshots dropped at the repo root by the browser harness
+# scratch the browser harness drops at the repo root mid-session
 /*.jpg
 /*.txt
 /*.png
 /*.mp4
+
+# harness output, regenerated every run
 .playwright-mcp/
 
-# superseded kits and generators, kept locally only
-_to_delete/
