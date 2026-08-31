@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { retargetClip } from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { PARTS } from '../../tools/avatar/avatar.mjs';
 
 /**
  * The player, as an actual rigged human.
@@ -26,7 +28,69 @@ export const CHARACTERS = [
   '/models/characters/civilian_suit.glb',
   '/models/characters/civilian_longsleeve.glb',
   '/models/characters/civilian_woman2.glb',
+  // RPM-schema wardrobe avatars (tools/avatar). No clips of their own — see
+  // the donor retarget below. ?me=6 / ?me=7.
+  '/models/avatar/male.wardrobe.glb',
+  '/models/avatar/female.wardrobe.glb',
 ];
+
+/* The wardrobe GLBs carry 11 generated parts (beards, hair shells, torso
+   layers) as plain meshes — glTF has no visibility flag and the loader keeps
+   everything visible, so an un-hidden avatar wears five beards at once. The
+   part list is the customiser's, imported so there is one source of truth. */
+const WARDROBE_PARTS = new Set(Object.values(PARTS).flat());
+
+/**
+ * RPM avatars ship no animation clips, so they borrow the Quaternius man's
+ * and retarget them at load. The map is TARGET (RPM, Mixamo names) -> SOURCE
+ * (Quaternius) — note the source names are what GLTFLoader makes of them:
+ * PropertyBinding.sanitizeNodeName strips the dots, so `UpperArm.L` loads as
+ * `UpperArmL`. Unmapped target bones (fingers, eyes, toes, Spine1) keep their
+ * bind pose. Quaternius `Foot.L/R` are IK targets parented to the rig root,
+ * not to the shin — retargetClip works in target-matrix space, so their world
+ * orientation still lands on the avatar's ankles correctly.
+ */
+const RETARGET_NAMES = {
+  Hips: 'Hips', Spine: 'Abdomen', Spine2: 'Torso', Neck: 'Neck', Head: 'Head',
+  LeftShoulder: 'ShoulderL', LeftArm: 'UpperArmL', LeftForeArm: 'LowerArmL', LeftHand: 'PalmL',
+  RightShoulder: 'ShoulderR', RightArm: 'UpperArmR', RightForeArm: 'LowerArmR', RightHand: 'PalmR',
+  LeftUpLeg: 'UpperLegL', LeftLeg: 'LowerLegL', LeftFoot: 'FootL',
+  RightUpLeg: 'UpperLegR', RightLeg: 'LowerLegR', RightFoot: 'FootR',
+};
+
+const DONOR = '/models/characters/civilian_man.glb';
+let donorPromise = null;
+const donorReady = () => (donorPromise ??= new Promise((res, rej) =>
+  new GLTFLoader().load(DONOR, res, undefined, rej)));
+
+/**
+ * Borrow the donor's clips for a clip-less avatar. `target` is the avatar's
+ * SkinnedMesh — the retargeted tracks come out as `.bones[Name].…` paths,
+ * which only bind when the AnimationMixer is rooted ON that mesh, so the
+ * caller must build its mixer there too.
+ */
+async function retargetedClips(target) {
+  const donor = await donorReady();
+  let source = null;
+  donor.scene.traverse((o) => { if (o.isSkinnedMesh) source ??= o; });
+  if (!source || !target) return [];
+  donor.scene.updateMatrixWorld(true);
+  target.updateMatrixWorld(true);
+  /* Hip translation comes across in the donor's units; scale it into the
+     avatar's. Bind-local hip height is the honest ruler for both — the Hips
+     bone hangs directly off each armature root. */
+  const sHip = source.skeleton.bones.find((b) => b.name === 'Hips');
+  const tHip = target.skeleton.bones.find((b) => b.name === 'Hips');
+  const scale = sHip && tHip && sHip.position.y > 1e-3
+    ? tHip.position.y / sHip.position.y : 1;
+  return donor.animations.map((clip) => retargetClip(target, source, clip, {
+    hip: 'Hips',
+    names: { ...RETARGET_NAMES },
+    scale,
+    // vertical bob only: the game positions the root, lateral drift would fight it
+    hipInfluence: new THREE.Vector3(0, 1, 0),
+  }));
+}
 
 const CLIPS = {
   idle: ['Idle', 'Standing'],
@@ -78,13 +142,14 @@ export class Character {
   }
 
   #load(url) {
-    new GLTFLoader().load(url, (gltf) => {
+    new GLTFLoader().load(url, async (gltf) => {
       const model = gltf.scene;
       model.traverse((o) => {
         if (!o.isMesh) return;
         o.castShadow = true;
         o.receiveShadow = true;
         o.frustumCulled = false;      // skinned bounds go stale as it animates
+        if (WARDROBE_PARTS.has(o.name)) o.visible = false;   // wardrobe is a menu
       });
 
       // normalise: these packs are authored at whatever scale suits them
@@ -95,9 +160,21 @@ export class Character {
       model.position.y = -box.min.y * s;
       this.root.add(model);
 
-      this.mixer = new THREE.AnimationMixer(model);
+      // RPM avatars ship no clips; borrow the donor's, retargeted
+      let animations = gltf.animations;
+      let mixerRoot = model;
+      if (!animations.length) {
+        let target = null;
+        model.traverse((o) => { if (o.isSkinnedMesh) target ??= o; });
+        try { animations = await retargetedClips(target); }
+        catch (e) { console.warn('avatar retarget failed:', e?.message || e); animations = []; }
+        if (this.root.children[0] !== model) return;   // swapped away mid-await
+        if (animations.length) mixerRoot = target;     // `.bones[…]` tracks bind here
+      }
+
+      this.mixer = new THREE.AnimationMixer(mixerRoot);
       for (const [key, names] of Object.entries(CLIPS)) {
-        const clip = gltf.animations.find((a) =>
+        const clip = animations.find((a) =>
           names.some((n) => a.name.toLowerCase().endsWith(n.toLowerCase())));
         if (clip) this.actions[key] = this.mixer.clipAction(clip);
       }

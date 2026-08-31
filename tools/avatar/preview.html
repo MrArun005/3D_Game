@@ -1,0 +1,119 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;background:#1a1c20;color:#e6eaef;font:13px/1.35 system-ui}
+#lbl{position:absolute;left:0;right:0;bottom:6px;display:flex;text-align:center}
+#lbl div{flex:1}
+#hd{position:absolute;left:12px;top:10px;font:600 15px system-ui;color:#fff;text-shadow:0 1px 3px #000}
+</style></head><body>
+<script type="importmap">{"imports":{"three":"./three/three.module.js","three/addons/":"./jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
+import { Avatar } from '/tools/avatar/avatar.mjs';
+import { SKIN, HAIR, EYE, FACE_PRESETS, BUILD_PRESETS } from '/tools/avatar/presets.mjs';
+
+const q=new URLSearchParams(location.search);
+const MODE=q.get('mode')||'skin';
+const SEX=q.get('sex')||'male';
+const W=+(q.get('w')||1900),H=+(q.get('h')||620);
+
+const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});
+renderer.setSize(W,H,false); renderer.setPixelRatio(1);
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.0;
+renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene=new THREE.Scene();
+scene.environment=new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(),0.04).texture;
+scene.environmentIntensity=0.95;
+scene.background=new THREE.Color(0x8fa0b2);
+const sun=new THREE.DirectionalLight(0xfff1dc,2.4);
+sun.position.set(2.4,5.0,3.2); sun.castShadow=true;
+Object.assign(sun.shadow.camera,{left:-6,right:6,top:4,bottom:-4,near:0.5,far:22});
+sun.shadow.mapSize.set(2048,2048); sun.shadow.bias=-0.0006;
+sun.shadow.camera.updateProjectionMatrix(); scene.add(sun);
+scene.add(new THREE.HemisphereLight(0xc4d6e6,0x5a5348,1.9));
+const gm=new THREE.Mesh(new THREE.PlaneGeometry(60,60),new THREE.MeshStandardMaterial({color:0x50545b,roughness:0.95}));
+gm.rotation.x=-Math.PI/2; gm.receiveShadow=true; scene.add(gm);
+
+// one load, then SkeletonUtils.clone per variant — a plain clone() shares the
+// skeleton and stacks every variant on the first one's pose
+const FILE=q.get('file')||(SEX+'.glb');
+const src=(await new GLTFLoader().loadAsync('/public/models/avatar/'+FILE)).scene;
+
+function variants(){
+  switch(MODE){
+    case 'skin':  return SKIN.map(s=>({label:'skin: '+s.id, apply:a=>a.setSkin(s.hex)}));
+    case 'hair':  return [...HAIR.slice(0,6).map(h=>({label:'hair: '+h.id, apply:a=>a.setHair(h.hex)})),
+                          {label:'hair: hidden (bald)', apply:a=>a.show('hair',false)}];
+    case 'eye':   return EYE.map(e=>({label:'eye: '+e.id, apply:a=>a.setEye(e.hex)}));
+    case 'face':  return Object.entries(FACE_PRESETS).map(([k,v])=>({label:'face: '+k+(k==='neutral'?'':' (approx)'), apply:a=>a.setShapes(v)}));
+    case 'build': return Object.entries(BUILD_PRESETS).map(([k,v])=>({label:'build: '+k, apply:a=>a.setBuild(v)}));
+    case 'beard': return [
+        {label:'clean shaven', apply:a=>{}},
+        {label:'short beard',  apply:a=>a.wear('beard','beard_short')},
+        {label:'full beard',   apply:a=>a.wear('beard','beard_full')},
+        {label:'goatee',       apply:a=>a.wear('beard','beard_goatee')},
+        {label:'moustache',    apply:a=>a.wear('beard','beard_moustache')},
+        {label:'chinstrap',    apply:a=>a.wear('beard','beard_chinstrap')},
+      ];
+    case 'beardcol': return HAIR.slice(0,6).map(h=>({label:'beard: '+h.id,
+        apply:a=>{a.wear('beard','beard_full');a.setBeard(h.hex);a.setHair(h.hex);}}));
+    case 'hairstyle': return [
+        {label:'authored (source)', apply:a=>a.wear('hair','styled')},
+        {label:'buzz',  apply:a=>a.wear('hair','hair_buzz')},
+        {label:'crop',  apply:a=>a.wear('hair','hair_crop')},
+        {label:'afro',  apply:a=>a.wear('hair','hair_afro')},
+        {label:'bald',  apply:a=>a.wear('hair','none')},
+      ];
+    case 'torso': return [
+        {label:'shirt (source)', apply:a=>{}},
+        {label:'t-shirt',  apply:a=>a.wear('torso','tshirt')},
+        {label:'vest',     apply:a=>a.wear('torso','vest')},
+        {label:'jacket',   apply:a=>a.wear('torso','jacket')},
+        {label:'jacket, tan',  apply:a=>{a.wear('torso','jacket');a.tint('jacket',0x6d5a3f);}},
+        {label:'jacket, oxblood', apply:a=>{a.wear('torso','jacket');a.tint('jacket',0x4a1f22);}},
+      ];
+    case 'look': return [
+        {label:'A — clean, shirt', apply:a=>{a.setSkin(0xe9c3a6);a.wear('hair','styled');}},
+        {label:'B — stubble, jacket', apply:a=>{a.setSkin(0xcfa077);a.wear('beard','beard_short');a.wear('torso','jacket');}},
+        {label:'C — full beard, vest', apply:a=>{a.setSkin(0xa8734c);a.wear('beard','beard_full');a.setBeard(0x3b2a20);a.wear('torso','vest');a.tint('vest',0x2f3a2c);}},
+        {label:'D — buzz + goatee', apply:a=>{a.setSkin(0x7d4f31);a.wear('hair','hair_buzz');a.wear('beard','beard_goatee');a.wear('torso','tshirt');a.tint('tshirt',0x22262b);}},
+        {label:'E — grey, moustache', apply:a=>{a.setSkin(0xe9c3a6);a.wear('hair','hair_crop');a.tint('hair_crop',0x9a9691);a.wear('beard','beard_moustache');a.setBeard(0x9a9691);a.wear('torso','jacket');a.tint('jacket',0x33383f);}},
+        {label:'F — afro, chinstrap', apply:a=>{a.setSkin(0x4e2f1e);a.wear('hair','hair_afro');a.wear('beard','beard_chinstrap');a.wear('torso','jacket');a.tint('jacket',0x1f2a35);}},
+      ];
+    case 'outfit':return [0xffffff,0x2b3a55,0x7a2f2f,0x2f5a3a,0xd8c9a3,0x21242a]
+                    .map((c,i)=>({label:'outfit tint '+(i?('#'+c.toString(16).padStart(6,'0')):'as authored'),
+                      apply:a=>{a.setOutfit('top',c);a.setOutfit('bottom',c);}}));
+  }
+}
+const V=variants();
+const GAP=+(q.get('gap')||0.95), span=(V.length-1)*GAP;
+const labels=[]; let tris=0;
+for(let i=0;i<V.length;i++){
+  const a=new Avatar(cloneSkinned(src));
+  try { V[i].apply(a); } catch(e){ labels.push(V[i].label+' ERROR '+e.message); continue; }
+  if(q.get('only')==='head'){ for(const k of ['body','top','bottom','footwear']) a.show(k,false); }
+  const h=a.groundAndMeasure();
+  a.root.position.x=i*GAP-span/2;
+  a.root.rotation.y=+(q.get('ry')||0);
+  scene.add(a.root);
+  tris+=a.triangles();
+  labels.push(V[i].label+'<br>'+h.toFixed(3)+' m');
+}
+
+const cam=new THREE.PerspectiveCamera(26,W/H,0.05,90);
+const VIEW=q.get('view')||'face';
+if(VIEW==='face'){ cam.fov=+(q.get('fov')||14); cam.position.set(0,1.63,10.0); cam.lookAt(0,1.63,0); }
+else if(VIEW==='crop'){ cam.fov=+(q.get('fov')||8); cam.position.set(0,+(q.get('cy')||1.72),+(q.get('cz')||3.0)); cam.lookAt(0,+(q.get('cy')||1.72),0); }
+else if(VIEW==='eye'){ cam.fov=+(q.get('fov')||5); cam.position.set(0,1.665,12.0); cam.lookAt(0,1.665,0); }
+else { cam.position.set(0,1.0,13.5); cam.lookAt(0,0.9,0); }
+cam.updateProjectionMatrix();
+renderer.render(scene,cam);
+document.getElementById('hd').textContent=MODE.toUpperCase()+' — '+SEX+' copy — '+V.length+' variants — '+tris.toLocaleString()+' tris total';
+document.getElementById('lbl').innerHTML=labels.map(l=>`<div>${l}</div>`).join('');
+window.__stats={mode:MODE,n:V.length,tris};
+window.__done=true;
+</script><div id="hd"></div><div id="lbl"></div></body></html>
