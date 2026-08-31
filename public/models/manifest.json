@@ -1,0 +1,3460 @@
+{
+  "version": 1,
+  "generated": "2026-08-30T18:12:44.270Z",
+  "assets": {
+    "facade/balcony": {
+      "url": "/models/facade/balcony.glb",
+      "lods": [
+        "/models/facade/balcony.lod1.glb",
+        "/models/facade/balcony.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.305,
+          0,
+          -1
+        ],
+        "max": [
+          1.305,
+          1.08,
+          0
+        ]
+      },
+      "tris": {
+        "lod0": 156,
+        "lod1": 156,
+        "lod2": 156
+      },
+      "materials": [
+        "concrete_precast",
+        "metal_painted"
+      ],
+      "tags": [
+        "vertical",
+        "residential"
+      ]
+    },
+    "facade/bay_brick_residential": {
+      "url": "/models/facade/bay_brick_residential.glb",
+      "lods": [
+        "/models/facade/bay_brick_residential.lod1.glb",
+        "/models/facade/bay_brick_residential.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.8,
+          0,
+          -0.45
+        ],
+        "max": [
+          1.8,
+          2.9,
+          0.11
+        ]
+      },
+      "tris": {
+        "lod0": 120,
+        "lod1": 120,
+        "lod2": 120
+      },
+      "materials": [
+        "brick_red",
+        "glass_shop",
+        "timber_painted",
+        "stone_dressed"
+      ],
+      "tags": [
+        "bay",
+        "residential",
+        "period"
+      ]
+    },
+    "facade/bay_glass_office": {
+      "url": "/models/facade/bay_glass_office.glb",
+      "lods": [
+        "/models/facade/bay_glass_office.lod1.glb",
+        "/models/facade/bay_glass_office.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.855,
+          0,
+          -0.5
+        ],
+        "max": [
+          1.855,
+          3.2,
+          0.08
+        ]
+      },
+      "tris": {
+        "lod0": 96,
+        "lod1": 96,
+        "lod2": 96
+      },
+      "materials": [
+        "glass_curtain",
+        "alloy_polished",
+        "concrete_precast"
+      ],
+      "tags": [
+        "bay",
+        "commercial",
+        "modern"
+      ]
+    },
+    "facade/bay_plaster_upper": {
+      "url": "/models/facade/bay_plaster_upper.glb",
+      "lods": [
+        "/models/facade/bay_plaster_upper.lod1.glb",
+        "/models/facade/bay_plaster_upper.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.8,
+          0,
+          -0.45
+        ],
+        "max": [
+          1.8,
+          2.9,
+          0.11
+        ]
+      },
+      "tris": {
+        "lod0": 108,
+        "lod1": 108,
+        "lod2": 108
+      },
+      "materials": [
+        "plaster_worn",
+        "glass_shop",
+        "timber_painted",
+        "stone_dressed"
+      ],
+      "tags": [
+        "bay",
+        "residential",
+        "mixed"
+      ]
+    },
+    "facade/bay_precast_office": {
+      "url": "/models/facade/bay_precast_office.glb",
+      "lods": [
+        "/models/facade/bay_precast_office.lod1.glb",
+        "/models/facade/bay_precast_office.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.8,
+          0,
+          -0.45
+        ],
+        "max": [
+          1.8,
+          3.2,
+          0.11
+        ]
+      },
+      "tris": {
+        "lod0": 120,
+        "lod1": 120,
+        "lod2": 120
+      },
+      "materials": [
+        "concrete_precast",
+        "glass_curtain",
+        "metal_painted"
+      ],
+      "tags": [
+        "bay",
+        "commercial",
+        "modern"
+      ]
+    },
+    "facade/bay_tenement": {
+      "url": "/models/facade/bay_tenement.glb",
+      "lods": [
+        "/models/facade/bay_tenement.lod1.glb",
+        "/models/facade/bay_tenement.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.8,
+          0,
+          -0.45
+        ],
+        "max": [
+          1.8,
+          3.3,
+          0.11
+        ]
+      },
+      "tris": {
+        "lod0": 120,
+        "lod1": 120,
+        "lod2": 120
+      },
+      "materials": [
+        "brick_painted",
+        "glass_shop",
+        "timber_painted",
+        "stone_dressed"
+      ],
+      "tags": [
+        "bay",
+        "residential",
+        "period"
+      ]
+    },
+    "facade/bay_warehouse": {
+      "url": "/models/facade/bay_warehouse.glb",
+      "lods": [
+        "/models/facade/bay_warehouse.lod1.glb",
+        "/models/facade/bay_warehouse.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.8,
+          0,
+          -0.45
+        ],
+        "max": [
+          1.8,
+          3.8,
+          0.09
+        ]
+      },
+      "tris": {
+        "lod0": 144,
+        "lod1": 144,
+        "lod2": 144
+      },
+      "materials": [
+        "brick_red",
+        "glass_curtain",
+        "metal_galv",
+        "metal_rust"
+      ],
+      "tags": [
+        "bay",
+        "industrial",
+        "period"
+      ]
+    },
+    "facade/cornice_ornate": {
+      "url": "/models/facade/cornice_ornate.glb",
+      "lods": [
+        "/models/facade/cornice_ornate.lod1.glb",
+        "/models/facade/cornice_ornate.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.8,
+          0,
+          -0.39
+        ],
+        "max": [
+          1.8,
+          0.74,
+          0.31
+        ]
+      },
+      "tris": {
+        "lod0": 48,
+        "lod1": 48,
+        "lod2": 48
+      },
+      "materials": [
+        "stone_dressed"
+      ],
+      "tags": [
+        "topper",
+        "period"
+      ]
+    },
+    "facade/cornice_simple": {
+      "url": "/models/facade/cornice_simple.glb",
+      "lods": [
+        "/models/facade/cornice_simple.lod1.glb",
+        "/models/facade/cornice_simple.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.8,
+          0,
+          -0.35
+        ],
+        "max": [
+          1.8,
+          0.46,
+          0.15
+        ]
+      },
+      "tris": {
+        "lod0": 24,
+        "lod1": 24,
+        "lod2": 24
+      },
+      "materials": [
+        "concrete_precast"
+      ],
+      "tags": [
+        "topper",
+        "modern"
+      ]
+    },
+    "facade/downpipe": {
+      "url": "/models/facade/downpipe.glb",
+      "lods": [
+        "/models/facade/downpipe.lod1.glb",
+        "/models/facade/downpipe.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.08,
+          0,
+          -0.18
+        ],
+        "max": [
+          0.08,
+          3.2,
+          -0.02
+        ]
+      },
+      "tris": {
+        "lod0": 56,
+        "lod1": 52,
+        "lod2": 52
+      },
+      "materials": [
+        "metal_galv"
+      ],
+      "tags": [
+        "vertical",
+        "service"
+      ]
+    },
+    "facade/fire_escape": {
+      "url": "/models/facade/fire_escape.glb",
+      "lods": [
+        "/models/facade/fire_escape.lod1.glb",
+        "/models/facade/fire_escape.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.2,
+          0,
+          -1.795
+        ],
+        "max": [
+          1.2,
+          2.488,
+          0.005
+        ]
+      },
+      "tris": {
+        "lod0": 240,
+        "lod1": 240,
+        "lod2": 240
+      },
+      "materials": [
+        "metal_rust"
+      ],
+      "tags": [
+        "vertical",
+        "industrial",
+        "rear"
+      ]
+    },
+    "facade/ground_cafe": {
+      "url": "/models/facade/ground_cafe.glb",
+      "lods": [
+        "/models/facade/ground_cafe.lod1.glb",
+        "/models/facade/ground_cafe.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.8,
+          0,
+          -1.85
+        ],
+        "max": [
+          1.8,
+          4.2,
+          0.06
+        ]
+      },
+      "tris": {
+        "lod0": 144,
+        "lod1": 144,
+        "lod2": 144
+      },
+      "materials": [
+        "concrete_cast",
+        "timber_painted",
+        "glass_shop",
+        "metal_painted",
+        "plastic_signage",
+        "timber_bare"
+      ],
+      "tags": [
+        "ground",
+        "retail",
+        "spillout"
+      ]
+    },
+    "facade/ground_garage": {
+      "url": "/models/facade/ground_garage.glb",
+      "lods": [
+        "/models/facade/ground_garage.lod1.glb",
+        "/models/facade/ground_garage.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.8,
+          0,
+          -0.45
+        ],
+        "max": [
+          1.8,
+          4.2,
+          0
+        ]
+      },
+      "tris": {
+        "lod0": 132,
+        "lod1": 132,
+        "lod2": 132
+      },
+      "materials": [
+        "concrete_cast",
+        "metal_galv"
+      ],
+      "tags": [
+        "ground",
+        "industrial",
+        "service"
+      ]
+    },
+    "facade/ground_lobby": {
+      "url": "/models/facade/ground_lobby.glb",
+      "lods": [
+        "/models/facade/ground_lobby.lod1.glb",
+        "/models/facade/ground_lobby.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.8,
+          0,
+          -1.3
+        ],
+        "max": [
+          1.8,
+          4.2,
+          0
+        ]
+      },
+      "tris": {
+        "lod0": 84,
+        "lod1": 84,
+        "lod2": 84
+      },
+      "materials": [
+        "stone_dressed",
+        "glass_shop",
+        "alloy_polished",
+        "pavement_slab"
+      ],
+      "tags": [
+        "ground",
+        "commercial"
+      ]
+    },
+    "facade/ground_service": {
+      "url": "/models/facade/ground_service.glb",
+      "lods": [
+        "/models/facade/ground_service.lod1.glb",
+        "/models/facade/ground_service.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.8,
+          0,
+          -0.45
+        ],
+        "max": [
+          1.8,
+          4.2,
+          0.16
+        ]
+      },
+      "tris": {
+        "lod0": 48,
+        "lod1": 48,
+        "lod2": 48
+      },
+      "materials": [
+        "concrete_cast",
+        "metal_painted",
+        "metal_galv",
+        "metal_rust"
+      ],
+      "tags": [
+        "ground",
+        "service"
+      ]
+    },
+    "facade/ground_shopfront": {
+      "url": "/models/facade/ground_shopfront.glb",
+      "lods": [
+        "/models/facade/ground_shopfront.lod1.glb",
+        "/models/facade/ground_shopfront.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.8,
+          0,
+          -0.45
+        ],
+        "max": [
+          1.8,
+          4.2,
+          0.06
+        ]
+      },
+      "tris": {
+        "lod0": 96,
+        "lod1": 96,
+        "lod2": 96
+      },
+      "materials": [
+        "concrete_cast",
+        "timber_painted",
+        "glass_shop",
+        "metal_painted",
+        "plastic_signage"
+      ],
+      "tags": [
+        "ground",
+        "retail"
+      ]
+    },
+    "facade/ground_shopfront_awning": {
+      "url": "/models/facade/ground_shopfront_awning.glb",
+      "lods": [
+        "/models/facade/ground_shopfront_awning.lod1.glb",
+        "/models/facade/ground_shopfront_awning.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.8,
+          0,
+          -1.523
+        ],
+        "max": [
+          1.8,
+          4.2,
+          0.06
+        ]
+      },
+      "tris": {
+        "lod0": 132,
+        "lod1": 132,
+        "lod2": 132
+      },
+      "materials": [
+        "concrete_cast",
+        "timber_painted",
+        "glass_shop",
+        "metal_painted",
+        "plastic_signage",
+        "fabric_awning"
+      ],
+      "tags": [
+        "ground",
+        "retail"
+      ]
+    },
+    "facade/mansard": {
+      "url": "/models/facade/mansard.glb",
+      "lods": [
+        "/models/facade/mansard.lod1.glb",
+        "/models/facade/mansard.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.8,
+          0,
+          -1.979
+        ],
+        "max": [
+          1.8,
+          2.339,
+          0.1
+        ]
+      },
+      "tris": {
+        "lod0": 48,
+        "lod1": 48,
+        "lod2": 48
+      },
+      "materials": [
+        "metal_galv",
+        "stone_dressed",
+        "timber_painted",
+        "glass_shop"
+      ],
+      "tags": [
+        "topper",
+        "period",
+        "roof"
+      ]
+    },
+    "facade/parapet": {
+      "url": "/models/facade/parapet.glb",
+      "lods": [
+        "/models/facade/parapet.lod1.glb",
+        "/models/facade/parapet.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.8,
+          0,
+          -0.395
+        ],
+        "max": [
+          1.8,
+          1.17,
+          0.055
+        ]
+      },
+      "tris": {
+        "lod0": 24,
+        "lod1": 24,
+        "lod2": 24
+      },
+      "materials": [
+        "brick_painted",
+        "stone_dressed"
+      ],
+      "tags": [
+        "topper"
+      ]
+    },
+    "facade/pilaster": {
+      "url": "/models/facade/pilaster.glb",
+      "lods": [
+        "/models/facade/pilaster.lod1.glb",
+        "/models/facade/pilaster.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.35,
+          0,
+          -0.32
+        ],
+        "max": [
+          0.35,
+          3.2,
+          0.04
+        ]
+      },
+      "tris": {
+        "lod0": 36,
+        "lod1": 36,
+        "lod2": 36
+      },
+      "materials": [
+        "stone_dressed"
+      ],
+      "tags": [
+        "vertical",
+        "period"
+      ]
+    },
+    "facade/quoin_corner": {
+      "url": "/models/facade/quoin_corner.glb",
+      "lods": [
+        "/models/facade/quoin_corner.lod1.glb",
+        "/models/facade/quoin_corner.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.31,
+          0,
+          -0.42
+        ],
+        "max": [
+          0.31,
+          3.2,
+          0
+        ]
+      },
+      "tris": {
+        "lod0": 96,
+        "lod1": 96,
+        "lod2": 96
+      },
+      "materials": [
+        "stone_dressed"
+      ],
+      "tags": [
+        "vertical",
+        "corner",
+        "period"
+      ]
+    },
+    "facade/string_course": {
+      "url": "/models/facade/string_course.glb",
+      "lods": [
+        "/models/facade/string_course.lod1.glb",
+        "/models/facade/string_course.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.8,
+          0,
+          -0.05
+        ],
+        "max": [
+          1.8,
+          0.22,
+          0.09
+        ]
+      },
+      "tris": {
+        "lod0": 12,
+        "lod1": 12,
+        "lod2": 12
+      },
+      "materials": [
+        "stone_dressed"
+      ],
+      "tags": [
+        "band",
+        "period"
+      ]
+    },
+    "props/a_frame_sign": {
+      "url": "/models/props/a_frame_sign.glb",
+      "lods": [
+        "/models/props/a_frame_sign.lod1.glb",
+        "/models/props/a_frame_sign.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.35,
+          0,
+          -0.354
+        ],
+        "max": [
+          0.35,
+          1.018,
+          0.354
+        ]
+      },
+      "tris": {
+        "lod0": 36,
+        "lod1": 36,
+        "lod2": 36
+      },
+      "materials": [
+        "timber_painted"
+      ],
+      "tags": [
+        "signage",
+        "spillout",
+        "clutter"
+      ]
+    },
+    "props/aerial_mast": {
+      "url": "/models/props/aerial_mast.glb",
+      "lods": [
+        "/models/props/aerial_mast.lod1.glb",
+        "/models/props/aerial_mast.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.75,
+          0,
+          -0.525
+        ],
+        "max": [
+          0.75,
+          6.93,
+          0.525
+        ]
+      },
+      "tris": {
+        "lod0": 128,
+        "lod1": 124,
+        "lod2": 124
+      },
+      "materials": [
+        "concrete_cast",
+        "metal_galv",
+        "plastic_signage"
+      ],
+      "tags": [
+        "roof",
+        "plant",
+        "landmark"
+      ]
+    },
+    "props/bandstand": {
+      "url": "/models/props/bandstand.glb",
+      "lods": [
+        "/models/props/bandstand.lod1.glb",
+        "/models/props/bandstand.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -3.5,
+          0,
+          -3.5
+        ],
+        "max": [
+          3.5,
+          5.8,
+          3.5
+        ]
+      },
+      "tris": {
+        "lod0": 248,
+        "lod1": 236,
+        "lod2": 236
+      },
+      "materials": [
+        "stone_dressed",
+        "timber_painted",
+        "metal_galv",
+        "metal_painted"
+      ],
+      "tags": [
+        "park",
+        "landmark"
+      ]
+    },
+    "props/banner_pole": {
+      "url": "/models/props/banner_pole.glb",
+      "lods": [
+        "/models/props/banner_pole.lod1.glb",
+        "/models/props/banner_pole.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.07,
+          0,
+          -0.07
+        ],
+        "max": [
+          0.07,
+          5,
+          0.75
+        ]
+      },
+      "tris": {
+        "lod0": 68,
+        "lod1": 64,
+        "lod2": 64
+      },
+      "materials": [
+        "metal_galv",
+        "fabric_awning"
+      ],
+      "tags": [
+        "signage",
+        "street",
+        "kerb"
+      ]
+    },
+    "props/barrier": {
+      "url": "/models/props/barrier.glb",
+      "lods": [
+        "/models/props/barrier.lod1.glb",
+        "/models/props/barrier.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1,
+          0,
+          -0.25
+        ],
+        "max": [
+          1,
+          0.8,
+          0.25
+        ]
+      },
+      "tris": {
+        "lod0": 48,
+        "lod1": 48,
+        "lod2": 48
+      },
+      "materials": [
+        "plastic_signage",
+        "metal_galv"
+      ],
+      "tags": [
+        "roadworks"
+      ]
+    },
+    "props/basketball_hoop": {
+      "url": "/models/props/basketball_hoop.glb",
+      "lods": [
+        "/models/props/basketball_hoop.lod1.glb",
+        "/models/props/basketball_hoop.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.9,
+          0,
+          -0.35
+        ],
+        "max": [
+          0.9,
+          4.075,
+          1.04
+        ]
+      },
+      "tris": {
+        "lod0": 108,
+        "lod1": 100,
+        "lod2": 100
+      },
+      "materials": [
+        "concrete_cast",
+        "metal_galv",
+        "plastic_signage",
+        "metal_painted"
+      ],
+      "tags": [
+        "park",
+        "sport"
+      ]
+    },
+    "props/bench": {
+      "url": "/models/props/bench.glb",
+      "lods": [
+        "/models/props/bench.lod1.glb",
+        "/models/props/bench.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.9,
+          0,
+          -0.265
+        ],
+        "max": [
+          0.9,
+          0.955,
+          0.265
+        ]
+      },
+      "tris": {
+        "lod0": 108,
+        "lod1": 108,
+        "lod2": 108
+      },
+      "materials": [
+        "metal_painted",
+        "timber_bare"
+      ],
+      "tags": [
+        "street",
+        "kerb",
+        "seating"
+      ]
+    },
+    "props/bike_rack": {
+      "url": "/models/props/bike_rack.glb",
+      "lods": [
+        "/models/props/bike_rack.lod1.glb",
+        "/models/props/bike_rack.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.51,
+          0,
+          -0.03
+        ],
+        "max": [
+          1.51,
+          0.78,
+          0.03
+        ]
+      },
+      "tris": {
+        "lod0": 144,
+        "lod1": 144,
+        "lod2": 144
+      },
+      "materials": [
+        "metal_galv"
+      ],
+      "tags": [
+        "street",
+        "kerb",
+        "clutter"
+      ]
+    },
+    "props/billboard_freestanding": {
+      "url": "/models/props/billboard_freestanding.glb",
+      "lods": [
+        "/models/props/billboard_freestanding.lod1.glb",
+        "/models/props/billboard_freestanding.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -3.4,
+          0,
+          -0.4
+        ],
+        "max": [
+          3.4,
+          7.22,
+          0.5
+        ]
+      },
+      "tris": {
+        "lod0": 84,
+        "lod1": 84,
+        "lod2": 84
+      },
+      "materials": [
+        "concrete_cast",
+        "metal_galv",
+        "plastic_signage"
+      ],
+      "tags": [
+        "signage",
+        "street"
+      ]
+    },
+    "props/billboard_wall": {
+      "url": "/models/props/billboard_wall.glb",
+      "lods": [
+        "/models/props/billboard_wall.lod1.glb",
+        "/models/props/billboard_wall.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -3.2,
+          0,
+          -0.09
+        ],
+        "max": [
+          3.2,
+          3.39,
+          0.41
+        ]
+      },
+      "tris": {
+        "lod0": 36,
+        "lod1": 36,
+        "lod2": 36
+      },
+      "materials": [
+        "metal_galv",
+        "plastic_signage"
+      ],
+      "tags": [
+        "signage",
+        "facade"
+      ]
+    },
+    "props/bin": {
+      "url": "/models/props/bin.glb",
+      "lods": [
+        "/models/props/bin.lod1.glb",
+        "/models/props/bin.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.3,
+          0,
+          -0.285
+        ],
+        "max": [
+          0.3,
+          0.92,
+          0.33
+        ]
+      },
+      "tris": {
+        "lod0": 92,
+        "lod1": 84,
+        "lod2": 84
+      },
+      "materials": [
+        "metal_painted",
+        "metal_galv"
+      ],
+      "tags": [
+        "street",
+        "kerb",
+        "clutter"
+      ]
+    },
+    "props/bollard": {
+      "url": "/models/props/bollard.glb",
+      "lods": [
+        "/models/props/bollard.lod1.glb",
+        "/models/props/bollard.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.14,
+          0,
+          -0.133
+        ],
+        "max": [
+          0.14,
+          1.01,
+          0.133
+        ]
+      },
+      "tris": {
+        "lod0": 80,
+        "lod1": 76,
+        "lod2": 76
+      },
+      "materials": [
+        "metal_painted"
+      ],
+      "tags": [
+        "street",
+        "kerb",
+        "clutter"
+      ]
+    },
+    "props/bus_shelter": {
+      "url": "/models/props/bus_shelter.glb",
+      "lods": [
+        "/models/props/bus_shelter.lod1.glb",
+        "/models/props/bus_shelter.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.8,
+          0,
+          -0.75
+        ],
+        "max": [
+          1.86,
+          2.62,
+          0.75
+        ]
+      },
+      "tris": {
+        "lod0": 120,
+        "lod1": 120,
+        "lod2": 120
+      },
+      "materials": [
+        "metal_galv",
+        "glass_shop",
+        "timber_bare",
+        "plastic_signage"
+      ],
+      "tags": [
+        "street",
+        "kerb",
+        "transit"
+      ]
+    },
+    "props/cafe_umbrella": {
+      "url": "/models/props/cafe_umbrella.glb",
+      "lods": [
+        "/models/props/cafe_umbrella.lod1.glb",
+        "/models/props/cafe_umbrella.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.55,
+          0,
+          -1.55
+        ],
+        "max": [
+          1.55,
+          2.55,
+          1.55
+        ]
+      },
+      "tris": {
+        "lod0": 100,
+        "lod1": 92,
+        "lod2": 92
+      },
+      "materials": [
+        "concrete_cast",
+        "metal_galv",
+        "fabric_awning"
+      ],
+      "tags": [
+        "street",
+        "spillout",
+        "seating"
+      ]
+    },
+    "props/climbing_frame": {
+      "url": "/models/props/climbing_frame.glb",
+      "lods": [
+        "/models/props/climbing_frame.lod1.glb",
+        "/models/props/climbing_frame.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.55,
+          0,
+          -1.55
+        ],
+        "max": [
+          1.55,
+          2.435,
+          1.55
+        ]
+      },
+      "tris": {
+        "lod0": 204,
+        "lod1": 204,
+        "lod2": 204
+      },
+      "materials": [
+        "metal_painted",
+        "metal_galv",
+        "plastic_signage"
+      ],
+      "tags": [
+        "park",
+        "playground"
+      ]
+    },
+    "props/cone": {
+      "url": "/models/props/cone.glb",
+      "lods": [
+        "/models/props/cone.lod1.glb",
+        "/models/props/cone.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.18,
+          0,
+          -0.18
+        ],
+        "max": [
+          0.18,
+          0.755,
+          0.18
+        ]
+      },
+      "tris": {
+        "lod0": 44,
+        "lod1": 40,
+        "lod2": 40
+      },
+      "materials": [
+        "plastic_signage"
+      ],
+      "tags": [
+        "roadworks",
+        "clutter"
+      ]
+    },
+    "props/container": {
+      "url": "/models/props/container.glb",
+      "lods": [
+        "/models/props/container.lod1.glb",
+        "/models/props/container.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -3.05,
+          0,
+          -1.25
+        ],
+        "max": [
+          3.05,
+          2.59,
+          1.25
+        ]
+      },
+      "tris": {
+        "lod0": 60,
+        "lod1": 60,
+        "lod2": 60
+      },
+      "materials": [
+        "metal_rust",
+        "metal_painted"
+      ],
+      "tags": [
+        "harbour",
+        "industrial"
+      ]
+    },
+    "props/container_stack": {
+      "url": "/models/props/container_stack.glb",
+      "lods": [
+        "/models/props/container_stack.lod1.glb",
+        "/models/props/container_stack.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -3.025,
+          0,
+          -3.77
+        ],
+        "max": [
+          3.025,
+          7.83,
+          3.77
+        ]
+      },
+      "tris": {
+        "lod0": 72,
+        "lod1": 72,
+        "lod2": 72
+      },
+      "materials": [
+        "metal_rust"
+      ],
+      "tags": [
+        "harbour",
+        "industrial"
+      ]
+    },
+    "props/crates": {
+      "url": "/models/props/crates.glb",
+      "lods": [
+        "/models/props/crates.lod1.glb",
+        "/models/props/crates.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.1,
+          0,
+          -0.644
+        ],
+        "max": [
+          1.2,
+          1.6,
+          0.65
+        ]
+      },
+      "tris": {
+        "lod0": 36,
+        "lod1": 36,
+        "lod2": 36
+      },
+      "materials": [
+        "timber_bare"
+      ],
+      "tags": [
+        "harbour",
+        "clutter"
+      ]
+    },
+    "props/dock_crane": {
+      "url": "/models/props/dock_crane.glb",
+      "lods": [
+        "/models/props/dock_crane.lod1.glb",
+        "/models/props/dock_crane.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -2,
+          0,
+          -5.5
+        ],
+        "max": [
+          2.3,
+          10.65,
+          13
+        ]
+      },
+      "tris": {
+        "lod0": 204,
+        "lod1": 204,
+        "lod2": 204
+      },
+      "materials": [
+        "metal_painted",
+        "metal_galv",
+        "glass_shop",
+        "metal_rust"
+      ],
+      "tags": [
+        "harbour",
+        "landmark"
+      ]
+    },
+    "props/drain_grate": {
+      "url": "/models/props/drain_grate.glb",
+      "lods": [
+        "/models/props/drain_grate.lod1.glb",
+        "/models/props/drain_grate.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.26,
+          0,
+          -0.17
+        ],
+        "max": [
+          0.26,
+          0.06,
+          0.17
+        ]
+      },
+      "tris": {
+        "lod0": 24,
+        "lod1": 24,
+        "lod2": 24
+      },
+      "materials": [
+        "kerb_stone",
+        "metal_rust"
+      ],
+      "tags": [
+        "street",
+        "kerb",
+        "flat"
+      ]
+    },
+    "props/fence_panel": {
+      "url": "/models/props/fence_panel.glb",
+      "lods": [
+        "/models/props/fence_panel.lod1.glb",
+        "/models/props/fence_panel.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.5,
+          0,
+          -0.045
+        ],
+        "max": [
+          1.5,
+          2,
+          0.045
+        ]
+      },
+      "tris": {
+        "lod0": 216,
+        "lod1": 216,
+        "lod2": 216
+      },
+      "materials": [
+        "metal_galv"
+      ],
+      "tags": [
+        "boundary",
+        "industrial"
+      ]
+    },
+    "props/ferry_ramp": {
+      "url": "/models/props/ferry_ramp.glb",
+      "lods": [
+        "/models/props/ferry_ramp.lod1.glb",
+        "/models/props/ferry_ramp.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -3,
+          0,
+          -2
+        ],
+        "max": [
+          3,
+          1.95,
+          2
+        ]
+      },
+      "tris": {
+        "lod0": 44,
+        "lod1": 44,
+        "lod2": 44
+      },
+      "materials": [
+        "concrete_cast",
+        "metal_rust",
+        "metal_painted"
+      ],
+      "tags": [
+        "harbour",
+        "edge",
+        "transit"
+      ]
+    },
+    "props/flower_bed": {
+      "url": "/models/props/flower_bed.glb",
+      "lods": [
+        "/models/props/flower_bed.lod1.glb",
+        "/models/props/flower_bed.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.3,
+          0,
+          -0.8
+        ],
+        "max": [
+          1.3,
+          0.53,
+          0.8
+        ]
+      },
+      "tris": {
+        "lod0": 36,
+        "lod1": 36,
+        "lod2": 36
+      },
+      "materials": [
+        "kerb_stone",
+        "timber_bare"
+      ],
+      "tags": [
+        "park",
+        "green"
+      ]
+    },
+    "props/fountain": {
+      "url": "/models/props/fountain.glb",
+      "lods": [
+        "/models/props/fountain.lod1.glb",
+        "/models/props/fountain.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -2.6,
+          0,
+          -2.6
+        ],
+        "max": [
+          2.6,
+          2.44,
+          2.6
+        ]
+      },
+      "tris": {
+        "lod0": 304,
+        "lod1": 292,
+        "lod2": 292
+      },
+      "materials": [
+        "stone_dressed",
+        "asphalt_wet"
+      ],
+      "tags": [
+        "park",
+        "landmark",
+        "water"
+      ]
+    },
+    "props/goalposts": {
+      "url": "/models/props/goalposts.glb",
+      "lods": [
+        "/models/props/goalposts.lod1.glb",
+        "/models/props/goalposts.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -3.72,
+          0,
+          -2.05
+        ],
+        "max": [
+          3.72,
+          2.56,
+          0.06
+        ]
+      },
+      "tris": {
+        "lod0": 100,
+        "lod1": 92,
+        "lod2": 92
+      },
+      "materials": [
+        "metal_painted"
+      ],
+      "tags": [
+        "park",
+        "sport"
+      ]
+    },
+    "props/hedge_run": {
+      "url": "/models/props/hedge_run.glb",
+      "lods": [
+        "/models/props/hedge_run.lod1.glb",
+        "/models/props/hedge_run.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -2.01,
+          0,
+          -0.41
+        ],
+        "max": [
+          2.01,
+          1.24,
+          0.41
+        ]
+      },
+      "tris": {
+        "lod0": 60,
+        "lod1": 60,
+        "lod2": 60
+      },
+      "materials": [
+        "timber_bare"
+      ],
+      "tags": [
+        "park",
+        "green",
+        "boundary"
+      ]
+    },
+    "props/hoarding": {
+      "url": "/models/props/hoarding.glb",
+      "lods": [
+        "/models/props/hoarding.lod1.glb",
+        "/models/props/hoarding.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -2,
+          0,
+          -0.16
+        ],
+        "max": [
+          2,
+          2.5,
+          0.075
+        ]
+      },
+      "tris": {
+        "lod0": 60,
+        "lod1": 60,
+        "lod2": 60
+      },
+      "materials": [
+        "timber_painted",
+        "timber_bare",
+        "plastic_signage"
+      ],
+      "tags": [
+        "boundary",
+        "roadworks"
+      ]
+    },
+    "props/hvac_unit": {
+      "url": "/models/props/hvac_unit.glb",
+      "lods": [
+        "/models/props/hvac_unit.lod1.glb",
+        "/models/props/hvac_unit.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.2,
+          0,
+          -0.85
+        ],
+        "max": [
+          1.2,
+          1.34,
+          0.85
+        ]
+      },
+      "tris": {
+        "lod0": 144,
+        "lod1": 136,
+        "lod2": 136
+      },
+      "materials": [
+        "metal_galv",
+        "metal_painted",
+        "metal_rust"
+      ],
+      "tags": [
+        "roof",
+        "plant"
+      ]
+    },
+    "props/hydrant": {
+      "url": "/models/props/hydrant.glb",
+      "lods": [
+        "/models/props/hydrant.lod1.glb",
+        "/models/props/hydrant.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.23,
+          0,
+          -0.19
+        ],
+        "max": [
+          0.23,
+          0.98,
+          0.19
+        ]
+      },
+      "tris": {
+        "lod0": 164,
+        "lod1": 156,
+        "lod2": 156
+      },
+      "materials": [
+        "metal_rust",
+        "metal_painted"
+      ],
+      "tags": [
+        "street",
+        "kerb",
+        "clutter"
+      ]
+    },
+    "props/junction_box": {
+      "url": "/models/props/junction_box.glb",
+      "lods": [
+        "/models/props/junction_box.lod1.glb",
+        "/models/props/junction_box.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.45,
+          0,
+          -0.275
+        ],
+        "max": [
+          0.45,
+          1.38,
+          0.275
+        ]
+      },
+      "tris": {
+        "lod0": 48,
+        "lod1": 48,
+        "lod2": 48
+      },
+      "materials": [
+        "concrete_cast",
+        "metal_galv",
+        "metal_painted"
+      ],
+      "tags": [
+        "street",
+        "kerb",
+        "service"
+      ]
+    },
+    "props/lamp_arterial": {
+      "url": "/models/props/lamp_arterial.glb",
+      "lods": [
+        "/models/props/lamp_arterial.lod1.glb",
+        "/models/props/lamp_arterial.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.22,
+          0,
+          -0.22
+        ],
+        "max": [
+          0.22,
+          8.305,
+          1.76
+        ]
+      },
+      "tris": {
+        "lod0": 88,
+        "lod1": 84,
+        "lod2": 84
+      },
+      "materials": [
+        "concrete_cast",
+        "metal_painted",
+        "plastic_signage"
+      ],
+      "tags": [
+        "street",
+        "kerb",
+        "lighting",
+        "arterial"
+      ]
+    },
+    "props/lamp_local": {
+      "url": "/models/props/lamp_local.glb",
+      "lods": [
+        "/models/props/lamp_local.lod1.glb",
+        "/models/props/lamp_local.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.18,
+          0,
+          -0.18
+        ],
+        "max": [
+          0.18,
+          6.15,
+          0.41
+        ]
+      },
+      "tris": {
+        "lod0": 68,
+        "lod1": 64,
+        "lod2": 64
+      },
+      "materials": [
+        "concrete_cast",
+        "metal_painted",
+        "plastic_signage"
+      ],
+      "tags": [
+        "street",
+        "kerb",
+        "lighting",
+        "local"
+      ]
+    },
+    "props/litter_bin_park": {
+      "url": "/models/props/litter_bin_park.glb",
+      "lods": [
+        "/models/props/litter_bin_park.lod1.glb",
+        "/models/props/litter_bin_park.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.34,
+          0,
+          -0.323
+        ],
+        "max": [
+          0.34,
+          0.9,
+          0.325
+        ]
+      },
+      "tris": {
+        "lod0": 92,
+        "lod1": 84,
+        "lod2": 84
+      },
+      "materials": [
+        "timber_bare",
+        "timber_painted",
+        "metal_galv"
+      ],
+      "tags": [
+        "park",
+        "clutter"
+      ]
+    },
+    "props/manhole": {
+      "url": "/models/props/manhole.glb",
+      "lods": [
+        "/models/props/manhole.lod1.glb",
+        "/models/props/manhole.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.42,
+          0,
+          -0.409
+        ],
+        "max": [
+          0.42,
+          0.04,
+          0.409
+        ]
+      },
+      "tris": {
+        "lod0": 112,
+        "lod1": 104,
+        "lod2": 104
+      },
+      "materials": [
+        "metal_rust",
+        "kerb_stone"
+      ],
+      "tags": [
+        "street",
+        "road",
+        "flat"
+      ]
+    },
+    "props/market_stall": {
+      "url": "/models/props/market_stall.glb",
+      "lods": [
+        "/models/props/market_stall.lod1.glb",
+        "/models/props/market_stall.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.7,
+          0,
+          -1.138
+        ],
+        "max": [
+          1.7,
+          2.645,
+          1.138
+        ]
+      },
+      "tris": {
+        "lod0": 108,
+        "lod1": 108,
+        "lod2": 108
+      },
+      "materials": [
+        "metal_galv",
+        "fabric_awning",
+        "timber_bare",
+        "plastic_signage"
+      ],
+      "tags": [
+        "street",
+        "spillout",
+        "market"
+      ]
+    },
+    "props/mooring_bollard": {
+      "url": "/models/props/mooring_bollard.glb",
+      "lods": [
+        "/models/props/mooring_bollard.lod1.glb",
+        "/models/props/mooring_bollard.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.34,
+          0,
+          -0.34
+        ],
+        "max": [
+          0.34,
+          0.85,
+          0.34
+        ]
+      },
+      "tris": {
+        "lod0": 144,
+        "lod1": 140,
+        "lod2": 140
+      },
+      "materials": [
+        "metal_rust"
+      ],
+      "tags": [
+        "harbour",
+        "edge",
+        "clutter"
+      ]
+    },
+    "props/notice_board": {
+      "url": "/models/props/notice_board.glb",
+      "lods": [
+        "/models/props/notice_board.lod1.glb",
+        "/models/props/notice_board.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.925,
+          0,
+          -0.15
+        ],
+        "max": [
+          0.925,
+          2.25,
+          0.19
+        ]
+      },
+      "tris": {
+        "lod0": 56,
+        "lod1": 56,
+        "lod2": 56
+      },
+      "materials": [
+        "timber_bare",
+        "timber_painted",
+        "glass_shop"
+      ],
+      "tags": [
+        "park",
+        "clutter"
+      ]
+    },
+    "props/pallet_stack": {
+      "url": "/models/props/pallet_stack.glb",
+      "lods": [
+        "/models/props/pallet_stack.lod1.glb",
+        "/models/props/pallet_stack.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.6,
+          0,
+          -0.4
+        ],
+        "max": [
+          0.6,
+          0.755,
+          0.4
+        ]
+      },
+      "tris": {
+        "lod0": 180,
+        "lod1": 180,
+        "lod2": 180
+      },
+      "materials": [
+        "timber_bare"
+      ],
+      "tags": [
+        "harbour",
+        "industrial",
+        "clutter"
+      ]
+    },
+    "props/park_bench": {
+      "url": "/models/props/park_bench.glb",
+      "lods": [
+        "/models/props/park_bench.lod1.glb",
+        "/models/props/park_bench.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.975,
+          0,
+          -0.31
+        ],
+        "max": [
+          0.975,
+          1.04,
+          0.31
+        ]
+      },
+      "tris": {
+        "lod0": 144,
+        "lod1": 144,
+        "lod2": 144
+      },
+      "materials": [
+        "stone_dressed",
+        "timber_bare"
+      ],
+      "tags": [
+        "park",
+        "seating"
+      ]
+    },
+    "props/park_gate": {
+      "url": "/models/props/park_gate.glb",
+      "lods": [
+        "/models/props/park_gate.lod1.glb",
+        "/models/props/park_gate.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -2.68,
+          0,
+          -0.38
+        ],
+        "max": [
+          2.68,
+          3.48,
+          0.38
+        ]
+      },
+      "tris": {
+        "lod0": 304,
+        "lod1": 296,
+        "lod2": 296
+      },
+      "materials": [
+        "stone_dressed",
+        "metal_painted"
+      ],
+      "tags": [
+        "park",
+        "entrance",
+        "landmark"
+      ]
+    },
+    "props/parking_meter": {
+      "url": "/models/props/parking_meter.glb",
+      "lods": [
+        "/models/props/parking_meter.lod1.glb",
+        "/models/props/parking_meter.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.13,
+          0,
+          -0.1
+        ],
+        "max": [
+          0.13,
+          1.55,
+          0.125
+        ]
+      },
+      "tris": {
+        "lod0": 56,
+        "lod1": 52,
+        "lod2": 52
+      },
+      "materials": [
+        "metal_galv",
+        "metal_painted",
+        "glass_shop"
+      ],
+      "tags": [
+        "street",
+        "kerb",
+        "clutter"
+      ]
+    },
+    "props/path_junction": {
+      "url": "/models/props/path_junction.glb",
+      "lods": [
+        "/models/props/path_junction.lod1.glb",
+        "/models/props/path_junction.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.36,
+          0,
+          -1.36
+        ],
+        "max": [
+          1.36,
+          0.13,
+          1.36
+        ]
+      },
+      "tris": {
+        "lod0": 60,
+        "lod1": 60,
+        "lod2": 60
+      },
+      "materials": [
+        "pavement_slab",
+        "kerb_stone"
+      ],
+      "tags": [
+        "park",
+        "path",
+        "flat"
+      ]
+    },
+    "props/path_segment": {
+      "url": "/models/props/path_segment.glb",
+      "lods": [
+        "/models/props/path_segment.lod1.glb",
+        "/models/props/path_segment.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -2,
+          0,
+          -1.36
+        ],
+        "max": [
+          2,
+          0.13,
+          1.36
+        ]
+      },
+      "tris": {
+        "lod0": 36,
+        "lod1": 36,
+        "lod2": 36
+      },
+      "materials": [
+        "pavement_slab",
+        "kerb_stone"
+      ],
+      "tags": [
+        "park",
+        "path",
+        "flat"
+      ]
+    },
+    "props/phone_box": {
+      "url": "/models/props/phone_box.glb",
+      "lods": [
+        "/models/props/phone_box.lod1.glb",
+        "/models/props/phone_box.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.525,
+          0,
+          -0.525
+        ],
+        "max": [
+          0.525,
+          2.53,
+          0.53
+        ]
+      },
+      "tris": {
+        "lod0": 132,
+        "lod1": 132,
+        "lod2": 132
+      },
+      "materials": [
+        "metal_painted",
+        "glass_shop",
+        "plastic_signage"
+      ],
+      "tags": [
+        "street",
+        "kerb"
+      ]
+    },
+    "props/picnic_table": {
+      "url": "/models/props/picnic_table.glb",
+      "lods": [
+        "/models/props/picnic_table.lod1.glb",
+        "/models/props/picnic_table.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.95,
+          0,
+          -0.87
+        ],
+        "max": [
+          0.95,
+          0.809,
+          0.87
+        ]
+      },
+      "tris": {
+        "lod0": 84,
+        "lod1": 84,
+        "lod2": 84
+      },
+      "materials": [
+        "timber_bare"
+      ],
+      "tags": [
+        "park",
+        "seating"
+      ]
+    },
+    "props/plant_enclosure": {
+      "url": "/models/props/plant_enclosure.glb",
+      "lods": [
+        "/models/props/plant_enclosure.lod1.glb",
+        "/models/props/plant_enclosure.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.875,
+          0,
+          -1.45
+        ],
+        "max": [
+          1.875,
+          2.2,
+          1.45
+        ]
+      },
+      "tris": {
+        "lod0": 96,
+        "lod1": 96,
+        "lod2": 96
+      },
+      "materials": [
+        "metal_galv"
+      ],
+      "tags": [
+        "roof",
+        "plant"
+      ]
+    },
+    "props/planter": {
+      "url": "/models/props/planter.glb",
+      "lods": [
+        "/models/props/planter.lod1.glb",
+        "/models/props/planter.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.8,
+          0,
+          -0.4
+        ],
+        "max": [
+          0.8,
+          0.665,
+          0.4
+        ]
+      },
+      "tris": {
+        "lod0": 36,
+        "lod1": 36,
+        "lod2": 36
+      },
+      "materials": [
+        "concrete_precast",
+        "timber_bare"
+      ],
+      "tags": [
+        "street",
+        "kerb",
+        "green"
+      ]
+    },
+    "props/pond_edge": {
+      "url": "/models/props/pond_edge.glb",
+      "lods": [
+        "/models/props/pond_edge.lod1.glb",
+        "/models/props/pond_edge.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.5,
+          0,
+          -0.5
+        ],
+        "max": [
+          1.5,
+          0.64,
+          0.645
+        ]
+      },
+      "tris": {
+        "lod0": 36,
+        "lod1": 36,
+        "lod2": 36
+      },
+      "materials": [
+        "stone_dressed",
+        "timber_bare"
+      ],
+      "tags": [
+        "park",
+        "water",
+        "edge"
+      ]
+    },
+    "props/pontoon": {
+      "url": "/models/props/pontoon.glb",
+      "lods": [
+        "/models/props/pontoon.lod1.glb",
+        "/models/props/pontoon.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -4,
+          0,
+          -1.3
+        ],
+        "max": [
+          4,
+          3,
+          1.32
+        ]
+      },
+      "tris": {
+        "lod0": 60,
+        "lod1": 60,
+        "lod2": 60
+      },
+      "materials": [
+        "timber_bare",
+        "timber_painted",
+        "metal_galv"
+      ],
+      "tags": [
+        "harbour",
+        "water"
+      ]
+    },
+    "props/post_box": {
+      "url": "/models/props/post_box.glb",
+      "lods": [
+        "/models/props/post_box.lod1.glb",
+        "/models/props/post_box.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.35,
+          0,
+          -0.35
+        ],
+        "max": [
+          0.35,
+          1.49,
+          0.35
+        ]
+      },
+      "tris": {
+        "lod0": 156,
+        "lod1": 152,
+        "lod2": 152
+      },
+      "materials": [
+        "metal_painted",
+        "metal_rust"
+      ],
+      "tags": [
+        "street",
+        "kerb",
+        "clutter"
+      ]
+    },
+    "props/quay_edge": {
+      "url": "/models/props/quay_edge.glb",
+      "lods": [
+        "/models/props/quay_edge.lod1.glb",
+        "/models/props/quay_edge.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -2,
+          0,
+          -0.7
+        ],
+        "max": [
+          2,
+          1.82,
+          0.71
+        ]
+      },
+      "tris": {
+        "lod0": 48,
+        "lod1": 48,
+        "lod2": 48
+      },
+      "materials": [
+        "concrete_cast",
+        "stone_dressed",
+        "timber_bare"
+      ],
+      "tags": [
+        "harbour",
+        "edge"
+      ]
+    },
+    "props/quay_ladder": {
+      "url": "/models/props/quay_ladder.glb",
+      "lods": [
+        "/models/props/quay_ladder.lod1.glb",
+        "/models/props/quay_ladder.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.27,
+          0,
+          -0.03
+        ],
+        "max": [
+          0.27,
+          2.6,
+          0.03
+        ]
+      },
+      "tris": {
+        "lod0": 120,
+        "lod1": 120,
+        "lod2": 120
+      },
+      "materials": [
+        "metal_rust"
+      ],
+      "tags": [
+        "harbour",
+        "edge"
+      ]
+    },
+    "props/railing": {
+      "url": "/models/props/railing.glb",
+      "lods": [
+        "/models/props/railing.lod1.glb",
+        "/models/props/railing.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.2,
+          0,
+          -0.035
+        ],
+        "max": [
+          1.2,
+          1.1,
+          0.035
+        ]
+      },
+      "tris": {
+        "lod0": 144,
+        "lod1": 144,
+        "lod2": 144
+      },
+      "materials": [
+        "metal_painted"
+      ],
+      "tags": [
+        "boundary",
+        "kerb"
+      ]
+    },
+    "props/roof_hut": {
+      "url": "/models/props/roof_hut.glb",
+      "lods": [
+        "/models/props/roof_hut.lod1.glb",
+        "/models/props/roof_hut.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.3,
+          0,
+          -1.1
+        ],
+        "max": [
+          1.3,
+          2.46,
+          1.1
+        ]
+      },
+      "tris": {
+        "lod0": 48,
+        "lod1": 48,
+        "lod2": 48
+      },
+      "materials": [
+        "brick_painted",
+        "concrete_cast",
+        "metal_painted",
+        "metal_galv"
+      ],
+      "tags": [
+        "roof",
+        "access"
+      ]
+    },
+    "props/scaffold_bay": {
+      "url": "/models/props/scaffold_bay.glb",
+      "lods": [
+        "/models/props/scaffold_bay.lod1.glb",
+        "/models/props/scaffold_bay.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.25,
+          0,
+          -0.65
+        ],
+        "max": [
+          1.25,
+          6.025,
+          0.65
+        ]
+      },
+      "tris": {
+        "lod0": 228,
+        "lod1": 212,
+        "lod2": 212
+      },
+      "materials": [
+        "metal_galv",
+        "timber_bare"
+      ],
+      "tags": [
+        "roadworks",
+        "facade"
+      ]
+    },
+    "props/shrub_blockout": {
+      "url": "/models/props/shrub_blockout.glb",
+      "lods": [
+        "/models/props/shrub_blockout.lod1.glb",
+        "/models/props/shrub_blockout.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.86,
+          0,
+          -0.743
+        ],
+        "max": [
+          0.843,
+          0.808,
+          0.76
+        ]
+      },
+      "tris": {
+        "lod0": 36,
+        "lod1": 36,
+        "lod2": 36
+      },
+      "materials": [
+        "timber_painted"
+      ],
+      "tags": [
+        "park",
+        "green",
+        "placeholder"
+      ]
+    },
+    "props/sign_gantry": {
+      "url": "/models/props/sign_gantry.glb",
+      "lods": [
+        "/models/props/sign_gantry.lod1.glb",
+        "/models/props/sign_gantry.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -4.55,
+          0,
+          -0.35
+        ],
+        "max": [
+          4.55,
+          6.75,
+          0.35
+        ]
+      },
+      "tris": {
+        "lod0": 236,
+        "lod1": 228,
+        "lod2": 228
+      },
+      "materials": [
+        "concrete_cast",
+        "metal_galv",
+        "plastic_signage"
+      ],
+      "tags": [
+        "street",
+        "junction",
+        "arterial"
+      ]
+    },
+    "props/sign_projecting": {
+      "url": "/models/props/sign_projecting.glb",
+      "lods": [
+        "/models/props/sign_projecting.lod1.glb",
+        "/models/props/sign_projecting.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          0,
+          0,
+          -0.625
+        ],
+        "max": [
+          0.545,
+          1.17,
+          0.625
+        ]
+      },
+      "tris": {
+        "lod0": 36,
+        "lod1": 36,
+        "lod2": 36
+      },
+      "materials": [
+        "metal_galv",
+        "plastic_signage"
+      ],
+      "tags": [
+        "signage",
+        "facade",
+        "retail"
+      ]
+    },
+    "props/sign_wall_box": {
+      "url": "/models/props/sign_wall_box.glb",
+      "lods": [
+        "/models/props/sign_wall_box.lod1.glb",
+        "/models/props/sign_wall_box.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.35,
+          0,
+          -0.11
+        ],
+        "max": [
+          1.35,
+          0.7,
+          0.11
+        ]
+      },
+      "tris": {
+        "lod0": 36,
+        "lod1": 36,
+        "lod2": 36
+      },
+      "materials": [
+        "plastic_signage",
+        "metal_galv"
+      ],
+      "tags": [
+        "signage",
+        "facade",
+        "retail"
+      ]
+    },
+    "props/skylight": {
+      "url": "/models/props/skylight.glb",
+      "lods": [
+        "/models/props/skylight.lod1.glb",
+        "/models/props/skylight.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.1,
+          0,
+          -0.8
+        ],
+        "max": [
+          1.1,
+          0.804,
+          0.8
+        ]
+      },
+      "tris": {
+        "lod0": 24,
+        "lod1": 24,
+        "lod2": 24
+      },
+      "materials": [
+        "metal_galv",
+        "glass_curtain"
+      ],
+      "tags": [
+        "roof"
+      ]
+    },
+    "props/slide": {
+      "url": "/models/props/slide.glb",
+      "lods": [
+        "/models/props/slide.lod1.glb",
+        "/models/props/slide.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.6,
+          0,
+          -2.03
+        ],
+        "max": [
+          0.6,
+          2.199,
+          1.826
+        ]
+      },
+      "tris": {
+        "lod0": 128,
+        "lod1": 128,
+        "lod2": 128
+      },
+      "materials": [
+        "metal_painted",
+        "timber_painted",
+        "metal_galv",
+        "plastic_signage"
+      ],
+      "tags": [
+        "park",
+        "playground"
+      ]
+    },
+    "props/street_sign": {
+      "url": "/models/props/street_sign.glb",
+      "lods": [
+        "/models/props/street_sign.lod1.glb",
+        "/models/props/street_sign.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.31,
+          0,
+          -0.045
+        ],
+        "max": [
+          0.8,
+          2.4,
+          0.045
+        ]
+      },
+      "tris": {
+        "lod0": 56,
+        "lod1": 52,
+        "lod2": 52
+      },
+      "materials": [
+        "metal_galv",
+        "plastic_signage"
+      ],
+      "tags": [
+        "street",
+        "kerb",
+        "junction"
+      ]
+    },
+    "props/swing_set": {
+      "url": "/models/props/swing_set.glb",
+      "lods": [
+        "/models/props/swing_set.lod1.glb",
+        "/models/props/swing_set.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -2.1,
+          0,
+          -1.356
+        ],
+        "max": [
+          2.1,
+          2.505,
+          1.356
+        ]
+      },
+      "tris": {
+        "lod0": 132,
+        "lod1": 132,
+        "lod2": 132
+      },
+      "materials": [
+        "metal_painted",
+        "metal_galv",
+        "plastic_signage"
+      ],
+      "tags": [
+        "park",
+        "playground"
+      ]
+    },
+    "props/traffic_signal": {
+      "url": "/models/props/traffic_signal.glb",
+      "lods": [
+        "/models/props/traffic_signal.lod1.glb",
+        "/models/props/traffic_signal.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.2,
+          0,
+          -0.2
+        ],
+        "max": [
+          0.2,
+          4.15,
+          0.245
+        ]
+      },
+      "tris": {
+        "lod0": 188,
+        "lod1": 172,
+        "lod2": 172
+      },
+      "materials": [
+        "concrete_cast",
+        "metal_painted",
+        "plastic_signage"
+      ],
+      "tags": [
+        "street",
+        "junction"
+      ]
+    },
+    "props/tree_blockout": {
+      "url": "/models/props/tree_blockout.glb",
+      "lods": [
+        "/models/props/tree_blockout.lod1.glb",
+        "/models/props/tree_blockout.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -2.09,
+          0,
+          -1.549
+        ],
+        "max": [
+          1.849,
+          5.162,
+          1.59
+        ]
+      },
+      "tris": {
+        "lod0": 104,
+        "lod1": 100,
+        "lod2": 100
+      },
+      "materials": [
+        "timber_bare",
+        "timber_painted"
+      ],
+      "tags": [
+        "park",
+        "green",
+        "tree",
+        "placeholder"
+      ]
+    },
+    "props/utility_pole": {
+      "url": "/models/props/utility_pole.glb",
+      "lods": [
+        "/models/props/utility_pole.lod1.glb",
+        "/models/props/utility_pole.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.1,
+          0,
+          -0.18
+        ],
+        "max": [
+          1.1,
+          8.5,
+          0.18
+        ]
+      },
+      "tris": {
+        "lod0": 260,
+        "lod1": 224,
+        "lod2": 224
+      },
+      "materials": [
+        "timber_bare",
+        "glass_shop",
+        "metal_rust"
+      ],
+      "tags": [
+        "street",
+        "kerb",
+        "service"
+      ]
+    },
+    "props/vent_stack": {
+      "url": "/models/props/vent_stack.glb",
+      "lods": [
+        "/models/props/vent_stack.lod1.glb",
+        "/models/props/vent_stack.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.65,
+          0,
+          -0.65
+        ],
+        "max": [
+          0.65,
+          3.16,
+          0.65
+        ]
+      },
+      "tris": {
+        "lod0": 88,
+        "lod1": 80,
+        "lod2": 80
+      },
+      "materials": [
+        "brick_red",
+        "concrete_cast",
+        "metal_rust"
+      ],
+      "tags": [
+        "roof",
+        "plant"
+      ]
+    },
+    "props/water_tank": {
+      "url": "/models/props/water_tank.glb",
+      "lods": [
+        "/models/props/water_tank.lod1.glb",
+        "/models/props/water_tank.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.12,
+          0,
+          -1.092
+        ],
+        "max": [
+          1.12,
+          5.3,
+          1.092
+        ]
+      },
+      "tris": {
+        "lod0": 160,
+        "lod1": 152,
+        "lod2": 152
+      },
+      "materials": [
+        "metal_rust",
+        "timber_bare",
+        "metal_galv"
+      ],
+      "tags": [
+        "roof",
+        "plant",
+        "landmark"
+      ]
+    }
+  }
+}
