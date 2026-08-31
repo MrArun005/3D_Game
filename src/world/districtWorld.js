@@ -6,6 +6,7 @@ import { ARCH, TOWER, MID, LOFT, PODIUM, DECK } from './facades.js';
 import { mulberry32 } from '../core/rng.js';
 import { PAINT_COLOURS, BODY_KEYS } from '../vehicle/config.js';
 import { signalState, LAMP_COLOURS } from './signals.js';
+import { BREAK_CLASS } from './breakables.js';
 import { ZEBRA_DEPTH } from '../game/traffic.js';
 
 /**
@@ -65,6 +66,7 @@ export class DistrictWorld {
        that rule put invisible walls across car parks and left half the
        facades passable. */
     this.solidsByChunk = new Map();
+    this.poolsByChunk = new Map();
     this.queue = [];          // chunks waiting to be built
     this.pending = new Set(); // ...and their keys, so we never queue twice
     this.primed = false;
@@ -313,6 +315,8 @@ export class DistrictWorld {
         this.parkedByChunk.delete(k);
         this.signalsByChunk.delete(k);
         this.solidsByChunk.delete(k);
+        this.poolsByChunk.delete(k);
+        this.onBreakablesGone?.(k);
       }
     }
   }
@@ -771,6 +775,8 @@ export class DistrictWorld {
            from dressing.js instead, placed by the same loop -- keeping both
            would stand a box lamp inside every real one. */
         if (dressed) continue;
+        // same junction rule as dressing.js: never on anyone's tarmac
+        if (this.district.tarmacDepth(px, pz) <= 0.2) continue;
         lamps.push(mat4(px, KERB_H + ly, pz, -yaw, 1, 1, 1));
         solidParked.push({ x: px, z: pz, yaw: 0, offsets: [0],
                            radius: 0.22, reach: 0.6, tag: 'prop' });
@@ -798,22 +804,27 @@ export class DistrictWorld {
         for (let t = 20; t < L - 12; t += 12) {
           if (hash(s2.ax + t, s2.az) > 0.42) continue;
           const side = hash(s2.az, s2.ax + t) < 0.5 ? 1 : -1;
+          const px = s2.ax + ux * t + nx * (s2.half - 1.2) * side;
+          const pz = s2.az + uz * t + nz * (s2.half - 1.2) * side;
+          /* A bay is legal on its OWN street's tarmac and nowhere else.
+             Segments run straight through junctions, so before this guard
+             1,995 of 6,305 bays (32%) sat inside another road's carriageway
+             -- a parked car in the middle of the crossing street. 1.5m keeps
+             the body (±1.45m offsets, 0.98m radius) clear of the other kerb. */
+          if (this.district.tarmacDepth(px, pz, s2) < 1.5) continue;
           /* Six silhouettes, not one. BODY_TYPES has had a hatch, wagon, suv,
              van and pickup in it the whole time and every parked car in
              Halstead Bay was a sedan -- the colours varied, so the street read
              as one model in eleven paint jobs. */
           const bk = BODY_KEYS[Math.floor(hash(s2.ax + t * 2.3, s2.bz) * BODY_KEYS.length)];
           (parked[bk] ?? (parked[bk] = [])).push(
-            mat4(s2.ax + ux * t + nx * (s2.half - 1.2) * side,
-                 0, s2.az + uz * t + nz * (s2.half - 1.2) * side,
-                 -Math.atan2(uz, ux), 1, 1, 1));
+            mat4(px, 0, pz, -Math.atan2(uz, ux), 1, 1, 1));
           // one shared white material would give us a street of identical
           // ghosts, which is exactly what it did
           (parkedCol[bk] ?? (parkedCol[bk] = [])).push(
             PAINT_COLOURS[Math.floor(hash(s2.az + t, s2.ax) * PAINT_COLOURS.length)]);
           solidParked.push({
-            x: s2.ax + ux * t + nx * (s2.half - 1.2) * side,
-            z: s2.az + uz * t + nz * (s2.half - 1.2) * side,
+            x: px, z: pz,
             yaw: Math.atan2(uz, ux),
             offsets: [-1.45, 0, 1.45], radius: 0.98, reach: 2.9, tag: 'parked',
           });
@@ -832,6 +843,9 @@ export class DistrictWorld {
       group.add(props);
       this.propGroups.set(k, props);
       const batch = new InstanceBatch(this.catalogue);
+      /* record where each breakable prop's triangles land in the merged
+         buffers, so world/breakables.js can knock them over (see its header) */
+      batch.trackNames = BREAK_CLASS;
       const dressPools = [];
       dressChunk(batch, {
         segments: segs.map((id) => this.district.segments[id]),
@@ -852,7 +866,11 @@ export class DistrictWorld {
       fbatch.emit(faces, { shadow: false })
         .catch((e) => console.warn('facades failed:', e.message));
       // fire and forget: the chunk is usable now, the props land a frame later
-      batch.emit(props).catch((e) => console.warn('dressing failed:', e.message));
+      batch.emit(props).then(() => {
+        if (batch.tracked.length) {
+          this.onBreakables?.(k, batch.tracked, solidParked, this.poolsByChunk.get(k));
+        }
+      }).catch((e) => console.warn('dressing failed:', e.message));
       for (const p of dressPools) pools.push(flat(p.x, p.y, p.z, p.size));
     }
 
@@ -905,6 +923,11 @@ export class DistrictWorld {
       pools.forEach((m, i) => pm.setMatrixAt(i, m));
       pm.instanceMatrix.needsUpdate = true;
       group.add(pm);
+      /* breakables need to find a felled lamp's glow pool, or the sodium
+         spill keeps floating over an empty pavement all night */
+      this.poolsByChunk.set(k, {
+        mesh: pm, at: pools.map((m) => [m.elements[12], m.elements[14]]),
+      });
     }
     /* Facade textures tile through a per-instance aUvScale attribute. Without
        it a single 4-storey tile is stretched over a 78m tower, which is exactly

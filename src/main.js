@@ -40,12 +40,20 @@ import { Recorder } from './game/recorder.js';
 import { createAudio } from './game/audio.js';
 import { createWeather } from './world/weather.js';
 import { buildHuman } from './world/human.js';
+import { Debris } from './world/breakables.js';
 
 /* Day first. Night is still fully built -- ?night in the URL brings it back --
    but daylight is the honest view: nothing hides behind a lamp glow. */
 const DAY = !new URLSearchParams(location.search).has('night');
 
 const canvas = document.getElementById('gl');
+/* The boot overlay is static HTML in index.html so it paints before this
+   module even parses; from here we narrate the slow phases into it and
+   frame() removes it on the first rendered frame. */
+let boot = document.getElementById('boot');
+const bootMsg = document.getElementById('bootmsg');
+const bootSay = (m) => { if (bootMsg) bootMsg.textContent = m; };
+bootSay('waking the GPU…');
 const renderer = createRenderer(canvas);
 /* WebGPU acquires its adapter and device asynchronously, and nothing that
    touches the backend -- PMREM for the sky's environment map, the first
@@ -53,6 +61,7 @@ const renderer = createRenderer(canvas);
    the honest expression of it: the module simply does not finish evaluating
    until the GPU is ready. Vite is on an es2022 target, so this ships. */
 await renderer.init();
+bootSay('building the city & compiling shaders — the first load is the slow one…');
 const resolution = autoResolution(renderer);
 /* WebGPURenderer exposes no capabilities.getMaxAnisotropy(); 16 is the
    guaranteed WebGPU maximum and the value the WebGL path was returning here
@@ -66,23 +75,32 @@ const scene = createScene(DAY);
 const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.5, 14000);
 const { sun, sunFar } = createLights(scene, DAY);
 const { dome } = createSky(scene, renderer, DAY);
-const grade = createGrade();
+/* Tier 1.1: the grade is now the whole post stack — scene MRT pass, GTAO,
+   emissive-fed bloom, tone map, then the vignette/grain/rain folded into the
+   same node graph (see core/grade.js). ?noao / ?nobloom drop a stage for an
+   A/B against the stats overlay. */
+const grade = createGrade(renderer, scene, camera, {
+  ao: !new URLSearchParams(location.search).has('noao'),
+  bloom: !new URLSearchParams(location.search).has('nobloom'),
+  aa: !new URLSearchParams(location.search).has('noaa'),
+  post: !new URLSearchParams(location.search).has('nopost'),
+});
 
 const assets = createAssets();
 grade.resize(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio());
-// daylight needs a higher threshold or the whole sky blooms
-/* Bloom is OFF.
-   The offscreen-target path it needs does not composite correctly -- with it
-   on, the road surface drops out of the frame and you are left looking at the
-   ground plate. It is also Tier 1 work that, per CLAUDE.md rule 2, should not
-   have been written against the WebGL material system before the WebGPU
-   migration. Re-enable with grade.setBloom(true, ...) once the blit is fixed
-   and screenshot-verified in BOTH day and night. */
-grade.setBloom(false);
+/* Bloom needs no day/night switch: it reads the emissive MRT channel, and
+   daylightAssets() below dims facade emissive to 0.04 — under the bloom
+   threshold — so at noon only signal lenses and brake lights carry a halo
+   while at night the baked-emissive windows and lamps bleed as designed. */
 if (DAY) {
   daylightAssets(assets);
   grade.vignette.uniforms.uStrength.value = 0.26;   // noon is not a film noir
   grade.grain.uniforms.uAmount.value = 0.012;
+} else {
+  /* Night ran genuinely too dark away from lit facades — silhouettes on a
+     horizon glow. A nudged exposure lifts the mid-tones without touching the
+     look of the emissive windows (they are already past the bloom knee). */
+  renderer.toneMappingExposure = 1.15;
 }
 /* `world` is whatever is currently building geometry. It starts as the old
    procedural grid so the game runs immediately, and is swapped for Halstead
@@ -111,6 +129,16 @@ function daylightAssets(A) {
 }
 
 let world = new City(scene, assets);
+/* Destructible street furniture (world/breakables.js). Inert until the
+   catalogue resolves and DistrictWorld starts reporting breakable chunks. */
+const debris = new Debris(scene);
+/* ?debug: expose the live car state for the browser-automation harness —
+   closed-loop test drivers need to read position and yaw. Dev-only surface,
+   not a save-game: nothing in the game reads it back. */
+if (new URLSearchParams(location.search).has('debug')) {
+  window.__car = () => car;
+  window.__breakNear = (x, z, r = 3) => debris.breakNear(x, z, r, car, 12);
+}
 let beach = null, water = null, crowd = null, heli = null, districtRef = null, drowning = 0;
 const person = buildHuman();
 scene.add(person.root);
@@ -396,6 +424,9 @@ Promise.all([loadDistrict(), catalogueReady]).then(([district, catalogue]) => {
   for (const g of city.cells.values()) scene.remove(g);
   city.cells.clear();
   world = new DistrictWorld(scene, assets, district, { day: DAY, catalogue });
+  debris.catalogue = catalogue;
+  world.onBreakables = (k, tracked, solids, pools) => debris.registerChunk(k, tracked, solids, pools);
+  world.onBreakablesGone = (k) => debris.dropChunk(k);
   /* buildCar CLONES mats.paint so each car keeps its own colour, so dressing
      the shared library material would never reach the car you are driving.
      The hero's own instances have to be handed over by name. */
@@ -445,6 +476,10 @@ Promise.all([loadDistrict(), catalogueReady]).then(([district, catalogue]) => {
 
 // ---- the car ----
 const car = createCarState();
+/* Headlights are automatic: on at night, off at noon. H still overrides —
+   the toggle in the input handler flips whatever this set. In daylight the
+   two real spotlights were burning cost while being visually invisible. */
+car.headlights = !DAY;
 const hero = buildCar(assets.carMats, 0x5b636d);
 scene.add(hero);
 // the damage model marks the real bodywork, so it needs the real meshes
@@ -647,6 +682,11 @@ function frame() {
   }
   }
 
+  /* Breakables go BEFORE the physics step: a lamp post the car is about to
+     fell must lose its collision solid before the tyre model resolves against
+     it, or the car eats a dead stop on the frame it breaks through. */
+  debris.update(car, dt);
+
   // fixed-step physics keeps the tyre model stable regardless of frame rate
   physicsAccumulator += dt;
   let guard = 0;
@@ -746,13 +786,21 @@ function frame() {
   grade.setDrops(DAY ? 0 : chase.mode >= 2 ? 1.2 : 0.68);
   world.update(car.x, car.z);
   resolution(dt);
-  grade.beginScene(renderer);
-  renderer.render(scene, camera);
-  // grade is a second pass; read scene stats before it overwrites renderer.info
-  stats.sample(renderer);
-  const draws = renderer.info.render.calls;
-  const tris = renderer.info.render.triangles;
+  /* One render: the pipeline owns the frame (scene MRT pass, GTAO, bloom,
+     tone map, grade — core/grade.js). renderer.info accumulates across a
+     frame's internal passes and resets once per rAF by the renderer's own
+     animation pump, so sampling after the pipeline reads the whole frame —
+     scene + shadow passes + ~15 fullscreen post quads. */
   grade.render(renderer, now / 1000);
+  // the first real frame is on screen: drop the boot overlay
+  if (boot) { boot.remove(); boot = null; }
+  stats.sample(renderer);
+  /* drawCalls, not calls: `render.calls` counts render-pass INVOCATIONS since
+     load and is never reset, so the banner's old "907 DRAWS" was a lifetime
+     pass counter that happened to look plausible. `drawCalls` is the real
+     per-frame number and matches the F3 overlay. */
+  const draws = renderer.info.render.drawCalls;
+  const tris = renderer.info.render.triangles;
   stats.update(dt, world, renderer);
   hud.update(car, traffic, mission, net, heli);
   if (bustFlash > 0) {

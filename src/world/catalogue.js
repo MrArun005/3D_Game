@@ -254,6 +254,13 @@ export class InstanceBatch {
   constructor(catalogue) {
     this.cat = catalogue;
     this.buckets = new Map();       // assetName -> Matrix4[]
+    /* Optional break-tracking (world/breakables.js). Set `trackNames` to
+       anything with .has(name) before emit() and every placement of those
+       assets records WHERE its triangles landed in the merged buffers —
+       {name, matrix, ranges:[{mesh, start, count}]} — so a broken prop can be
+       zeroed out of the merge instead of costing its own draw call. */
+    this.trackNames = null;
+    this.tracked = [];
   }
 
   add(name, matrix) {
@@ -261,6 +268,12 @@ export class InstanceBatch {
     let list = this.buckets.get(name);
     if (!list) this.buckets.set(name, (list = []));
     list.push(matrix);
+  }
+
+  #trackRec(name, matrix) {
+    let rec = this.tracked.find((r) => r.matrix === matrix);
+    if (!rec) this.tracked.push(rec = { name, matrix, ranges: [] });
+    return rec;
   }
 
   get count() { return this.buckets.size; }
@@ -287,7 +300,7 @@ export class InstanceBatch {
         for (const p of parts) {
           let b = byMaterial.get(p.material);
           if (!b) byMaterial.set(p.material, (b = []));
-          for (const mm of list) b.push({ geo: p.geometry, matrix: mm });
+          for (const mm of list) b.push({ geo: p.geometry, matrix: mm, name });
         }
       }));
     }
@@ -295,6 +308,8 @@ export class InstanceBatch {
 
     for (const [material, items] of byMaterial) {
       const geos = [];
+      const pending = [];               // break-tracking: ranges awaiting the mesh
+      let offset = 0;
       for (const it of items) {
         /* Non-indexed throughout: mergeGeometries refuses a mix of indexed and
            non-indexed inputs, and the kit is authored both ways. These are
@@ -313,6 +328,11 @@ export class InstanceBatch {
           g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
         }
         if (!g.attributes.normal) g.computeVertexNormals();
+        const count = g.attributes.position.count;
+        if (this.trackNames?.has(it.name)) {
+          pending.push({ rec: this.#trackRec(it.name, it.matrix), start: offset, count });
+        }
+        offset += count;
         geos.push(g);
       }
       if (!geos.length) continue;
@@ -326,6 +346,7 @@ export class InstanceBatch {
       mesh.receiveShadow = true;
       mesh.userData.fromCatalogue = true;
       group.add(mesh);
+      for (const p of pending) p.rec.ranges.push({ mesh, start: p.start, count: p.count });
     }
     return group;
   }
