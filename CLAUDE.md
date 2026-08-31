@@ -20,20 +20,21 @@ authored by me. No paid licences anywhere in the pipeline.
 
 1. **Never regress frame rate to buy fidelity.** 60fps at 1440x860 is the floor.
    If a change costs frames, it must state what it costs and what pays for it.
-2. **No new `onBeforeCompile`.** We are migrating to WebGPU + TSL. Custom shader
-   work written against the WebGL material system is migration debt. If a shader
-   is unavoidable, write it so the TSL port is mechanical, and say so in a comment.
+2. **No `onBeforeCompile`, no `ShaderMaterial`.** The migration is DONE — the
+   project runs on `WebGPURenderer` and TSL, and neither construct appears
+   anywhere in `src/`. Keep it that way: shader work goes in TSL nodes.
 
-   **Standing debt against this rule** (all pre-date the contract):
-   `world/city.js:25` `onBeforeCompile` for `aUvScale`; `core/grade.js` six
-   `ShaderMaterial`s — vignette, grain, lens, and the three added for bloom
-   (bright-pass, separable blur, blit); `world/skidmarks.js:32` one. The bloom
-   chain is deliberately the most mechanical port on the list: threshold, two
-   nine-tap gaussians, additive composite.
-
-   Note that `world/districtWorld.js` no longer needs `aUvScale` for its
-   authored dressing — the asset kit carries its own UVs — so the only
-   `onBeforeCompile` left is the legacy grid's.
+   Three traps the migration paid for, worth knowing before writing a node:
+   - Setting `.colorNode` on a **classic** material (`MeshStandardMaterial`)
+     is silently ignored. Build a `*NodeMaterial`, or `copy()` into one.
+   - `materialColor` is NOT `material.color`. three defines it as
+     `color * map(default uv)`, and `materialEmissive` as
+     `emissive * emissiveIntensity * emissiveMap(default uv)`. Multiplying
+     your own texture sample by either one samples the texture **twice** and
+     squares it.
+   - Reading a material property as a plain number **bakes** it. Anything the
+     game changes at runtime (`emissiveIntensity` is dimmed to 0.04 for
+     daylight) needs `materialReference(name, type)`.
 3. **Procedural for layout, authored for detail.** The city assembly logic stays
    procedural. Anything the player sees inside ~30 m should come from the asset
    catalogue, not from a `BoxGeometry` in code.
@@ -99,7 +100,15 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
 
 - Tests: `npm test` — 20/20 passing. Node's built-in runner, no framework.
 - `npm run dev` (vite, :5173), `npm run build`, `npm run preview`.
-- three r185, WebGL renderer. WebGPU migration is Tier 0 of `docs/ROADMAP.md`.
+- three r185, **WebGPURenderer** (WebGL2 backend where WebGPU is absent).
+  `vite.config.js` aliases `three` -> `three/webgpu` with an exact-match
+  regex; a plain string alias would also rewrite `three/tsl`. `main.js` has a
+  top-level `await renderer.init()` — nothing may touch the backend before
+  the device resolves.
+- Tier 1's post stack is now within reach for free: three ships `BloomNode`,
+  `GTAONode`, `FXAANode`, `MotionBlur` and `DepthOfFieldNode` in
+  `three/examples/jsm/tsl/display/`. The hand-rolled bloom chain was deleted
+  rather than ported; `grade.setBloom()` is a no-op stub pending that work.
 - ~900-1000 draw calls and ~4.1M triangles facing downtown with the full
   authored kit placed (budgets: 1400 draws, 4.0M triangles). Triangles came
   DOWN from 5.7M while the city gained ~14,000 props, because the profile
