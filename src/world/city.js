@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import {
+  attribute, texture, uv, materialColor, materialEmissive, materialReference,
+} from 'three/tsl';
 import { mulberry32 } from '../core/rng.js';
 import { M4 } from '../core/geometry.js';
 import {
@@ -22,18 +25,36 @@ import { PAINT_COLOURS, BODY_KEYS, BODY_TYPES } from '../vehicle/config.js';
  * a per-instance scale into the shader so the tile repeats at its real size.
  */
 export function makeTileable(material) {
-  material.onBeforeCompile = (shader) => {
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec2 aUvScale;')
-      .replace('#include <uv_vertex>', `#include <uv_vertex>
-#ifdef USE_MAP
-  vMapUv *= aUvScale;
-#endif
-#ifdef USE_EMISSIVEMAP
-  vEmissiveMapUv *= aUvScale;
-#endif`);
-  };
-  material.customProgramCacheKey = () => 'tiled-facade';
+  /* TSL, and this is the one that mattered.
+     The GLSL version reached into the compiled program to multiply vMapUv and
+     vEmissiveMapUv by a per-instance attribute -- two string replacements
+     against three's own shader chunks, which is exactly the migration debt
+     rule 2 exists to stop. As a node it is one expression: scale the UV, then
+     sample both maps through it. No cache key to hand-manage either, because
+     the node graph IS the cache key. */
+  const scaled = uv().mul(attribute('aUvScale', 'vec2'));
+  /* A node REPLACES the term it names, it does not decorate it.
+     `colorNode = texture(map)` drops the material.color multiply, and
+     `emissiveNode = texture(emissiveMap)` drops both material.emissive and
+     emissiveIntensity -- which on these facades is a 1.05-1.2 multiplier on a
+     white emissive, so every lit window came out at full texture brightness
+     and the towers rendered blown out. Both multiplies have to be written
+     back in explicitly. */
+  if (material.map) {
+    material.colorNode = texture(material.map, scaled).mul(materialColor);
+  }
+  if (material.emissiveMap) {
+    /* materialReference, NOT the value.
+       Reading `material.emissiveIntensity` here bakes whatever it happens to
+       be when the material is built. main.js then dims the facades to 0.04
+       for daylight -- windows are not lit at noon -- and the node never saw
+       it, so every tower rendered with its night-time windows blazing in
+       broad daylight. A reference node re-reads the property each frame,
+       which is what the classic material path did for free. */
+    material.emissiveNode = texture(material.emissiveMap, scaled)
+      .mul(materialEmissive)
+      .mul(materialReference('emissiveIntensity', 'float'));
+  }
   return material;
 }
 

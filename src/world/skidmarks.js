@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { attribute, vec3, float } from 'three/tsl';
 
 /**
  * Rubber left on the road.
@@ -28,28 +29,25 @@ export class SkidMarks {
 
     /* A plain transparent black would be a wet-look smear. Rubber reads as a
        dark stain that fades along its own length, so the strength travels in
-       a vertex attribute rather than a uniform. */
-    const mat = new THREE.ShaderMaterial({
+       a vertex attribute rather than a uniform.
+
+       TSL (Tier 0.3): `attribute('aAlpha')` is the whole of what the old
+       vertex shader did -- the position transform it also wrote out by hand is
+       the default path, so it simply goes away. */
+    const a = attribute('aAlpha', 'float');
+    const mat = new THREE.MeshBasicNodeMaterial({
       transparent: true,
       depthWrite: false,
       polygonOffset: true,
       polygonOffsetFactor: -4,
       polygonOffsetUnits: -4,
-      uniforms: {},
-      vertexShader: `
-        attribute float aAlpha;
-        varying float vA;
-        void main() {
-          vA = aAlpha;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }`,
-      fragmentShader: `
-        varying float vA;
-        void main() {
-          if (vA <= 0.004) discard;
-          gl_FragColor = vec4(0.04, 0.04, 0.045, vA * 0.62);
-        }`,
     });
+    mat.colorNode = vec3(0.04, 0.04, 0.045);
+    mat.opacityNode = a.mul(0.62);
+    /* The GLSL discarded below 0.004 rather than trusting the blend. Keep it:
+       the buffer is a ring of MAX quads and the unused tail is all zeros, so
+       without this every retired skid still costs a blended fragment. */
+    mat.alphaTestNode = float(0.0025);
 
     const mesh = new THREE.Mesh(geo, mat);
     mesh.frustumCulled = false;
