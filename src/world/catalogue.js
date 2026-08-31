@@ -330,3 +330,50 @@ export class InstanceBatch {
     return group;
   }
 }
+
+/**
+ * Put the material library's surface detail on the hero car.
+ *
+ * Only worth doing now that core/geometry.js:loft() emits a real cylindrical
+ * unwrap -- against the old all-zero UV attribute every one of these maps
+ * would have sampled a single texel and done nothing at all.
+ *
+ * COLOUR is deliberately not taken from the library. The paint tint is
+ * per-car and the damage model drives roughness, metalness and soot through
+ * the same material every frame; what the library adds is the surface
+ * underneath that -- orange peel in the clearcoat, tread on the rubber.
+ * A map multiplies the scalar rather than replacing it, so the damage model
+ * keeps working untouched.
+ */
+export function dressCarMaterials(cat, mats) {
+  if (!cat?.materials?.size || !mats) return 0;
+  const pairs = [
+    [mats.paint, 'car_paint'],
+    [mats.rubber, 'tyre_rubber'],
+    [mats.chrome, 'chrome_trim'],
+    [mats.alloy, 'alloy_polished'],
+    [mats.glass, 'car_glass'],
+    [mats.skin, 'skin'],
+    [mats.shirt, 'cloth_shirt'],
+  ];
+  let n = 0;
+  for (const [target, name] of pairs) {
+    const src = cat.materials.get(name);
+    if (!target || !src) continue;
+    if (src.normalMap) {
+      target.normalMap = src.normalMap;
+      target.normalScale = src.normalScale?.clone?.() ?? target.normalScale;
+    }
+    if (src.roughnessMap) {
+      target.roughnessMap = src.roughnessMap;
+      /* aoMap needs a second UV set unless told otherwise, and the hull has
+         exactly one. The texture's own channel was already set to 0 when the
+         library was built, so this just opts the car into the same map. */
+      target.aoMap = src.aoMap ?? src.roughnessMap;
+      target.metalnessMap = src.metalnessMap ?? src.roughnessMap;
+    }
+    target.needsUpdate = true;
+    n++;
+  }
+  return n;
+}

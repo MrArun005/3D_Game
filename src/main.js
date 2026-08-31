@@ -6,7 +6,7 @@ import { createSky } from './core/sky.js';
 import { createGrade } from './core/grade.js';
 import { setAnisotropy } from './world/textures.js';
 import { createAssets } from './world/assets.js';
-import { Catalogue } from './world/catalogue.js';
+import { Catalogue, dressCarMaterials } from './world/catalogue.js';
 import { City } from './world/city.js';
 import { DistrictWorld } from './world/districtWorld.js';
 import { loadDistrict } from './world/district.js';
@@ -384,6 +384,18 @@ Promise.all([loadDistrict(), catalogueReady]).then(([district, catalogue]) => {
   for (const g of city.cells.values()) scene.remove(g);
   city.cells.clear();
   world = new DistrictWorld(scene, assets, district, { day: DAY, catalogue });
+  /* buildCar CLONES mats.paint so each car keeps its own colour, so dressing
+     the shared library material would never reach the car you are driving.
+     The hero's own instances have to be handed over by name. */
+  if (catalogue) {
+    const n = dressCarMaterials(catalogue, {
+      ...assets.carMats,
+      paint: hero.userData.paint,
+      glass: hero.userData.glass?.material,
+      shirt: hero.userData.driver?.material,
+    });
+    console.info(`car materials dressed: ${n}`);
+  }
   world.onChunkBuilt = (ms) => stats.reportChunkBuild(ms);
   water = buildWater(scene, district, DAY);
   buildSurrounds(scene, district.bounds, DAY);

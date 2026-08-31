@@ -71,6 +71,19 @@ export function createAssets() {
       map: intersection, roughness: 0.38, metalness: 0.08, envMapIntensity: 1.0,
     }),
     walk: new THREE.MeshLambertMaterial({ map: walk }),
+    /* The same slabs, tiled ONCE.
+       `walk` carries repeat = (WALK_W/2.4, CELL/2.4) for the legacy 130m grid,
+       which writes no UVs of its own. districtWorld DOES write real UVs, in
+       units of tiles -- so the repeat multiplied on top of them, crushing a
+       4x4 slab pattern to roughly a fiftieth of a texel down the length of
+       every pavement. At a grazing angle that aliases into black corrugation,
+       which is what the pavements have looked like all along. */
+    walkDistrict: new THREE.MeshLambertMaterial({ map: (() => {
+      const t = walk.clone();
+      t.repeat.set(1, 1);
+      t.needsUpdate = true;
+      return t;
+    })() }),
     kerb: new THREE.MeshLambertMaterial({ color: 0x44474c }),
     roof: new THREE.MeshLambertMaterial({ color: 0x2a2e34 }),
     roofGlass: new THREE.MeshStandardMaterial({

@@ -4,7 +4,7 @@ import { dressChunk, dressRoofs, dressFacades, place as placeAsset } from './dre
 import { KERB_H, roadDepth } from './metrics.js';
 import { ARCH, TOWER, MID, LOFT, PODIUM, DECK } from './facades.js';
 import { mulberry32 } from '../core/rng.js';
-import { PAINT_COLOURS } from '../vehicle/config.js';
+import { PAINT_COLOURS, BODY_KEYS } from '../vehicle/config.js';
 import { signalState, LAMP_COLOURS } from './signals.js';
 import { ZEBRA_DEPTH } from '../game/traffic.js';
 
@@ -274,13 +274,12 @@ export class DistrictWorld {
       if (fg) fg.visible = d <= 1;
       const pl = this.parkedLod.get(key);
       if (pl) {
-        pl.near.visible = d <= 1;
-        pl.far.visible = d > 1;
+        for (const m of pl.near) { m.visible = d <= 1; m.castShadow = d === 0; }
+        for (const m of pl.far) m.visible = d > 1;
         /* Shadows from the chunk you are standing in, and nowhere else.
            389 near parked cars were casting 950k triangles into the cascades
            -- more than the entire authored prop kit -- to draw a row of
            smudges under cars a street away. */
-        pl.near.castShadow = d === 0;
       }
       /* Shadows only from the ring you are standing in.
          A shadow-casting mesh is drawn once per camera and once per cascade,
@@ -520,7 +519,7 @@ export class DistrictWorld {
     emit(white, A.mat.paint);              // basic material, normals unused
     emit(warm, A.mat.paintWarm);
     emit(kerb, A.mat.kerbFace, kerbN);
-    emit(walk, A.mat.walk, walkN, walkUv, true);
+    emit(walk, A.mat.walkDistrict ?? A.mat.walk, walkN, walkUv, true);
   }
 
   /**
@@ -748,7 +747,8 @@ export class DistrictWorld {
        city got all its night light from these; the district world shipped
        without a single one, which is why Halstead Bay looked like a dark plain
        rather than a lit street. */
-    const lamps = [], heads = [], pools = [], parked = [], parkedCol = [], solidParked = [];
+    const lamps = [], heads = [], pools = [], solidParked = [];
+    const parked = {}, parkedCol = {};       // keyed by silhouette
     const dressed = !!this.catalogue;
     // one bucket per species, so a street never plants the same tree twice over
     const trees = { plane: [], pine: [], poplar: [], palm: [] };
@@ -798,12 +798,19 @@ export class DistrictWorld {
         for (let t = 20; t < L - 12; t += 12) {
           if (hash(s2.ax + t, s2.az) > 0.42) continue;
           const side = hash(s2.az, s2.ax + t) < 0.5 ? 1 : -1;
-          parked.push(mat4(s2.ax + ux * t + nx * (s2.half - 1.2) * side,
-                           0, s2.az + uz * t + nz * (s2.half - 1.2) * side,
-                           -Math.atan2(uz, ux), 1, 1, 1));
+          /* Six silhouettes, not one. BODY_TYPES has had a hatch, wagon, suv,
+             van and pickup in it the whole time and every parked car in
+             Halstead Bay was a sedan -- the colours varied, so the street read
+             as one model in eleven paint jobs. */
+          const bk = BODY_KEYS[Math.floor(hash(s2.ax + t * 2.3, s2.bz) * BODY_KEYS.length)];
+          (parked[bk] ?? (parked[bk] = [])).push(
+            mat4(s2.ax + ux * t + nx * (s2.half - 1.2) * side,
+                 0, s2.az + uz * t + nz * (s2.half - 1.2) * side,
+                 -Math.atan2(uz, ux), 1, 1, 1));
           // one shared white material would give us a street of identical
           // ghosts, which is exactly what it did
-          parkedCol.push(PAINT_COLOURS[Math.floor(hash(s2.az + t, s2.ax) * PAINT_COLOURS.length)]);
+          (parkedCol[bk] ?? (parkedCol[bk] = [])).push(
+            PAINT_COLOURS[Math.floor(hash(s2.az + t, s2.ax) * PAINT_COLOURS.length)]);
           solidParked.push({
             x: s2.ax + ux * t + nx * (s2.half - 1.2) * side,
             z: s2.az + uz * t + nz * (s2.half - 1.2) * side,
@@ -864,7 +871,7 @@ export class DistrictWorld {
       m.computeBoundingSphere();          // static for the life of the chunk
       group.add(m);
     };
-    inst(slabGeo, A.mat.walk, slabs.block);
+    inst(slabGeo, A.mat.walkDistrict ?? A.mat.walk, slabs.block);
     inst(slabGeo, A.mat.parkGround ?? A.mat.leaf, slabs.park);
     inst(slabGeo, A.mat.kerb, slabs.lot);
     inst(slabGeo, A.mat.kerb, slabs.vacant);
@@ -880,16 +887,18 @@ export class DistrictWorld {
     /* Two versions of the kerbside fleet, and the ring decides which you see.
        Both are built once with the chunk; only the instance matrices cost
        anything to keep, and the geometry is shared. */
-    inst(A.geo.stunt.sedan.body, A.mat.parked, parked, true, parkedCol);
-    const nearParked = group.children[group.children.length - 1];
-    if (nearParked) nearParked.name = 'parkedNear';
-    inst(A.geo.stunt.sedan.lodBody ?? A.geo.stunt.sedan.body, A.mat.parked, parked, false, parkedCol);
-    const farParked = group.children[group.children.length - 1];
-    if (farParked && farParked !== nearParked) {
-      farParked.name = 'parkedFar';
-      farParked.visible = false;
-      this.parkedLod.set(k, { near: nearParked, far: farParked });
+    const nearParked = [], farParked = [];
+    for (const bk of Object.keys(parked)) {
+      const kit = A.geo.stunt[bk];
+      if (!kit) continue;
+      inst(kit.body, A.mat.parked, parked[bk], true, parkedCol[bk]);
+      const n = group.children[group.children.length - 1];
+      if (n) { n.name = `parkedNear:${bk}`; nearParked.push(n); }
+      inst(kit.lodBody ?? kit.body, A.mat.parked, parked[bk], false, parkedCol[bk]);
+      const f = group.children[group.children.length - 1];
+      if (f && f !== n) { f.name = `parkedFar:${bk}`; f.visible = false; farParked.push(f); }
     }
+    if (nearParked.length) this.parkedLod.set(k, { near: nearParked, far: farParked });
     if (pools.length) {
       const pm = new THREE.InstancedMesh(A.geo.plane, A.mat.pool, pools.length);
       pm.frustumCulled = false; pm.renderOrder = 2;

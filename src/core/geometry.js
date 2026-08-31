@@ -35,11 +35,19 @@ export function mergeGeos(list) {
   return out;
 }
 
-export function fromTris(positions, normals) {
+/**
+ * `uvs` is optional only for callers that genuinely have nothing to say. It
+ * used to be absent everywhere, which wrote an all-zero UV attribute onto the
+ * car hull and every merged prop -- every texel sampled the same corner of the
+ * map, so the hull could never take a normal map, a livery, a plate or dirt.
+ * That single omission is what blocked Tier 2 of the roadmap.
+ */
+export function fromTris(positions, normals, uvs) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
   if (normals) g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normals), 3));
-  g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array((positions.length / 3) * 2), 2));
+  g.setAttribute('uv', new THREE.BufferAttribute(
+    uvs ? new Float32Array(uvs) : new Float32Array((positions.length / 3) * 2), 2));
   if (!normals) g.computeVertexNormals();
   return g;
 }
@@ -158,13 +166,38 @@ export function loft(stations, classify = () => 'body', smoothAngle = 48) {
     VN.push(row);
   }
 
+  /* UVs: a cylindrical unwrap, which is the parameterisation the loft already
+     has. U runs nose to tail in METRES normalised by hull length, so a decal is
+     not squashed where the stations bunch up; V runs around the section by
+     cumulative PERIMETER rather than by ring index, so the map does not stretch
+     across the wide flank and crush over the narrow roof.
+
+     The ring closes on itself (k2 wraps to 0), so a quad's second edge uses the
+     UNWRAPPED index -- v = 1 rather than v = 0 -- which puts a normal texture
+     seam down the underside instead of mirroring the whole map back on itself. */
+  const x0 = stations[0][0];
+  const xLen = (stations[S - 1][0] - x0) || 1;
+  const ringV = [];
+  for (let i = 0; i < S; i++) {
+    const acc = [0];
+    let total = 0;
+    for (let k = 0; k < N; k++) {
+      const a = P[i][k], b = P[i][(k + 1) % N];
+      total += Math.hypot(b[1] - a[1], b[2] - a[2]);
+      acc.push(total);
+    }
+    ringV.push(acc.map((d) => d / (total || 1)));
+  }
+  const uAt = (i) => (stations[i][0] - x0) / xLen;
+
   const buckets = new Map();
-  const emit = (name, verts, normals) => {
+  const emit = (name, verts, normals, uvs) => {
     let b = buckets.get(name);
-    if (!b) buckets.set(name, (b = { p: [], n: [] }));
+    if (!b) buckets.set(name, (b = { p: [], n: [], u: [] }));
     for (let i = 0; i < verts.length; i++) {
       b.p.push(verts[i][0], verts[i][1], verts[i][2]);
       b.n.push(normals[i][0], normals[i][1], normals[i][2]);
+      b.u.push(uvs[i][0], uvs[i][1]);
     }
   };
   // hard crease if the quad disagrees with the averaged normal too much
@@ -192,8 +225,12 @@ export function loft(stations, classify = () => 'body', smoothAngle = 48) {
       const nb = pickNormal(fn, VN[i + 1][k]);
       const nc = pickNormal(fn, VN[i + 1][k2]);
       const nd = pickNormal(fn, VN[i][k2]);
-      emit(name, [a, b, c], [na, nb, nc]);
-      emit(name, [a, c, d], [na, nc, nd]);
+      const ua = [uAt(i), ringV[i][k]];
+      const ub = [uAt(i + 1), ringV[i + 1][k]];
+      const uc = [uAt(i + 1), ringV[i + 1][k + 1]];
+      const ud = [uAt(i), ringV[i][k + 1]];
+      emit(name, [a, b, c], [na, nb, nc], [ua, ub, uc]);
+      emit(name, [a, c, d], [na, nc, nd], [ua, uc, ud]);
     }
   }
 
@@ -203,17 +240,28 @@ export function loft(stations, classify = () => 'body', smoothAngle = 48) {
     for (let k = 0; k < N; k++) { cy += secs[si][k][1]; cz += secs[si][k][0]; }
     const centre = [stations[si][0], cy / N, cz / N];
     const n = [flip ? 1 : -1, 0, 0];
+    /* The caps are a fan, so they get their own little disc projection --
+       taking a slice of the body map here would smear the whole flank texture
+       across the bumper face. */
+    let rMax = 1e-4;
+    for (let k = 0; k < N; k++) {
+      rMax = Math.max(rMax, Math.hypot(P[si][k][1] - centre[1], P[si][k][2] - centre[2]));
+    }
+    const capUv = (v) => [
+      0.5 + ((v[2] - centre[2]) / rMax) * 0.5,
+      0.5 + ((v[1] - centre[1]) / rMax) * 0.5,
+    ];
     for (let k = 0; k < N; k++) {
       const k2 = (k + 1) % N;
       const tri = flip
         ? [centre, P[si][k], P[si][k2]]
         : [centre, P[si][k2], P[si][k]];
-      emit('body', tri, [n, n, n]);
+      emit('body', tri, [n, n, n], tri.map(capUv));
     }
   }
 
   const out = {};
-  for (const [name, b] of buckets) out[name] = fromTris(b.p, b.n);
+  for (const [name, b] of buckets) out[name] = fromTris(b.p, b.n, b.u);
   return out;
 }
 
