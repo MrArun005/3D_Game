@@ -25,6 +25,7 @@ import { Traffic } from './game/traffic.js';
 import { Crowd } from './game/crowd.js';
 import { Helicopter } from './game/helicopter.js';
 import { OnFoot, makeSolver } from './game/onfoot.js';
+import { CHARACTERS } from './game/character.js';
 import { Mission } from './game/mission.js';
 import { Multiplayer, roomFromUrl, createRoom } from './game/multiplayer.js';
 import { Weapon } from './game/weapon.js';
@@ -536,6 +537,10 @@ const input = createInput((action) => {
   if (action === 'camera') chase.cycle();
   if (action === 'lights') car.headlights = !car.headlights;
   if (action === 'reset') respawnCar();
+  if (action === 'avatar' && onFoot.character) {
+    const i = onFoot.character.swap(onFoot.character.index + 1);
+    hud.flash(`CHARACTER ${i + 1}/${CHARACTERS.length}`);
+  }
   if (action === 'mute') { muted = !muted; audio.mute(muted); }
   if (action === 'use') useVehicle();
   if (action === 'room') joinRoom(roomFromUrl());

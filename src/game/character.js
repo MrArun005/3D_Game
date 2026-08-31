@@ -13,7 +13,20 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
  * Only the player gets one. A skinned mesh per pedestrian would cost far more
  * than the part-instanced crowd does, and nobody is looking that closely at
  * the ninety-six people on the pavement.
+ *
+ * Six models ship; five of them were never loaded by anything. They are the
+ * pool the player picks from -- `?me=3` on the URL, or K in play.
  */
+
+/** Every shipped avatar, in a stable order so `?me=` means the same thing. */
+export const CHARACTERS = [
+  '/models/characters/civilian_casual.glb',
+  '/models/characters/civilian_man.glb',
+  '/models/characters/civilian_woman.glb',
+  '/models/characters/civilian_suit.glb',
+  '/models/characters/civilian_longsleeve.glb',
+  '/models/characters/civilian_woman2.glb',
+];
 
 const CLIPS = {
   idle: ['Idle', 'Standing'],
@@ -25,14 +38,46 @@ const CLIPS = {
 const TARGET_HEIGHT = 1.78;            // metres, so they match the cars
 
 export class Character {
-  constructor(scene, url = '/models/characters/civilian_casual.glb') {
+  constructor(scene, url = CHARACTERS[0]) {
     this.root = new THREE.Group();
     this.root.visible = false;
     scene.add(this.root);
     this.ready = false;
     this.actions = {};
     this.current = null;
+    this.index = Math.max(0, CHARACTERS.indexOf(url));
+    this.#load(url);
+  }
 
+  /**
+   * Swap avatar. The old model is disposed rather than hidden -- a skinned
+   * mesh keeps its skeleton, its bone texture and its clips alive, and
+   * cycling through six of them would leak all six.
+   */
+  swap(index) {
+    const i = ((index % CHARACTERS.length) + CHARACTERS.length) % CHARACTERS.length;
+    if (i === this.index && this.ready) return this.index;
+    this.index = i;
+    const wasVisible = this.root.visible;
+    for (const child of [...this.root.children]) {
+      child.traverse((o) => {
+        if (!o.isMesh && !o.isSkinnedMesh) return;
+        o.geometry?.dispose();
+        for (const m of [].concat(o.material || [])) m?.dispose();
+      });
+      this.root.remove(child);
+    }
+    this.mixer?.stopAllAction();
+    this.mixer = null;
+    this.actions = {};
+    this.current = null;
+    this.ready = false;
+    this.#load(CHARACTERS[i]);
+    this.root.visible = wasVisible;
+    return i;
+  }
+
+  #load(url) {
     new GLTFLoader().load(url, (gltf) => {
       const model = gltf.scene;
       model.traverse((o) => {

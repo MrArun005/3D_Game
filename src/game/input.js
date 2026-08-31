@@ -105,7 +105,7 @@ export function createInput(onAction) {
   const blocked = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'];
   // must list every action the pad can raise, or its edge is never detected
   const prevDown = { camera: false, lights: false, reset: false, film: false,
-                     use: false, fire: false, run: false };
+                     use: false, fire: false, run: false, avatar: false };
 
   addEventListener('keydown', (e) => {
     keys[e.code] = true;
@@ -120,6 +120,7 @@ export function createInput(onAction) {
     if (e.code === 'KeyG') onAction('run');    // start / abandon a checkpoint run
     if (e.code === 'KeyJ') onAction('room');   // create / join a multiplayer room
     if (e.code === 'KeyE') onAction('fire');   // fire; left mouse does the same
+    if (e.code === 'KeyK') onAction('avatar'); // cycle which character you are
   });
   addEventListener('keyup', (e) => { keys[e.code] = false; });
 

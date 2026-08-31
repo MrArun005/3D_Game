@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { personGeometry } from '../world/beach.js';
-import { Character } from '../game/character.js';
+import { Character, CHARACTERS } from '../game/character.js';
 
 /**
  * The player, out of the car.
@@ -49,7 +49,12 @@ export class OnFoot {
 
     /* The blocks above stay as the fallback. If the rigged model loads they
        are hidden and never used again; if it fails you still have a body. */
-    this.character = new Character(scene);
+    /* Which of the six you are. `?me=` picks one for a session -- useful for
+       a multiplayer room, where two players otherwise arrive as the same
+       person -- and K cycles in play. */
+    const want = Number(new URLSearchParams(location.search).get('me'));
+    this.character = new Character(scene,
+      CHARACTERS[Number.isFinite(want) ? ((want % CHARACTERS.length) + CHARACTERS.length) % CHARACTERS.length : 0]);
     this.character.onReady = () => { this.group.visible = false; this.character.show(this.active); };
   }
 
