@@ -128,12 +128,13 @@ export function createAssets() {
     bodyKeys: BODY_KEYS, bodySpecs: BODY_TYPES, paints: PAINT_COLOURS,
     facades: (() => {
       const f = buildFacadeMaterials();
-      for (const k of Object.keys(f)) f[k].forEach(makeTileable);
+      // makeTileable returns a NODE material, so the result must be kept
+      for (const k of Object.keys(f)) f[k] = f[k].map(makeTileable);
       return f;
     })(),
     base: (() => {
       const b = buildBaseMaterials();
-      b.materials.forEach(makeTileable);
+      b.materials = b.materials.map(makeTileable);
       return b;
     })(),
     baseHeight: BASE_H,

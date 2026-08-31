@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {
-  attribute, texture, uv, materialColor, materialEmissive, materialReference,
+  attribute, texture, uv, materialReference,
 } from 'three/tsl';
 import { mulberry32 } from '../core/rng.js';
 import { M4 } from '../core/geometry.js';
@@ -25,6 +25,19 @@ import { PAINT_COLOURS, BODY_KEYS, BODY_TYPES } from '../vehicle/config.js';
  * a per-instance scale into the shader so the tile repeats at its real size.
  */
 export function makeTileable(material) {
+  /* Convert to a real node material FIRST.
+     `material.colorNode = ...` on a classic MeshStandardMaterial is silently
+     ignored: the renderer converts classic materials internally and the
+     bolted-on properties do not survive the trip, so the facades rendered
+     with an untiled 0..1 UV -- one four-storey tile stretched over a whole
+     tower, which is the exact bug this function exists to fix. `copy()`
+     carries the maps, colours and flags across. */
+  if (!material.isNodeMaterial) {
+    const node = new THREE.MeshStandardNodeMaterial();
+    node.copy(material);
+    node.name = material.name;
+    material = node;
+  }
   /* TSL, and this is the one that mattered.
      The GLSL version reached into the compiled program to multiply vMapUv and
      vEmissiveMapUv by a per-instance attribute -- two string replacements
@@ -32,7 +45,8 @@ export function makeTileable(material) {
      rule 2 exists to stop. As a node it is one expression: scale the UV, then
      sample both maps through it. No cache key to hand-manage either, because
      the node graph IS the cache key. */
-  const scaled = uv().mul(attribute('aUvScale', 'vec2'));
+  const aScale = attribute('aUvScale', 'vec2');
+  const scaled = uv().mul(aScale);
   /* A node REPLACES the term it names, it does not decorate it.
      `colorNode = texture(map)` drops the material.color multiply, and
      `emissiveNode = texture(emissiveMap)` drops both material.emissive and
@@ -40,19 +54,28 @@ export function makeTileable(material) {
      white emissive, so every lit window came out at full texture brightness
      and the towers rendered blown out. Both multiplies have to be written
      back in explicitly. */
+  /* materialReference to the RAW properties, and our own texture sample.
+     Two traps here, both of which cost a render each to find:
+
+     1. `materialColor` is not `material.color` -- three defines it as
+        `color * map(default uv)`, and `materialEmissive` as
+        `emissive * emissiveIntensity * emissiveMap(default uv)`. Multiplying
+        our scaled sample by either one samples the texture TWICE, at two
+        different UVs, and squares it. That is what darkened every facade.
+     2. Reading `material.emissiveIntensity` as a plain number bakes whatever
+        it happens to be at construction. main.js then dims the facades to
+        0.04 for daylight -- windows are not lit at noon -- and a baked node
+        never sees it, so the towers blazed in broad daylight.
+
+     A reference node re-reads the raw property every frame, which is exactly
+     what the classic material path did for free. */
   if (material.map) {
-    material.colorNode = texture(material.map, scaled).mul(materialColor);
+    material.colorNode = texture(material.map, scaled)
+      .mul(materialReference('color', 'color'));
   }
   if (material.emissiveMap) {
-    /* materialReference, NOT the value.
-       Reading `material.emissiveIntensity` here bakes whatever it happens to
-       be when the material is built. main.js then dims the facades to 0.04
-       for daylight -- windows are not lit at noon -- and the node never saw
-       it, so every tower rendered with its night-time windows blazing in
-       broad daylight. A reference node re-reads the property each frame,
-       which is what the classic material path did for free. */
     material.emissiveNode = texture(material.emissiveMap, scaled)
-      .mul(materialEmissive)
+      .mul(materialReference('emissive', 'color'))
       .mul(materialReference('emissiveIntensity', 'float'));
   }
   return material;

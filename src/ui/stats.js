@@ -60,7 +60,12 @@ export class Stats {
    * stats for a fullscreen quad.
    */
   sample(renderer) {
-    this.snapshot.draws = renderer.info.render.calls;
+    /* WebGPU counts differently: `render.calls` includes every pass three
+       issues (shadows, the grade quad, compute) and accumulates across the
+       frame, while `render.drawCalls` is the comparable number to WebGL's
+       `calls`. Prefer it where it exists so the budget still means something. */
+    const r = renderer.info.render;
+    this.snapshot.draws = r.drawCalls ?? r.calls;
     this.snapshot.tris = renderer.info.render.triangles;
     this.snapshot.programs = renderer.info.programs ? renderer.info.programs.length : 0;
     this.snapshot.geometries = renderer.info.memory.geometries;
