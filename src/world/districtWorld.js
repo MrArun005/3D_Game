@@ -249,20 +249,64 @@ export class DistrictWorld {
     for (const w of want) { this.queue.push(w); this.pending.add(w.k); }
 
     /* The first frame has to be complete -- streaming the world in around a
-       stationary player at the start looks like a bug, not like streaming. */
-    const budget = this.primed ? BUILD_MS : Infinity;
+       stationary player at the start looks like a bug, not like streaming.
+       After that, a build is a GENERATOR pumped for at most BUILD_MS a frame:
+       the queue kept five chunks from landing on one frame, but a single
+       chunk was still 40-70ms of roads, massing, dressing and instancing in
+       one gulp — a felt steering hitch at exactly the moment you cross a
+       boundary at speed. The group only enters the scene when its generator
+       finishes, so nobody ever sees half a chunk. */
+    const wasPrimed = this.primed;
+    const budget = wasPrimed ? BUILD_MS : Infinity;
     const t0 = performance.now();
-    while (this.queue.length) {
-      if (performance.now() - t0 > budget) break;
-      const w = this.queue.shift();
-      this.pending.delete(w.k);
-      // it may have gone out of range while it sat in the queue
-      if (Math.abs(w.cx - ix) > this.radius || Math.abs(w.cz - iz) > this.radius) continue;
-      const started = performance.now();
-      this.chunks.set(w.k, this.#build(w.cx, w.cz));
-      if (this.onChunkBuilt) this.onChunkBuilt(performance.now() - started);
+    while (performance.now() - t0 < budget) {
+      if (!this.building) {
+        const w = this.queue.shift();
+        if (!w) break;
+        // it may have gone out of range while it sat in the queue
+        if (Math.abs(w.cx - ix) > this.radius || Math.abs(w.cz - iz) > this.radius) {
+          this.pending.delete(w.k);
+          continue;
+        }
+        // stays in `pending` until the build completes, or the rescan re-queues it
+        this.building = {
+          k: w.k, cx: w.cx, cz: w.cz,
+          group: new THREE.Group(),
+          gen: null,
+        };
+        this.building.gen = this.#buildSteps(w.cx, w.cz, this.building.group);
+      }
+      const b = this.building;
+      if (b.gen.next().done) {
+        this.chunks.set(b.k, b.group);
+        this.pending.delete(b.k);
+        this.building = null;
+      }
     }
+    // what the budget line in the stats HUD actually promises: the time THIS
+    // frame spent building, not the total cost of a chunk. The boot-time
+    // prime (budget Infinity, hidden behind the loading screen) is excluded.
+    const slice = performance.now() - t0;
+    if (wasPrimed && slice > 0.2 && this.onChunkBuilt) this.onChunkBuilt(slice);
     this.primed = true;
+    /* An in-flight build whose chunk left the radius is abandoned: nothing of
+       it is in the scene yet, but sections may have parked entries in the
+       per-chunk registries and owned geometry in the group. */
+    if (this.building) {
+      const b = this.building;
+      if (Math.abs(b.cx - ix) > this.radius || Math.abs(b.cz - iz) > this.radius) {
+        b.group.traverse((o) => {
+          if (!o.isMesh) return;
+          if (o.isInstancedMesh) o.dispose();
+          if (o.geometry?.userData?.owned) o.geometry.dispose();
+        });
+        for (const m of [this.propGroups, this.facadeGroups, this.parkedLod,
+                         this.parkedByChunk, this.signalsByChunk,
+                         this.solidsByChunk, this.poolsByChunk]) m.delete(b.k);
+        this.pending.delete(b.k);
+        this.building = null;
+      }
+    }
 
     /* Dressing is visible only in the near ring. Props are small, numerous and
        the single biggest contributor to the draw count; at 400m they are a few
@@ -670,9 +714,17 @@ export class DistrictWorld {
     return L;
   }
 
-  #build(ix, iz) {
+  /**
+   * One chunk, as a resumable sequence of steps. Every `yield` is a point
+   * where update()'s budget pump may park the build until next frame; all
+   * state lives in generator locals, and `group` stays out of the scene
+   * until the final step, so a parked build is invisible rather than half
+   * a street. Yield placement is load-bearing: between sections, and inside
+   * the two per-item loops that dominate the cost (building massing,
+   * per-segment furniture).
+   */
+  *#buildSteps(ix, iz, group) {
     const A = this.assets;
-    const group = new THREE.Group();
     const k = ck(ix, iz);
 
     /* --- carriageway: one quad per segment, all merged into one mesh ---
@@ -711,6 +763,7 @@ export class DistrictWorld {
       road.receiveShadow = true;
       group.add(road);
     }
+    yield;
 
     /* --- blocks: a raised slab is its own kerb, and buildings stand on it --- */
     const blocks = this.blkByChunk.get(k) ?? [];
@@ -721,6 +774,7 @@ export class DistrictWorld {
     const plant = { ac: [], tank: [], hut: [] };
     const slabGeo = A.geo.box;
 
+    let massed = 0;
     for (const bl of blocks) {
       const kind = bl.type === 'park' ? 'park'
                  : bl.type === 'lot' ? 'lot'
@@ -731,6 +785,7 @@ export class DistrictWorld {
       if (!arch) continue;
       const range = HEIGHT[bl.type] || [10, 20];
       for (const g of this.district.buildingsOf(bl.id)) {
+        if (++massed % 8 === 0) yield;
         const scale = DISTRICT_SCALE[bl.district] ?? 1;
         const h = (range[0] + hash(g.x + bl.x, g.y + bl.y) * (range[1] - range[0])) * scale;
         // local footprint -> world, through the block's own transform
@@ -744,8 +799,11 @@ export class DistrictWorld {
       }
     }
 
+    yield;
     this.#streetFurniture(this.edgeByChunk.get(k) ?? [], group);
+    yield;
     this.#signals(this.edgeByChunk.get(k) ?? [], group, k);
+    yield;
 
     /* Lamps every 30m down each segment, alternating sides. The old procedural
        city got all its night light from these; the district world shipped
@@ -757,7 +815,9 @@ export class DistrictWorld {
     // one bucket per species, so a street never plants the same tree twice over
     const trees = { plane: [], pine: [], poplar: [], palm: [] };
     const leafCol = { plane: [], pine: [], poplar: [], palm: [] };
+    let seg = 0;
     for (const id of segs) {
+      if (++seg % 10 === 0) yield;
       const s2 = this.district.segments[id];
       if (s2.cls === 'freeway' || s2.cls === 'ramp') continue;
       const dx = s2.bx - s2.ax, dz = s2.bz - s2.az;
@@ -847,11 +907,14 @@ export class DistrictWorld {
          buffers, so world/breakables.js can knock them over (see its header) */
       batch.trackNames = BREAK_CLASS;
       const dressPools = [];
+      yield;
       dressChunk(batch, {
         segments: segs.map((id) => this.district.segments[id]),
         blocks, district: this.district, solids: solidParked, pools: dressPools,
       });
+      yield;
       dressRoofs(batch, boxes, this.district);
+      yield;
 
       /* Facades are their own batch and their own group. They are far and away
          the most expensive thing in the kit -- a dressed frontage is roughly a
@@ -863,6 +926,7 @@ export class DistrictWorld {
       this.facadeGroups.set(k, faces);
       const fbatch = new InstanceBatch(this.catalogue);
       dressFacades(fbatch, boxes, this.district, roadDepth);
+      yield;
       fbatch.emit(faces, { shadow: false })
         .catch((e) => console.warn('facades failed:', e.message));
       // fire and forget: the chunk is usable now, the props land a frame later
@@ -893,12 +957,14 @@ export class DistrictWorld {
     inst(slabGeo, A.mat.parkGround ?? A.mat.leaf, slabs.park);
     inst(slabGeo, A.mat.kerb, slabs.lot);
     inst(slabGeo, A.mat.kerb, slabs.vacant);
+    yield;
     inst(A.geo.lamp, A.mat.pole, lamps, true);
     inst(A.geo.lampHead, A.mat.lampGlow, heads);
     for (const sp of Object.keys(trees)) {
       inst(A.geo.species[sp].trunk, A.mat.bark, trees[sp], true);
       inst(A.geo.species[sp].canopy, A.mat.leaf, trees[sp], true, leafCol[sp]);
     }
+    yield;
     /* No glazing on the parked fleet. There are ~390 of them in the streaming
        radius and nobody ever looks into a parked car; adding their windows
        took the scene from 4.9M triangles to 7.5M. */
@@ -953,6 +1019,7 @@ export class DistrictWorld {
       const [arch, v] = key.split('|');
       tiled(A.facades[arch][+v], facades[key]);
     }
+    yield;
     for (const key of Object.keys(bases)) tiled(A.base.materials[+key], bases[key]);
     inst(slabGeo, A.mat.roof, roofs);
     inst(slabGeo, A.mat.roofGlass, glassRoofs);
@@ -964,8 +1031,7 @@ export class DistrictWorld {
 
     this.parkedByChunk.set(k, solidParked);
     this.solidsByChunk.set(k, boxes);
-    this.scene.add(group);
-    return group;
+    this.scene.add(group);   // the last step: the chunk appears whole
   }
 
   /** Solid building footprints in the 3x3 chunks around a point. */

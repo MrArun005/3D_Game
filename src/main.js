@@ -138,6 +138,8 @@ const debris = new Debris(scene);
 if (new URLSearchParams(location.search).has('debug')) {
   window.__car = () => car;
   window.__breakNear = (x, z, r = 3) => debris.breakNear(x, z, r, car, 12);
+  // frame-time distribution + worst chunk-build slice, for the perf harness
+  window.__perf = () => ({ frames: [...stats.samples], chunk: stats.worstChunkMs });
 }
 let beach = null, water = null, crowd = null, heli = null, districtRef = null, drowning = 0;
 const person = buildHuman();

@@ -306,7 +306,13 @@ export class InstanceBatch {
     }
     await Promise.all(jobs);
 
+    /* One material's merge per macrotask. The merges used to run as a single
+       microtask continuation — the whole kit's mergeGeometries in one gulp,
+       a hitch the chunk-build budget never even saw because it lives on the
+       promise side of the fence. */
+    const nextTask = () => new Promise((r) => setTimeout(r, 0));
     for (const [material, items] of byMaterial) {
+      await nextTask();
       const geos = [];
       const pending = [];               // break-tracking: ranges awaiting the mesh
       let offset = 0;
