@@ -30,6 +30,10 @@ authored by me. No paid licences anywhere in the pipeline.
    (bright-pass, separable blur, blit); `world/skidmarks.js:32` one. The bloom
    chain is deliberately the most mechanical port on the list: threshold, two
    nine-tap gaussians, additive composite.
+
+   Note that `world/districtWorld.js` no longer needs `aUvScale` for its
+   authored dressing — the asset kit carries its own UVs — so the only
+   `onBeforeCompile` left is the legacy grid's.
 3. **Procedural for layout, authored for detail.** The city assembly logic stays
    procedural. Anything the player sees inside ~30 m should come from the asset
    catalogue, not from a `BoxGeometry` in code.
@@ -54,6 +58,9 @@ src/
   world/
     district.js        parses the district JSON into a road graph
     districtWorld.js   the 256m chunk streamer. THE hot file.
+    catalogue.js       loads manifest.json + textures/library.json; binds
+                       materials by name; merges placements by material
+    dressing.js        WHERE the 91 assets go. Tables, not conditionals.
     city.js            legacy 130m procedural grid streamer. Being retired.
     metrics.js         roadDepth() - "am I on tarmac", two modulos and a min
     facades.js         building facade texture + material generation
@@ -93,10 +100,12 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
 - Tests: `npm test` — 20/20 passing. Node's built-in runner, no framework.
 - `npm run dev` (vite, :5173), `npm run build`, `npm run preview`.
 - three r185, WebGL renderer. WebGPU migration is Tier 0 of `docs/ROADMAP.md`.
-- ~620-670 draw calls facing the city (450 facing away — culling is on for the
-  static per-chunk instances), ~5.7M triangles. The older
-  "720 draws / 1.8M tris" figure predates bridges, zebra crossings, the crowd,
-  pedestrians, places and the far-city LOD.
+- ~900-1000 draw calls and ~4.1M triangles facing downtown with the full
+  authored kit placed (budgets: 1400 draws, 4.0M triangles). Triangles came
+  DOWN from 5.7M while the city gained ~14,000 props, because the profile
+  showed 748 parked cars at 2444 triangles each were 54% of the scene: they
+  now have a 492-triangle LOD and shadow casting is gated to the chunk you
+  stand in. The older "720 draws / 1.8M tris" figure is long dead.
 - Frame rate cannot be measured from an automated browser: an EMPTY
   requestAnimationFrame loop there runs at 22.8 ms (44 fps). Any fps number
   taken under Playwright is an artefact of the harness. Report draws and
@@ -114,13 +123,47 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   a race has no finish condition.
 - `character.js` loads `hit` and `punch` clips that are never played. Five of the
   six shipped GLB characters are never loaded (Tier 3.5 covers the pool).
-- **91 ingested assets are inert.** `assets/source/` holds 22 facade modules and
-  69 props, all ingested to `public/models/` with LOD0/1/2 and a manifest.
-  `grep -rn manifest src/` returns nothing — the city is still built from
-  `BoxGeometry` in code. This is Tier 3.1/3.2 and it is the largest single
-  pile of already-paid-for work sitting unused.
-- Triangles are over budget: ~5.7 M against the 4.0 M in `docs/BUDGETS.md`.
-  Visible on the F3 overlay.
+- LODs in the manifest are worthless: across all 91 assets lod2 saves 2.5% of
+  lod0's triangles, and 62 of them are byte-identical. The props are already
+  84-300 triangles, so there is nothing for a decimator to remove. Distance
+  culling is the only lever that works on them; do not reach for the LOD chain
+  expecting it to pay.
+- KTX2 is still not generated — `tools/ingest.mjs` skips it without the `toktx`
+  binary, so the 97 texture PNGs ship uncompressed (~18 MB).
+
+### Fixed 2026-08-31 (verified, kept here so they are not re-reported)
+
+- **The 91 assets are live.** `world/catalogue.js` + `world/dressing.js` place
+  all 91 (audited: `dressing.js` + `districtWorld.js` reference 91/91).
+  Materials bind by name — 32 library materials for 91 assets.
+- **Vertex quantization.** `ingest.mjs` runs KHR_mesh_quantization, so
+  positions arrive as normalized int16. `applyMatrix4` wrote floats back into
+  an Int16Array and truncated every coordinate to -1/0/1 — 837 props per chunk
+  collapsed into one 2m cube at the origin. `catalogue.js:deQuantize` fixes it.
+  Anything else that loads these glTFs must do the same.
+- **Catalogue geometry is shared between chunks** and is deliberately NOT
+  marked `geometry.userData.owned`, or the release sweep would free a bench
+  out from under every other live chunk.
+- **`loft()` emits real UVs** — cylindrical, U along the hull in metres, V by
+  cumulative section perimeter. The all-zero attribute is gone and the car now
+  carries the library's `car_paint` normal/ORM maps. `mergeGeos` still zero-
+  fills for inputs that have no UVs of their own.
+- **PCFSoftShadowMap really is deprecated in r185.** The browser warns on every
+  load and silently falls back. An earlier comment in `renderer.js` claiming
+  the deprecation was invented was itself wrong; it now sets `PCFShadowMap`.
+- **Pavements.** `A.mat.walk` carries `repeat` for the legacy 130m grid, but
+  districtWorld writes its own tile-count UVs — the two multiplied and crushed
+  the slab pattern to ~1/50th of a texel, which aliased into black corrugation
+  at grazing angles. districtWorld uses `A.mat.walkDistrict`, tiled once.
+- **All six parked silhouettes** are used, not just `sedan`.
+- **All six characters** load; `?me=N` and K cycle them.
+- **Multiplayer is a real race**: the course anchor comes out of the seeded
+  stream (same seed = same course, verified from two points 1.4km apart), and
+  finishing sends `{k:'stop'}`.
+- **Damage is visible**: hull vertices crumple at the real contact point
+  (plumbed out of `collision.js`, which already computed it), tyres deflate,
+  glass goes milky, a proper particle fire burns, then the blast — and death
+  fades through black to downtown Kingsway.
 
 ### Fixed 2026-08-30 (verified, kept here so they are not re-reported)
 
