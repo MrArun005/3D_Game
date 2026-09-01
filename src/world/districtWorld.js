@@ -836,6 +836,47 @@ export class DistrictWorld {
     const segs = this.segByChunk.get(k) ?? [];
     if (segs.length) {
       const pos = [], nor = [], uv = [];
+      /* Structure under and beside any road that leaves the ground.
+         Sampling deck height per corner made a bridge a ramp rather than a
+         decal -- but only the top surface. From the bank you looked straight
+         under the approach to the ground: no side faces, and the parapet in
+         water.js sits at the fixed span height, so it neither follows the
+         ramp nor exists on it. Both are emitted HERE, per segment, from the
+         same corner heights the tarmac uses, so they cannot disagree with it. */
+      const sk = [], skN = [], skUv = [];      // skirt: deck edge down to ground
+      const pp = [], ppN = [], ppUv = [];      // parapet: 1.0m wall riding the edge
+      const PARAPET_H = 1.0, PARAPET_T = 0.38;
+      /* Every quad here is emitted through `face`, which checks the geometric
+         normal of the first triangle against the normal the caller INTENDS and
+         reverses the corner order if they disagree. The two edges of a road
+         face opposite ways but are built by the same code, so hand-ordering
+         the corners gets exactly one side back-culled -- the junction paint
+         hit the identical trap (see tri() in #signals). Correct once, here. */
+      const face = (out, nrm, uvs, c0, c1, c2, c3, n, uvq) => {
+        const e1 = [c1[0] - c0[0], c1[1] - c0[1], c1[2] - c0[2]];
+        const e2 = [c2[0] - c0[0], c2[1] - c0[1], c2[2] - c0[2]];
+        const g = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+        const flip = g[0] * n[0] + g[1] * n[1] + g[2] * n[2] < 0;
+        const [p0, p1, p2, p3] = flip ? [c0, c3, c2, c1] : [c0, c1, c2, c3];
+        const [t0, t1, t2, t3] = flip ? [uvq[0], uvq[3], uvq[2], uvq[1]] : uvq;
+        out.push(...p0, ...p1, ...p2, ...p0, ...p2, ...p3);
+        for (let i = 0; i < 6; i++) nrm.push(n[0], n[1], n[2]);
+        uvs.push(...t0, ...t1, ...t2, ...t0, ...t2, ...t3);
+      };
+      const wall = (out, nrm, uvs, ax, ay, az, bx, by, bz, y0a, y0b, ox, oz) => {
+        // a vertical quad from (a,b) at heights [y0..ay],[y0..by], facing (ox,oz)
+        const L = Math.hypot(bx - ax, bz - az) / 2.4;
+        const ha = (ay - y0a) / 2.4, hb = (by - y0b) / 2.4;
+        face(out, nrm, uvs, [ax, y0a, az], [bx, y0b, bz], [bx, by, bz], [ax, ay, az],
+             [ox, 0, oz], [[0, 0], [L, 0], [L, hb], [0, ha]]);
+      };
+      const top = (out, nrm, uvs, ax, ay, az, bx, by, bz, ox, oz, t) => {
+        // the parapet's cap, `t` thick, spanning from the edge inward
+        const ix = -ox * t, iz = -oz * t;
+        const L = Math.hypot(bx - ax, bz - az) / 2.4;
+        face(out, nrm, uvs, [ax, ay, az], [bx, by, bz], [bx + ix, by, bz + iz], [ax + ix, ay, az + iz],
+             [0, 1, 0], [[0, 0], [L, 0], [L, t / 2.4], [0, t / 2.4]]);
+      };
       for (const id of segs) {
         const s = this.district.segments[id];
         const dx = s.bx - s.ax, dz = s.bz - s.az;
@@ -855,6 +896,37 @@ export class DistrictWorld {
         // what turned every arterial into a car park with faint stripes on it
         const v = L / 18.4, u = (s.half * 2) / 18.4;
         uv.push(0, 0, v, 0, v, u, 0, 0, v, u, 0, u);
+
+        // elevated? then this segment gets sides
+        const e0 = D.elevationAt(q[0][0], q[0][1]), e1 = D.elevationAt(q[1][0], q[1][1]);
+        const e3 = D.elevationAt(q[3][0], q[3][1]), e2 = D.elevationAt(q[2][0], q[2][1]);
+        if (Math.max(e0, e1, e2, e3) > 0.12) {
+          const ground = (px, pz) => (D.inWater && D.inWater(px, pz) ? -2.6 : 0);
+          for (const [a, b, ox, oz] of [
+            [q[0], q[1],  nx / s.half,  nz / s.half],   // one edge, facing out
+            [q[3], q[2], -nx / s.half, -nz / s.half],   // the other
+          ]) {
+            const ya = D.elevationAt(a[0], a[1]), yb = D.elevationAt(b[0], b[1]);
+            wall(sk, skN, skUv, a[0], ya, a[1], b[0], yb, b[1], ground(a[0], a[1]), ground(b[0], b[1]), ox, oz);
+            // parapet: outer face, cap, inner face
+            wall(pp, ppN, ppUv, a[0], ya + PARAPET_H, a[1], b[0], yb + PARAPET_H, b[1], ya, yb, ox, oz);
+            top(pp, ppN, ppUv, a[0], ya + PARAPET_H, a[1], b[0], yb + PARAPET_H, b[1], ox, oz, PARAPET_T);
+            const ix = -ox * PARAPET_T, iz = -oz * PARAPET_T;
+            wall(pp, ppN, ppUv, b[0] + ix, yb + PARAPET_H, b[1] + iz, a[0] + ix, ya + PARAPET_H, a[1] + iz, yb, ya, -ox, -oz);
+          }
+        }
+      }
+      const concrete = this.catalogue?.materials.get('concrete_cast') ?? A.mat.kerbFace;
+      for (const [arr, nrm, uvs] of [[sk, skN, skUv], [pp, ppN, ppUv]]) {
+        if (!arr.length) continue;
+        const sg = new THREE.BufferGeometry();
+        sg.userData.owned = true;
+        sg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(arr), 3));
+        sg.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(nrm), 3));
+        sg.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
+        const sm = new THREE.Mesh(sg, concrete);
+        sm.castShadow = true; sm.receiveShadow = true;
+        group.add(sm);
       }
       const g = new THREE.BufferGeometry();
       g.userData.owned = true;
