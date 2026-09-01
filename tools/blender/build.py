@@ -51,6 +51,35 @@ def reset():
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
 
+def chain_uvs(ch):
+    """
+    Reproduce the UV rule the JS loft uses, because the cage carries positions
+    only. `normalized` maps the surface onto 0..1 in both axes — what a painted
+    texture like a face needs. Otherwise UVs are arc length in METRES, which is
+    what keeps texel density consistent across every tiling material.
+    """
+    rings = ch['rings']
+    normalized = ch.get('uv') == 'normalized'
+    n = len(rings[0])
+    us, vs = [], []
+    v_run = 0.0
+    for i, ring in enumerate(rings):
+        if normalized:
+            vs.append(i / max(len(rings) - 1, 1))
+            us.append([k / n for k in range(n + 1)])
+        else:
+            vs.append(v_run)
+            if i < len(rings) - 1:
+                a, b = ring[0], rings[i + 1][0]
+                v_run += math.dist(a, b)
+            row, u_run = [0.0], 0.0
+            for k in range(n):
+                row.append(u_run + math.dist(ring[k], ring[(k + 1) % n]))
+                u_run = row[-1]
+            us.append(row)
+    return us, vs
+
+
 def mesh_from_chains(name, chains):
     """One object per material, built from the cage's quad rings."""
     objects = []
@@ -60,28 +89,35 @@ def mesh_from_chains(name, chains):
 
     for mat, group in by_mat.items():
         bm = bmesh.new()
+        # UVs live on LOOPS, not vertices, so they survive the weld below —
+        # which is why the layer has to exist before any face is created
+        uvl = bm.loops.layers.uv.new('UVMap')
+
         for ch in group:
             rings = ch['rings']
             n = len(rings[0])
+            us, vs = chain_uvs(ch)
             verts = [[bm.verts.new(to_blender(p)) for p in ring] for ring in rings]
+
+            def face(vs_in, uvs_in):
+                try:
+                    f = bm.faces.new(vs_in)
+                except ValueError:
+                    return                # duplicate face where two chains meet
+                for loop, uv in zip(f.loops, uvs_in):
+                    loop[uvl].uv = uv
+
             for i in range(len(rings) - 1):
                 a, b = verts[i], verts[i + 1]
                 for k in range(n):
                     k2 = (k + 1) % n
-                    try:
-                        bm.faces.new((a[k], a[k2], b[k2], b[k]))
-                    except ValueError:
-                        pass          # duplicate face where two chains meet
+                    face((a[k], a[k2], b[k2], b[k]),
+                         [(us[i][k], vs[i]), (us[i][k + 1], vs[i]),
+                          (us[i + 1][k + 1], vs[i + 1]), (us[i + 1][k], vs[i + 1])])
             if ch.get('capEnd', True):
-                try:
-                    bm.faces.new(verts[-1])
-                except ValueError:
-                    pass
+                face(verts[-1], [(us[-1][k], vs[-1]) for k in range(n)])
             if ch.get('capStart', True):
-                try:
-                    bm.faces.new(list(reversed(verts[0])))
-                except ValueError:
-                    pass
+                face(list(reversed(verts[0])), [(us[0][n - k], vs[0]) for k in range(n)])
 
         # weld the seams between chains, then make the winding consistent —
         # subdivision on an inconsistent surface produces creases and holes

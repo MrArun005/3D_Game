@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated": "2026-08-30T19:21:00.246Z",
+  "generated": "2026-08-31T05:52:17.867Z",
   "materials": {
     "brick_red": {
       "albedo": "/textures/brick_red_albedo.png",
@@ -255,6 +255,14 @@
       "orm": "/textures/shoe_leather_orm.png",
       "normal": "/textures/shoe_leather_normal.png",
       "tile": 0.3,
+      "metalness": null,
+      "normalScale": 1
+    },
+    "face_skin": {
+      "albedo": "/textures/face_skin_albedo.png",
+      "orm": "/textures/face_skin_orm.png",
+      "normal": "/textures/face_skin_normal.png",
+      "tile": 1,
       "metalness": null,
       "normalScale": 1
     }

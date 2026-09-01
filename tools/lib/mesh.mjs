@@ -323,7 +323,14 @@ export class Mesh {
    * UVs: u runs around the ring in metres, v along the loft in metres, so the
    * same texel density rule holds as everywhere else.
    */
-  loftRings(mat, rings, { capStart = true, capEnd = true } = {}) {
+  /**
+   * `uv: 'normalized'` writes u = around the ring (0..1) and v = along the loft
+   * (0..1) instead of arc length in metres. Tiling materials want metres; a
+   * painted texture — a face, a decal, a livery — wants the surface to occupy a
+   * known rectangle.
+   */
+  loftRings(mat, rings, { capStart = true, capEnd = true, uv = 'metres' } = {}) {
+    const NORM = uv === 'normalized';
     if (rings.length < 2) return this;
     const g = this.#group(mat);
     const N = rings[0].length;
@@ -363,11 +370,13 @@ export class Mesh {
         const seg = Math.hypot(
           a[k2].p[0] - a[k].p[0], a[k2].p[1] - a[k].p[1], a[k2].p[2] - a[k].p[2]);
         const base = g.pos.length / 3;
+        const u0 = NORM ? k / N : uRun;
+        const u1 = NORM ? (k + 1) / N : uRun + seg;
+        const v0 = NORM ? i / (rings.length - 1) : vRun;
+        const v1 = NORM ? (i + 1) / (rings.length - 1) : vRun + step;
         const quad = flip
-          ? [[a[k2], uRun + seg, vRun], [a[k], uRun, vRun],
-             [b[k], uRun, vRun + step], [b[k2], uRun + seg, vRun + step]]
-          : [[a[k], uRun, vRun], [a[k2], uRun + seg, vRun],
-             [b[k2], uRun + seg, vRun + step], [b[k], uRun, vRun + step]];
+          ? [[a[k2], u1, v0], [a[k], u0, v0], [b[k], u0, v1], [b[k2], u1, v1]]
+          : [[a[k], u0, v0], [a[k2], u1, v0], [b[k2], u1, v1], [b[k], u0, v1]];
         for (const [v, u, w] of quad) {
           g.pos.push(v.p[0], v.p[1], v.p[2]);
           g.nrm.push(v.n[0], v.n[1], v.n[2]);

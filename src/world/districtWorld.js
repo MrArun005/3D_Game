@@ -582,6 +582,64 @@ export class DistrictWorld {
     const sigBatch = this.catalogue ? new InstanceBatch(this.catalogue) : null;
     const ly = (x, z) => this.district.elevationAt(x, z);
 
+    /* Junction paint: stop lines and lane arrows.
+       Kept here rather than in #streetFurniture because both are positioned
+       from the APPROACH -- they need the junction node, the direction into it
+       and the crossing depth, all of which this function already has and that
+       one does not. */
+    const jpaint = [];
+    /* One triangle, laid flat, wound so it always faces UP.
+       A.mat.paint is FrontSide, and the (forward, lateral) basis these shapes
+       are built in is left-handed with respect to world XZ -- so the natural
+       corner order emits a downward normal and the paint is invisible from
+       above. Measured before fixing: 11,485 of 12,191 junction triangles faced
+       down. Rather than hand-order the corners of every shape and get one of
+       them wrong, the winding is corrected HERE, once, for every caller. It is
+       the same trap `ribbon()` hit on the kerbs -- see the note in
+       #streetFurniture about half the pavements coming out black. */
+    const tri = (ax, az, bx, bz, cx, cz) => {
+      // +Y component of (b-a) x (c-a) for points in the XZ plane
+      const ny = (bz - az) * (cx - ax) - (bx - ax) * (cz - az);
+      if (ny < 0) { const tx = bx, tz = bz; bx = cx; bz = cz; cx = tx; cz = tz; }
+      jpaint.push(ax, 0.021 + ly(ax, az), az,
+                  bx, 0.021 + ly(bx, bz), bz,
+                  cx, 0.021 + ly(cx, cz), cz);
+    };
+    /* A rectangle from a centre, a forward unit vector and half-extents.
+       `along` runs with the traffic, `across` is lateral. */
+    const rect = (cx, cz, fx, fz, along, across) => {
+      const lx = -fz, lz = fx;
+      const p = (a, b) => [cx + fx * a + lx * b, cz + fz * a + lz * b];
+      const [x0, z0] = p(-along, -across), [x1, z1] = p(along, -across);
+      const [x2, z2] = p(along, across), [x3, z3] = p(-along, across);
+      tri(x0, z0, x1, z1, x2, z2);
+      tri(x0, z0, x2, z2, x3, z3);
+    };
+    /* A lane arrow pointing the way the traffic goes. `turn` bends the head:
+       0 straight, -1 left, +1 right. */
+    /* Sized like real road paint, not like a UI icon.
+       The first pass used a 0.34m shaft and a 1.1m head, which is correct for
+       an arrow you look at from two metres and invisible from the thirty
+       metres a driver actually reads it at -- a few pixels, swamped by the
+       lane dividers either side. A UK/US lane arrow is about 5m long and
+       1.7m across the head, and at that size it reads from the stop line. */
+    const arrow = (cx, cz, fx, fz, turn = 0) => {
+      const lx = -fz, lz = fx;
+      const p = (a, b) => [cx + fx * a + lx * b, cz + fz * a + lz * b];
+      rect(cx + fx * -0.9, cz + fz * -0.9, fx, fz, 2.1, 0.28);
+      if (turn === 0) {
+        const [tx, tz] = p(2.6, 0);
+        const [bx, bz] = p(0.9, -0.85), [dx2, dz2] = p(0.9, 0.85);
+        tri(bx, bz, tx, tz, dx2, dz2);
+      } else {
+        // an elbow into the turn, then a head on the end of it
+        rect(...p(1.2, turn * 0.85), lx * turn, lz * turn, 1.1, 0.28);
+        const [tx, tz] = p(1.2, turn * 2.5);
+        const [bx, bz] = p(2.05, turn * 1.15), [dx2, dz2] = p(0.35, turn * 1.15);
+        tri(bx, bz, tx, tz, dx2, dz2);
+      }
+    };
+
     for (const ei of edgeIds) {
       const e = this.district.graph.edges[ei];
       if (e.class === 'freeway' || e.class === 'ramp') continue;
@@ -613,6 +671,35 @@ export class DistrictWorld {
           const bx = node.x - dx * (e.width / 2 + 1.2 + ZEBRA_DEPTH / 2) + -dz * k;
           const bz = node.y - dz * (e.width / 2 + 1.2 + ZEBRA_DEPTH / 2) + dx * k;
           zebra.push(flatRect(bx, 0.02, bz, yaw, ZEBRA_DEPTH, 0.62));
+        }
+
+        /* Stop line and lane arrows.
+           Traffic keeps RIGHT here -- traffic.js:#laneOffset returns a positive
+           offset "right of the centreline" and #shift applies it along
+           (-dz, dx) -- so the approach lanes are the right half of the
+           carriageway and the paint only covers that half. Painting the full
+           width would put a stop line across the oncoming side. */
+        /* 1.6m of clear tarmac between the crossing and the stop line. At the
+           0.5m the first pass used, the line touched the zebra and read as one
+           more stripe rather than as the place you stop. */
+        const stopBack = half + 1.2 + ZEBRA_DEPTH + 1.6;
+        const sx = node.x - dx * stopBack + -dz * (half / 2);
+        const sz = node.y - dz * stopBack + dx * (half / 2);
+        rect(sx, sz, dx, dz, 0.3, half / 2 - 0.3);
+
+        /* Lane count from METRES, the same derivation the lane dividers use --
+           the file's `lanes` field is a planning number and disagrees with the
+           width on most edges. */
+        const lanes = Math.max(1, Math.round((half - 1.8) / 3.6));
+        const laneW = (half - 1.0) / lanes;
+        for (let i = 0; i < lanes; i++) {
+          const off = laneW * (i + 0.5);
+          const ax2 = node.x - dx * (stopBack + 9) + -dz * off;
+          const az2 = node.y - dz * (stopBack + 9) + dx * off;
+          // kerbside lane turns right, the lane against the centre turns left
+          const turn = lanes > 1 && i === lanes - 1 ? 1
+                     : lanes > 2 && i === 0 ? -1 : 0;
+          arrow(ax2, az2, dx, dz, turn);
         }
 
         const axis = Math.abs(dx) > Math.abs(dz) ? 0 : 1;
@@ -657,6 +744,13 @@ export class DistrictWorld {
       group.add(mesh);
       return mesh;
     };
+    if (jpaint.length) {
+      const pg = new THREE.BufferGeometry();
+      pg.userData.owned = true;
+      pg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(jpaint), 3));
+      pg.computeBoundingSphere();
+      group.add(new THREE.Mesh(pg, A.mat.paint));
+    }
     if (sigBatch) sigBatch.emit(group, { shadow: false })
       .catch((e) => console.warn('signals failed:', e.message));
     inst(posts, A.mat.pole);

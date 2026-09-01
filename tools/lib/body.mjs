@@ -50,7 +50,12 @@ export const DEFAULTS = {
   ears: 0.5,
 };
 
-const SEG = 20;                       // segments around every ring
+const SEG = 20;                       // segments around a body ring
+// The head needs far more resolution than a limb: an eye socket is ~0.07 of the
+// head's height and ~0.3 rad wide, and a feature that falls between two rings
+// simply does not exist. This was the actual reason the first face did not
+// read — not the displacement, the sampling.
+const SEG_HEAD = 32;
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (v, a = 0, b = 1) => (v < a ? a : v > b ? b : v);
 /** Smooth bump, 1 at `c`, 0 beyond `w`. The shaping primitive for the face. */
@@ -78,10 +83,10 @@ function sect(t, a, b, n = 2) {
 }
 
 /** Ring in the XZ plane at height y, optionally displaced per-vertex. */
-function ringY(y, a, b, n, { z0 = 0, disp = null } = {}) {
+function ringY(y, a, b, n, { z0 = 0, disp = null, seg = SEG } = {}) {
   const out = [];
-  for (let k = 0; k < SEG; k++) {
-    const t = (k / SEG) * Math.PI * 2;
+  for (let k = 0; k < seg; k++) {
+    const t = (k / seg) * Math.PI * 2;
     let [x, z] = sect(t, a, b, n);
     if (disp) { const d = disp(t, x, z); x = d[0]; z = d[1]; }
     out.push({ p: [x, y, z + z0], n: [Math.cos(t), 0, Math.sin(t)] });
@@ -90,10 +95,10 @@ function ringY(y, a, b, n, { z0 = 0, disp = null } = {}) {
 }
 
 /** Ring in the YZ plane at x — for arms, which run along X in a T-pose. */
-function ringX(x, cy, cz, a, b, n = 2) {
+function ringX(x, cy, cz, a, b, n = 2, seg = SEG) {
   const out = [];
-  for (let k = 0; k < SEG; k++) {
-    const t = (k / SEG) * Math.PI * 2;
+  for (let k = 0; k < seg; k++) {
+    const t = (k / seg) * Math.PI * 2;
     const [u, v] = sect(t, a, b, n);
     out.push({ p: [x, cy + u, cz + v], n: [0, Math.cos(t), Math.sin(t)] });
   }
@@ -195,47 +200,66 @@ export function buildBody(paramsIn = {}) {
     let out = [x * k, z * k];
     const push = (amt, dirZ = 1) => { out[1] += amt * SUB * dirZ; };
 
-    // brow ridge
-    push(HR * 0.10 * lerp(0.4, 1.2, P.brow) * bump(hv, 0.60, 0.09) * bump(fd, 0, 0.85));
-    // eye sockets, either side of the midline
-    const eye = Math.max(bump(fd, 0.42, 0.30), 0) * bump(hv, 0.545, 0.075);
-    push(-HR * 0.16 * eye);
-    // nose: bridge, then the tip
-    const mid = bump(fd, 0, 0.22);
-    push(HR * 0.16 * lerp(0.5, 1.5, P.nose) * mid * bump(hv, 0.47, 0.16));
-    push(HR * 0.14 * lerp(0.5, 1.5, P.nose) * bump(fd, 0, 0.15) * bump(hv, 0.40, 0.06));
+    // Feature heights are measured from the chin (hv 0) to the crown (hv 1) on a
+    // real head, and the first pass had them all too high — everything sat up in
+    // the cranium, which is why the brow protruded further than the nose.
+    //   chin .06 | mouth .155 | nose tip .29 | bridge .40 | eyes .42 | brow .46
+    // The nose tip must be the furthest-forward point on the whole head.
+
+    // brow ridge — a shelf, not a beak
+    push(HR * 0.055 * lerp(0.4, 1.3, P.brow) * bump(hv, 0.46, 0.07) * bump(fd, 0, 0.80));
+    // eye sockets, either side of the midline, recessed under the brow
+    const eye = bump(fd, 0.40, 0.26) * bump(hv, 0.415, 0.055);
+    push(-HR * 0.10 * eye);
+    // nose: bridge rising to the tip, which is the head's forward extreme
+    push(HR * 0.10 * lerp(0.6, 1.4, P.nose) * bump(fd, 0, 0.20) * bump(hv, 0.395, 0.075));
+    push(HR * 0.20 * lerp(0.6, 1.5, P.nose) * bump(fd, 0, 0.155) * bump(hv, 0.295, 0.065));
+    // nostril wings, a touch wider than the bridge
+    push(HR * 0.07 * lerp(0.6, 1.4, P.nose) * bump(fd, 0.17, 0.13) * bump(hv, 0.275, 0.035));
     // cheekbones
-    push(HR * 0.09 * lerp(0.5, 1.4, P.cheek) * bump(fd, 0.70, 0.36) * bump(hv, 0.46, 0.13));
-    // mouth: a recess with a lip below it
-    push(-HR * 0.07 * bump(fd, 0, 0.55) * bump(hv, 0.30, 0.055));
-    push(HR * 0.05 * bump(fd, 0, 0.42) * bump(hv, 0.255, 0.035));
-    // chin
-    push(HR * 0.13 * lerp(0.5, 1.4, P.chin) * bump(fd, 0, 0.42) * bump(hv, 0.135, 0.10));
+    push(HR * 0.06 * lerp(0.5, 1.4, P.cheek) * bump(fd, 0.62, 0.34) * bump(hv, 0.345, 0.10));
+    // philtrum, upper lip, lower lip
+    push(-HR * 0.035 * bump(fd, 0, 0.40) * bump(hv, 0.215, 0.035));
+    push(HR * 0.045 * bump(fd, 0, 0.34) * bump(hv, 0.170, 0.028));
+    push(HR * 0.035 * bump(fd, 0, 0.34) * bump(hv, 0.128, 0.028));
+    // the crease under the lower lip, then the chin
+    push(-HR * 0.030 * bump(fd, 0, 0.36) * bump(hv, 0.100, 0.024));
+    push(HR * 0.075 * lerp(0.5, 1.4, P.chin) * bump(fd, 0, 0.38) * bump(hv, 0.055, 0.055));
     // occiput — the back of a skull is not a hemisphere
-    push(-HR * 0.10 * bump(fd, Math.PI, 0.9) * bump(hv, 0.52, 0.30), -1);
+    push(-HR * 0.09 * bump(fd, Math.PI, 0.9) * bump(hv, 0.55, 0.30), -1);
     // temples
     out[0] *= 1 - 0.06 * bump(fd, 1.35, 0.5) * bump(hv, 0.62, 0.18);
     return out;
   };
 
+  // 24 stations, clustered where the features are. Below hv 0.7 the spacing is
+  // ~0.03 so a 0.06-wide feature lands on two rings; above it, the cranium is
+  // smooth and needs almost none.
   const headStations = [
-    [0.00, 0.42, 0.44], [0.10, 0.62, 0.70], [0.20, 0.76, 0.84],
-    [0.32, 0.88, 0.94], [0.44, 0.96, 1.00], [0.56, 1.00, 1.02],
-    [0.68, 0.99, 1.00], [0.79, 0.92, 0.93], [0.88, 0.78, 0.80],
-    [0.95, 0.55, 0.57], [1.00, 0.22, 0.24],
+    [0.000, 0.42, 0.44], [0.045, 0.56, 0.60], [0.090, 0.66, 0.72],
+    [0.135, 0.74, 0.80], [0.180, 0.80, 0.86], [0.225, 0.85, 0.90],
+    [0.270, 0.88, 0.93], [0.310, 0.905, 0.955], [0.350, 0.925, 0.975],
+    [0.390, 0.94, 0.99], [0.430, 0.955, 1.00], [0.470, 0.965, 1.005],
+    [0.510, 0.975, 1.01], [0.550, 0.985, 1.015], [0.590, 0.995, 1.02],
+    [0.630, 1.00, 1.02], [0.670, 0.995, 1.015], [0.720, 0.98, 1.00],
+    [0.780, 0.945, 0.96], [0.840, 0.885, 0.90], [0.895, 0.79, 0.81],
+    [0.940, 0.66, 0.68], [0.975, 0.47, 0.49], [1.000, 0.20, 0.22],
   ];
   const headRings = headStations.map(([hv, wa, wb]) =>
     ringY(lerp(chinY, crown, hv), HR * wa, HR * 1.09 * wb, 2.3,
-      { z0: hz, disp: face(hv) }));
+      { z0: hz, disp: face(hv), seg: SEG_HEAD }));
 
   // neck, blended into the jaw
   m.loftRings('skin', [
-    ringY((1.455 - 0.03) * S + (hipY - 0.98) * 0.55 * S, 0.066 * neckL * S, 0.062 * S, 2.2,
-      { z0: leanAt(J.Neck[1]) }),
-    ringY(J.Neck[1] + 0.03 * S, 0.062 * neckL * S, 0.060 * S, 2.2, { z0: hz }),
+    ringY((1.455 - 0.05) * S + (hipY - 0.98) * 0.55 * S, 0.070 * neckL * S, 0.066 * S, 2.2,
+      { z0: leanAt(J.Neck[1]), seg: SEG_HEAD }),
+    ringY(J.Neck[1] + 0.01 * S, 0.063 * neckL * S, 0.061 * S, 2.2, { z0: hz, seg: SEG_HEAD }),
+    ringY(J.Neck[1] + 0.05 * S, 0.058 * neckL * S, 0.058 * S, 2.2, { z0: hz, seg: SEG_HEAD }),
     headRings[0],
   ], { capStart: false, capEnd: false });
-  m.loftRings('skin', headRings, { capStart: false, capEnd: true });
+  // the head gets its own material and a normalized UV rectangle, so the face
+  // can be painted rather than sculpted
+  m.loftRings('face_skin', headRings, { capStart: false, capEnd: true, uv: 'normalized' });
 
   // ears
   if (P.ears > 0.05) {
@@ -243,9 +267,9 @@ export function buildBody(paramsIn = {}) {
     for (const sx of [-1, 1]) {
       const ey = lerp(chinY, crown, 0.52);
       m.loftRings('skin', [
-        ringX(sx * HR * 0.80, ey, hz - HR * 0.10, er * 0.72, er * 0.44, 2.4),
-        ringX(sx * HR * 1.02, ey + er * 0.06, hz - HR * 0.14, er, er * 0.6, 2.4),
-        ringX(sx * HR * 1.10, ey + er * 0.04, hz - HR * 0.16, er * 0.72, er * 0.42, 2.4),
+        ringX(sx * HR * 0.80, ey, hz - HR * 0.10, er * 0.72, er * 0.44, 2.4, 14),
+        ringX(sx * HR * 1.02, ey + er * 0.06, hz - HR * 0.14, er, er * 0.6, 2.4, 14),
+        ringX(sx * HR * 1.10, ey + er * 0.04, hz - HR * 0.16, er * 0.72, er * 0.42, 2.4, 14),
       ], { capStart: false, capEnd: true });
     }
   }

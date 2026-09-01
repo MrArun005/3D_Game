@@ -65,7 +65,7 @@ const MATERIALS = new Set([
   'timber_painted', 'timber_bare', 'fabric_awning', 'plastic_signage',
   'car_paint', 'car_glass', 'tyre_rubber', 'chrome_trim',
   'foliage', 'bark', 'grass',
-  'skin', 'hair', 'cloth_shirt', 'cloth_trouser', 'shoe_leather',
+  'skin', 'face_skin', 'hair', 'cloth_shirt', 'cloth_trouser', 'shoe_leather',
 ]);
 
 /* Assets predating the pipeline. Warned about, not failed. Empty this as the

@@ -30,6 +30,11 @@ const streak = (u, v, seed = 0, scale = 24) =>
   clamp(fbm(u * scale, v * 1.6, 16, 4, seed) * 1.15 - 0.1);
 
 const mix = (a, b, t) => a + (b - a) * clamp(t);
+/** Smooth bump, 1 at `c`, 0 beyond `w`. The shaping primitive for a painted face. */
+const bump = (x, c, w) => {
+  const t = Math.abs(x - c) / w;
+  return t >= 1 ? 0 : Math.pow(Math.cos(t * Math.PI / 2), 2);
+};
 const tint = (base, k) => ({ r: base[0] * k, g: base[1] * k, b: base[2] * k });
 
 export const MATERIALS = {
@@ -415,6 +420,85 @@ export const MATERIALS = {
       const blotch = fbm(u, v, 7, 3, 19);
       const k = 0.9 + blotch * 0.2 + pore * 0.06;
       return { r: 0.230 * k, g: 0.140 * k, b: 0.104 * k, rough: 0.62 + pore * 0.12 };
+    },
+  },
+
+
+  /**
+   * The face. Painted, not sculpted.
+   *
+   * This material is NOT tiled — it maps once onto the head's normalized UV
+   * rectangle: u runs around the skull with the face centred at u = 0.25 (the
+   * ring's front), v runs from chin (0) to crown (1).
+   *
+   * Sculpting a face needs an artist moving thousands of vertices by eye.
+   * Painting one needs eyes, brows, a mouth and some shading in the right
+   * places, which is arithmetic. Every stylised game does it this way.
+   */
+  face_skin: {
+    tile: 1.0, relief: 0.5, aoStrength: 0.5, clamp: true,
+    height: (u, v) => {
+      const du = Math.abs(u - 0.25);
+      // faint relief so the lips and brow catch a little light
+      let h = 0.7 + fbm(u, v, 90, 3) * 0.05;
+      h += 0.05 * bump(du, 0.055, 0.030) * bump(v, 0.455, 0.030);   // brow ridge
+      h -= 0.05 * bump(du, 0.052, 0.026) * bump(v, 0.415, 0.026);   // eye socket
+      h += 0.04 * bump(du, 0, 0.040) * bump(v, 0.170, 0.030);       // lips
+      return h;
+    },
+    shade: (u, v) => {
+      const du = Math.abs(u - 0.25);            // distance from the face centre
+      const front = clamp(1 - du / 0.20);       // 1 on the face, 0 at the ears
+
+      const pore = cell(u * 2, v, 44, 31).f1;
+      const blotch = fbm(u, v, 6, 3, 19);
+      let k = 0.92 + blotch * 0.16 + pore * 0.05;
+      let r = 0.230 * k, g = 0.140 * k, b = 0.104 * k;
+      let rough = 0.62 + pore * 0.10;
+
+      // cheeks, warmer and slightly redder
+      const cheek = bump(du, 0.075, 0.045) * bump(v, 0.300, 0.070) * front;
+      r += 0.030 * cheek; g += 0.004 * cheek;
+
+      // brows — a soft mass, not a drawn line
+      const browShape = bump(du, 0.058, 0.038) * bump(v, 0.470, 0.022) * front;
+      const brow = clamp(browShape * 1.7) * (0.55 + fbm(u * 6, v * 6, 60, 3, 5) * 0.7);
+      r = mix(r, 0.030, clamp(brow)); g = mix(g, 0.020, clamp(brow)); b = mix(b, 0.014, clamp(brow));
+
+      // eyes: sclera, then iris, then pupil, then a lash line above
+      const eyeU = 0.055, eyeV = 0.420;
+      const eyeD = Math.hypot((du - eyeU) / 0.036, (v - eyeV) / 0.020);
+      if (eyeD < 1 && front > 0.4) {
+        const sclera = 0.78;
+        r = g = b = sclera;
+        rough = 0.22;
+        const iris = Math.hypot((du - eyeU) / 0.019, (v - eyeV) / 0.017);
+        if (iris < 1) {
+          r = 0.075; g = 0.095; b = 0.115;                       // cool grey-blue iris
+          const pupil = Math.hypot((du - eyeU) / 0.008, (v - eyeV) / 0.0075);
+          if (pupil < 1) { r = g = b = 0.012; }
+          rough = 0.08;
+        }
+        // upper lash line
+        if (v > eyeV + 0.011) { r = mix(r, 0.02, 0.85); g = mix(g, 0.015, 0.85); b = mix(b, 0.012, 0.85); }
+      }
+
+      // nostrils
+      const nos = bump(du, 0.020, 0.013) * bump(v, 0.268, 0.012) * front;
+      r = mix(r, 0.045, clamp(nos * 1.4)); g = mix(g, 0.028, clamp(nos * 1.4)); b = mix(b, 0.022, clamp(nos * 1.4));
+
+      // mouth: the line, then upper and lower lip
+      const lipLine = bump(du, 0, 0.060) * bump(v, 0.168, 0.006) * front;
+      const lips = bump(du, 0, 0.055) * bump(v, 0.168, 0.026) * front;
+      r = mix(r, 0.190, clamp(lips * 1.1)); g = mix(g, 0.072, clamp(lips * 1.1)); b = mix(b, 0.062, clamp(lips * 1.1));
+      r = mix(r, 0.055, clamp(lipLine * 1.6)); g = mix(g, 0.024, clamp(lipLine * 1.6)); b = mix(b, 0.022, clamp(lipLine * 1.6));
+      if (lips > 0.05) rough = 0.42;
+
+      // hairline shadow across the top, so the hair mesh does not read as a hat
+      const hairline = clamp((v - 0.58) / 0.10);
+      r *= 1 - 0.35 * hairline; g *= 1 - 0.35 * hairline; b *= 1 - 0.35 * hairline;
+
+      return { r, g, b, rough };
     },
   },
 
