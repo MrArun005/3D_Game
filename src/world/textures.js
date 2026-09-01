@@ -180,3 +180,46 @@ export function texSky(day = false) {
   g.fillStyle = gr; g.fillRect(0, 0, 64, 512);
   return toTex(c);
 }
+
+/**
+ * A normal map derived from a canvas's own luminance.
+ *
+ * The procedural surfaces here are painted as albedo only, so under a single
+ * sun they have no micro-relief to catch light: tarmac at noon reads as a
+ * sheet of grey plastic no matter how much aggregate is drawn into it. Sobel
+ * over the luminance treats the paint as a height field, which is exactly what
+ * it is -- dark specks are voids between stones, bright specks are the stones.
+ *
+ * `strength` is in height units per unit luminance; 1.0 is a strong relief.
+ */
+export function normalFromCanvas(canvas, strength = 1) {
+  const w = canvas.width, h = canvas.height;
+  const src = canvas.getContext('2d').getImageData(0, 0, w, h).data;
+  const out = cv(w, h);
+  const g = out.getContext('2d');
+  const img = g.createImageData(w, h);
+  const lum = (x, y) => {
+    const i = (((y + h) % h) * w + ((x + w) % w)) * 4;
+    return (src[i] * 0.2126 + src[i + 1] * 0.7152 + src[i + 2] * 0.0722) / 255;
+  };
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      // Sobel, so a single bright speck does not become a spike
+      const dx = (lum(x + 1, y - 1) + 2 * lum(x + 1, y) + lum(x + 1, y + 1))
+               - (lum(x - 1, y - 1) + 2 * lum(x - 1, y) + lum(x - 1, y + 1));
+      const dy = (lum(x - 1, y + 1) + 2 * lum(x, y + 1) + lum(x + 1, y + 1))
+               - (lum(x - 1, y - 1) + 2 * lum(x, y - 1) + lum(x + 1, y - 1));
+      let nx = -dx * strength, ny = -dy * strength, nz = 1;
+      const inv = 1 / Math.hypot(nx, ny, nz);
+      nx *= inv; ny *= inv; nz *= inv;
+      const i = (y * w + x) * 4;
+      img.data[i] = (nx * 0.5 + 0.5) * 255;
+      img.data[i + 1] = (ny * 0.5 + 0.5) * 255;
+      img.data[i + 2] = (nz * 0.5 + 0.5) * 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  // a normal map is DATA, not colour: it must not go through the sRGB decode
+  return toTex(out, false);
+}

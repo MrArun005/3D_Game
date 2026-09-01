@@ -126,6 +126,13 @@ function daylightAssets(A) {
   A.mat.bark.color.setHex(0x5b4a3a);
   // the asphalt was painted for sodium light; at noon it reads as tar
   A.mat.tarmac.color.setHex(0xb4b8bd);
+  /* Dry asphalt at noon is matte. At 0.42 roughness with envMapIntensity 0.8
+     the carriageway mirrored the sky, which is what flattened it: the sheen
+     washed straight over the albedo AND the new normal map. Wet tarmac under
+     sodium is the NIGHT look and keeps its gloss. */
+  A.mat.tarmac.roughness = 0.82;
+  A.mat.tarmac.metalness = 0.0;
+  A.mat.tarmac.envMapIntensity = 0.25;
 }
 
 let world = new City(scene, assets);

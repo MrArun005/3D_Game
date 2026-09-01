@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { texAsphalt, texWalk, texPool, toTex, cv } from './textures.js';
+import { texAsphalt, texWalk, texPool, toTex, cv, normalFromCanvas } from './textures.js';
 import { buildFacadeMaterials, buildBaseMaterials, BASE_H } from './facades.js';
 import { makeTileable } from './city.js';
 import {
@@ -18,6 +18,8 @@ export function createAssets() {
   const plain = texAsphalt('plain');
   const intersection = texAsphalt('inter');
   const walk = texWalk();
+  // built from the same canvas the albedo uses, before repeat is applied
+  const plainNormal = normalFromCanvas(plain.image, 2.4);
   const pool = texPool();
 
   const armLen = CELL - ROAD_HALF * 2;
@@ -56,8 +58,15 @@ export function createAssets() {
       map: road, roughness: 0.36, metalness: 0.08, envMapIntensity: 1.05,
     }),
     // the district's carriageway: unpainted, tiled by the metre
+    /* Asphalt needs relief, not just a picture of asphalt.
+       With albedo alone the carriageway is a flat sheet under the sun and the
+       aggregate painted into the texture never catches a highlight -- it read
+       as grey plastic. The normal map comes from the texture's own luminance,
+       so the stones that are drawn bright are the stones that stand proud. */
     tarmac: new THREE.MeshStandardMaterial({
-      map: plain, roughness: 0.42, metalness: 0.06, envMapIntensity: 0.8,
+      map: plain, normalMap: plainNormal,
+      normalScale: new THREE.Vector2(0.85, 0.85),
+      roughness: 0.42, metalness: 0.06, envMapIntensity: 0.8,
     }),
     // road paint, drawn as geometry a hair above the tarmac
     paint: new THREE.MeshBasicMaterial({
