@@ -251,7 +251,13 @@ function spanHeight(s, x, z) {
     const d = Math.hypot(x - ax - vx * tc, z - az - vz * tc);
     if (d < bestD) { bestD = d; along = s.cum[i] + tc * Math.sqrt(l2); }
   }
-  if (bestD <= s.half + 1.5) {
+  /* The lifted band covers the PAVEMENT, not just the carriageway.
+     At half + 1.5 the road climbed onto the bridge while its kerb wall,
+     pavement ribbon (centred at half + 2.4) and every kerbside prop (lamps at
+     half + 1.6) stayed on the ground beneath it -- a raised road with its own
+     footway seven metres below, and lamp posts sticking up through the deck.
+     half + 5.5 clears the 4.8m pavement's outer edge with room for a railing. */
+  if (bestD <= s.half + 5.5) {
     if (s.taper) {
       // a ramp climbs across its whole length rather than having approaches
       return s.height * smooth(Math.max(0, Math.min(1, along / Math.max(1, s.length))));
@@ -275,7 +281,7 @@ function spanHeight(s, x, z) {
     const out = rx * ux + rz * uz;          // metres past the abutment
     if (out <= 0 || out > s.ramp) continue;
     const perp = Math.hypot(rx - ux * out, rz - uz * out);
-    if (perp > s.half + 1.5) continue;
+    if (perp > s.half + 5.5) continue;      // same band as the span (see above)
     return s.height * smooth(1 - out / s.ramp);
   }
   return 0;
