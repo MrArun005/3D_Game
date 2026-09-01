@@ -90,11 +90,8 @@ function buildInterior() {
   parts.push(box(0.16, 0.44, 1.18, 3.44, 0.94, 0, -0.14));
   parts.push(box(0.52, 0.05, 1.22, 3.84, 0.99, 0));          // parcel shelf
 
-  const wheel = new THREE.TorusGeometry(0.155, 0.021, 8, 20);
-  wheel.rotateY(Math.PI / 2);
-  wheel.rotateZ(0.32);
-  wheel.translate(2.06, 1.03, 0.36);
-  parts.push(wheel);
+  /* The steering wheel itself is NOT merged here any more -- it turns with
+     car.steer, so buildCar hangs it on its own pivot. The column stays. */
   const column = new THREE.CylinderGeometry(0.03, 0.03, 0.3, 8);
   column.rotateZ(Math.PI / 2 + 0.32);
   column.translate(1.94, 0.98, 0.36);
@@ -254,6 +251,28 @@ export function buildCar(mats, paintHex) {
   const interior = new THREE.Mesh(buildInterior(), mats.cabin);
   shell.add(interior);
 
+  /* The steering wheel, on a pivot so it turns with the front wheels.
+     Reproduces the old baked transform -- rotateY(PI/2) then rotateZ(0.32) --
+     as a 'ZYX' Euler on the pivot, so the torus axis lands where it always
+     did; the child then spins about its own local Z, which is that axis. */
+  const steerPivot = new THREE.Group();
+  steerPivot.position.set(2.06, 1.03, 0.36);
+  steerPivot.rotation.set(0, Math.PI / 2, 0.32, 'ZYX');
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.155, 0.021, 8, 20), mats.cabin);
+  // three spokes and a hub, so the rotation can be READ
+  const spokes = [];
+  for (let i = 0; i < 3; i++) {
+    const sp = new THREE.BoxGeometry(0.02, 0.15, 0.016);
+    sp.translate(0, 0.075, 0);
+    sp.rotateZ((i * 2 * Math.PI) / 3);
+    spokes.push(sp);
+  }
+  const hub = new THREE.CylinderGeometry(0.035, 0.035, 0.03, 10);
+  hub.rotateX(Math.PI / 2);
+  const wheelInner = new THREE.Mesh(mergeGeos([rim.geometry, ...spokes, hub]), mats.cabin);
+  steerPivot.add(wheelInner);
+  shell.add(steerPivot);
+
   const driver = new THREE.Mesh(buildDriver(), mats.shirt.clone());
   driver.castShadow = true;
   driver.receiveShadow = true;
@@ -292,6 +311,9 @@ export function buildCar(mats, paintHex) {
 
   const tailMat = mats.tail.clone();
   const headMat = mats.lampOn.clone();
+  // off until the gear lever says otherwise
+  const reverseMat = mats.lampOn.clone();
+  reverseMat.emissiveIntensity = 0;
   const heads = [];
   const lensGeo = new THREE.SphereGeometry(1, 14, 10);
 
@@ -315,6 +337,10 @@ export function buildCar(mats, paintHex) {
     const tLens = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.11, 0.32), tailMat);
     tLens.position.set(4.565, 0.845, s * 0.44);
     shell.add(tHousing, tLens);
+    // reverse lamp: a small clear lens inboard of the tail cluster, lit in R
+    const rLens = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.07, 0.10), reverseMat);
+    rLens.position.set(4.565, 0.845, s * 0.215);
+    shell.add(rLens);
 
     // mirror on a stalk, not a block glued to the door
     const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 0.14, 8), mats.trim);
@@ -324,13 +350,24 @@ export function buildCar(mats, paintHex) {
     cap.position.set(1.71, 0.985, s * (hullHalfWidth(1.73) + 0.12));
     const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.06, 0.012), mats.chrome);
     mirror.position.set(1.71, 0.985, s * (hullHalfWidth(1.73) + 0.098));
-    shell.add(stalk, cap, mirror);
+
+    /* Anything bolted to a door swings with it. The mirror (x 1.73) and the
+       front handle (x 2.16) sit inside the front door band, so they hang off
+       that door's hinge pivot in pivot-local coordinates; the rear handle at
+       3.34 is on the fixed quarter panel and stays on the shell. */
+    const frontDoor = doors['doorF' + (s > 0 ? 'L' : 'R')];
+    const onDoor = (m) => {
+      if (!frontDoor) { shell.add(m); return; }
+      m.position.sub(frontDoor.pivot.position);
+      frontDoor.pivot.add(m);
+    };
+    onDoor(stalk); onDoor(cap); onDoor(mirror);
 
     // door handles
     for (const hx of [2.16, 3.34]) {
       const handle = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.035, 0.05), mats.chrome);
       handle.position.set(hx, 0.845, s * (hullHalfWidth(hx) + 0.012));
-      shell.add(handle);
+      if (hx < SHUTLINES[1]) onDoor(handle); else shell.add(handle);
     }
 
     const exhaust = new THREE.Mesh(
@@ -396,7 +433,7 @@ export function buildCar(mats, paintHex) {
 
   group.userData = {
     heads, headMat, tailMat, wheels, paint, interior, body, driver,
-    hull: bodyMesh, glass: glassMesh, shell, doors,
+    hull: bodyMesh, glass: glassMesh, shell, doors, steering: wheelInner, reverseMat,
   };
   return group;
 }

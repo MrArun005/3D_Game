@@ -732,6 +732,11 @@ function frame() {
   for (const d of Object.values(hero.userData.doors || {})) {
     d.pivot.rotation.y += (d.target - d.pivot.rotation.y) * Math.min(1, dt * d.speed);
   }
+  /* Steering ratio ~2.6: a real car turns the wheel about 2.5 times more
+     than the road wheels turn, and the interior is visible through the
+     glass every second of play. Sign follows the road wheels so a left
+     steer is a left hand-over. */
+  if (hero.userData.steering) hero.userData.steering.rotation.z = -car.steer * 2.6;
   for (const w of hero.userData.wheels) {
     if (w.front) w.steer.rotation.y = car.steer;
     const idx = (w.front ? 0 : 2) + (w.side > 0 ? 1 : 0);
@@ -742,6 +747,8 @@ function frame() {
 
   hero.userData.tailMat.emissiveIntensity =
     0.5 + car.brake * 3.0 + (car.hand > 0.3 ? 1.2 : 0);
+  // gear 0 is reverse (the HUD prints it as R)
+  if (hero.userData.reverseMat) hero.userData.reverseMat.emissiveIntensity = car.gear === 0 ? 2.4 : 0;
   const headMat = hero.userData.headMat;
   headMat.emissiveIntensity = car.headlights ? 2.2 : 0;
   for (const b of headlightBeams) {
