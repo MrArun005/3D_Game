@@ -151,24 +151,28 @@ export class DistrictWorld {
     roads.frustumCulled = false;
     far.add(roads);
 
-    const slabs = [], solids = [], cols = [];
+    const slabs = [], solids = [], uvScale = [];
     const c = new THREE.Color();
-    const PAL = day ? [0xb0aca3, 0xa5a9ac, 0x9c968c, 0xbdb8ad, 0x8f949a]
-                    : [0x2a3038, 0x252b33, 0x30363e, 0x222831, 0x2d333b];
     for (const bl of D.blocks) {
       slabs.push(mat4(bl.x, 0, bl.y, bl.angle, bl.w, KERB_H * 0.9, bl.h));
       const range = HEIGHT[bl.type];
       if (!range || !range[1]) continue;
       const scale = DISTRICT_SCALE[bl.district] ?? 1;
       const ca = Math.cos(bl.angle), sa = Math.sin(bl.angle);
+      /* The stand-in wears the same tiled facade as the near building, so it
+         needs the same per-instance UV scale: tiles across = width / tile
+         width, tiles up = height / (floors * storey). The near massing does
+         exactly this per stage in #massing; a stand-in is one stage. */
+      const spec = ARCH[ARCHETYPE[bl.type]] ?? ARCH[MID];
+      const tileW = spec.wide, tileH = spec.floors * spec.storey;
       for (const g of D.buildingsOf(bl.id)) {
         const h = (range[0] + hash(g.x + bl.x, g.y + bl.y) * (range[1] - range[0])) * scale;
         const lx = g.x + g.w / 2, lz = g.y + g.d / 2;
+        const w = Math.max(1, g.w - 0.3), hh = Math.max(1, h - 0.4);
         solids.push(mat4(bl.x + lx * ca - lz * sa, KERB_H,
                          bl.y + lx * sa + lz * ca, bl.angle,
-                         Math.max(1, g.w - 0.3), Math.max(1, h - 0.4),
-                         Math.max(1, g.d - 0.3)));
-        cols.push(PAL[Math.floor(hash(lz, lx) * PAL.length)]);
+                         w, hh, Math.max(1, g.d - 0.3)));
+        uvScale.push(w / tileW, hh / tileH);
       }
     }
     const box = this.assets.geo.box;
@@ -180,9 +184,18 @@ export class DistrictWorld {
     slabMesh.frustumCulled = false;
     far.add(slabMesh);
 
-    const solidMesh = new THREE.InstancedMesh(box, new THREE.MeshLambertMaterial({
-      color: 0xffffff,
-    }), solids.length);
+    /* Windows on the skyline.
+       Flat PAL-grey Lambert boxes read as nothing against the ground: past two
+       blocks the city looked like a plain of roads with three towers on it,
+       although all 2,482 stand-ins were there. They now wear the near towers'
+       own tiled facade material, driven by the same aUvScale attribute the
+       near massing uses -- so from a rooftop the grid is buildings to the
+       mountains, and at night they light up with the rest of the city. One
+       material, one draw, and #cullFar's matrix bookkeeping is untouched. */
+    const farGeo = box.clone();
+    farGeo.userData.owned = true;
+    farGeo.setAttribute('aUvScale', new THREE.InstancedBufferAttribute(new Float32Array(uvScale), 2));
+    const solidMesh = new THREE.InstancedMesh(farGeo, this.assets.facades[TOWER][0], solids.length);
     /* Where detail exists the far copy has to get out of the way: a stand-in
        box is full width to the top, so it burst out of every setback and
        crown as a pale cube sitting on the real building. */
@@ -191,9 +204,7 @@ export class DistrictWorld {
     this.farMesh = solidMesh;
     this.farHidden = new Set();
     solids.forEach((m, i) => solidMesh.setMatrixAt(i, m));
-    cols.forEach((hex, i) => solidMesh.setColorAt(i, c.setHex(hex)));
     solidMesh.instanceMatrix.needsUpdate = true;
-    solidMesh.instanceColor.needsUpdate = true;
     // matrices are rewritten by #cullFar as you move, so the sphere would go
     // stale -- this one genuinely has to opt out
     solidMesh.frustumCulled = false;
