@@ -145,8 +145,12 @@ export function texWalk() {
 export function texPool() {
   const S = 128, c = cv(S, S), g = c.getContext('2d');
   const gr = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
-  gr.addColorStop(0, 'rgba(255,196,124,0.62)');
-  gr.addColorStop(0.35, 'rgba(255,172,92,0.2)');
+  /* Hotter core, softer skirt. Tuned for the old direct-to-canvas rig, the
+     0.62 peak barely registered once the frame went through the post stack:
+     at night the street under a lamp read as tarmac with a faint stain. */
+  gr.addColorStop(0, 'rgba(255,205,140,0.98)');
+  gr.addColorStop(0.22, 'rgba(255,184,104,0.46)');
+  gr.addColorStop(0.55, 'rgba(255,160,70,0.12)');
   gr.addColorStop(1, 'rgba(255,150,50,0)');
   g.fillStyle = gr; g.fillRect(0, 0, S, S);
   return toTex(c);

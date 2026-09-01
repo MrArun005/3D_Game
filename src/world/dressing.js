@@ -200,7 +200,10 @@ function kerbside(batch, segments, district, solids, pools) {
            spacing. */
         if (pools && row.asset.includes('lamp')) {
           pools.push({ x: px + Math.cos(yaw) * 1.4, y: y + 0.03,
-                       z: pz - Math.sin(yaw) * 1.4, size: 13 });
+                       z: pz - Math.sin(yaw) * 1.4, size: 16 });
+          // the pavement side gets light too; a lamp does not only face the road
+          pools.push({ x: px - Math.cos(yaw) * 1.6, y: y + 0.03,
+                       z: pz + Math.sin(yaw) * 1.6, size: 9 });
         }
         if (row.asset.includes('lamp') || row.asset.includes('tree')
             || row.asset.includes('phone') || row.asset.includes('shelter')) {

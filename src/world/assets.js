@@ -103,7 +103,13 @@ export function createAssets() {
       roughness: 0.28, metalness: 0.2,
     }),
     pole: new THREE.MeshStandardMaterial({ color: 0x23262b, roughness: 0.62, metalness: 0.55 }),
-    lampGlow: new THREE.MeshBasicMaterial({ color: 0xffd9a0 }),
+    /* Emissive, not Basic. main.js dims lampGlow.emissiveIntensity for daylight
+       -- a property a MeshBasicMaterial does not have -- and the bloom pass
+       reads the emissive MRT channel, so as a Basic material the lamp heads
+       neither dimmed by day nor bloomed by night. Now they do both. */
+    lampGlow: new THREE.MeshStandardMaterial({
+      color: 0x3a3226, emissive: 0xffd9a0, emissiveIntensity: 3.2, roughness: 0.4,
+    }),
     // unlit so a red lens stays red at night; brightness comes from instance colour
     signalLamp: new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
     plant: new THREE.MeshStandardMaterial({ color: 0x4b4f55, roughness: 0.78, metalness: 0.4 }),
@@ -121,7 +127,7 @@ export function createAssets() {
     }),
     pool: new THREE.MeshBasicMaterial({
       map: pool, transparent: true, blending: THREE.AdditiveBlending,
-      depthWrite: false, opacity: 0.85, fog: true,
+      depthWrite: false, opacity: 1.0, fog: true,
     }),
     // one white material for every parked car; colour comes per instance, so a
     // whole street of mixed cars is one draw call per silhouette

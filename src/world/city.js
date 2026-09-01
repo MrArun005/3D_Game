@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {
-  attribute, texture, uv, materialReference,
+  attribute, texture, uv, materialReference, instanceIndex,
+  floor, fract, sin, dot, step, mix, vec2, vec3, float,
 } from 'three/tsl';
 import { mulberry32 } from '../core/rng.js';
 import { M4 } from '../core/geometry.js';
@@ -74,9 +75,26 @@ export function makeTileable(material) {
       .mul(materialReference('color', 'color'));
   }
   if (material.emissiveMap) {
+    /* Windows with life.
+       The emissive map lights every window at the same intensity, so a tower
+       at night read as a lightbox. Real blocks are 40-60% lit, in a mix of
+       warm incandescent and cool fluorescent, and which windows are lit is
+       fixed per building rather than flickering. `scaled` is already in units
+       of facade TILES, so floor(scaled) is a stable window-cell id; hashing it
+       with the instance index gives each building its own pattern. Everything
+       is a pure function of (cell, instance): no new attribute, no per-frame
+       work, and deterministic on every reload. */
+    const cell = floor(scaled).add(vec2(float(instanceIndex).mul(0.731), float(instanceIndex).mul(0.417)));
+    const h = fract(sin(dot(cell, vec2(127.1, 311.7))).mul(43758.5453));
+    const h2 = fract(sin(dot(cell, vec2(269.5, 183.3))).mul(43758.5453));
+    const lit = step(0.45, h);                                   // ~55% of windows on
+    const warm = vec3(1.0, 0.86, 0.62), cool = vec3(0.80, 0.90, 1.0);
+    const tint = mix(warm, cool, step(0.55, h2));
+    const level = lit.mul(mix(0.55, 1.0, h2));                   // lit ones vary too
     material.emissiveNode = texture(material.emissiveMap, scaled)
       .mul(materialReference('emissive', 'color'))
-      .mul(materialReference('emissiveIntensity', 'float'));
+      .mul(materialReference('emissiveIntensity', 'float'))
+      .mul(tint).mul(level);
   }
   return material;
 }
