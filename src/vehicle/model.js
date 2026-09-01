@@ -133,6 +133,10 @@ export function buildMaterials() {
     paint: new THREE.MeshPhysicalMaterial({
       color: 0x23282e, metalness: 0.62, roughness: 0.22,
       clearcoat: 1.0, clearcoatRoughness: 0.045, envMapIntensity: 1.6,
+      /* DoubleSide so an open door has an inside. The hull is closed, so this
+         costs nothing on the body; on the single-skin doors it is the whole
+         difference between a panel and a hole. */
+      side: THREE.DoubleSide,
     }),
     /* Glazing you can see through. It was a near-black 66% sheet, which read
        as a solid roof and hid the cabin entirely -- fine at night, wrong the

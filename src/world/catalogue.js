@@ -150,6 +150,14 @@ export class Catalogue {
              the same maths done thousands more times. */
           const g = deQuantize(o.geometry.clone());
           g.applyMatrix4(o.matrixWorld);
+          /* Rule 4, for real. Every one of the 201 shipped parts arrived with
+             NO TEXCOORD_0, so the merge step's zero-fill put every texel of
+             every PBR material on one point: brick, glass and timber never
+             actually showed. Box-projection in METRES -- each vertex takes the
+             two axes perpendicular to its normal's dominant axis -- so the
+             library's per-metre tiling reads at true size and a 3.6m bay gets
+             3.6m of brick. Baked positions, so it is done once per asset. */
+          if (!g.attributes.uv) boxProjectUv(g);
           /* NOT marked `owned`. Catalogue geometry is shared by every chunk
              that instances the asset, and districtWorld's release sweep
              disposes anything flagged owned -- so flagging these would free
@@ -237,6 +245,26 @@ function deQuantize(geo) {
     geo.setAttribute(name, new THREE.BufferAttribute(out, a.itemSize));
   }
   return geo;
+}
+
+
+/** Planar UVs from position, chosen per vertex by the dominant normal axis. */
+function boxProjectUv(g) {
+  const pos = g.attributes.position;
+  if (!g.attributes.normal) g.computeVertexNormals();
+  const nrm = g.attributes.normal;
+  const uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    const nx = Math.abs(nrm.getX(i)), ny = Math.abs(nrm.getY(i)), nz = Math.abs(nrm.getZ(i));
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    let u, v;
+    if (ny >= nx && ny >= nz) { u = x; v = z; }          // top/bottom faces
+    else if (nx >= nz) { u = z; v = y; }                 // faces looking down x
+    else { u = x; v = y; }                               // faces looking down z
+    uv[i * 2] = u; uv[i * 2 + 1] = v;
+  }
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  return g;
 }
 
 const LOADER = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
