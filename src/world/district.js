@@ -66,6 +66,7 @@ export class District {
       const list = this.buildingsByBlock.get(g.blockId);
       if (list) list.push(g); else this.buildingsByBlock.set(g.blockId, [g]);
     }
+    this.#infill(data);
   }
 
   #bucket(seg, id, pad) {
@@ -211,6 +212,74 @@ export class District {
   }
 
   buildingsOf(blockId) { return this.buildingsByBlock.get(blockId) ?? []; }
+
+  /**
+   * Fill the blocks in.
+   *
+   * The file ships 2,598 footprints over 506 blocks: about five a block,
+   * covering roughly 15% of a typical 56x44m downtown block. Measured from a
+   * rooftop that reads as a plain of roads with the odd tower on it, because it
+   * is one. A built city block is 60-90% footprint. This walks each built
+   * block's frontage in block-local coordinates and drops additional
+   * footprints wherever they fit without touching an authored one, leaving a
+   * courtyard in the middle. Deterministic (hashed on block id and cell), and
+   * everything downstream -- massing, collision, far stand-ins, the facade kit
+   * -- reads buildingsOf(), so it all densifies together with no new draws.
+   *
+   * Procedural for layout, authored for detail: the authored footprints keep
+   * their exact positions; this only adds where they left the slab bare.
+   */
+  #infill(data) {
+    const BUILT = new Set(['row', 'mid', 'tower']);
+    const MARGIN = 2.6;            // inset from the block edge: the pavement
+    const GAP = 2.2;               // clear space to an authored footprint
+    const hash = (a, b) => { const n = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453; return n - Math.floor(n); };
+    let added = 0;
+    for (const bl of data.blocks) {
+      if (!BUILT.has(bl.type)) continue;
+      const list = this.buildingsByBlock.get(bl.id) ?? [];
+      const hw = bl.w / 2, hh = bl.h / 2;
+      // frontage depth and plot width by block kind
+      const depth = bl.type === 'tower' ? 18 : bl.type === 'mid' ? 15 : 11;
+      const plot = bl.type === 'tower' ? 16 : bl.type === 'mid' ? 13 : 9;
+      const overlaps = (x, y, w, d) => list.some((g) =>
+        Math.abs(g.x - x) < (g.w + w) / 2 + GAP && Math.abs(g.y - y) < (g.d + d) / 2 + GAP);
+      const tryPlace = (x, y, w, d, seedA, seedB) => {
+        // shrink a little so a run of plots reads as separate buildings
+        const k = 0.86 + hash(seedA, seedB) * 0.12;
+        const ww = w * k, dd = d * k;
+        if (Math.abs(x) + ww / 2 > hw - MARGIN || Math.abs(y) + dd / 2 > hh - MARGIN) return;
+        if (overlaps(x, y, ww, dd)) return;
+        list.push({ blockId: bl.id, block: [bl.x, bl.y], angle: bl.angle, x, y, w: ww, d: dd,
+                    type: bl.type, infill: true });
+        added++;
+      };
+      // long sides: plots along x, set back `depth` from the top and bottom edges
+      const innerW = bl.w - 2 * MARGIN, innerH = bl.h - 2 * MARGIN;
+      if (innerH > depth * 1.2) {
+        const n = Math.max(1, Math.floor(innerW / plot));
+        const step = innerW / n;
+        for (let i = 0; i < n; i++) {
+          const x = -innerW / 2 + step * (i + 0.5);
+          tryPlace(x, -hh + MARGIN + depth / 2, step, depth, bl.id + i, 1);
+          tryPlace(x,  hh - MARGIN - depth / 2, step, depth, bl.id + i, 2);
+        }
+      }
+      // short sides, between the corner plots
+      if (innerW > depth * 1.2) {
+        const span = innerH - 2 * depth;
+        const n = Math.max(0, Math.floor(span / plot));
+        const step = n ? span / n : 0;
+        for (let i = 0; i < n; i++) {
+          const y = -span / 2 + step * (i + 0.5);
+          tryPlace(-hw + MARGIN + depth / 2, y, depth, step, bl.id + 100 + i, 3);
+          tryPlace( hw - MARGIN - depth / 2, y, depth, step, bl.id + 100 + i, 4);
+        }
+      }
+      if (!this.buildingsByBlock.has(bl.id) && list.length) this.buildingsByBlock.set(bl.id, list);
+    }
+    this.infilled = added;
+  }
 }
 
 /**

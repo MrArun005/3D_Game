@@ -116,7 +116,7 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   `toneMappingExposure` 1.15 (day 1.0), and headlights default to night-only.
 - The state of play, reviewed in full with ranked issues and next steps:
   `docs/REVIEW-2026-08-31.md`.
-- ~900-1000 draw calls and ~4.1M triangles facing downtown with the full
+- ~1100 draw calls and ~3.6M triangles facing downtown with the full
   authored kit placed (budgets: 1400 draws, 4.0M triangles). Triangles came
   DOWN from 5.7M while the city gained ~14,000 props, because the profile
   showed 748 parked cars at 2444 triangles each were 54% of the scene: they
@@ -172,6 +172,22 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   binary, so the 97 texture PNGs ship uncompressed (~18 MB).
 
 ### Fixed 2026-09-01 (verified, kept here so they are not re-reported)
+
+- **The city was 15% built.** The district file ships ~5 footprints per
+  block. `district.js:#infill` adds seeded frontage footprints on row/mid/
+  tower blocks (1,207 added; mean coverage on built blocks 0.15 -> 0.43),
+  inside the block, clear of authored ones — `test/district.test.js` now
+  asserts exactly that instead of an exact count. Far stand-ins wear the
+  tiled facade material with a per-instance `aUvScale`, and the far roads
+  use `A.mat.tarmac`, so streaming out no longer produces a detail cliff.
+- **Bridges have sides.** Per-segment concrete skirt + parapet from the
+  tarmac's own corner heights (`face()` corrects winding once); pavements,
+  kerbs and lamps rise with the deck (`spanHeight` band half+5.5);
+  `water.js` no longer draws its own fixed-height rails.
+- **Night street lighting.** Lamp pools hot enough to read post-stack, a
+  pavement-side pool, emissive `lampGlow` (it was a Basic material, so the
+  daylight dim never applied and heads never bloomed), and an emissive cap
+  at every authored lamp's arm tip. Facade windows ~55% lit, warm/cool.
 
 - **WebGPU "Binding size for [Buffer ...] is zero" storm** (~100 errors/s in
   the harness). `#signals` built two zero-count InstancedMeshes per chunk
