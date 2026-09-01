@@ -135,7 +135,17 @@ export function stepVehicle(car, dt) {
   const ratio = V.gears[car.gear] * V.final;
   const wAvg = (car.wheelW[2] + car.wheelW[3]) / 2;
   if (car.gear !== 1) {
-    car.rpm += ((Math.abs(wAvg * ratio) * 60) / (2 * Math.PI) - car.rpm) * Math.min(1, dt * 9);
+    /* Torque-converter launch.
+       Locking rpm to wheel speed meant a standing start ran the engine at idle
+       -- about 200Nm against a 370Nm peak -- and the measured launch was 8km/h
+       after a full second. A real automatic lets the engine flare against the
+       converter off the line; this is that: the rpm floor rises with throttle
+       while the wheels are slower than it, and hands over to wheel speed the
+       moment they catch up. Costs nothing at cruise. */
+    const wheelRpm = (Math.abs(wAvg * ratio) * 60) / (2 * Math.PI);
+    const flare = V.idle + car.throttle * V.launchRpm;
+    const target = Math.max(wheelRpm, wheelRpm < flare ? flare : 0);
+    car.rpm += (target - car.rpm) * Math.min(1, dt * 9);
   } else {
     car.rpm += (V.idle + car.throttle * 4200 - car.rpm) * Math.min(1, dt * 3);
   }

@@ -207,7 +207,13 @@ export const V = {
   /* The handbrake has to actually lock the rears. At 3400Nm through the 0.5
      scaling in the brake loop it only slowed them to within 10% of rolling,
      so the tail never stepped out and the car left almost no rubber. */
-  brakeMax: 5200, handbrake: 9000,
+  /* Measured from 110km/h: 68.8m and 5.67s at 5200 -- 0.53g, torque-limited,
+     with the tyres good for 1.42g. A road car stops from 110 in ~45m at ~1g,
+     and a GTA car stops harder than that. 10500 lands at ~1.05g, still under
+     the grip cap so ABS-free braking does not just lock the fronts. */
+  brakeMax: 10500, handbrake: 9000,
+  // converter flare above idle at full throttle from rest (see dynamics.js)
+  launchRpm: 1900,
 
   /* Suspension. Four rays instead of a weight-transfer formula: the spring
      compression at each corner IS the tyre's normal load, so weight transfer,
