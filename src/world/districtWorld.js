@@ -1008,12 +1008,15 @@ export class DistrictWorld {
       /* record where each breakable prop's triangles land in the merged
          buffers, so world/breakables.js can knock them over (see its header) */
       batch.trackNames = BREAK_CLASS;
-      const dressPools = [];
+      const dressPools = [], dressHeads = [];
       yield;
       dressChunk(batch, {
         segments: segs.map((id) => this.district.segments[id]),
         blocks, district: this.district, solids: solidParked, pools: dressPools,
+        heads: dressHeads,
       });
+      // emissive caps on the authored lamps, so the heads bloom at night
+      for (const hd of dressHeads) heads.push(mat4(hd.x, hd.y, hd.z, -hd.yaw, 1, 1, 1));
       yield;
       dressRoofs(batch, boxes, this.district);
       yield;
@@ -1061,7 +1064,11 @@ export class DistrictWorld {
     inst(slabGeo, A.mat.kerb, slabs.vacant);
     yield;
     inst(A.geo.lamp, A.mat.pole, lamps, true);
-    inst(A.geo.lampHead, A.mat.lampGlow, heads);
+    /* Two head geometries share one list: the legacy lamp's head is offset to
+       sit on its own arm; the authored lamps' cap is origin-centred because
+       dressing.js already placed it at the arm tip. Only one is in use per
+       world, so pick by whether the catalogue dressed this chunk. */
+    inst(dressed ? A.geo.lampCap : A.geo.lampHead, A.mat.lampGlow, heads);
     for (const sp of Object.keys(trees)) {
       inst(A.geo.species[sp].trunk, A.mat.bark, trees[sp], true);
       inst(A.geo.species[sp].canopy, A.mat.leaf, trees[sp], true, leafCol[sp]);

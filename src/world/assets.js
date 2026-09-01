@@ -136,6 +136,8 @@ export function createAssets() {
   };
 
   geo.lampCone = new THREE.ConeGeometry(3.1, 8.4, 12, 1, true);
+  // origin-centred glowing cap for the catalogue lamps (dressing.js places it)
+  geo.lampCap = new THREE.BoxGeometry(0.34, 0.12, 0.62);
   geo.species = Object.fromEntries(TREE_SPECIES.map((k) => [k, buildSpecies(k)]));
 
   return {

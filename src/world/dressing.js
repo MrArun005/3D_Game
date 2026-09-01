@@ -151,13 +151,13 @@ function pick(kit, r) {
  * through does not end up in the middle of the pavement.
  */
 export function dressChunk(batch, ctx) {
-  const { segments, blocks, district, solids, pools } = ctx;
-  kerbside(batch, segments, district, solids, pools);
+  const { segments, blocks, district, solids, pools, heads } = ctx;
+  kerbside(batch, segments, district, solids, pools, heads);
   roads(batch, segments, district);
   blockDressing(batch, blocks, district, solids);
 }
 
-function kerbside(batch, segments, district, solids, pools) {
+function kerbside(batch, segments, district, solids, pools, heads) {
   for (const s of segments) {
     if (s.cls === 'freeway' || s.cls === 'ramp') continue;
     const dx = s.bx - s.ax, dz = s.bz - s.az;
@@ -204,6 +204,17 @@ function kerbside(batch, segments, district, solids, pools) {
           // the pavement side gets light too; a lamp does not only face the road
           pools.push({ x: px - Math.cos(yaw) * 1.6, y: y + 0.03,
                        z: pz + Math.sin(yaw) * 1.6, size: 9 });
+        }
+        /* The glowing head, at the tip of the authored arm. The kit lamps have
+           no emissive part of their own, so at night they were dark sticks
+           standing over a pool of light with nothing above it to bloom. The
+           asset's arm runs along its local +Z, which place() yaws to
+           (sin yaw, cos yaw) in world. */
+        if (heads && row.asset.includes('lamp')) {
+          const arterial = row.asset.includes('arterial');
+          const reach = arterial ? 1.55 : 0.30, h = arterial ? 8.2 : 6.02;
+          heads.push({ x: px + Math.sin(yaw) * reach, y: y + h,
+                       z: pz + Math.cos(yaw) * reach, yaw });
         }
         if (row.asset.includes('lamp') || row.asset.includes('tree')
             || row.asset.includes('phone') || row.asset.includes('shelter')) {
