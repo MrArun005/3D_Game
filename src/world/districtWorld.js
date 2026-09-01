@@ -122,7 +122,14 @@ export class DistrictWorld {
     const D = this.district;
     const far = new THREE.Group();
 
-    const pos = [];
+    /* The far roads wear the SAME tarmac as the near ones.
+       They were a flat Lambert grey with no UVs, so the moment a chunk
+       streamed out the road lost its grain, its tone and its normal map and
+       became a paint band -- a visible cliff in every establishing shot.
+       Same material, same 18.4m tile in metres, and the join disappears; the
+       markings alone are absent out there, and at that range they are
+       sub-pixel anyway. */
+    const pos = [], uvs = [];
     for (const s of D.segments) {
       const dx = s.bx - s.ax, dz = s.bz - s.az;
       const L = Math.hypot(dx, dz) || 1;
@@ -131,14 +138,15 @@ export class DistrictWorld {
         s.ax + nx, 0, s.az + nz, s.bx + nx, 0, s.bz + nz, s.bx - nx, 0, s.bz - nz,
         s.ax + nx, 0, s.az + nz, s.bx - nx, 0, s.bz - nz, s.ax - nx, 0, s.az - nz,
       );
+      const v = L / 18.4, u = (s.half * 2) / 18.4;
+      uvs.push(0, 0, v, 0, v, u, 0, 0, v, u, 0, u);
     }
     const rg = new THREE.BufferGeometry();
     rg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
     rg.setAttribute('normal', new THREE.BufferAttribute(
       new Float32Array(pos.length).fill(0).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
-    const roads = new THREE.Mesh(rg, new THREE.MeshLambertMaterial({
-      color: day ? 0x4c5057 : 0x181d24,
-    }));
+    rg.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
+    const roads = new THREE.Mesh(rg, this.assets.mat.tarmac);
     roads.position.y = -0.03;               // always loses to the real tarmac
     roads.frustumCulled = false;
     far.add(roads);

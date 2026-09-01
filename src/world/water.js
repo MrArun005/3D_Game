@@ -118,7 +118,7 @@ export function buildWater(scene, district, day = true) {
      would mean re-deriving every kerb, marking and lamp that hangs off it.
      What was missing is everything UNDER the road -- so each crossing gets a
      deck soffit, piers down to the water, and parapets you can see over. */
-  const decks = [], piers = [], rails = [];
+  const decks = [], piers = [];
   for (const br of D.bridges) {
     const pts = br.points, half = br.width / 2;
     for (let i = 0; i < pts.length - 1; i++) {
@@ -128,10 +128,11 @@ export function buildWater(scene, district, day = true) {
       const yaw = Math.atan2(bz - az, bx - ax);
       const mx = (ax + bx) / 2, mz = (az + bz) / 2;
       decks.push(M(mx, DECK_Y - DECK_T, mz, yaw, L, DECK_T, br.width));
-      for (const side of [-1, 1]) {
-        rails.push(M(mx - Math.sin(yaw) * (half - 0.3) * side, DECK_Y + 0.05,
-                     mz + Math.cos(yaw) * (half - 0.3) * side, yaw, L, 1.05, 0.42));
-      }
+      /* No rails here any more. districtWorld emits a parapet per road segment
+         that FOLLOWS the ramp from the same corner heights as the tarmac; a
+         second, fixed-height rail at DECK_Y doubled it over the water and
+         stopped dead at the abutments. The deck soffit and piers stay: they
+         are what you see from the water, and nothing else draws them. */
       // piers every ~34m, stopping short of the abutments
       for (let t = 16; t < L - 14; t += 34) {
         const px = ax + Math.cos(yaw) * t, pz = az + Math.sin(yaw) * t;
@@ -153,7 +154,6 @@ export function buildWater(scene, district, day = true) {
   };
   inst(decks, day ? 0x8c8880 : 0x1b2027, true);
   inst(piers, day ? 0x7d7a72 : 0x171c22, true);
-  inst(rails, day ? 0xb6b2a8 : 0x242a32, true);
 
   scene.add(group);
 
