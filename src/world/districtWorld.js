@@ -736,6 +736,14 @@ export class DistrictWorld {
 
     if (!lens.length) return;
     const inst = (list, m2) => {
+      /* Never build a zero-count InstancedMesh. With the catalogue loaded the
+         authored mast replaces the box posts and arms, so both lists are
+         EMPTY here -- and an InstancedMesh with count 0 owns a zero-byte
+         instanceMatrix buffer that WebGPU refuses to bind:
+           "Binding size for [Buffer ...UniformBuffer_N_(vertex)] is zero"
+         once per mesh per frame, ~100 errors a second across the near
+         chunks. The guard is the whole fix. */
+      if (!list.length) return null;
       const mesh = new THREE.InstancedMesh(A.geo.box, m2, list.length);
       list.forEach((mm, i) => mesh.setMatrixAt(i, mm));
       mesh.instanceMatrix.needsUpdate = true;

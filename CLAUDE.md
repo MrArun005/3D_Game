@@ -143,6 +143,11 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
 
 ### Open
 
+- Doors are hinged but single-skinned: from inside the cabin an open door's
+  inner face is back-culled (`paint` is FrontSide). An inner skin, or
+  DoubleSide on a door-only paint clone, is the fix when it matters.
+
+
 - `core/geometry.js:mergeGeos` still zero-fills UVs for input geometries that
   carry none of their own (loft() and fromTris() now emit real UVs — see the
   2026-08-31 fixed list). Anything built purely from mergeGeos over UV-less
@@ -165,6 +170,26 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   expecting it to pay.
 - KTX2 is still not generated — `tools/ingest.mjs` skips it without the `toktx`
   binary, so the 97 texture PNGs ship uncompressed (~18 MB).
+
+### Fixed 2026-09-01 (verified, kept here so they are not re-reported)
+
+- **WebGPU "Binding size for [Buffer ...] is zero" storm** (~100 errors/s in
+  the harness). `#signals` built two zero-count InstancedMeshes per chunk
+  (`posts`, `arms`) once the authored mast replaced them. A zero-count
+  InstancedMesh owns a zero-byte instanceMatrix buffer WebGPU refuses to
+  bind. Guarded; verified 333 instanced meshes, 0 with count 0, after a
+  teleport that rebuilt a full ring of chunks.
+- **Junction paint**: stop lines and lane arrows on every signalised approach
+  (`#signals`, `tri()` corrects winding once for all shapes — 11,485 of
+  12,191 triangles faced down before). Traffic keeps RIGHT.
+- **Asphalt reads as asphalt**: `textures.js:normalFromCanvas` derives a
+  normal map from the tarmac's own luminance; daylight tarmac is matte
+  (roughness 0.82, env 0.25).
+- **The car**: hinged doors cut from the loft (`hullClassify` door buckets,
+  hinge pivots in `buildCar`), mirror + front handle ride the door, steering
+  wheel turns at 2.6x, reverse lamps in R. Converter-flare launch and
+  brakeMax 10500 (0-100 7.89s, ~1g braking) — see commit c67b144 for the
+  before/after table.
 
 ### Fixed 2026-08-31 evening (verified, kept here so they are not re-reported)
 
