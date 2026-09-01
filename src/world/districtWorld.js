@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { InstanceBatch } from './catalogue.js';
 import { dressChunk, dressRoofs, dressFacades, place as placeAsset } from './dressing.js';
 import { KERB_H, roadDepth } from './metrics.js';
@@ -778,7 +779,7 @@ export class DistrictWorld {
       pg.computeBoundingSphere();
       group.add(new THREE.Mesh(pg, A.mat.paint));
     }
-    if (sigBatch) sigBatch.emit(group, { shadow: false })
+    if (sigBatch) sigBatch.emit(group, { shadow: false, lod: 1 })
       .catch((e) => console.warn('signals failed:', e.message));
     inst(posts, A.mat.pole);
     inst(arms, A.mat.pole);
@@ -1123,10 +1124,15 @@ export class DistrictWorld {
       const fbatch = new InstanceBatch(this.catalogue);
       dressFacades(fbatch, boxes, this.district, roadDepth);
       yield;
-      fbatch.emit(faces, { shadow: false })
+      fbatch.emit(faces, { shadow: false, lod: 1 })
         .catch((e) => console.warn('facades failed:', e.message));
       // fire and forget: the chunk is usable now, the props land a frame later
-      batch.emit(props).then(() => {
+      /* lod1 throughout. The re-ingested kit is 5.7x heavier at lod0 (31k triangles
+         across the placed assets against 9k for the blockouts it replaced) and its
+         LOD chains are finally real -- tree 964/280/272 -- so lod1 lands the kit back
+         at the old cost with better geometry. A 3.6m bay's lod0 detail is sub-pixel
+         past fifteen metres anyway. */
+      batch.emit(props, { lod: 1 }).then(() => {
         if (batch.tracked.length) {
           this.onBreakables?.(k, batch.tracked, solidParked, this.poolsByChunk.get(k));
         }
@@ -1149,10 +1155,58 @@ export class DistrictWorld {
       m.computeBoundingSphere();          // static for the life of the chunk
       group.add(m);
     };
-    inst(slabGeo, A.mat.walkDistrict ?? A.mat.walk, slabs.block);
-    inst(slabGeo, A.mat.parkGround ?? A.mat.leaf, slabs.park);
-    inst(slabGeo, A.mat.kerb, slabs.lot);
-    inst(slabGeo, A.mat.kerb, slabs.vacant);
+    /* Block slabs with radiused corners.
+       A block slab IS the pavement and its kerb, and as an instanced unit box
+       every corner in the city met at a hard 90 degrees -- a tell you see at
+       every junction, because that is where you look. Each block becomes a
+       rounded rectangle (3.5m kerb return, or a third of the short side on a
+       small block) extruded to KERB_H, merged per kind per chunk, so the draw
+       count is unchanged and the top carries UVs in metres for the slabs. */
+    const roundedSlab = (list) => {
+      if (!list.length) return null;
+      const geos = [];
+      for (const m of list) {
+        const e = m.elements;
+        const w = Math.hypot(e[0], e[2]), d = Math.hypot(e[8], e[10]);   // scale x, z
+        const r = Math.min(3.5, Math.min(w, d) / 3);
+        const shape = new THREE.Shape();
+        const hw = w / 2, hd = d / 2;
+        shape.moveTo(-hw + r, -hd);
+        shape.lineTo(hw - r, -hd); shape.quadraticCurveTo(hw, -hd, hw, -hd + r);
+        shape.lineTo(hw, hd - r); shape.quadraticCurveTo(hw, hd, hw - r, hd);
+        shape.lineTo(-hw + r, hd); shape.quadraticCurveTo(-hw, hd, -hw, hd - r);
+        shape.lineTo(-hw, -hd + r); shape.quadraticCurveTo(-hw, -hd, -hw + r, -hd);
+        const g = new THREE.ExtrudeGeometry(shape, { depth: KERB_H, bevelEnabled: false, curveSegments: 6 });
+        // Extrude builds in XY and extrudes +Z; stand it up so the slab lies in XZ with its top at KERB_H
+        g.rotateX(-Math.PI / 2);
+        g.translate(0, KERB_H, 0);
+        // UVs in metres: the extrude writes shape-space XY into uv, so scale to the slab tile
+        const uv = g.attributes.uv;
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / 2.4, uv.getY(i) / 2.4);
+        // the instance matrix carried the block's yaw and centre; apply it minus the scale
+        const yaw = Math.atan2(e[8] / d, e[10] / d);
+        const place = new THREE.Matrix4().makeRotationY(yaw).setPosition(e[12], e[13], e[14]);
+        g.applyMatrix4(place);
+        geos.push(g);
+      }
+      const merged = mergeGeometries(geos, false);
+      for (const g of geos) g.dispose();
+      if (!merged) return null;
+      merged.userData.owned = true;
+      merged.computeBoundingSphere();
+      return merged;
+    };
+    const slabMesh = (list, mat) => {
+      const g = roundedSlab(list);
+      if (!g) return;
+      const m = new THREE.Mesh(g, mat);
+      m.receiveShadow = true;
+      group.add(m);
+    };
+    slabMesh(slabs.block, A.mat.walkDistrict ?? A.mat.walk);
+    slabMesh(slabs.park, A.mat.parkGround ?? A.mat.leaf);
+    slabMesh(slabs.lot, A.mat.kerb);
+    slabMesh(slabs.vacant, A.mat.kerb);
     yield;
     inst(A.geo.lamp, A.mat.pole, lamps, true);
     /* Two head geometries share one list: the legacy lamp's head is offset to

@@ -64,8 +64,8 @@ const KERB_ROWS = [
   { asset: 'props/junction_box',  every: 104, chance: 0.22, offset: 2.2 },
   { asset: 'props/street_sign',   every: 70, chance: 0.30, offset: 1.4 },
   { asset: 'props/sign_projecting', every: 78, chance: 0.22, offset: 4.4 },
-  { asset: 'props/tree_blockout', every: 40, chance: 0.42, offset: 3.0, scale: [0.85, 1.35] },
-  { asset: 'props/shrub_blockout', every: 54, chance: 0.26, offset: 3.8, scale: [0.8, 1.2] },
+  { asset: 'props/tree_broadleaf', every: 40, chance: 0.42, offset: 3.0, scale: [0.85, 1.35] },
+  { asset: 'props/shrub_mass', every: 54, chance: 0.26, offset: 3.8, scale: [0.8, 1.2] },
   { asset: 'props/railing',       every: 8,  chance: 0.14, on: ['arterial'], offset: 2.5, align: true },
   { asset: 'props/hedge_run',     every: 10, chance: 0.10, on: ['street'],   offset: 4.6, align: true },
 ];
@@ -92,8 +92,8 @@ const ROOF_KIT = [
 
 const PARK_KIT = [
   { asset: 'props/park_bench',      weight: 5 },
-  { asset: 'props/tree_blockout',   weight: 9, scale: [1.0, 1.8] },
-  { asset: 'props/shrub_blockout',  weight: 6, scale: [0.8, 1.4] },
+  { asset: 'props/tree_broadleaf',   weight: 9, scale: [1.0, 1.8] },
+  { asset: 'props/shrub_mass',  weight: 6, scale: [0.8, 1.4] },
   { asset: 'props/flower_bed',      weight: 4 },
   { asset: 'props/hedge_run',       weight: 3 },
   { asset: 'props/litter_bin_park', weight: 3 },

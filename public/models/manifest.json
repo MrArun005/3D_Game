@@ -1,7 +1,48 @@
 {
   "version": 1,
-  "generated": "2026-08-30T18:12:44.270Z",
+  "generated": "2026-09-01T20:28:10.263Z",
   "assets": {
+    "characters/hero": {
+      "url": "/models/characters/hero.glb",
+      "lods": [
+        "/models/characters/hero.lod1.glb",
+        "/models/characters/hero.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.994,
+          0,
+          -0.141
+        ],
+        "max": [
+          0.994,
+          1.776,
+          0.208
+        ]
+      },
+      "tris": {
+        "lod0": 22536,
+        "lod1": 22536,
+        "lod2": 22536
+      },
+      "materials": [
+        "cloth_shirt",
+        "cloth_trouser",
+        "face_skin",
+        "hair",
+        "shoe_leather",
+        "skin"
+      ],
+      "tags": [
+        "character",
+        "crowd"
+      ]
+    },
     "facade/balcony": {
       "url": "/models/facade/balcony.glb",
       "lods": [
@@ -26,7 +67,7 @@
         ]
       },
       "tris": {
-        "lod0": 156,
+        "lod0": 572,
         "lod1": 156,
         "lod2": 156
       },
@@ -63,7 +104,7 @@
         ]
       },
       "tris": {
-        "lod0": 120,
+        "lod0": 440,
         "lod1": 120,
         "lod2": 120
       },
@@ -103,7 +144,7 @@
         ]
       },
       "tris": {
-        "lod0": 96,
+        "lod0": 352,
         "lod1": 96,
         "lod2": 96
       },
@@ -142,7 +183,7 @@
         ]
       },
       "tris": {
-        "lod0": 108,
+        "lod0": 396,
         "lod1": 108,
         "lod2": 108
       },
@@ -182,7 +223,7 @@
         ]
       },
       "tris": {
-        "lod0": 120,
+        "lod0": 440,
         "lod1": 120,
         "lod2": 120
       },
@@ -221,7 +262,7 @@
         ]
       },
       "tris": {
-        "lod0": 120,
+        "lod0": 440,
         "lod1": 120,
         "lod2": 120
       },
@@ -261,7 +302,7 @@
         ]
       },
       "tris": {
-        "lod0": 144,
+        "lod0": 528,
         "lod1": 144,
         "lod2": 144
       },
@@ -292,18 +333,18 @@
         "min": [
           -1.8,
           0,
-          -0.39
+          -0.02
         ],
         "max": [
           1.8,
-          0.74,
-          0.31
+          0.85,
+          0.62
         ]
       },
       "tris": {
-        "lod0": 48,
-        "lod1": 48,
-        "lod2": 48
+        "lod0": 580,
+        "lod1": 196,
+        "lod2": 196
       },
       "materials": [
         "stone_dressed"
@@ -328,18 +369,18 @@
         "min": [
           -1.8,
           0,
-          -0.35
+          -0.02
         ],
         "max": [
           1.8,
           0.46,
-          0.15
+          0.44
         ]
       },
       "tris": {
-        "lod0": 24,
-        "lod1": 24,
-        "lod2": 24
+        "lod0": 40,
+        "lod1": 40,
+        "lod2": 40
       },
       "materials": [
         "concrete_precast"
@@ -373,9 +414,9 @@
         ]
       },
       "tris": {
-        "lod0": 56,
-        "lod1": 52,
-        "lod2": 52
+        "lod0": 120,
+        "lod1": 48,
+        "lod2": 44
       },
       "materials": [
         "metal_galv"
@@ -398,20 +439,20 @@
       ],
       "bounds": {
         "min": [
-          -1.2,
+          -1.23,
           0,
-          -1.795
+          -2.907
         ],
         "max": [
-          1.2,
-          2.488,
-          0.005
+          1.23,
+          3.925,
+          0.03
         ]
       },
       "tris": {
-        "lod0": 240,
-        "lod1": 240,
-        "lod2": 240
+        "lod0": 1716,
+        "lod1": 468,
+        "lod2": 468
       },
       "materials": [
         "metal_rust"
@@ -446,7 +487,7 @@
         ]
       },
       "tris": {
-        "lod0": 144,
+        "lod0": 528,
         "lod1": 144,
         "lod2": 144
       },
@@ -488,7 +529,7 @@
         ]
       },
       "tris": {
-        "lod0": 132,
+        "lod0": 452,
         "lod1": 132,
         "lod2": 132
       },
@@ -526,7 +567,7 @@
         ]
       },
       "tris": {
-        "lod0": 84,
+        "lod0": 308,
         "lod1": 84,
         "lod2": 84
       },
@@ -565,7 +606,7 @@
         ]
       },
       "tris": {
-        "lod0": 48,
+        "lod0": 176,
         "lod1": 48,
         "lod2": 48
       },
@@ -604,7 +645,7 @@
         ]
       },
       "tris": {
-        "lod0": 96,
+        "lod0": 352,
         "lod1": 96,
         "lod2": 96
       },
@@ -635,7 +676,7 @@
         "min": [
           -1.8,
           0,
-          -1.523
+          -1.52
         ],
         "max": [
           1.8,
@@ -644,7 +685,7 @@
         ]
       },
       "tris": {
-        "lod0": 132,
+        "lod0": 484,
         "lod1": 132,
         "lod2": 132
       },
@@ -676,22 +717,22 @@
         "min": [
           -1.8,
           0,
-          -1.979
+          -3.1
         ],
         "max": [
           1.8,
-          2.339,
-          0.1
+          2.3,
+          0.295
         ]
       },
       "tris": {
-        "lod0": 48,
-        "lod1": 48,
-        "lod2": 48
+        "lod0": 200,
+        "lod1": 72,
+        "lod2": 72
       },
       "materials": [
-        "metal_galv",
         "stone_dressed",
+        "metal_galv",
         "timber_painted",
         "glass_shop"
       ],
@@ -716,18 +757,18 @@
         "min": [
           -1.8,
           0,
-          -0.395
+          -0.43
         ],
         "max": [
           1.8,
-          1.17,
-          0.055
+          1.13,
+          0.07
         ]
       },
       "tris": {
-        "lod0": 24,
-        "lod1": 24,
-        "lod2": 24
+        "lod0": 76,
+        "lod1": 44,
+        "lod2": 44
       },
       "materials": [
         "brick_painted",
@@ -761,7 +802,7 @@
         ]
       },
       "tris": {
-        "lod0": 36,
+        "lod0": 132,
         "lod1": 36,
         "lod2": 36
       },
@@ -797,7 +838,7 @@
         ]
       },
       "tris": {
-        "lod0": 96,
+        "lod0": 352,
         "lod1": 96,
         "lod2": 96
       },
@@ -825,18 +866,18 @@
         "min": [
           -1.8,
           0,
-          -0.05
+          0.01
         ],
         "max": [
           1.8,
-          0.22,
-          0.09
+          0.26,
+          0.17
         ]
       },
       "tris": {
-        "lod0": 12,
-        "lod1": 12,
-        "lod2": 12
+        "lod0": 28,
+        "lod1": 28,
+        "lod2": 28
       },
       "materials": [
         "stone_dressed"
@@ -861,16 +902,16 @@
         "min": [
           -0.35,
           0,
-          -0.354
+          -0.351
         ],
         "max": [
           0.35,
-          1.018,
-          0.354
+          1.016,
+          0.351
         ]
       },
       "tris": {
-        "lod0": 36,
+        "lod0": 132,
         "lod1": 36,
         "lod2": 36
       },
@@ -907,9 +948,9 @@
         ]
       },
       "tris": {
-        "lod0": 128,
-        "lod1": 124,
-        "lod2": 124
+        "lod0": 384,
+        "lod1": 120,
+        "lod2": 116
       },
       "materials": [
         "concrete_cast",
@@ -946,9 +987,9 @@
         ]
       },
       "tris": {
-        "lod0": 248,
-        "lod1": 236,
-        "lod2": 236
+        "lod0": 504,
+        "lod1": 210,
+        "lod2": 166
       },
       "materials": [
         "stone_dressed",
@@ -985,9 +1026,9 @@
         ]
       },
       "tris": {
-        "lod0": 68,
-        "lod1": 64,
-        "lod2": 64
+        "lod0": 164,
+        "lod1": 60,
+        "lod2": 56
       },
       "materials": [
         "metal_galv",
@@ -1023,7 +1064,7 @@
         ]
       },
       "tris": {
-        "lod0": 48,
+        "lod0": 176,
         "lod1": 48,
         "lod2": 48
       },
@@ -1059,9 +1100,9 @@
         ]
       },
       "tris": {
-        "lod0": 108,
-        "lod1": 100,
-        "lod2": 100
+        "lod0": 204,
+        "lod1": 88,
+        "lod2": 76
       },
       "materials": [
         "concrete_cast",
@@ -1098,7 +1139,7 @@
         ]
       },
       "tris": {
-        "lod0": 108,
+        "lod0": 396,
         "lod1": 108,
         "lod2": 108
       },
@@ -1136,7 +1177,7 @@
         ]
       },
       "tris": {
-        "lod0": 144,
+        "lod0": 528,
         "lod1": 144,
         "lod2": 144
       },
@@ -1173,7 +1214,7 @@
         ]
       },
       "tris": {
-        "lod0": 84,
+        "lod0": 308,
         "lod1": 84,
         "lod2": 84
       },
@@ -1211,7 +1252,7 @@
         ]
       },
       "tris": {
-        "lod0": 36,
+        "lod0": 132,
         "lod1": 36,
         "lod2": 36
       },
@@ -1248,9 +1289,9 @@
         ]
       },
       "tris": {
-        "lod0": 92,
-        "lod1": 84,
-        "lod2": 84
+        "lod0": 124,
+        "lod1": 68,
+        "lod2": 52
       },
       "materials": [
         "metal_painted",
@@ -1287,8 +1328,8 @@
       },
       "tris": {
         "lod0": 80,
-        "lod1": 76,
-        "lod2": 76
+        "lod1": 56,
+        "lod2": 40
       },
       "materials": [
         "metal_painted"
@@ -1323,7 +1364,7 @@
         ]
       },
       "tris": {
-        "lod0": 120,
+        "lod0": 440,
         "lod1": 120,
         "lod2": 120
       },
@@ -1363,9 +1404,9 @@
         ]
       },
       "tris": {
-        "lod0": 100,
-        "lod1": 92,
-        "lod2": 92
+        "lod0": 132,
+        "lod1": 76,
+        "lod2": 62
       },
       "materials": [
         "concrete_cast",
@@ -1402,7 +1443,7 @@
         ]
       },
       "tris": {
-        "lod0": 204,
+        "lod0": 748,
         "lod1": 204,
         "lod2": 204
       },
@@ -1440,9 +1481,9 @@
         ]
       },
       "tris": {
-        "lod0": 44,
-        "lod1": 40,
-        "lod2": 40
+        "lod0": 76,
+        "lod1": 36,
+        "lod2": 32
       },
       "materials": [
         "plastic_signage"
@@ -1476,7 +1517,7 @@
         ]
       },
       "tris": {
-        "lod0": 60,
+        "lod0": 220,
         "lod1": 60,
         "lod2": 60
       },
@@ -1513,7 +1554,7 @@
         ]
       },
       "tris": {
-        "lod0": 72,
+        "lod0": 264,
         "lod1": 72,
         "lod2": 72
       },
@@ -1538,23 +1579,24 @@
       ],
       "bounds": {
         "min": [
-          -1.1,
+          -1.124,
           0,
-          -0.644
+          -0.593
         ],
         "max": [
-          1.2,
-          1.6,
-          0.65
+          1.263,
+          1.58,
+          0.697
         ]
       },
       "tris": {
-        "lod0": 36,
-        "lod1": 36,
-        "lod2": 36
+        "lod0": 792,
+        "lod1": 216,
+        "lod2": 216
       },
       "materials": [
-        "timber_bare"
+        "timber_bare",
+        "timber_painted"
       ],
       "tags": [
         "harbour",
@@ -1585,7 +1627,7 @@
         ]
       },
       "tris": {
-        "lod0": 204,
+        "lod0": 748,
         "lod1": 204,
         "lod2": 204
       },
@@ -1624,7 +1666,7 @@
         ]
       },
       "tris": {
-        "lod0": 24,
+        "lod0": 88,
         "lod1": 24,
         "lod2": 24
       },
@@ -1662,7 +1704,7 @@
         ]
       },
       "tris": {
-        "lod0": 216,
+        "lod0": 792,
         "lod1": 216,
         "lod2": 216
       },
@@ -1687,20 +1729,20 @@
       ],
       "bounds": {
         "min": [
-          -3,
+          -3.5,
           0,
-          -2
+          -3
         ],
         "max": [
-          3,
-          1.95,
-          2
+          3.5,
+          2.898,
+          5.058
         ]
       },
       "tris": {
-        "lod0": 44,
-        "lod1": 44,
-        "lod2": 44
+        "lod0": 572,
+        "lod1": 156,
+        "lod2": 156
       },
       "materials": [
         "concrete_cast",
@@ -1726,24 +1768,25 @@
       ],
       "bounds": {
         "min": [
-          -1.3,
+          -1.39,
           0,
-          -0.8
+          -0.92
         ],
         "max": [
-          1.3,
-          0.53,
-          0.8
+          1.39,
+          0.788,
+          0.92
         ]
       },
       "tris": {
-        "lod0": 36,
-        "lod1": 36,
-        "lod2": 36
+        "lod0": 568,
+        "lod1": 184,
+        "lod2": 184
       },
       "materials": [
         "kerb_stone",
-        "timber_bare"
+        "grass",
+        "foliage"
       ],
       "tags": [
         "park",
@@ -1775,8 +1818,8 @@
       },
       "tris": {
         "lod0": 304,
-        "lod1": 292,
-        "lod2": 292
+        "lod1": 224,
+        "lod2": 136
       },
       "materials": [
         "stone_dressed",
@@ -1803,7 +1846,7 @@
         "min": [
           -3.72,
           0,
-          -2.05
+          -2.044
         ],
         "max": [
           3.72,
@@ -1812,9 +1855,9 @@
         ]
       },
       "tris": {
-        "lod0": 100,
-        "lod1": 92,
-        "lod2": 92
+        "lod0": 196,
+        "lod1": 84,
+        "lod2": 76
       },
       "materials": [
         "metal_painted"
@@ -1837,23 +1880,24 @@
       ],
       "bounds": {
         "min": [
-          -2.01,
+          -2.031,
           0,
-          -0.41
+          -0.45
         ],
         "max": [
-          2.01,
-          1.24,
-          0.41
+          2.037,
+          1.268,
+          0.45
         ]
       },
       "tris": {
-        "lod0": 60,
-        "lod1": 60,
-        "lod2": 60
+        "lod0": 352,
+        "lod1": 96,
+        "lod2": 96
       },
       "materials": [
-        "timber_bare"
+        "kerb_stone",
+        "foliage"
       ],
       "tags": [
         "park",
@@ -1885,7 +1929,7 @@
         ]
       },
       "tris": {
-        "lod0": 60,
+        "lod0": 220,
         "lod1": 60,
         "lod2": 60
       },
@@ -1923,9 +1967,9 @@
         ]
       },
       "tris": {
-        "lod0": 144,
-        "lod1": 136,
-        "lod2": 136
+        "lod0": 272,
+        "lod1": 120,
+        "lod2": 88
       },
       "materials": [
         "metal_galv",
@@ -1961,9 +2005,9 @@
         ]
       },
       "tris": {
-        "lod0": 164,
-        "lod1": 156,
-        "lod2": 156
+        "lod0": 196,
+        "lod1": 120,
+        "lod2": 92
       },
       "materials": [
         "metal_rust",
@@ -1999,7 +2043,7 @@
         ]
       },
       "tris": {
-        "lod0": 48,
+        "lod0": 176,
         "lod1": 48,
         "lod2": 48
       },
@@ -2033,14 +2077,14 @@
         ],
         "max": [
           0.22,
-          8.305,
+          8.302,
           1.76
         ]
       },
       "tris": {
-        "lod0": 88,
-        "lod1": 84,
-        "lod2": 84
+        "lod0": 216,
+        "lod1": 76,
+        "lod2": 68
       },
       "materials": [
         "concrete_cast",
@@ -2078,9 +2122,9 @@
         ]
       },
       "tris": {
-        "lod0": 68,
-        "lod1": 64,
-        "lod2": 64
+        "lod0": 164,
+        "lod1": 60,
+        "lod2": 56
       },
       "materials": [
         "concrete_cast",
@@ -2118,9 +2162,9 @@
         ]
       },
       "tris": {
-        "lod0": 92,
-        "lod1": 84,
-        "lod2": 84
+        "lod0": 124,
+        "lod1": 68,
+        "lod2": 52
       },
       "materials": [
         "timber_bare",
@@ -2157,8 +2201,8 @@
       },
       "tris": {
         "lod0": 112,
-        "lod1": 104,
-        "lod2": 104
+        "lod1": 80,
+        "lod2": 48
       },
       "materials": [
         "metal_rust",
@@ -2185,16 +2229,16 @@
         "min": [
           -1.7,
           0,
-          -1.138
+          -1.134
         ],
         "max": [
           1.7,
-          2.645,
-          1.138
+          2.642,
+          1.134
         ]
       },
       "tris": {
-        "lod0": 108,
+        "lod0": 396,
         "lod1": 108,
         "lod2": 108
       },
@@ -2235,8 +2279,8 @@
       },
       "tris": {
         "lod0": 144,
-        "lod1": 140,
-        "lod2": 140
+        "lod1": 108,
+        "lod2": 60
       },
       "materials": [
         "metal_rust"
@@ -2271,9 +2315,9 @@
         ]
       },
       "tris": {
-        "lod0": 56,
-        "lod1": 56,
-        "lod2": 56
+        "lod0": 188,
+        "lod1": 60,
+        "lod2": 60
       },
       "materials": [
         "timber_bare",
@@ -2309,7 +2353,7 @@
         ]
       },
       "tris": {
-        "lod0": 180,
+        "lod0": 660,
         "lod1": 180,
         "lod2": 180
       },
@@ -2346,7 +2390,7 @@
         ]
       },
       "tris": {
-        "lod0": 144,
+        "lod0": 528,
         "lod1": 144,
         "lod2": 144
       },
@@ -2383,9 +2427,9 @@
         ]
       },
       "tris": {
-        "lod0": 304,
-        "lod1": 296,
-        "lod2": 296
+        "lod0": 944,
+        "lod1": 288,
+        "lod2": 280
       },
       "materials": [
         "stone_dressed",
@@ -2421,9 +2465,9 @@
         ]
       },
       "tris": {
-        "lod0": 56,
-        "lod1": 52,
-        "lod2": 52
+        "lod0": 120,
+        "lod1": 48,
+        "lod2": 44
       },
       "materials": [
         "metal_galv",
@@ -2460,7 +2504,7 @@
         ]
       },
       "tris": {
-        "lod0": 60,
+        "lod0": 220,
         "lod1": 60,
         "lod2": 60
       },
@@ -2489,18 +2533,18 @@
         "min": [
           -2,
           0,
-          -1.36
+          -1.37
         ],
         "max": [
           2,
-          0.13,
-          1.36
+          0.3,
+          1.37
         ]
       },
       "tris": {
-        "lod0": 36,
-        "lod1": 36,
-        "lod2": 36
+        "lod0": 84,
+        "lod1": 52,
+        "lod2": 52
       },
       "materials": [
         "pavement_slab",
@@ -2536,7 +2580,7 @@
         ]
       },
       "tris": {
-        "lod0": 132,
+        "lod0": 484,
         "lod1": 132,
         "lod2": 132
       },
@@ -2569,12 +2613,12 @@
         ],
         "max": [
           0.95,
-          0.809,
+          0.798,
           0.87
         ]
       },
       "tris": {
-        "lod0": 84,
+        "lod0": 308,
         "lod1": 84,
         "lod2": 84
       },
@@ -2610,7 +2654,7 @@
         ]
       },
       "tris": {
-        "lod0": 96,
+        "lod0": 352,
         "lod1": 96,
         "lod2": 96
       },
@@ -2637,22 +2681,23 @@
         "min": [
           -0.8,
           0,
-          -0.4
+          -0.398
         ],
         "max": [
           0.8,
-          0.665,
-          0.4
+          1.476,
+          0.58
         ]
       },
       "tris": {
-        "lod0": 36,
-        "lod1": 36,
-        "lod2": 36
+        "lod0": 216,
+        "lod1": 88,
+        "lod2": 88
       },
       "materials": [
         "concrete_precast",
-        "timber_bare"
+        "grass",
+        "foliage"
       ],
       "tags": [
         "street",
@@ -2684,7 +2729,7 @@
         ]
       },
       "tris": {
-        "lod0": 36,
+        "lod0": 132,
         "lod1": 36,
         "lod2": 36
       },
@@ -2722,7 +2767,7 @@
         ]
       },
       "tris": {
-        "lod0": 60,
+        "lod0": 220,
         "lod1": 60,
         "lod2": 60
       },
@@ -2760,9 +2805,9 @@
         ]
       },
       "tris": {
-        "lod0": 156,
-        "lod1": 152,
-        "lod2": 152
+        "lod0": 188,
+        "lod1": 120,
+        "lod2": 72
       },
       "materials": [
         "metal_painted",
@@ -2789,23 +2834,24 @@
         "min": [
           -2,
           0,
-          -0.7
+          0
         ],
         "max": [
           2,
-          1.82,
-          0.71
+          2.98,
+          1.62
         ]
       },
       "tris": {
-        "lod0": 48,
-        "lod1": 48,
-        "lod2": 48
+        "lod0": 300,
+        "lod1": 108,
+        "lod2": 108
       },
       "materials": [
         "concrete_cast",
         "stone_dressed",
-        "timber_bare"
+        "timber_bare",
+        "metal_rust"
       ],
       "tags": [
         "harbour",
@@ -2836,7 +2882,7 @@
         ]
       },
       "tris": {
-        "lod0": 120,
+        "lod0": 440,
         "lod1": 120,
         "lod2": 120
       },
@@ -2872,7 +2918,7 @@
         ]
       },
       "tris": {
-        "lod0": 144,
+        "lod0": 528,
         "lod1": 144,
         "lod2": 144
       },
@@ -2908,7 +2954,7 @@
         ]
       },
       "tris": {
-        "lod0": 48,
+        "lod0": 176,
         "lod1": 48,
         "lod2": 48
       },
@@ -2947,7 +2993,7 @@
         ]
       },
       "tris": {
-        "lod0": 228,
+        "lod0": 580,
         "lod1": 212,
         "lod2": 212
       },
@@ -2960,11 +3006,11 @@
         "facade"
       ]
     },
-    "props/shrub_blockout": {
-      "url": "/models/props/shrub_blockout.glb",
+    "props/shrub_mass": {
+      "url": "/models/props/shrub_mass.glb",
       "lods": [
-        "/models/props/shrub_blockout.lod1.glb",
-        "/models/props/shrub_blockout.lod2.glb"
+        "/models/props/shrub_mass.lod1.glb",
+        "/models/props/shrub_mass.lod2.glb"
       ],
       "lodDistances": [
         0,
@@ -2973,28 +3019,27 @@
       ],
       "bounds": {
         "min": [
-          -0.86,
+          -0.481,
           0,
-          -0.743
+          -0.707
         ],
         "max": [
-          0.843,
-          0.808,
-          0.76
+          0.587,
+          0.852,
+          0.895
         ]
       },
       "tris": {
-        "lod0": 36,
-        "lod1": 36,
-        "lod2": 36
+        "lod0": 264,
+        "lod1": 72,
+        "lod2": 72
       },
       "materials": [
-        "timber_painted"
+        "foliage"
       ],
       "tags": [
         "park",
-        "green",
-        "placeholder"
+        "green"
       ]
     },
     "props/sign_gantry": {
@@ -3021,9 +3066,9 @@
         ]
       },
       "tris": {
-        "lod0": 236,
-        "lod1": 228,
-        "lod2": 228
+        "lod0": 652,
+        "lod1": 212,
+        "lod2": 196
       },
       "materials": [
         "concrete_cast",
@@ -3060,7 +3105,7 @@
         ]
       },
       "tris": {
-        "lod0": 36,
+        "lod0": 132,
         "lod1": 36,
         "lod2": 36
       },
@@ -3098,7 +3143,7 @@
         ]
       },
       "tris": {
-        "lod0": 36,
+        "lod0": 132,
         "lod1": 36,
         "lod2": 36
       },
@@ -3131,12 +3176,12 @@
         ],
         "max": [
           1.1,
-          0.804,
+          0.802,
           0.8
         ]
       },
       "tris": {
-        "lod0": 24,
+        "lod0": 88,
         "lod1": 24,
         "lod2": 24
       },
@@ -3167,12 +3212,12 @@
         ],
         "max": [
           0.6,
-          2.199,
-          1.826
+          2.193,
+          1.82
         ]
       },
       "tris": {
-        "lod0": 128,
+        "lod0": 480,
         "lod1": 128,
         "lod2": 128
       },
@@ -3211,9 +3256,9 @@
         ]
       },
       "tris": {
-        "lod0": 56,
-        "lod1": 52,
-        "lod2": 52
+        "lod0": 120,
+        "lod1": 48,
+        "lod2": 44
       },
       "materials": [
         "metal_galv",
@@ -3240,16 +3285,16 @@
         "min": [
           -2.1,
           0,
-          -1.356
+          -1.353
         ],
         "max": [
           2.1,
-          2.505,
-          1.356
+          2.501,
+          1.353
         ]
       },
       "tris": {
-        "lod0": 132,
+        "lod0": 484,
         "lod1": 132,
         "lod2": 132
       },
@@ -3287,9 +3332,9 @@
         ]
       },
       "tris": {
-        "lod0": 188,
-        "lod1": 172,
-        "lod2": 172
+        "lod0": 284,
+        "lod1": 144,
+        "lod2": 116
       },
       "materials": [
         "concrete_cast",
@@ -3301,11 +3346,11 @@
         "junction"
       ]
     },
-    "props/tree_blockout": {
-      "url": "/models/props/tree_blockout.glb",
+    "props/tree_broadleaf": {
+      "url": "/models/props/tree_broadleaf.glb",
       "lods": [
-        "/models/props/tree_blockout.lod1.glb",
-        "/models/props/tree_blockout.lod2.glb"
+        "/models/props/tree_broadleaf.lod1.glb",
+        "/models/props/tree_broadleaf.lod2.glb"
       ],
       "lodDistances": [
         0,
@@ -3314,30 +3359,29 @@
       ],
       "bounds": {
         "min": [
-          -2.09,
+          -2.323,
           0,
-          -1.549
+          -2.311
         ],
         "max": [
-          1.849,
-          5.162,
-          1.59
+          2.106,
+          5.847,
+          2.264
         ]
       },
       "tris": {
-        "lod0": 104,
-        "lod1": 100,
-        "lod2": 100
+        "lod0": 964,
+        "lod1": 280,
+        "lod2": 272
       },
       "materials": [
-        "timber_bare",
-        "timber_painted"
+        "bark",
+        "foliage"
       ],
       "tags": [
         "park",
         "green",
-        "tree",
-        "placeholder"
+        "tree"
       ]
     },
     "props/utility_pole": {
@@ -3364,9 +3408,9 @@
         ]
       },
       "tris": {
-        "lod0": 260,
-        "lod1": 224,
-        "lod2": 224
+        "lod0": 356,
+        "lod1": 220,
+        "lod2": 216
       },
       "materials": [
         "timber_bare",
@@ -3403,9 +3447,9 @@
         ]
       },
       "tris": {
-        "lod0": 88,
-        "lod1": 80,
-        "lod2": 80
+        "lod0": 152,
+        "lod1": 72,
+        "lod2": 64
       },
       "materials": [
         "brick_red",
@@ -3441,9 +3485,9 @@
         ]
       },
       "tris": {
-        "lod0": 160,
-        "lod1": 152,
-        "lod2": 152
+        "lod0": 288,
+        "lod1": 128,
+        "lod2": 96
       },
       "materials": [
         "metal_rust",

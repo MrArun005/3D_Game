@@ -267,6 +267,7 @@ function boxProjectUv(g) {
   return g;
 }
 
+const MISSING = new Set();
 const LOADER = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
 const FALLBACK = new THREE.MeshStandardMaterial({ color: 0x8d8d90, roughness: 0.9 });
 
@@ -324,6 +325,14 @@ export class InstanceBatch {
     const byMaterial = new Map();
     for (const [name, list] of this.buckets) {
       jobs.push(this.cat.fetchAsset(name).then((lods) => {
+        /* A name the manifest no longer knows must cost ONE prop, not the
+           whole chunk. Re-running the ingest renamed two blockouts and every
+           chunk's dressing threw on the first missing asset -- 21 warnings,
+           draw count down by two thirds, and nothing on the pavements. */
+        if (!lods) {
+          if (!MISSING.has(name)) { MISSING.add(name); console.warn(`catalogue: no asset named ${name}`); }
+          return;
+        }
         const parts = lods[Math.min(lod, lods.length - 1)] || [];
         for (const p of parts) {
           let b = byMaterial.get(p.material);

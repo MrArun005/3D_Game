@@ -163,15 +163,31 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   physics callers want the same fix is an open question — measure before
   changing grip behaviour.
 - `character.js` loads `hit` and `punch` clips that are never played.
-- LODs in the manifest are worthless: across all 91 assets lod2 saves 2.5% of
-  lod0's triangles, and 62 of them are byte-identical. The props are already
-  84-300 triangles, so there is nothing for a decimator to remove. Distance
-  culling is the only lever that works on them; do not reach for the LOD chain
-  expecting it to pay.
+- The kit's LOD chain is REAL now (re-ingested 2026-09-01): tree_broadleaf
+  964/280/272, fire_escape 1716/468/468. lod0 across the placed assets is
+  ~31k triangles, lod1 ~10k, so `districtWorld` dresses at **lod1
+  everywhere** (`emit(..., { lod: 1 })`). Switching to lod0 costs ~3.7M
+  triangles at the spawn — measured 7.15M vs 3.43M. Do not.
+- Re-running `npm run ingest` can rename assets (2026-09-01: the two
+  blockouts became `tree_broadleaf` / `shrub_mass`). `InstanceBatch.emit`
+  now skips a missing name with one warning instead of aborting the chunk,
+  but the dressing tables still have to be updated by hand — diff the
+  manifest keys against HEAD after any ingest.
+- The ingest takes >5 minutes for 92 assets and writes 277 files; run it in
+  the background and never interrupt it — a killed run leaves half-written
+  GLBs (restore with `git checkout -- public/models`).
 - KTX2 is still not generated — `tools/ingest.mjs` skips it without the `toktx`
   binary, so the 97 texture PNGs ship uncompressed (~18 MB).
 
 ### Fixed 2026-09-01 (verified, kept here so they are not re-reported)
+
+- **The kit had no UVs.** All 201 shipped parts carried only POSITION and
+  NORMAL — the ingest's `prune()` fix had never been re-run — so every one of
+  the 27 PBR materials rendered from one texel. Re-ingested: TEXCOORD_0 (and
+  COLOR_0) ship on every part and LOD. `catalogue.js:boxProjectUv` remains as
+  a metre-scaled fallback for any part that ever arrives without UVs again.
+- **Kerb corners are radiused** (3.5 m returns): block slabs are rounded-
+  rectangle extrusions merged per kind per chunk, same draw count.
 
 - **The city was 15% built.** The district file ships ~5 footprints per
   block. `district.js:#infill` adds seeded frontage footprints on row/mid/
@@ -248,7 +264,7 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
 ### Fixed 2026-08-31 (verified, kept here so they are not re-reported)
 
 - **The 91 assets are live.** `world/catalogue.js` + `world/dressing.js` place
-  all 91 (audited: `dressing.js` + `districtWorld.js` reference 91/91).
+  all 91 (audited: `dressing.js` + `districtWorld.js` reference the full kit; 92 assets after the 2026-09-01 ingest).
   Materials bind by name — 32 library materials for 91 assets.
 - **Vertex quantization.** `ingest.mjs` runs KHR_mesh_quantization, so
   positions arrive as normalized int16. `applyMatrix4` wrote floats back into
