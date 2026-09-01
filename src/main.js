@@ -361,6 +361,15 @@ function flightUpdate(c, dt) {
   camera.lookAt(h.pos.x + Math.cos(h.heading) * 12, h.pos.y - 1, h.pos.z - Math.sin(h.heading) * 12);
 }
 
+/** Swing the driver's door: open, then close after `hold` seconds. */
+function driverDoor(hold = 0.9) {
+  const d = hero.userData.doors?.doorFR;
+  if (!d) return;
+  d.target = d.open;
+  clearTimeout(d.timer);
+  d.timer = setTimeout(() => { d.target = 0; }, hold * 1000);
+}
+
 function useVehicle() {
   if (!started) { started = true; hud.dismiss(); }
   if (flying) {                      // step out, wherever you happen to be
@@ -397,6 +406,7 @@ function useVehicle() {
     }
     if (!best) return;
     onFoot.enter();
+    driverDoor(1.1);                       // you climb in; the door follows you
     if (best !== 'own') {
       // the driver bails out and runs
       if (crowd) crowd.eject(best.x, best.z, best.yaw);
@@ -409,6 +419,7 @@ function useVehicle() {
     hero.visible = true;
   } else {
     if (Math.abs(car.fwdSpeed) > 4) return;          // not at speed
+    driverDoor(1.4);                       // step out; it swings shut behind you
     onFoot.exit(car);
     car.throttle = 0; car.brake = 1; car.hand = 1;
   }
@@ -717,6 +728,10 @@ function frame() {
   body.position.y = car.heave - (sag / 4) * WHEEL_R * 0.3;
   // local x is forward and local z is lateral, so roll goes on x and pitch on z
   body.rotation.set(car.roll, 0, car.pitch);
+  // doors ease toward their target; a slam is a fast ease, not a snap
+  for (const d of Object.values(hero.userData.doors || {})) {
+    d.pivot.rotation.y += (d.target - d.pivot.rotation.y) * Math.min(1, dt * d.speed);
+  }
   for (const w of hero.userData.wheels) {
     if (w.front) w.steer.rotation.y = car.steer;
     const idx = (w.front ? 0 : 2) + (w.side > 0 ? 1 : 0);

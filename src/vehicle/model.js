@@ -217,6 +217,35 @@ export function buildCar(mats, paintHex) {
   const glassMesh = new THREE.Mesh(hull.glass, glassMat);
   shell.add(bodyMesh, glassMesh);
 
+  /* Doors, hinged.
+     The loft emits the door skins as their own buckets (config.js:
+     hullClassify), so each becomes a mesh under a pivot Group placed on its
+     hinge line: front doors on the A-pillar shutline, rear on the B-pillar.
+     Geometry is translated so the hinge sits at the pivot's origin and a
+     rotation about Y swings the trailing edge outward. Opening is a tween on
+     `target` driven from main.js's pose pass. */
+  const doors = {};
+  const DOOR_HINGE = { doorF: SHUTLINES[0], doorR: SHUTLINES[1] };
+  for (const key of ['doorFL', 'doorFR', 'doorRL', 'doorRR']) {
+    const g = hull[key];
+    if (!g) continue;
+    const hingeX = DOOR_HINGE[key.slice(0, 5)];
+    const sgn = key.endsWith('L') ? 1 : -1;
+    const hingeZ = sgn * hullHalfWidth(hingeX) * 0.98;
+    g.translate(-hingeX, 0, -hingeZ);
+    const pivot = new THREE.Group();
+    pivot.position.set(hingeX, 0, hingeZ);
+    const m = new THREE.Mesh(g, paint);
+    m.castShadow = true; m.receiveShadow = true;
+    pivot.add(m);
+    // the window in this door rides the same hinge
+    const gg = hull[key + 'g'];
+    if (gg) { gg.translate(-hingeX, 0, -hingeZ); pivot.add(new THREE.Mesh(gg, glassMat)); }
+    shell.add(pivot);
+    // outward is away from the centreline: +z doors swing to negative yaw
+    doors[key] = { pivot, mesh: m, target: 0, open: -sgn * 1.15, speed: 5.5 };
+  }
+
   // panel shutlines — a car without them reads as one moulded lump
   shell.add(new THREE.Mesh(
     mergeGeos(SHUTLINES.map((x) => seamRing(HERO_STATIONS, x))), mats.seam,
@@ -367,7 +396,7 @@ export function buildCar(mats, paintHex) {
 
   group.userData = {
     heads, headMat, tailMat, wheels, paint, interior, body, driver,
-    hull: bodyMesh, glass: glassMesh, shell,
+    hull: bodyMesh, glass: glassMesh, shell, doors,
   };
   return group;
 }

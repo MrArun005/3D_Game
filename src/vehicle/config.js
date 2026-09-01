@@ -16,7 +16,20 @@ export const CG_X = AXLE_F + WHEELBASE * 0.46;
  * without rewriting this. `hf` is height above the beltline (0 at the shoulder,
  * 1 at the roof); `wf` is |z| as a fraction of the section's widest half-width.
  */
-export function hullClassify(xm, hf, wf) {
+export function hullClassify(xm, hf, wf, yc = 0, zc = 0) {
+  /* Doors first, so they win over the generic 'body' bucket.
+     A door is the SIDE skin (wf > 0.56) between two shutlines, above the sill
+     (0.30m) and below the glass line. Front doors hinge on the A-pillar
+     shutline, rear doors on the B-pillar. Sides are named by hull-local z;
+     model.js decides which is the driver's. Glass rules below still win for
+     the window area because they return before this is reached... except
+     they do not -- so the door band is capped at the beltline hf where the
+     side-glass rule begins. */
+  const side = zc > 0 ? 'L' : 'R';
+  if (wf > 0.56 && yc > 0.30 && !(hf > 0.14 && xm > 1.66 + hf * 0.52 && xm < 3.60 - hf * 0.40 && hf < 0.92 && !(xm > 2.50 && xm < 2.76))) {
+    if (xm > SHUTLINES[0] && xm < SHUTLINES[1]) return 'doorF' + side;
+    if (xm > SHUTLINES[1] && xm < SHUTLINES[2]) return 'doorR' + side;
+  }
   if (hf < 0.14) return 'body';                    // everything below the beltline
 
   // The A- and C-pillars are raked: the glass boundary walks backward as it
@@ -25,7 +38,12 @@ export function hullClassify(xm, hf, wf) {
   const cPillar = 3.60 - hf * 0.40;
   const bPillar = xm > 2.50 && xm < 2.76;
 
-  if (wf > 0.56 && !bPillar && xm > aPillar && xm < cPillar && hf < 0.92) return 'glass';
+  if (wf > 0.56 && !bPillar && xm > aPillar && xm < cPillar && hf < 0.92) {
+    // side glass inside a door band swings WITH the door
+    if (xm > SHUTLINES[0] && xm < SHUTLINES[1]) return 'doorF' + side + 'g';
+    if (xm > SHUTLINES[1] && xm < SHUTLINES[2]) return 'doorR' + side + 'g';
+    return 'glass';
+  }
   if (wf < 0.66 && hf > 0.32 && xm > 1.58 && xm < 2.42) return 'glass';   // windscreen
   if (wf < 0.66 && hf > 0.32 && xm > 3.18 && xm < 3.76) return 'glass';   // backlight
   return 'body';

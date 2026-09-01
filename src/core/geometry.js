@@ -217,7 +217,10 @@ export function loft(stations, classify = () => 'body', smoothAngle = 48) {
       const zc = (a[2] + b[2] + c[2] + d[2]) / 4;
       const heightFraction = (yc - sy) / Math.max(1e-4, yt - sy);
       const widthFraction = Math.abs(zc) / Math.max(1e-4, wm);
-      const name = classify(xm, heightFraction, widthFraction);
+      /* yc and zc are passed as well: a classifier that wants to cut DOORS out
+         of the skin needs an absolute height (the sill is a metre, not a
+         fraction of a station) and which SIDE of the car the quad is on. */
+      const name = classify(xm, heightFraction, widthFraction, yc, zc);
       if (!name) continue;
 
       const fn = QN[i][k];
