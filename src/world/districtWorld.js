@@ -1261,10 +1261,18 @@ export class DistrictWorld {
       inst(kit.body, A.mat.parked, parked[bk], true, parkedCol[bk]);
       const n = group.children[group.children.length - 1];
       if (n) { n.name = `parkedNear:${bk}`; nearParked.push(n); }
+      /* Vendor kits split paint from detail (glass, tyres, trim in the kit's
+         own palette); the detail rides the near ring with the paint. */
+      let dm = null;
+      if (kit.detail && kit.detailMat) {
+        inst(kit.detail, kit.detailMat, parked[bk], true);
+        dm = group.children[group.children.length - 1];
+        if (dm && dm !== n) { dm.name = `parkedNearDetail:${bk}`; nearParked.push(dm); } else dm = null;
+      }
       inst(kit.lodBody ?? kit.body, A.mat.parked, parked[bk], false, parkedCol[bk]);
       const f = group.children[group.children.length - 1];
-      if (f && f !== n) { f.name = `parkedFar:${bk}`; f.visible = false; farParked.push(f); }
-      byBody[bk] = { near: n, far: f !== n ? f : null };
+      if (f && f !== n && f !== dm) { f.name = `parkedFar:${bk}`; f.visible = false; farParked.push(f); }
+      byBody[bk] = { near: n, detail: dm, far: f !== n && f !== dm ? f : null };
     }
     if (nearParked.length) this.parkedLod.set(k, { near: nearParked, far: farParked, byBody });
     if (pools.length) {
@@ -1339,7 +1347,7 @@ export class DistrictWorld {
     const lod = this.parkedLod.get(solid.chunk);
     const meshes = lod?.byBody?.[solid.body];
     if (meshes) {
-      for (const m of [meshes.near, meshes.far]) {
+      for (const m of [meshes.near, meshes.detail, meshes.far]) {
         if (!m) continue;
         m.setMatrixAt(solid.index, _zero);
         m.instanceMatrix.needsUpdate = true;

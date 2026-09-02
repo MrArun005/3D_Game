@@ -214,6 +214,21 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   Harness lesson: toggling `castShadow` or `shadowMap.enabled` at runtime
   under WebGPU invalidates a pipeline and blacks out every later frame while
   the counters keep working -- profile in one load, screenshot in another.
+- **The fleet is Kenney's Car Kit (CC0)** -- `world/vendorCars.js` loads
+  `public/models/vendor/kenney/cars/*.glb` (+ its external
+  `Textures/colormap.png`, which the GLBs reference by relative path) and
+  installs them over `assets.geo.stunt[key]` with the same contract as the
+  loft (`body`, `glass`, `lodBody`, `occupant`), plus `detail`/`detailMat`.
+  `body` is the PAINT: faces clustered by palette CHROMA (the colormap
+  shades each hue down a gradient, so exact-colour matching found 30
+  faces); `detail` is glass, tyres, trim in the kit palette. Body scaled per
+  axis to BODY_TYPES, wheels uniformly and re-seated. Kenney +Z -> our +X,
+  verified by a camera placed ahead along a car's MEASURED travel; the
+  fleet's brake box had sat on the bonnet since the loft was turned round.
+  Taxi and police models are in; the hero car stays the loft (doors, damage).
+  Sources under `assets/source/vendor/kenney/` (GLB + licence only; FBX/OBJ
+  ignored). Cost at kingsway-corner: ~+60 draws (a detail mesh per body
+  style per chunk), triangles flat.
 - **Phase 1 shop signs** (`world/signs.js`): one seeded 2048^2 atlas of 64
   fascia boards (512x128 tiles), one node material (`sign_emissive`, colour
   and emissive both sample the atlas via a per-instance `aTile` cell), one

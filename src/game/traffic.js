@@ -72,7 +72,7 @@ export class Traffic {
   }
 
   #makePolice() {
-    const c = this.#makeCar('sedan');
+    const c = this.#makeCar(this.assets.geo.stunt.police ? 'police' : 'sedan');
     c.mesh.material.color.setHex(0x0d1526);
     c.mesh.material.metalness = 0.35;
     c.hunt = true;
@@ -159,8 +159,9 @@ export class Traffic {
 
   #makeCar(force) {
     const rand = this.rand;
-    const style = force || BODY_KEYS[Math.floor(rand() * BODY_KEYS.length)];
-    const spec = BODY_TYPES[style];
+    const keys = this.assets.geo.stuntKeys ?? BODY_KEYS;    // vendor kits add taxi
+    const style = force || keys[Math.floor(rand() * keys.length)];
+    const spec = BODY_TYPES[style] ?? BODY_TYPES.sedan;      // taxi/police borrow the sedan's
     const mat = this.assets.mat.parked.clone();
     mat.color.setHex(PAINT_COLOURS[Math.floor(rand() * PAINT_COLOURS.length)]);
     const kit = this.assets.geo.stunt[style];
@@ -168,7 +169,8 @@ export class Traffic {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     // glazing, and somebody sitting behind it
-    mesh.add(new THREE.Mesh(kit.glass, this.assets.mat.carGlass));
+    // a vendor kit's `glass` is its whole detail part (glass, tyres, trim) in the kit palette
+    mesh.add(new THREE.Mesh(kit.glass, kit.detailMat ?? this.assets.mat.carGlass));
     const who = new THREE.Mesh(kit.occupant, this.assets.mat.parked.clone());
     who.material.color.setHex(OCCUPANT[Math.floor(rand() * OCCUPANT.length)]);
     who.material.metalness = 0.0;
@@ -179,7 +181,11 @@ export class Traffic {
 
     const brakeMat = this.assets.mat.tailDim.clone();
     const tail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.12, spec.wMax * 1.3), brakeMat);
-    tail.position.set(spec.L * 0.5 - 0.06, spec.bonnetY * 0.86, 0);
+    /* The REAR is -X: the fleet drives along +X (a Kenney SUV comes at the
+       camera nose-first, headlights and all). This box sat at +L/2 -- on the
+       bonnet -- from the day the loft was turned round, and nobody could
+       tell on a hull with no lamps of its own. */
+    tail.position.set(-(spec.L * 0.5 - 0.06), spec.bonnetY * 0.86, 0);
     mesh.add(tail);
     this.scene.add(mesh);
 

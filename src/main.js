@@ -6,6 +6,7 @@ import { createSky } from './core/sky.js';
 import { createGrade } from './core/grade.js';
 import { setAnisotropy } from './world/textures.js';
 import { createAssets } from './world/assets.js';
+import { loadVendorCars } from './world/vendorCars.js';
 import { Catalogue, dressCarMaterials } from './world/catalogue.js';
 import { City } from './world/city.js';
 import { DistrictWorld } from './world/districtWorld.js';
@@ -88,6 +89,10 @@ const grade = createGrade(renderer, scene, camera, {
 });
 
 const assets = createAssets();
+/* Kenney Car Kit (CC0) over the lofted fleet -- world/vendorCars.js. Awaited
+   here so traffic and the streamer never see a half-swapped kit; a missing
+   file leaves that style on the loft and logs once. */
+await loadVendorCars(assets).catch((e) => console.warn('vendor cars:', e.message));
 grade.resize(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio());
 /* Bloom needs no day/night switch: it reads the emissive MRT channel, and
    daylightAssets() below dims facade emissive to 0.04 — under the bloom

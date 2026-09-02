@@ -19,3 +19,11 @@ assets/source/**/*.blend1
 # harness output, regenerated every run
 .playwright-mcp/
 
+
+# vendor kit sources: keep the glTF and the licence, not the FBX/OBJ/preview bulk
+assets/source/vendor/kenney/*/Models/FBX format/
+assets/source/vendor/kenney/*/Models/OBJ format/
+assets/source/vendor/kenney/*/Previews/
+assets/source/vendor/kenney/*/*.url
+assets/source/vendor/kenney/*/Preview.png
+assets/source/vendor/kenney/*/Overview.html
