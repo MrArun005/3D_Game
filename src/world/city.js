@@ -70,9 +70,16 @@ export function makeTileable(material) {
 
      A reference node re-reads the raw property every frame, which is exactly
      what the classic material path did for free. */
+  /* Third argument PINS the reference to this material. Without it the node
+     resolves against whatever material is being compiled -- and the shadow
+     pass compiles our colorNode inside three's override depth material
+     (Renderer._getShadowNodes multiplies shadow alpha by colorNode.a), which
+     has no .color, so the first shell to cast a shadow crashed the frame with
+     "Cannot read properties of undefined (reading 'r')". Found 2026-09-02 the
+     moment building shells were made to cast. */
   if (material.map) {
     material.colorNode = texture(material.map, scaled)
-      .mul(materialReference('color', 'color'));
+      .mul(materialReference('color', 'color', material));
   }
   if (material.emissiveMap) {
     /* Windows with life.
@@ -92,8 +99,8 @@ export function makeTileable(material) {
     const tint = mix(warm, cool, step(0.55, h2));
     const level = lit.mul(mix(0.55, 1.0, h2));                   // lit ones vary too
     material.emissiveNode = texture(material.emissiveMap, scaled)
-      .mul(materialReference('emissive', 'color'))
-      .mul(materialReference('emissiveIntensity', 'float'))
+      .mul(materialReference('emissive', 'color', material))
+      .mul(materialReference('emissiveIntensity', 'float', material))
       .mul(tint).mul(level);
   }
   return material;

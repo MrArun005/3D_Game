@@ -5,6 +5,7 @@ import { dressChunk, dressRoofs, dressFacades, place as placeAsset } from './dre
 import { KERB_H, roadDepth } from './metrics.js';
 import { ARCH, TOWER, MID, LOFT, PODIUM, DECK } from './facades.js';
 import { mulberry32 } from '../core/rng.js';
+import { SHADOW_FAR_LAYER } from '../core/renderer.js';
 import { PAINT_COLOURS, BODY_KEYS } from '../vehicle/config.js';
 import { signalState, LAMP_COLOURS } from './signals.js';
 import { BREAK_CLASS } from './breakables.js';
@@ -356,7 +357,11 @@ export class DistrictWorld {
       if (g.userData.shadowRing !== d) {
         g.userData.shadowRing = d;
         const cast = d === 0;
-        for (const m of g.children) m.castShadow = cast;
+        /* Building shells are the exception: they are what the far cascade
+           exists for (a tower's shadow falls across the next street), so they
+           cast from the neighbouring ring too. They are the only meshes on
+           SHADOW_FAR_LAYER, so this is all the far map draws. */
+        for (const m of g.children) m.castShadow = m.userData.shell ? d <= 1 : cast;
       }
     }
     for (const [k, g] of [...this.chunks]) {
@@ -1271,6 +1276,16 @@ export class DistrictWorld {
          because a cached sphere goes stale the moment the instances move. */
       m.computeBoundingSphere();
       m.receiveShadow = true;
+      /* A building shell: the one kind of mesh the far shadow cascade draws
+         (see renderer.js SHADOW_FAR_LAYER), and the one kind that keeps
+         casting from the neighbouring ring in update(). */
+      m.userData.shell = true;
+      m.layers.enable(SHADOW_FAR_LAYER);
+      /* Set here, not left to the ring gate in update(): the gate runs on the
+         frame the chunk group is added, before this generator has emitted the
+         shells, and re-runs only when the ring changes -- so shells built at
+         the spawn never cast until you crossed a chunk boundary. */
+      m.castShadow = true;
       group.add(m);
     };
     for (const key of Object.keys(facades)) {

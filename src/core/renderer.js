@@ -4,6 +4,8 @@ export const FOG_COLOUR = 0x222a3a;
 export const FOG_DAY = 0xb7c9dd;
 /** Where the day sun is. The sky dome paints its disc from this same vector. */
 export const DAY_SUN = new THREE.Vector3(-190, 250, 120);
+/** Layer bit the far shadow cascade renders. Building shells enable it; nothing else does. */
+export const SHADOW_FAR_LAYER = 3;
 
 export function createRenderer(canvas) {
   /* WebGPURenderer, from the three/webgpu build the vite alias points at.
@@ -104,6 +106,15 @@ function createDayLights(scene) {
   sunFar.shadow.camera.bottom = -230;
   sunFar.shadow.bias = -0.0012;
   sunFar.shadow.normalBias = 0.09;
+  /* The far cascade only sees SHADOW_FAR_LAYER. At 4.5 texels/m a bin, a
+     pedestrian or a parked car casts nothing you can see, yet every caster
+     was re-drawn into this map: profiled 2026-09-02 at the downtown spawn,
+     the far pass cost 1.36M triangles with everything casting and 0.2M with
+     only the building shells. The WebGPU shadow pass renders through
+     renderer.render(scene, shadow.camera), which honours camera.layers, so
+     the shells enable the bit (districtWorld) and this camera looks only at
+     it. The near cascade keeps every caster. */
+  sunFar.shadow.camera.layers.set(SHADOW_FAR_LAYER);
   scene.add(sunFar, sunFar.target);
 
   const fill = new THREE.DirectionalLight(0xd8e6f5, 0.22);
