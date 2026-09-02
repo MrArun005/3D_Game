@@ -28,8 +28,10 @@ export const CHARACTERS = [
   '/models/characters/civilian_suit.glb',
   '/models/characters/civilian_longsleeve.glb',
   '/models/characters/civilian_woman2.glb',
+  '/models/characters/cowboy.glb',
+  '/models/characters/navy_jacket.glb',
   // RPM-schema wardrobe avatars (tools/avatar). No clips of their own — see
-  // the donor retarget below. ?me=6 / ?me=7.
+  // the donor retarget below. ?me=8 / ?me=9.
   '/models/avatar/male.wardrobe.glb',
   '/models/avatar/female.wardrobe.glb',
 ];
@@ -166,10 +168,12 @@ export class Character {
       if (!animations.length) {
         let target = null;
         model.traverse((o) => { if (o.isSkinnedMesh) target ??= o; });
-        try { animations = await retargetedClips(target); }
-        catch (e) { console.warn('avatar retarget failed:', e?.message || e); animations = []; }
-        if (this.root.children[0] !== model) return;   // swapped away mid-await
-        if (animations.length) mixerRoot = target;     // `.bones[…]` tracks bind here
+        if (target) {
+          try { animations = await retargetedClips(target); }
+          catch (e) { console.warn('avatar retarget failed:', e?.message || e); animations = []; }
+          if (this.root.children[0] !== model) return;   // swapped away mid-await
+          if (animations.length) mixerRoot = target;     // `.bones[…]` tracks bind here
+        }
       }
 
       this.mixer = new THREE.AnimationMixer(mixerRoot);

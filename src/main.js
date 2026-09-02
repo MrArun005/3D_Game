@@ -10,6 +10,8 @@ import { loadVendorCars, loadHeroSkin, KENNEY_CARS } from './world/vendorCars.js
 import { LightPool } from './game/lighting.js';
 import { Jobs, onPavementAtSpeed } from './game/jobs.js';
 import { Garage } from './game/garage.js';
+import { StoryManager } from './game/storyMissions.js';
+import { Phone } from './ui/phone.js';
 import { People } from './game/people.js';
 import { Roadblock } from './game/roadblock.js';
 import { Radio } from './game/radio.js';
@@ -163,7 +165,7 @@ if (new URLSearchParams(location.search).has('debug')) {
 }
 let beach = null, water = null, crowd = null, heli = null, districtRef = null, drowning = 0;
 let lightPool = null;
-let jobs = null, garage = null;
+let jobs = null, garage = null, story = null, phone = null;
 let people = null;
 let hornCooldown = 0;
 let warming = false;
@@ -620,6 +622,8 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   metro = new Metro(scene, district, assets);   // two elevated lines and their trains (world/metro.js)
   landmarks = new Landmarks(scene, district);   // gun shop, supermarket, street set on their lots (world/landmarks.js)
   garage.restore();
+  story = new StoryManager(mission, traffic, hud, garage);
+  phone = new Phone(story, garage, hero, traffic);
   /* The other half of the race handshake: say when YOU finish. Set here
      rather than on join, because the room can be joined before the district
      has loaded and there would be no mission to hang it on. */
@@ -755,6 +759,7 @@ const input = createInput((action) => {
   if (action === 'camera') chase.cycle();
   if (action === 'lights') car.headlights = !car.headlights;
   if (action === 'photo') photo.toggle();
+  if (action === 'phone') phone?.toggle();
   if (action === 'garage') garage?.browse();
   if (action === 'buy') garage?.act();
   if (action === 'map') hud.toggleMap();
@@ -846,6 +851,11 @@ function frameBody() {
     car.holdGear = false;
   } else {
   const c = input.read();
+  if (garage) {
+    garage.setNos(c.nos);
+    garage.update(dt, car);
+  }
+  if (story) story.update(car, dt);
   if (!started && (c.throttle > 0.08 || c.brake > 0.25 || Math.abs(c.steer) > 0.3)) start();
   if (flying) {
     flightUpdate(c, dt);
@@ -867,7 +877,8 @@ function frameBody() {
   // In reverse the pedals swap: S drives, W slows you. Without this you can
   // select R and then sit there, because S is only ever wired to the brake.
   const inReverse = car.gear === 0;
-  const throttleIn = inReverse ? revKey : fwdKey;
+  const tuneMult = 1 + ((garage?.stage || 1) - 1) * 0.15;
+  const throttleIn = (inReverse ? revKey : fwdKey) * tuneMult;
   const brakeIn = inReverse ? fwdKey : revKey;
   const lag = c.analogue ? 16 : 11;
   car.throttle += (throttleIn - car.throttle) * Math.min(1, dt * lag);

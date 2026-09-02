@@ -34,3 +34,5 @@ assets/source/vendor/kenney/blocky-characters/Previews/
 assets/source/vendor/quaternius/*/Blends/
 assets/source/vendor/quaternius/*/FBX/
 assets/source/vendor/quaternius/*/Preview.png
+.vercel
+assets/source/originals/

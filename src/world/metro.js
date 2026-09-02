@@ -79,13 +79,46 @@ export class Metro {
 
   async #loadTrains() {
     const loader = new GLTFLoader();
-    const files = ['train-electric-subway-a', 'train-electric-subway-b', 'train-electric-subway-c'];
-    const gltfs = await Promise.all(files.map((f) => new Promise((res, rej) => loader.load(TRAIN + f + '.glb', res, undefined, rej)).catch(() => null)));
+    const gltf = await new Promise((res, rej) => loader.load('/models/metro/train_ride.glb', res, undefined, rej)).catch(() => null);
+    let template = null;
+    if (gltf) {
+      const STATION_PARTS = [
+        'station', 'platform', 'track', 'rail', 'waiting', 'pillar', 'plane',
+        'trash', 'shed', 'celing', 'drain', 'post'
+      ];
+      gltf.scene.traverse((o) => {
+        const name = (o.name || '').toLowerCase();
+        if (STATION_PARTS.some((p) => name.includes(p))) {
+          o.visible = false;
+        } else if (o.isMesh) {
+          o.castShadow = false;
+          o.receiveShadow = true;
+          o.frustumCulled = false;
+          if (o.material) {
+            o.material.envMapIntensity = 1.3;
+            if (o.material.emissive || o.material.emissiveMap) {
+              o.material.emissiveIntensity = 2.4;
+            }
+          }
+        }
+      });
+      const box = new THREE.Box3();
+      gltf.scene.traverse((o) => {
+        if (o.isMesh && o.visible) box.expandByObject(o);
+      });
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      const len = Math.max(size.x, size.z);
+      const s = len > 0 ? 14 / len : 1;
+      template = new THREE.Group();
+      gltf.scene.position.set(-center.x, -box.min.y, -center.z);
+      template.add(gltf.scene);
+      template.scale.setScalar(s);
+    }
+
     for (const line of this.lines) {
-      for (let i = 0; i < 3; i++) {
-        const src = gltfs[i] || gltfs.find(Boolean);
-        const car = src ? src.scene.clone(true) : new THREE.Mesh(new THREE.BoxGeometry(9, 3.6, 3.2), new THREE.MeshStandardMaterial({ color: 0xd8dde4 }));
-        if (src) { car.scale.setScalar(3.2); car.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } }); }
+      for (let i = 0; i < 2; i++) {
+        const car = template ? template.clone(true) : new THREE.Mesh(new THREE.BoxGeometry(14, 3.8, 3.2), new THREE.MeshStandardMaterial({ color: 0xd8dde4 }));
         this.scene.add(car);
         line.cars.push(car);
       }
@@ -101,10 +134,10 @@ export class Metro {
         for (const st of l.stations) if ((before - st) * (l.s - st) <= 0 && before !== l.s) { l.dwell = DWELL; l.s = st; }
       }
       l.cars.forEach((car, i) => {
-        const s = l.s - l.dir * i * 9.4;
+        const s = l.s - l.dir * i * 14.8;
         const p = this.#at(l.pts, l.cum, s), q = this.#at(l.pts, l.cum, s + l.dir * 2);
         car.position.set(p.x, DECK_Y + 0.65, p.z);
-        car.rotation.y = Math.atan2(-(q.z - p.z), q.x - p.x) + Math.PI / 2;   // Kenney trains face +Z
+        car.rotation.y = Math.atan2(-(q.z - p.z), q.x - p.x) + Math.PI / 2;
       });
     }
   }

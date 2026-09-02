@@ -1,17 +1,6 @@
 import { loadHeroSkin } from '../world/vendorCars.js';
 
-/**
- * The garage: where the job money goes.
- *
- *   B  browse the next body (price shown; owned ones say so)
- *   N  buy and fit the shown body, or repair the current one for $150
- *
- * Bodies are the Kenney Car Kit files the fleet already ships; fitting one
- * re-skins the hero over the same physics hull (vendorCars.loadHeroSkin), so
- * handling never changes -- only what you look at. Owned bodies and the
- * fitted one persist in localStorage.
- */
-const CATALOGUE = [
+export const CATALOGUE = [
   { file: 'q-sports',     name: 'SPORTS COUPE',  price: 0 },
   { file: 'q-normal1',    name: 'SALOON',        price: 500 },
   { file: 'q-normal2',    name: 'COMPACT',       price: 700 },
@@ -23,7 +12,7 @@ const CATALOGUE = [
   { file: 'k-suv-luxury', name: 'LUXURY SUV',    price: 2600 },
   { file: 'q-sports2',    name: 'SUPERCAR',      price: 3800 },
   { file: 'q-cop',        name: 'CRUISER',       price: 4000 },
-  // owner-supplied Sketchfab bodies: real PBR, hero-only, heavier -- see public/models/vendor/sketchfab/NOTICE.md
+  // owner-supplied Sketchfab bodies: real PBR, hero-only
   { file: 's-camaro-jewel',  name: "'67 CAMARO SS",     price: 6500 },
   { file: 's-camaro-350',    name: "'67 CAMARO 350",    price: 7500 },
   { file: 's-corvette-c6r',  name: 'C6.R GT2',          price: 9000 },
@@ -35,12 +24,44 @@ const REPAIR = 150;
 
 export class Garage {
   constructor(jobs, assets, hero, damage, hud) {
-    this.jobs = jobs; this.assets = assets; this.hero = hero; this.damage = damage; this.hud = hud;
+    this.jobs = jobs;
+    this.assets = assets;
+    this.hero = hero;
+    this.damage = damage;
+    this.hud = hud;
+
     this.owned = new Set(JSON.parse(localStorage.getItem('hb.garage') || '["q-sports"]'));
     this.fitted = localStorage.getItem('hb.body') || 'q-sports';
-    if (!CATALOGUE.some((c) => c.file === this.fitted)) this.fitted = 'q-sports';   // ids changed 2026-09-02
+    if (!CATALOGUE.some((c) => c.file === this.fitted)) this.fitted = 'q-sports';
     this.cursor = CATALOGUE.findIndex((c) => c.file === this.fitted);
     this.browsing = false;
+
+    // Performance & NOS Tuning
+    this.stage = Number(localStorage.getItem('hb.tune_stage') || 1);
+    this.hasNos = localStorage.getItem('hb.has_nos') === 'true';
+    this.nosGauge = 1.0;
+    this.nosActive = false;
+  }
+
+  get cash() {
+    return this.jobs?.cash ?? 0;
+  }
+
+  addCash(amount, reason = '') {
+    if (this.jobs) {
+      this.jobs.cash += amount;
+      this.jobs.persist();
+      if (this.hud?.flash) {
+        this.hud.flash(`+$${amount.toLocaleString()} ${reason ? '· ' + reason : ''}`);
+      }
+    }
+  }
+
+  spendCash(amount) {
+    if (!this.jobs || this.jobs.cash < amount) return false;
+    this.jobs.cash -= amount;
+    this.jobs.persist();
+    return true;
   }
 
   /** Fit the persisted body at start-up (the default is already on). */
@@ -60,21 +81,24 @@ export class Garage {
     const c = CATALOGUE[this.cursor];
     if (!this.browsing || c.file === this.fitted) {
       // repair
-      if (this.damage.value <= 0.02) { this.hud.flash('NOTHING TO REPAIR'); return; }
-      if (this.jobs.cash < REPAIR) { this.hud.flash(`REPAIR $${REPAIR} · NOT ENOUGH CASH`); return; }
-      this.jobs.cash -= REPAIR; this.jobs.persist(); this.damage.repair();
-      this.hud.flash(`REPAIRED · -$${REPAIR}`); return;
+      if (this.damage?.value <= 0.02) { this.hud.flash('NOTHING TO REPAIR'); return; }
+      if (!this.spendCash(REPAIR)) { this.hud.flash(`REPAIR $${REPAIR} · NOT ENOUGH CASH`); return; }
+      this.damage?.repair();
+      this.hud.flash(`REPAIRED · -$${REPAIR}`);
+      return;
     }
     if (!this.owned.has(c.file)) {
-      if (this.jobs.cash < c.price) { this.hud.flash(`${c.name} · $${c.price} · NOT ENOUGH CASH`); return; }
-      this.jobs.cash -= c.price; this.owned.add(c.file); this.jobs.persist();
+      if (!this.spendCash(c.price)) { this.hud.flash(`${c.name} · $${c.price} · NOT ENOUGH CASH`); return; }
+      this.owned.add(c.file);
     }
     await this.#fit(c.file);
     this.hud.flash(`${c.name} FITTED`);
   }
 
   /** Drive what you stole: fit a body without buying it. */
-  async wear(file) { if (file && file !== this.fitted) await this.#fit(file); }
+  async wear(file) {
+    if (file && file !== this.fitted) await this.#fit(file);
+  }
 
   async #fit(file) {
     const u = this.hero.userData;
@@ -82,8 +106,79 @@ export class Garage {
     const ok = await loadHeroSkin(this.assets, this.hero, file);
     if (!ok) { this.hud.flash('GARAGE CLOSED'); return; }
     this.fitted = file;
-    this.damage.attach(this.hero);         // the new body is what dents now
-    try { localStorage.setItem('hb.body', file); localStorage.setItem('hb.garage', JSON.stringify([...this.owned])); } catch { /* private mode */ }
+    this.damage?.attach(this.hero);
+    try {
+      localStorage.setItem('hb.body', file);
+      localStorage.setItem('hb.garage', JSON.stringify([...this.owned]));
+    } catch { /* private mode */ }
     this.browsing = false;
+  }
+
+  /** Hold Shift to trigger nitrous boost */
+  setNos(active) {
+    if (!this.hasNos) return false;
+    this.nosActive = active && this.nosGauge > 0.05;
+    return this.nosActive;
+  }
+
+  /** Update NOS recharge and speed boost */
+  update(dt, car) {
+    if (this.nosActive && this.nosGauge > 0) {
+      this.nosGauge = Math.max(0, this.nosGauge - dt * 0.28);
+      if (Math.abs(car.fwdSpeed) > 2) {
+        car.vx += Math.cos(car.yaw) * 26 * dt;
+        car.vz -= Math.sin(car.yaw) * 26 * dt;
+      }
+      if (this.nosGauge <= 0) this.nosActive = false;
+    } else {
+      this.nosGauge = Math.min(1.0, this.nosGauge + dt * 0.08);
+    }
+  }
+
+  /** Pay'n'Spray: Respray car and wipe police heat immediately */
+  payAndSpray(traffic) {
+    if (!this.spendCash(500)) {
+      this.hud.flash('NEED $500 FOR RESPLAY');
+      return false;
+    }
+    if (traffic) traffic.standDown();
+    const colors = [0x991111, 0x113399, 0x111111, 0xd0c020, 0x157733, 0xee5500, 0x882288];
+    const newColor = colors[Math.floor(Math.random() * colors.length)];
+    if (this.hero?.userData?.hull?.material) {
+      this.hero.userData.hull.material.color.setHex(newColor);
+    }
+    this.hud.flash('PAY\'N\'SPRAY: POLICE HEAT WIPED! -$500');
+    return true;
+  }
+
+  /** Buy NOS */
+  installNos() {
+    if (this.hasNos) return false;
+    if (!this.spendCash(3000)) {
+      this.hud.flash('NEED $3,000 FOR NITROUS OXIDE');
+      return false;
+    }
+    this.hasNos = true;
+    this.nosGauge = 1.0;
+    localStorage.setItem('hb.has_nos', 'true');
+    this.hud.flash('NITROUS OXIDE INSTALLED! HOLD SHIFT TO BOOST');
+    return true;
+  }
+
+  /** Upgrade Engine */
+  tuneEngine() {
+    if (this.stage >= 3) {
+      this.hud.flash('ENGINE AT MAX TUNE (STAGE 3)');
+      return false;
+    }
+    const cost = this.stage === 1 ? 4000 : 8000;
+    if (!this.spendCash(cost)) {
+      this.hud.flash(`NEED $${cost.toLocaleString()} FOR STAGE ${this.stage + 1} TUNE`);
+      return false;
+    }
+    this.stage++;
+    localStorage.setItem('hb.tune_stage', String(this.stage));
+    this.hud.flash(`STAGE ${this.stage} TURBO TUNE INSTALLED!`);
+    return true;
   }
 }

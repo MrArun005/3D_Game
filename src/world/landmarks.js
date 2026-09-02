@@ -47,5 +47,30 @@ export class Landmarks {
       this.placed.push({ ...lm, x: lot.x, z: lot.y, scale: k });
       console.info(`landmark ${lm.name} at ${lot.x | 0},${lot.y | 0} (${lm.district}) x${k.toFixed(2)}`);
     }));
+
+    // Place high-detail scanned characters as street walkers / pedestrians
+    const STREET_PEOPLE = [
+      { file: '/models/characters/cowboy.glb', x: 28, z: 12, yaw: 0.4, name: 'Cowboy on Sidewalk' },
+      { file: '/models/characters/navy_jacket.glb', x: 18, z: 15, yaw: -1.2, name: 'Navy Jacket Pedestrian' },
+      { file: '/models/characters/cowboy.glb', x: -35, z: 25, yaw: 1.8, name: 'Cowboy at Corner' },
+    ];
+    for (const sp of STREET_PEOPLE) {
+      try {
+        const gltf = await new Promise((res, rej) => loader.load(sp.file, res, undefined, rej));
+        const obj = gltf.scene;
+        obj.updateMatrixWorld(true);
+        const bb = new THREE.Box3().setFromObject(obj);
+        const h = bb.max.y - bb.min.y || 1;
+        const scale = 1.78 / h;
+        obj.scale.setScalar(scale);
+        obj.position.set(sp.x, -bb.min.y * scale + 0.15, sp.z);
+        obj.rotation.y = sp.yaw;
+        obj.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = true; } });
+        this.scene.add(obj);
+        console.info(`street walker: ${sp.name} at ${sp.x},${sp.z}`);
+      } catch (e) {
+        console.warn('street walker', sp.file, e.message);
+      }
+    }
   }
 }

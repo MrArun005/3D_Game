@@ -115,7 +115,8 @@ export function createInput(onAction) {
     if (e.code === 'KeyH') onAction('lights');
     if (e.code === 'KeyR') onAction('reset');
     if (e.code === 'KeyV') onAction('film');
-    if (e.code === 'KeyM') onAction('mute');
+    if (e.code === 'KeyM') onAction('phone'); // iFruit GTA phone
+    if (e.code === 'KeyU') onAction('mute');
     if (e.code === 'KeyB') onAction('garage'); // browse bodies
     if (e.code === 'KeyL') onAction('radio');  // cycle radio stations
     if (e.code === 'KeyN') onAction('buy');    // buy / fit / repair
@@ -138,6 +139,7 @@ export function createInput(onAction) {
         steer: (keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0),
         handbrake: keys.Space ? 1 : 0,
         hold: !!(keys.ShiftLeft || keys.ShiftRight),
+        nos: !!(keys.ShiftLeft || keys.ShiftRight),
       };
       const pad = readPad();
       for (const name of Object.keys(prevDown)) {

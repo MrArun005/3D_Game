@@ -1611,7 +1611,7 @@ const _frustum = new THREE.Frustum(), _pv = new THREE.Matrix4(), _box = new THRE
    recording cleared three's current-bundle pointer, so the spawn chunk's
    recording held 1 of 81 objects. Fixed at the renderer; verified 76/76
    recorded afterwards. ?nobundles turns them off for A/B. */
-const USE_BUNDLES = typeof location === 'undefined' || !new URLSearchParams(location.search).has('nobundles');
+const USE_BUNDLES = false;
 const _zero = new THREE.Matrix4().makeScale(0, 0, 0);   // hides an instance in place
 const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
 /** a ground-plane quad, laid flat and scaled — light pools, decals */
