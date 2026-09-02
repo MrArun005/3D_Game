@@ -209,6 +209,15 @@ export function createGrade(renderer, scene, camera, {
 
     bloom: withBloom,
     setBloom(on) { if (bloomPass) bloomPass.strength.value = on ? BLOOM_STRENGTH : 0; },
+    /* Night mood: signs and lamps glow harder and softer (radius up), the
+       threshold stays where windows (emissive ~1.0 * tint <= 1) do not bloom
+       but sign boards (1.4) and lamp caps (3.2) do. */
+    setNight(on) {
+      if (!bloomPass) return;
+      bloomPass.strength.value = on ? 0.95 : BLOOM_STRENGTH;
+      bloomPass.radius.value = on ? 0.55 : 0.35;
+      bloomPass.threshold.value = on ? 0.9 : 0.25;
+    },
 
     setDrops(amount) { lAmt.value = amount; },
 

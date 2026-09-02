@@ -7,6 +7,7 @@ import { createGrade } from './core/grade.js';
 import { setAnisotropy } from './world/textures.js';
 import { createAssets } from './world/assets.js';
 import { loadVendorCars } from './world/vendorCars.js';
+import { LightPool } from './game/lighting.js';
 import { Catalogue, dressCarMaterials } from './world/catalogue.js';
 import { City } from './world/city.js';
 import { DistrictWorld } from './world/districtWorld.js';
@@ -156,6 +157,7 @@ if (new URLSearchParams(location.search).has('debug')) {
   window.__perf = () => ({ frames: [...stats.samples], chunk: stats.worstChunkMs });
 }
 let beach = null, water = null, crowd = null, heli = null, districtRef = null, drowning = 0;
+let lightPool = null;                       // night: real lights on the nearest lamp heads (game/lighting.js)
 const person = buildHuman();
 scene.add(person.root);
 let muted = false;
@@ -559,6 +561,11 @@ Promise.all([loadDistrict(), catalogueReady]).then(([district, catalogue]) => {
   city.cells.clear();
   world = new DistrictWorld(scene, assets, district, { day: DAY, catalogue });
   world.camera = camera;                  // chunk-level frustum culling for the render bundles
+  if (!DAY) {
+    const n = +(new URLSearchParams(location.search).get('lights') ?? 6);
+    lightPool = new LightPool(scene, world, { count: n });
+    grade.setNight?.(true);
+  }
   debris.catalogue = catalogue;
   world.onBreakables = (k, tracked, solids, pools) => debris.registerChunk(k, tracked, solids, pools);
   world.onBreakablesGone = (k) => debris.dropChunk(k);
@@ -934,6 +941,7 @@ function frame() {
     }
   }
   if (!DAY) weather.update(camera, car, dt);
+  lightPool?.update(dt, car.x, car.z);
   grade.setDrops(DAY ? 0 : chase.mode >= 2 ? 1.2 : 0.68);
   world.update(car.x, car.z);
   resolution(dt);

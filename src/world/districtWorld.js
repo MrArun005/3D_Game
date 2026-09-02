@@ -42,6 +42,26 @@ const hash = (x, z) => {
   return n - Math.floor(n);
 };
 const ARCHETYPE = { tower: TOWER, mid: MID, row: LOFT, yard: DECK, lot: PODIUM };
+/* Each district builds differently, not just taller or shorter. `forms` are
+   the massing shapes #massing may choose (weights), `style` biases the facade
+   kit (dressing.js styleFor). KINGSWAY: podium-and-tower glass; OLD QUARTER
+   and VELLERY ROW: narrow period blocks with wings; STEELGATE and the yards:
+   long sheds; THE FLATS: stepped residential terraces; NORTHLINE and
+   GREENFELL: low suburban rows. Same seed, same city -- these only weight
+   the hashed choice. */
+const DISTRICT_FORM = {
+  KINGSWAY:        { forms: { podium: 0.45, setback: 0.35, slab: 0.2 }, style: 'modern' },
+  NORTHLINE:       { forms: { slab: 0.5, wing: 0.3, terrace: 0.2 }, style: 'period' },
+  STEELGATE:       { forms: { shed: 0.55, slab: 0.3, wing: 0.15 }, style: 'industrial' },
+  'HARBOUR POINT': { forms: { shed: 0.4, slab: 0.35, wing: 0.25 }, style: 'industrial' },
+  'OLD QUARTER':   { forms: { wing: 0.45, slab: 0.35, terrace: 0.2 }, style: 'period' },
+  'VELLERY ROW':   { forms: { wing: 0.4, slab: 0.4, setback: 0.2 }, style: 'period' },
+  ASHMOOR:         { forms: { slab: 0.45, wing: 0.35, shed: 0.2 }, style: 'period' },
+  'MARROW HILL':   { forms: { terrace: 0.4, slab: 0.4, wing: 0.2 }, style: 'period' },
+  'THE FLATS':     { forms: { terrace: 0.5, slab: 0.3, setback: 0.2 }, style: 'modern' },
+  'GREENFELL PARK': { forms: { slab: 0.6, wing: 0.4 }, style: 'period' },
+};
+const pickForm = (forms, r) => { let acc = 0; for (const [k, w] of Object.entries(forms)) { acc += w; if (r < acc) return k; } return 'slab'; };
 /* Foliage is never one green. These multiply the leaf material, so they read
    as the same planting in different light rather than as five paint pots. */
 const LEAF = [0xa8c48a, 0x8fae74, 0xc2cf92, 0x7f9e6c, 0xb6c88d, 0x9dbb85];
@@ -79,6 +99,7 @@ export class DistrictWorld {
     // city-wide BatchedMesh per material (catalogue.js) -- the draw-call fix of 2026-09-02
     if (this.catalogue?.multiDraw) this.catalogue.attach(scene);
     this.propGroups = new Map();
+    this.headsByChunk = new Map();     // chunk key -> [{x,y,z}] lamp heads (night light pool)
     this.facadeGroups = new Map();
     this.parkedLod = new Map();
     this.propRadius = 2;
@@ -435,6 +456,7 @@ export class DistrictWorld {
         this.signalsByChunk.delete(k);
         this.solidsByChunk.delete(k);
         this.poolsByChunk.delete(k);
+        this.headsByChunk.delete(k);
         this.onBreakablesGone?.(k);
         this.#rerecordAll();
       }
@@ -447,9 +469,14 @@ export class DistrictWorld {
    * capping every step, and a crown on the towers. This is the difference
    * between a skyline and a bar chart.
    */
-  #massing(arch, wx, wz, angle, w, d, h, out) {
+  #massing(arch, wx, wz, angle, w, d, h, out, district = null) {
     const A = this.assets;
     const rand = mulberry32(Math.floor(hash(wx, wz) * 2147483647) >>> 0);
+    const dform = DISTRICT_FORM[district] ?? DISTRICT_FORM.ASHMOOR;
+    const form = pickForm(dform.forms, rand());
+    // local (along, across) offsets on the block's own axes
+    const ca = Math.cos(angle), sa = Math.sin(angle);
+    const at = (ox, oz) => [wx + ox * ca - oz * sa, wz + ox * sa + oz * ca];
     const spec = ARCH[arch];
     const BASE = A.baseHeight, SINK = 0.35;
     const variant = Math.floor(rand() * 3);
@@ -472,12 +499,51 @@ export class DistrictWorld {
       fb.m.push(mat4(wx, y, wz, angle, w * k, hh, d * k));
       fb.uv.push((w * k) / tileW, hh / tileH);
     };
+    // a stage of its own footprint (sw x sd), offset (ox, oz) on the block axes
+    const stageAt = (y, hh, sw, sd, ox, oz) => {
+      const [px, pz] = at(ox, oz);
+      fb.m.push(mat4(px, y, pz, angle, sw, hh, sd));
+      fb.uv.push(sw / tileW, hh / tileH);
+      (glassTop ? out.glassRoofs : out.roofs).push(mat4(px, y + hh - SINK, pz, angle, sw + 0.1, 0.7 + SINK, sd + 0.1));
+    };
     const cap = (y, hh, k, pad) =>
       (glassTop ? out.glassRoofs : out.roofs).push(
         mat4(wx, y, wz, angle, w * k + pad, hh, d * k + pad));
 
     let topK = 1;
-    if (arch === TOWER && shaft > 48 && rand() < 0.75) {
+    /* District forms first; the old tower/mid setbacks remain as 'setback'
+       and the plain box as 'slab'. Every form is still a few instanced boxes
+       in the same facade bucket, so the draw count does not move. */
+    if (form === 'wing' && w > 15 && d > 11 && shaft > 6) {
+      // an L: the main block along the frontage, a lower wing back on one side
+      const side = rand() < 0.5 ? -1 : 1, wingW = w * (0.34 + rand() * 0.12), wingH = shaft * (0.55 + rand() * 0.25);
+      stageAt(y0, shaft, w, d * 0.58, 0, -d * 0.21);
+      stageAt(y0, wingH, wingW, d * 0.42, side * (w / 2 - wingW / 2), d * 0.29);
+    } else if (form === 'podium' && shaft > 20) {
+      // a two-storey podium the full footprint, a slimmer tower off-centre on top
+      const podH = Math.min(shaft * 0.28, 8.5), k = 0.5 + rand() * 0.14, side = rand() < 0.5 ? -1 : 1;
+      stage(y0, podH, 1);
+      cap(y0 + podH - SINK, 0.5 + SINK, 1, 0.1);
+      stageAt(y0 + podH - SINK, shaft - podH + SINK, w * k, d * k, side * w * (0.5 - k / 2) * 0.8, 0);
+      topK = k;
+    } else if (form === 'terrace' && w > 12 && shaft > 9) {
+      // stepped: three bands of the frontage at falling heights
+      const n = 3, bw = w / n;
+      for (let i = 0; i < n; i++) {
+        const hh = shaft * (1 - 0.18 * ((i + Math.floor(rand() * 2)) % n));
+        stageAt(y0, hh, bw + 0.02, d, -w / 2 + bw * (i + 0.5), 0);
+      }
+    } else if (form === 'shed' && w > 10) {
+      // long low sheds: a wide body with a raised spine and roof huts
+      const bodyH = Math.min(shaft, 9 + rand() * 3);
+      stage(y0, bodyH, 1);
+      stageAt(y0 + bodyH - SINK, 1.6 + rand(), w * 0.32, d * 1.02, 0, 0);
+      cap(KERB_H + Math.min(h, baseH - SINK + bodyH) - SINK, 0.7 + SINK, 1, 0.1);
+      for (let i = 0, k = 2 + Math.floor(rand() * 3); i < k; i++) {
+        const [px, pz] = at((rand() - 0.5) * w * 0.7, (rand() - 0.5) * d * 0.6);
+        out.plant.hut.push(mat4(px, KERB_H + baseH - SINK + bodyH + 0.6, pz, angle, 1, 1, 1));
+      }
+    } else if (arch === TOWER && shaft > 48 && rand() < 0.75) {
       const a = shaft * 0.42, b = shaft * 0.32;
       const k1 = 0.84 + rand() * 0.06, k2 = 0.66 + rand() * 0.08;
       stage(y0, a, 1);
@@ -1044,8 +1110,8 @@ export class DistrictWorld {
         const wx = bl.x + lx * ca - lz * sa;
         const wz = bl.y + lx * sa + lz * ca;
         this.#massing(arch, wx, wz, bl.angle, g.w, g.d, h,
-                      { bases, facades, roofs, glassRoofs, crowns, masts, plant });
-        boxes.push({ x: wx, z: wz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: h });
+                      { bases, facades, roofs, glassRoofs, crowns, masts, plant }, bl.district);
+        boxes.push({ x: wx, z: wz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: h, district: bl.district });
       }
     }
 
@@ -1168,6 +1234,8 @@ export class DistrictWorld {
       });
       // emissive caps on the authored lamps, so the heads bloom at night
       for (const hd of dressHeads) heads.push(mat4(hd.x, hd.y, hd.z, -hd.yaw, 1, 1, 1));
+      // lamp-head positions for game/lighting.js: the pool of real lights follows the nearest
+      this.headsByChunk.set(k, dressHeads.map((hd) => ({ x: hd.x, y: hd.y, z: hd.z })));
       yield;
       dressRoofs(batch, boxes, this.district);
       yield;

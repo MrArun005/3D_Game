@@ -479,7 +479,15 @@ const STYLES = {
 };
 
 /** Which kit a building wears. Height is the honest proxy for what it is. */
+const DISTRICT_STYLE = {
+  KINGSWAY: 'modern', 'THE FLATS': 'modern', STEELGATE: 'industrial', 'HARBOUR POINT': 'industrial',
+  'OLD QUARTER': 'period', 'VELLERY ROW': 'period', ASHMOOR: 'period', 'MARROW HILL': 'period',
+  NORTHLINE: 'period', 'GREENFELL PARK': 'period',
+};
 function styleFor(box, r) {
+  // the district sets the character; two in three buildings follow it, the rest keep the height rule
+  const bias = DISTRICT_STYLE[box.district];
+  if (bias && r < 0.66) return box.height > 30 && bias !== 'modern' ? 'modern' : bias;
   if (box.height > 30) return 'modern';
   if (box.height < 13) return r < 0.55 ? 'industrial' : 'period';
   return r < 0.62 ? 'period' : 'modern';
