@@ -950,9 +950,10 @@ function frame() {
      load and is never reset, so the banner's old "907 DRAWS" was a lifetime
      pass counter that happened to look plausible. `drawCalls` is the real
      per-frame number and matches the F3 overlay. */
-  const draws = renderer.info.render.drawCalls;
-  const tris = renderer.info.render.triangles;
   stats.update(dt, world, renderer);
+  // counted + replayed-from-bundles: renderer.info alone under-reports by ~75% since the chunks became render bundles
+  const draws = renderer.info.render.drawCalls + (stats.snapshot.bundledDraws || 0);
+  const tris = renderer.info.render.triangles + (stats.snapshot.bundledTris || 0);
   hud.update(car, traffic, mission, net, heli);
   if (bustFlash > 0) {
     bustFlash -= dt;

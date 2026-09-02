@@ -303,7 +303,7 @@ export class DistrictWorld {
            has to bump group.needsUpdate so the recording is redone. */
         this.building = {
           k: w.k, cx: w.cx, cz: w.cz,
-          group: new THREE.BundleGroup(),
+          group: USE_BUNDLES ? new THREE.BundleGroup() : new THREE.Group(),
           gen: null,
         };
         this.building.gen = this.#buildSteps(w.cx, w.cz, this.building.group);
@@ -345,6 +345,7 @@ export class DistrictWorld {
                          this.solidsByChunk, this.poolsByChunk]) m.delete(b.k);
         this.pending.delete(b.k);
         this.building = null;
+        this.#rerecordAll();
       }
     }
 
@@ -435,6 +436,7 @@ export class DistrictWorld {
         this.solidsByChunk.delete(k);
         this.poolsByChunk.delete(k);
         this.onBreakablesGone?.(k);
+        this.#rerecordAll();
       }
     }
   }
@@ -1389,6 +1391,23 @@ export class DistrictWorld {
    * paint so the hero can take it.
    */
   /**
+   * Re-record every live chunk's render bundle.
+   *
+   * Measured 2026-09-02 on a 600m out-and-back at the spawn: bundles on,
+   * 392 WebGPU "buffer used in submit while destroyed" errors; bundles off,
+   * 3; bundles on but re-recorded every frame, 1. So a released chunk's
+   * teardown destroys a GPU buffer that some LIVE chunk's recording still
+   * points at (a buffer the renderer shares between render objects), and
+   * the stale recording submits it. Re-recording once per streaming event
+   * -- 24 bundles, a few milliseconds, only when a chunk leaves -- is the
+   * cheap, complete answer; chasing the exact shared buffer through three's
+   * backend is not.
+   */
+  #rerecordAll() {
+    for (const g of this.chunks.values()) g.needsUpdate = true;
+  }
+
+  /**
    * What the chunk bundles replay in the main pass. renderer.info counts only
    * the draws the CPU issues; a replayed render bundle is invisible to it, so
    * after 2026-09-02 the HUD's own figure would have read 211 draws for a
@@ -1457,6 +1476,13 @@ export class DistrictWorld {
 
 const _colour = new THREE.Color();
 const _frustum = new THREE.Frustum(), _pv = new THREE.Matrix4(), _box = new THREE.Box3();
+/* Render bundles are OFF by default (2026-09-02). They cut render CPU
+   11.6 -> 8.8 ms, but a recording goes stale in ways re-recording on release
+   does not cover: after streaming, live bundles drew a building at the
+   player's transform and parked cars in the sky (seen; forcing every bundle
+   to re-record made both vanish). Until the trigger is understood, opt in
+   with ?bundles. */
+const USE_BUNDLES = typeof location !== 'undefined' && new URLSearchParams(location.search).has('bundles');
 const _zero = new THREE.Matrix4().makeScale(0, 0, 0);   // hides an instance in place
 const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
 /** a ground-plane quad, laid flat and scaled — light pools, decals */
