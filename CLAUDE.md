@@ -250,6 +250,22 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   beacons (`A.mat.beacon`), wider sodium horizon. shopfront-night: 931
   draws / 3.79M tris -- 0.2M under budget, so the next layer must pay for
   itself.
+- **The loop (2026-09-02)**: `game/jobs.js` (G: courier / fare / getaway,
+  pay by distance and district tier, wanted stars cost 20% each, WASTED or
+  BUSTED forfeits; cash + jobs persist in localStorage), `game/garage.js`
+  (B browse, N buy/fit/repair; bodies are Kenney files fitted via
+  `loadHeroSkin`; `Damage.repair()`), `hud.toggleMap()` on Tab. The
+  checkpoint race remains for multiplayer rooms only. `Crowd.panic()` scatters
+  pedestrians from gunfire and pavement mounting.
+- **Hero skin**: `vendorCars.loadHeroSkin` hides the loft body/glass/doors/
+  trim and adds a Kenney body scaled to the hull; `userData.hull` becomes the
+  paint mesh so damage crumples it. Doors no longer swing on a carjack.
+- **Looks**: `?dusk` (low sun, warm haze); facade grime is TSL in
+  `city.js:makeTileable` (bottom 3.5 m + parapet band); far stand-ins over
+  45 m carry masts and beacons; manholes and grates on the carriageway rows.
+- Vendor kits on disk (GLB + licence only): Kenney car kit, city kits
+  commercial / roads / suburban / industrial. Kenney animated characters were
+  not downloadable by slug; pedestrians are still the six-part figures.
 - **City-wide BatchedMesh is written but dormant** (`Catalogue.attach`,
   gated on `catalogue.multiDraw`). Without multi-draw-indirect three's WebGPU
   backend issues one draw per instance: measured 8,938 draws / 17.9 ms
