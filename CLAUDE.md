@@ -118,8 +118,8 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   `docs/REVIEW-2026-08-31.md`.
 - The active plan is "Light the City" (2026-09-02): six workstreams to reach
   Shibuya-density signage, real light and crowd downtown. Phase 0 (budget
-  room + photo-mode acceptance cameras) is done; Phase 1 is the sign and
-  shopfront layer. Every phase commits with a frame from a named preset and
+  room + photo-mode acceptance cameras) and Phase 1 (signs and shopfronts)
+  are done; Phase 2 is window quads + night bloom retune + glare sprites. Every phase commits with a frame from a named preset and
   its `photo.line()` stats, or it does not commit.
 - ~1100 draw calls and ~3.6M triangles facing downtown with the full
   authored kit placed (budgets: 1400 draws, 4.0M triangles). Triangles came
@@ -214,6 +214,13 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   Harness lesson: toggling `castShadow` or `shadowMap.enabled` at runtime
   under WebGPU invalidates a pipeline and blacks out every later frame while
   the counters keep working -- profile in one load, screenshot in another.
+- **Phase 1 shop signs** (`world/signs.js`): one seeded 2048^2 atlas of 64
+  fascia boards (512x128 tiles), one node material (`sign_emissive`, colour
+  and emissive both sample the atlas via a per-instance `aTile` cell), one
+  quad; `dressFacades()` places a board over every ground module and
+  districtWorld builds one InstancedMesh per chunk in the facade group.
+  Projecting signs, A-frames, hvac units and junction boxes come from the
+  kit. +13 draws / +60k tris downtown; chunk build worst 8.1 ms total.
 - **Day sky** (`textures.js:texDaySky`): sun disc + glare drawn from
   `DAY_SUN`, stretched 1/cos(elevation) for the equirect dome; eleven sparse
   cumulus clusters; hemisphere 0.55, sun 3.4 warm, fog 0.00017; dome 64x32.
