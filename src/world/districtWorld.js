@@ -230,6 +230,22 @@ export class DistrictWorld {
     this.farHidden = new Set();
     solids.forEach((m, i) => solidMesh.setMatrixAt(i, m));
     solidMesh.instanceMatrix.needsUpdate = true;
+    /* Skyline (item 5): every stand-in over 45m gets a mast and a red beacon,
+       so the far city has a roofline and, at night, the blinking-red horizon
+       every real city has. Two instanced draws for the whole map. */
+    const tall = solids.filter((m) => m.elements[5] > 45);
+    if (tall.length) {
+      const masts = new THREE.InstancedMesh(box, this.assets.mat.pole, tall.length);
+      const beacons = new THREE.InstancedMesh(this.assets.geo.lampCap, this.assets.mat.beacon, tall.length);
+      tall.forEach((m, i) => {
+        const e = m.elements, top = e[13] + e[5], mh = 6 + (e[5] % 7);
+        masts.setMatrixAt(i, mat4(e[12], top + mh / 2, e[14], 0, 0.5, mh, 0.5));
+        beacons.setMatrixAt(i, mat4(e[12], top + mh + 0.3, e[14], 0, 1.6, 1.6, 1.6));
+      });
+      masts.instanceMatrix.needsUpdate = beacons.instanceMatrix.needsUpdate = true;
+      masts.frustumCulled = beacons.frustumCulled = false;
+      far.add(masts, beacons);
+    }
     // matrices are rewritten by #cullFar as you move, so the sphere would go
     // stale -- this one genuinely has to opt out
     solidMesh.frustumCulled = false;

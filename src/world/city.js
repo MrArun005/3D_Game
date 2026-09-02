@@ -1,8 +1,7 @@
 import * as THREE from 'three';
 import {
   attribute, texture, uv, materialReference, instanceIndex,
-  floor, fract, sin, dot, step, mix, vec2, vec3, float,
-} from 'three/tsl';
+  floor, fract, sin, dot, step, mix, vec2, vec3, float, positionWorld, smoothstep } from 'three/tsl';
 import { mulberry32 } from '../core/rng.js';
 import { M4 } from '../core/geometry.js';
 import {
@@ -77,9 +76,15 @@ export function makeTileable(material) {
      has no .color, so the first shell to cast a shadow crashed the frame with
      "Cannot read properties of undefined (reading 'r')". Found 2026-09-02 the
      moment building shells were made to cast. */
+  /* Wear. A clean facade is the tell of a render; cities are dirty where
+     people and rain reach. Darken the bottom 3.5m of every wall (splash and
+     hands) and every wall's own top band (soot under the parapet), from world
+     height and the tile's V, so no texture had to be repainted. */
+  const grime = float(1).sub(smoothstep(3.5, 0.2, positionWorld.y).mul(0.32))
+    .sub(smoothstep(0.86, 1.0, fract(scaled.y)).mul(0.12));
   if (material.map) {
     material.colorNode = texture(material.map, scaled)
-      .mul(materialReference('color', 'color', material));
+      .mul(materialReference('color', 'color', material)).mul(grime);
   }
   if (material.emissiveMap) {
     /* Windows with life.

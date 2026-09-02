@@ -227,6 +227,12 @@ function texDaySky(sunDir) {
   }
   // thin high haze so the zenith is not a flat fill
   noiseWash(g, W, Math.floor(H * 0.5), 900, 0.05, '235,242,250');
+  // dusk: a warm wash rising from the horizon under a cooler zenith
+  if (sunDir && sunDir.y < 100) {
+    const warm = g.createLinearGradient(0, H * 0.5, 0, H * 0.2);
+    warm.addColorStop(0, 'rgba(255,150,80,0.55)'); warm.addColorStop(0.5, 'rgba(255,170,110,0.25)'); warm.addColorStop(1, 'rgba(120,110,160,0)');
+    g.fillStyle = warm; g.fillRect(0, H * 0.2, W, H * 0.3);
+  }
 
   /* Glare and disc. The canvas is equirectangular, so a circle drawn here
      projects onto the dome squeezed by cos(elevation) horizontally -- at the

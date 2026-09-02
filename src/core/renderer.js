@@ -5,6 +5,12 @@ export const FOG_COLOUR = 0x222a3a;
 export const FOG_DAY = 0xb7c9dd;
 /** Where the day sun is. The sky dome paints its disc from this same vector. */
 export const DAY_SUN = new THREE.Vector3(-190, 250, 120);
+/* ?dusk: the same day rig with the sun 12 degrees up. Long shadows, orange
+   key, cool fill, warm haze -- the third look after noon and night. The dome
+   paints its disc from DAY_SUN, so lowering it here moves the sun in the sky
+   and the shadows on the ground together. */
+export const DUSK = typeof location !== 'undefined' && new URLSearchParams(location.search).has('dusk');
+if (DUSK) DAY_SUN.set(-190, 52, 120);
 /** Layer bit the far shadow cascade renders. Building shells enable it; nothing else does. */
 export const SHADOW_FAR_LAYER = 3;
 
@@ -126,7 +132,7 @@ function createDayLights(scene) {
      the 2.6 sun never produced light-and-shade -- a facade turned away from
      the sun was the same tone as one facing it, which is most of why day read
      as milky. Ambient is now the sky's job at 0.55; the sun carries the form. */
-  const hemi = new THREE.HemisphereLight(0xa9c4e0, 0x8f8873, 0.55);
+  const hemi = new THREE.HemisphereLight(DUSK ? 0x6f7fa8 : 0xa9c4e0, DUSK ? 0x5c4a3c : 0x8f8873, DUSK ? 0.42 : 0.55);
   scene.add(hemi);
 
   /* One sun, three real cascades.
@@ -144,7 +150,7 @@ function createDayLights(scene) {
      of stepping between two boxes. Cascade 0 (the street you are in) and 1
      take every caster; the far cascade takes SHADOW_FAR_LAYER only -- the
      building shells -- because at its texel size nothing smaller resolves. */
-  const sun = new THREE.DirectionalLight(0xffeac6, 3.4);
+  const sun = new THREE.DirectionalLight(DUSK ? 0xffa25a : 0xffeac6, DUSK ? 2.8 : 3.4);
   sun.position.copy(DAY_SUN);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -176,7 +182,7 @@ function createDayLights(scene) {
 export function createScene(day = false) {
   const scene = new THREE.Scene();
   // clear daylight sees a long way; a 4.2km city is worth showing off
-  scene.fog = day ? new THREE.FogExp2(FOG_DAY, 0.00017)   // aerial perspective: depth, not murk
+  scene.fog = day ? new THREE.FogExp2(DUSK ? 0xc9a48a : FOG_DAY, DUSK ? 0.00024 : 0.00017)   // aerial perspective: depth, not murk
                   : new THREE.FogExp2(FOG_COLOUR, 0.0034);
   return scene;
 }
