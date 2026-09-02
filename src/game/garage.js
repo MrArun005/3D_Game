@@ -23,6 +23,13 @@ const CATALOGUE = [
   { file: 'k-suv-luxury', name: 'LUXURY SUV',    price: 2600 },
   { file: 'q-sports2',    name: 'SUPERCAR',      price: 3800 },
   { file: 'q-cop',        name: 'CRUISER',       price: 4000 },
+  // owner-supplied Sketchfab bodies: real PBR, hero-only, heavier -- see public/models/vendor/sketchfab/NOTICE.md
+  { file: 's-camaro-jewel',  name: "'67 CAMARO SS",     price: 6500 },
+  { file: 's-camaro-350',    name: "'67 CAMARO 350",    price: 7500 },
+  { file: 's-corvette-c6r',  name: 'C6.R GT2',          price: 9000 },
+  { file: 's-camaro-patrol', name: 'CAMARO PATROL',     price: 9500 },
+  { file: 's-corvette-zr1',  name: 'CORVETTE ZR1',      price: 14000 },
+  { file: 's-monza',         name: 'MONZA',             price: 12000 },
 ];
 const REPAIR = 150;
 

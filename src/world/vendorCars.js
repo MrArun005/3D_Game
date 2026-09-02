@@ -29,6 +29,7 @@ import { toTex } from './textures.js';
  */
 const BASE = '/models/vendor/kenney/cars/';
 const QBASE = '/models/vendor/quaternius/cars/';
+const SBASE = '/models/vendor/sketchfab/';   // owner-supplied bodies, hero-only, see NOTICE.md there
 
 /**
  * Every body the game can wear, from two CC0 sources. Quaternius' Realistic
@@ -50,6 +51,16 @@ export const BODIES = {
   'k-suv-luxury': { src: 'k', file: 'suv-luxury' },
   'k-hatch':   { src: 'k', file: 'hatchback-sports' },
   'k-sedan':   { src: 'k', file: 'sedan' },
+  /* Sketchfab bodies the owner dropped in: full PBR, dozens of materials, so
+     they are worn as a whole textured group (no paint split, no instancing,
+     no dents) and only by the hero. `front` says which local axis the nose
+     is on; flip it if a car drives backwards. NC licences: see NOTICE.md. */
+  's-camaro-jewel':  { src: 's', file: 'camaro-jewel',  front: '+z' },
+  's-corvette-c6r':  { src: 's', file: 'corvette-c6r',  front: '+z' },
+  's-camaro-350':    { src: 's', file: 'camaro-350',    front: '+z' },
+  's-camaro-patrol': { src: 's', file: 'camaro-patrol', front: '+z' },
+  's-corvette-zr1':  { src: 's', file: 'corvette-zr1',  front: '+z' },
+  's-monza':         { src: 's', file: 'monza',         front: '+z' },
 };
 /** Traffic / parked style -> body id. */
 export const KENNEY_CARS = {
@@ -63,7 +74,7 @@ const SPEC_OF = { taxi: 'sedan', police: 'sedan' };
 
 const loader = new GLTFLoader();
 const gltfCache = new Map();          // file -> Promise<gltf>; the fleet, the hero skin and the garage share one fetch
-const fetchGltf = (file) => { let p = gltfCache.get(file); if (!p) { p = new Promise((res, rej) => loader.load(BASE + file + '.glb', res, undefined, rej)); gltfCache.set(file, p); } return p; };
+const fetchGltf = (file, base = BASE) => { const k = base + file; let p = gltfCache.get(k); if (!p) { p = new Promise((res, rej) => loader.load(base + file + '.glb', res, undefined, rej)); gltfCache.set(k, p); } return p; };
 const _m = new THREE.Matrix4(), _v = new THREE.Vector3();
 
 function samplePalette(image) {
@@ -235,6 +246,23 @@ function buildKitFromObj(group, spec, { wheels: keepWheels = true } = {}) {
 /** Any body id -> { paint, detail, detailMat, lodBody }, from either source. */
 export async function fetchKit(id, spec, assets, opts = {}) {
   const def = BODIES[id] ?? BODIES['q-sports'];
+  if (def.src === 's') {
+    // whole textured model, nose to +X, bottom at 0, scaled by LENGTH so the proportions stay real
+    const gltf = await fetchGltf(def.file, SBASE);
+    const group = gltf.scene.clone(true);
+    group.updateMatrixWorld(true);
+    const bb = new THREE.Box3().setFromObject(group), size = bb.getSize(new THREE.Vector3()), c = bb.getCenter(new THREE.Vector3());
+    const zLong = size.z >= size.x;
+    const len = zLong ? size.z : size.x;
+    const wrap = new THREE.Group();
+    group.position.set(-c.x, -bb.min.y, -c.z);
+    wrap.add(group);
+    const turn = zLong ? (def.front === '-z' ? -Math.PI / 2 : Math.PI / 2) : (def.front === '-x' ? Math.PI : 0);
+    wrap.rotation.y = turn;
+    const k = spec.L / len; wrap.scale.set(k, k, k);
+    wrap.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+    return { group: wrap, paint: null, detail: null, detailMat: null, lodBody: null };
+  }
   if (def.src === 'q') {
     const group = await fetchObj(def.file);
     const kit = buildKitFromObj(group, spec, opts);
@@ -278,6 +306,17 @@ export async function loadHeroSkin(assets, hero, file = 'q-sports') {
   const L = bb.max.x - bb.min.x, W = bb.max.z - bb.min.z;
   const kit = await fetchKit(file, { L, wMax: W / 2 }, assets, { wheels: false }).catch((e) => { console.warn('hero skin', file, e.message); return null; });
   if (!kit) return false;
+  if (kit.group) {
+    // a whole textured body (Sketchfab): hide the loft skin, hang the group where the hull centre is
+    const shellG = hull.parent, trimG = assets.carMats.trim, paintG = hull.material, glassG = u.glass?.material;
+    shellG.traverse((o) => { if (o.isMesh && (o.material === paintG || o.material === glassG || o.material === trimG)) o.visible = false; });
+    const cxG = (bb.min.x + bb.max.x) / 2;
+    kit.group.position.set(shellG.position.x - cxG, bb.min.y, 0);
+    shellG.parent.add(kit.group);
+    u.skin = kit.group;
+    u.hull = hull;                                         // dents land on the hidden loft: invisible, harmless
+    return true;
+  }
   const shell = hull.parent;
   // hide the loft skin: body, glass, doors and trim; keep lamps, interior, driver, wheel
   const trim = assets.carMats.trim, paint = hull.material, glass = u.glass?.material;

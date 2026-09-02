@@ -283,6 +283,13 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   garage and the hero skin take ids. Paint = largest non-neutral material
   group; front = side the Front*Wheel objects sit on. Note: mergeGeometries
   needs identical attribute sets -- every part gets a colour attribute.
+- **Owner-supplied Sketchfab cars** (`public/models/vendor/sketchfab/`, six
+  Chevrolets by Ddiaz Design, simplified to 28k-152k tris and 1k JPEG
+  textures by gltf-transform + sharp): `s-*` bodies in `vendorCars.BODIES`,
+  worn as a whole textured group (hero/garage only, no paint split, no
+  instancing, dents invisible). `front` per body; flip if one drives
+  backwards. FIVE ARE CC-BY-NC-SA and all are branded -- dev/personal use
+  only, remove before any sale or release (NOTICE.md there).
 - **City-wide BatchedMesh is written but dormant** (`Catalogue.attach`,
   gated on `catalogue.multiDraw`). Without multi-draw-indirect three's WebGPU
   backend issues one draw per instance: measured 8,938 draws / 17.9 ms
