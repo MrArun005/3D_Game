@@ -116,6 +116,11 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   `toneMappingExposure` 1.15 (day 1.0), and headlights default to night-only.
 - The state of play, reviewed in full with ranked issues and next steps:
   `docs/REVIEW-2026-08-31.md`.
+- The active plan is "Light the City" (2026-09-02): six workstreams to reach
+  Shibuya-density signage, real light and crowd downtown. Phase 0 (budget
+  room + photo-mode acceptance cameras) is done; Phase 1 is the sign and
+  shopfront layer. Every phase commits with a frame from a named preset and
+  its `photo.line()` stats, or it does not commit.
 - ~1100 draw calls and ~3.6M triangles facing downtown with the full
   authored kit placed (budgets: 1400 draws, 4.0M triangles). Triangles came
   DOWN from 5.7M while the city gained ~14,000 props, because the profile
@@ -178,6 +183,40 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   GLBs (restore with `git checkout -- public/models`).
 - KTX2 is still not generated — `tools/ingest.mjs` skips it without the `toktx`
   binary, so the 97 texture PNGs ship uncompressed (~18 MB).
+
+### Fixed 2026-09-02 (verified, kept here so they are not re-reported)
+
+- **The far shadow cascade never worked, and cost 1.36M triangles a frame.**
+  The day rig was two directional lights; the wide one ran at intensity 0
+  ("shadows only"), and a shadow can only darken its own light's
+  contribution, so it shadowed nothing while re-drawing every crowd figure,
+  prop and parked car into a 460 m map. Replaced by `CSMShadowNode` on the
+  one sun (`renderer.js:GatedCSM`): splits 52/156/520 m, every caster in
+  cascade 0, `SHADOW_FAR_LAYER` (building shells only) in cascades 1-2.
+  Shells enable the layer bit in `districtWorld.js:tiled()` and cast from
+  the neighbouring ring. Spawn driver camera: 1137 -> 1017 draws,
+  4.66M -> 3.32M triangles, and towers now throw shadows across the street.
+- **Building shells never cast at spawn.** The shell emitter left
+  `castShadow` to the ring gate in `update()`, which had already run before
+  the chunk generator emitted them and only re-ran on a ring change. Set at
+  creation now.
+- **First shell to cast crashed the frame** ("Cannot read properties of
+  undefined (reading 'r')"). three's shadow pass compiles a material's
+  `colorNode` inside its override depth material to read the alpha; an
+  unpinned `materialReference('color', 'color')` in `city.js:makeTileable`
+  resolved against that material, which has no `.color`. Pass the material
+  as the third argument -- always, for any node that reads a material
+  property.
+- **Photo mode** (`game/photo.js`, P): free camera, `[ ]` presets, Enter
+  prints the stats line; `window.photo.goto(name)` + `.line()` for the
+  harness. `kingsway-corner` is the spawn driver camera every budget figure
+  is measured from. Stats keeps the last ten whole-chunk build costs.
+  Harness lesson: toggling `castShadow` or `shadowMap.enabled` at runtime
+  under WebGPU invalidates a pipeline and blacks out every later frame while
+  the counters keep working -- profile in one load, screenshot in another.
+- **Day sky** (`textures.js:texDaySky`): sun disc + glare drawn from
+  `DAY_SUN`, stretched 1/cos(elevation) for the equirect dome; eleven sparse
+  cumulus clusters; hemisphere 0.55, sun 3.4 warm, fog 0.00017; dome 64x32.
 
 ### Fixed 2026-09-01 (verified, kept here so they are not re-reported)
 
