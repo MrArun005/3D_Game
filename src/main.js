@@ -164,7 +164,8 @@ if (new URLSearchParams(location.search).has('debug')) {
 let beach = null, water = null, crowd = null, heli = null, districtRef = null, drowning = 0;
 let lightPool = null;
 let jobs = null, garage = null;
-let people = null;                          // near-field Kenney characters over the crowd (game/people.js)                            // the GTA loop: jobs, cash, heat (game/jobs.js)                       // night: real lights on the nearest lamp heads (game/lighting.js)
+let people = null;
+let hornCooldown = 0;                          // near-field Kenney characters over the crowd (game/people.js)                            // the GTA loop: jobs, cash, heat (game/jobs.js)                       // night: real lights on the nearest lamp heads (game/lighting.js)
 const person = buildHuman();
 scene.add(person.root);
 let muted = false;
@@ -931,6 +932,20 @@ function frame() {
   if (firing) pullTrigger();
   if (crowd) crowd.update(car, dt, (speed) => traffic.reportCrime('person', speed));
   people?.update(dt, crowd, car, (x, z) => districtRef?.elevationAt?.(x, z) ?? 0);
+  /* Traffic reacts: a car you cut within 6 m of at speed blows its horn,
+     panned to where it is, no more than once a second and a half. */
+  hornCooldown -= dt;
+  if (hornCooldown <= 0 && Math.abs(car.fwdSpeed) > 7) {
+    for (const t of traffic.cars) {
+      if (!t.live || !t.mesh.visible) continue;
+      const dx = t.x - car.x, dz = t.z - car.z, d = Math.hypot(dx, dz);
+      if (d > 6.5) continue;
+      const side = -Math.sin(car.yaw) * dx - Math.cos(car.yaw) * dz;   // left/right of the hero's heading
+      audio.horn(Math.max(-1, Math.min(1, side / 6)), 0);
+      hornCooldown = 1.5;
+      break;
+    }
+  }
   if (beach) beach.update(dt);
   if (water) water.update(dt);
 

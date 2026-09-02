@@ -216,6 +216,24 @@ export function createAudio() {
       boot();
       if (ctx && ctx.state === 'suspended') ctx.resume();
     },
+    /* A car horn: two detuned tones through a fast envelope. `pan` is -1..1
+       across the stereo field, `far` 0..1 fades it with distance. Traffic
+       sounds it at near misses (main.js); the city stops being silent. */
+    horn(pan = 0, far = 0) {
+      if (!ready || !ctx || ctx.state !== 'running') return;
+      const now = ctx.currentTime, g = ctx.createGain(), p = ctx.createStereoPanner();
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.28 * (1 - far * 0.7), now + 0.03);
+      g.gain.setValueAtTime(0.28 * (1 - far * 0.7), now + 0.28);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.42);
+      p.pan.value = Math.max(-1, Math.min(1, pan));
+      for (const f of [415, 522]) {
+        const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = f;
+        const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400;
+        o.connect(lp); lp.connect(g); o.start(now); o.stop(now + 0.45);
+      }
+      g.connect(p); p.connect(master);
+    },
     update(car) {
       if (!ready || !ctx || ctx.state !== 'running') return;
       const now = ctx.currentTime;
