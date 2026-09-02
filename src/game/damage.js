@@ -210,6 +210,16 @@ export class Damage {
     if (crumple(p.hull, local, radius, depth, hash3)) this.dentCount++;
   }
 
+  /**
+   * Change the car's paint. The soot pass rewrites paint.color from basePaint
+   * every frame, so writing paint.color directly is undone before it is ever
+   * drawn -- which is why a stolen car kept your old colour. Set the base.
+   */
+  setPaint(hex) {
+    if (this.basePaint === undefined) this.basePaint = new THREE.Color();
+    this.basePaint.setHex(hex);
+  }
+
   repair() {
     this.value = 0;
     this.dead = false;

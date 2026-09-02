@@ -314,6 +314,11 @@ export class Debris {
     this.dot ??= dotTexture();
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+    /* The node PointsMaterial asks the geometry for `uv` when it has a map,
+       even though point sprites take their texture coordinate from the sprite
+       itself -- without the attribute every burst logs "Vertex attribute uv
+       not found". Zero-filled is correct here: it is never read. */
+    geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
     const mat = new THREE.PointsMaterial({
       map: this.dot, color: colour, size, transparent: true, depthWrite: false,
       blending, sizeAttenuation: true,
@@ -346,6 +351,29 @@ export class Debris {
     vel[i * 3] = (Math.random() - 0.5) * 1.6;
     vel[i * 3 + 1] = 8.5 + Math.random() * 3.5;
     vel[i * 3 + 2] = (Math.random() - 0.5) * 1.6;
+  }
+
+  /**
+   * A car window going in. Public, because the on-foot code owns the punch
+   * and only knows where the glass was. Rides the sparks integrator -- same
+   * gravity, same lifetime -- with a colder colour and a flatter, wider burst
+   * so it reads as shards falling out of a frame rather than a lamp arcing.
+   */
+  shatter(x, y, z) {
+    if (this.effects.filter((e) => e.kind === 'sparks').length >= 3) return;
+    const n = 64;
+    const pts = this.#particles(n, 0xcfe4f2, 0.16, THREE.NormalBlending);
+    const vel = new Float32Array(n * 3);
+    const pos = pts.geometry.attributes.position.array;
+    for (let i = 0; i < n; i++) {
+      pos[i * 3] = x + (Math.random() - 0.5) * 0.6;
+      pos[i * 3 + 1] = y + (Math.random() - 0.5) * 0.35;
+      pos[i * 3 + 2] = z + (Math.random() - 0.5) * 0.6;
+      vel[i * 3] = (Math.random() - 0.5) * 3.2;
+      vel[i * 3 + 1] = Math.random() * 1.6;
+      vel[i * 3 + 2] = (Math.random() - 0.5) * 3.2;
+    }
+    this.effects.push({ kind: 'sparks', pts, vel, entry: { x, y, z, scale: 1 }, t: 0, life: 0.9 });
   }
 
   #sparks(entry) {

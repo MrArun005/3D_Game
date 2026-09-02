@@ -382,17 +382,84 @@ function carjackSequence(best) {
   const at = (ms, fn) => setTimeout(fn, ms);
   controlsLockedUntil = performance.now() + 2600;
   if (d) { d.target = d.open; clearTimeout(d.timer); }
+  /* One driver in three does not run: he squares up. Same eject, speed zero,
+     facing you -- then a hit lands on you at 1.0s and he legs it at 1.6s.
+     Police always fight. */
+  const fights = best.hunt || Math.random() < 0.3;
   at(500, () => {
-    if (crowd) crowd.eject(best.x, best.z, best.yaw);
+    if (crowd) {
+      crowd.eject(best.x, best.z, best.yaw);
+      if (fights) {
+        const p = crowd.people.find((q) => q.live && q.speed === 2.6 && Math.hypot(q.x - best.x, q.z - best.z) < 3);
+        if (p) { p.speed = 0; p.yaw = Math.atan2(-(onFoot.z - p.z), onFoot.x - p.x); p.fighting = true; }
+      }
+    }
     resetCar(car);
     car.x = best.x; car.z = best.z; car.yaw = best.yaw; car.y = 0.62;
-    hero.userData.paint.color.copy(best.mesh.material.color);
+    damageModel.setPaint(best.mesh.material.color.getHex());
     best.live = false; best.mesh.visible = false;
     hero.visible = true;
-    traffic.reportCrime(best.hunt ? 'police' : 'traffic', 6);
+    /* The wanted system only cares if somebody SAW it. A carjack in front of a
+       pavement full of people is a crime; the same carjack on an empty street
+       at the edge of the docks is just a car changing hands. Police are their
+       own witnesses. */
+    if (best.hunt || witnesses(best.x, best.z) > 0) traffic.reportCrime(best.hunt ? 'police' : 'traffic', 6);
   });
+  if (fights) {
+    at(1000, () => {
+      health = Math.max(0, health - 0.12);
+      hud.setHealth(health);
+      chase.shake = 0.7;
+      hud.flash(best.hunt ? 'THE OFFICER FOUGHT BACK' : 'THE DRIVER FOUGHT BACK');
+      onFoot.character?.act?.('punch', 0.7);      // you answer in kind
+      if (health <= 0) onDeath();
+    });
+    at(1600, () => {
+      if (!crowd) return;
+      const p = crowd.people.find((q) => q.fighting);
+      if (p) { p.fighting = false; p.speed = 2.6; p.yaw += Math.PI; }
+    });
+  }
   at(1200, () => { onFoot.enter(); });
   at(2000, () => { if (d) d.target = 0; });
+}
+
+/**
+ * Breaking into a parked car.
+ *
+ *   0.0s  punch -- the clip the rig has carried since day one and never played
+ *   0.45s the window goes: shards, and the parked instance is taken
+ *   1.0s  door swings, you are in
+ *   1.8s  door shuts, pedals live at 2.4s
+ *
+ * Witnesses count here too: glass in front of a crowd is a crime, in an empty
+ * street it is a Tuesday.
+ */
+function breakInSequence(bay) {
+  const at = (ms, fn) => setTimeout(fn, ms);
+  controlsLockedUntil = performance.now() + 2400;
+  onFoot.character?.act?.('punch', 0.9);
+  at(450, () => {
+    const colour = world.takeParked(bay);
+    debris.shatter(bay.x, 1.05, bay.z);
+    resetCar(car);
+    car.x = bay.x; car.z = bay.z; car.yaw = bay.yaw; car.y = 0.62;
+    if (colour !== undefined) damageModel.setPaint(colour);
+    hero.visible = true;
+    if (witnesses(bay.x, bay.z) > 0) traffic.reportCrime('traffic', 3);
+  });
+  at(1000, () => { driverDoor(0.8); onFoot.enter(); });
+}
+
+/** How many people can see this spot. The wanted system only cares if someone did. */
+function witnesses(x, z, radius = 26) {
+  if (!crowd) return 0;
+  let n = 0;
+  for (const p of crowd.people) {
+    if (!p.live || p.down) continue;
+    if (Math.hypot(p.x - x, p.z - z) < radius) n++;
+  }
+  return n;
 }
 
 /** Swing the driver's door: open, then close after `hold` seconds. */
@@ -438,8 +505,20 @@ function useVehicle() {
         if (d < bestD) { best = v; bestD = d; }
       }
     }
-    if (!best) return;
     if (performance.now() < controlsLockedUntil) return;   // one beat at a time
+    /* No occupied car in reach: a PARKED one will do, but it is locked. You
+       break the window to get in -- the Punch clip finally earns its place --
+       and the glass goes, and then the car is yours the same way. */
+    if (!best && world.nearbyParked) {
+      let bay = null, bd = reach;
+      for (const s of world.nearbyParked(onFoot.x, onFoot.z)) {
+        if (s.tag !== 'parked' || s.index === undefined) continue;
+        const d = Math.hypot(s.x - onFoot.x, s.z - onFoot.z);
+        if (d < bd) { bd = d; bay = s; }
+      }
+      if (bay) { breakInSequence(bay); return; }
+    }
+    if (!best) return;
     if (best !== 'own') { carjackSequence(best); return; }
     // your own car: door, a beat, then you are in
     driverDoor(1.1);
@@ -960,7 +1039,7 @@ frame();
 Object.assign(window, {
   THREE, scene, renderer, camera, car, city, traffic, chase, start,
   startFilm, stopFilm, Recorder, grade, audio, weather, signalState, onFoot,
-  weapon, pullTrigger, skids, damageModel, useVehicle,
+  weapon, pullTrigger, skids, damageModel, useVehicle, debris,
 });
 // defineProperty, not Object.assign: assign copies a getter's VALUE once, so
 // window.film would be frozen at null for the life of the page

@@ -1081,6 +1081,9 @@ export class DistrictWorld {
             x: px, z: pz,
             yaw: Math.atan2(uz, ux),
             offsets: [-1.45, 0, 1.45], radius: 0.98, reach: 2.9, tag: 'parked',
+            // enough to find and hide this exact instance when it gets stolen
+            body: bk, index: parked[bk].length - 1, chunk: k,
+            colour: parkedCol[bk][parkedCol[bk].length - 1],
           });
         }
       }
@@ -1225,7 +1228,7 @@ export class DistrictWorld {
     /* Two versions of the kerbside fleet, and the ring decides which you see.
        Both are built once with the chunk; only the instance matrices cost
        anything to keep, and the geometry is shared. */
-    const nearParked = [], farParked = [];
+    const nearParked = [], farParked = [], byBody = {};
     for (const bk of Object.keys(parked)) {
       const kit = A.geo.stunt[bk];
       if (!kit) continue;
@@ -1235,8 +1238,9 @@ export class DistrictWorld {
       inst(kit.lodBody ?? kit.body, A.mat.parked, parked[bk], false, parkedCol[bk]);
       const f = group.children[group.children.length - 1];
       if (f && f !== n) { f.name = `parkedFar:${bk}`; f.visible = false; farParked.push(f); }
+      byBody[bk] = { near: n, far: f !== n ? f : null };
     }
-    if (nearParked.length) this.parkedLod.set(k, { near: nearParked, far: farParked });
+    if (nearParked.length) this.parkedLod.set(k, { near: nearParked, far: farParked, byBody });
     if (pools.length) {
       const pm = new THREE.InstancedMesh(A.geo.plane, A.mat.pool, pools.length);
       pm.frustumCulled = false; pm.renderOrder = 2;
@@ -1288,6 +1292,28 @@ export class DistrictWorld {
     this.scene.add(group);   // the last step: the chunk appears whole
   }
 
+  /**
+   * A parked car gets stolen: hide its instance on both LOD meshes and drop
+   * its collision body, so the space it stood in is empty and nothing else
+   * changes. The chunk still owns the buffers; the instance is just scaled to
+   * nothing, which is how #cullFar hides the far stand-ins too. Returns the
+   * paint so the hero can take it.
+   */
+  takeParked(solid) {
+    const lod = this.parkedLod.get(solid.chunk);
+    const meshes = lod?.byBody?.[solid.body];
+    if (meshes) {
+      for (const m of [meshes.near, meshes.far]) {
+        if (!m) continue;
+        m.setMatrixAt(solid.index, _zero);
+        m.instanceMatrix.needsUpdate = true;
+      }
+    }
+    const list = this.parkedByChunk.get(solid.chunk);
+    if (list) { const i = list.indexOf(solid); if (i >= 0) list.splice(i, 1); }
+    return solid.colour;
+  }
+
   /** Solid building footprints in the 3x3 chunks around a point. */
   nearbyBuildings(x, z) {
     const ix = Math.floor(x / CHUNK), iz = Math.floor(z / CHUNK);
@@ -1318,6 +1344,7 @@ export class DistrictWorld {
 }
 
 const _colour = new THREE.Color();
+const _zero = new THREE.Matrix4().makeScale(0, 0, 0);   // hides an instance in place
 const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
 /** a ground-plane quad, laid flat and scaled — light pools, decals */
 function flat(x, y, z, size) {

@@ -200,12 +200,27 @@ export class Character {
     this.current = next;
   }
 
+  /**
+   * A one-shot action -- punch, hit -- that holds for `seconds` before the
+   * locomotion states take the body back. Without the hold, update() would
+   * re-select idle on the very next frame and the punch would never be seen:
+   * which is why the Punch clip has been loaded and never played.
+   */
+  act(name, seconds = 0.8) {
+    if (!this.actions[name]) return false;
+    this.busyUntil = performance.now() + seconds * 1000;
+    this.play(name, 0.08);
+    return true;
+  }
+
   /** `speed` in m/s decides the clip; the model faces +X like everything else. */
   update(dt, x, y, z, yaw, speed) {
     if (!this.ready) return;
     this.root.position.set(x, y, z);
     this.root.rotation.y = -yaw + Math.PI / 2;
-    this.play(speed > 4.2 ? 'run' : speed > 0.35 ? 'walk' : 'idle');
+    if (!(this.busyUntil > performance.now())) {
+      this.play(speed > 4.2 ? 'run' : speed > 0.35 ? 'walk' : 'idle');
+    }
     // the clips are authored at their own pace; nudge playback so the feet
     // roughly keep up with how fast we are actually moving
     if (this.current) {
