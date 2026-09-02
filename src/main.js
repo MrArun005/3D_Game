@@ -1027,10 +1027,10 @@ function frameBody() {
     bootMsg.textContent = 'warming the shaders…';
     const hidden = [];
     scene.traverse((o) => { if ((o.isPoints || o.isMesh) && !o.visible && !o.isInstancedMesh && !o.userData?.shell) { hidden.push(o); o.visible = true; } });
-    renderer.compileAsync(scene, camera).catch((e) => console.warn('warm-up:', e.message)).then(() => {
-      for (const o of hidden) o.visible = false;
-      if (boot) { boot.remove(); boot = null; }
-    });
+    // never let the warm-up hold the game hostage: 3 s, then in you go regardless
+    const drop = () => { for (const o of hidden) o.visible = false; if (boot) { boot.remove(); boot = null; } };
+    Promise.race([renderer.compileAsync(scene, camera), new Promise((r) => setTimeout(r, 3000))])
+      .catch((e) => console.warn('warm-up:', e.message)).then(drop);
   }
   stats.sample(renderer);
   /* drawCalls, not calls: `render.calls` counts render-pass INVOCATIONS since

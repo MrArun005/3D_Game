@@ -167,17 +167,24 @@ export class Traffic {
     const mat = this.assets.mat.parked.clone();
     mat.color.setHex(PAINT_COLOURS[Math.floor(rand() * PAINT_COLOURS.length)]);
     const kit = this.assets.geo.stunt[style];
-    const mesh = new THREE.Mesh(kit.body, mat);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    // glazing, and somebody sitting behind it
-    // a vendor kit's `glass` is its whole detail part (glass, tyres, trim) in the kit palette
-    mesh.add(new THREE.Mesh(kit.glass, kit.detailMat ?? this.assets.mat.carGlass));
-    const who = new THREE.Mesh(kit.occupant, this.assets.mat.parked.clone());
-    who.material.color.setHex(OCCUPANT[Math.floor(rand() * OCCUPANT.length)]);
-    who.material.metalness = 0.0;
-    who.material.roughness = 0.85;
-    mesh.add(who);
+    let mesh;
+    if (kit.group) {
+      // a whole textured body (the owner's Sketchfab cars): one clone, its own materials, no paint tint
+      mesh = kit.group.clone(true);
+      mesh.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      mesh.material = mat;                          // keeps the .material.color callers happy
+    } else {
+      mesh = new THREE.Mesh(kit.body, mat);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      // a vendor kit's `glass` is its whole detail part (glass, tyres, trim) in the kit palette
+      mesh.add(new THREE.Mesh(kit.glass, kit.detailMat ?? this.assets.mat.carGlass));
+      const who = new THREE.Mesh(kit.occupant, this.assets.mat.parked.clone());
+      who.material.color.setHex(OCCUPANT[Math.floor(rand() * OCCUPANT.length)]);
+      who.material.metalness = 0.0;
+      who.material.roughness = 0.85;
+      mesh.add(who);
+    }
 
     mesh.visible = false;
 
