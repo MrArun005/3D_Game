@@ -63,6 +63,9 @@ export class Garage {
     this.hud.flash(`${c.name} FITTED`);
   }
 
+  /** Drive what you stole: fit a body without buying it. */
+  async wear(file) { if (file && file !== this.fitted) await this.#fit(file); }
+
   async #fit(file) {
     const u = this.hero.userData;
     if (u.skin) { u.skin.parent?.remove(u.skin); u.skin = null; }

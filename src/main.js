@@ -6,7 +6,7 @@ import { createSky } from './core/sky.js';
 import { createGrade } from './core/grade.js';
 import { setAnisotropy } from './world/textures.js';
 import { createAssets } from './world/assets.js';
-import { loadVendorCars, loadHeroSkin } from './world/vendorCars.js';
+import { loadVendorCars, loadHeroSkin, KENNEY_CARS } from './world/vendorCars.js';
 import { LightPool } from './game/lighting.js';
 import { Jobs, onPavementAtSpeed } from './game/jobs.js';
 import { Garage } from './game/garage.js';
@@ -426,6 +426,9 @@ function carjackSequence(best) {
     car.x = best.x; car.z = best.z; car.yaw = best.yaw; car.y = 0.62;
     damageModel.setPaint(best.mesh.material.color.getHex());
     best.live = false; best.mesh.visible = false;
+    // you drive what you took: the victim's body goes on over the hull
+    const style = Object.keys(assets.geo.stunt).find((k) => assets.geo.stunt[k].body === best.mesh.geometry);
+    if (style && KENNEY_CARS[style]) garage?.wear(KENNEY_CARS[style]);
     hero.visible = true;
     /* The wanted system only cares if somebody SAW it. A carjack in front of a
        pavement full of people is a crime; the same carjack on an empty street
@@ -473,6 +476,7 @@ function breakInSequence(bay) {
     resetCar(car);
     car.x = bay.x; car.z = bay.z; car.yaw = bay.yaw; car.y = 0.62;
     if (colour !== undefined) damageModel.setPaint(colour);
+    if (bay.body && KENNEY_CARS[bay.body]) garage?.wear(KENNEY_CARS[bay.body]);   // the parked car is now your car
     hero.visible = true;
     if (witnesses(bay.x, bay.z) > 0) traffic.reportCrime('traffic', 3);
   });
