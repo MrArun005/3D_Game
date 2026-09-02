@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { texAsphalt, texWalk, texPool, toTex, cv, normalFromCanvas } from './textures.js';
 import { buildFacadeMaterials, buildBaseMaterials, BASE_H } from './facades.js';
 import { makeTileable } from './city.js';
+import { texSignAtlas, buildSignMaterial, signGeometry } from './signs.js';
 import {
   buildStreetLamp, buildLampHead, buildTrafficPost, buildTree,
   buildCanopy, buildBollard, buildBin, buildShelter,
@@ -138,6 +139,9 @@ export function createAssets() {
   geo.lampCone = new THREE.ConeGeometry(3.1, 8.4, 12, 1, true);
   // origin-centred glowing cap for the catalogue lamps (dressing.js places it)
   geo.lampCap = new THREE.BoxGeometry(0.34, 0.12, 0.62);
+  // Phase 1 shop signs: one atlas, one node material, one quad (world/signs.js)
+  geo.sign = signGeometry();
+  mat.sign = buildSignMaterial(texSignAtlas());
   geo.species = Object.fromEntries(TREE_SPECIES.map((k) => [k, buildSpecies(k)]));
 
   return {

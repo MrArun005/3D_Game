@@ -19,6 +19,8 @@ const hash = (x, z) => {
   return n - Math.floor(n);
 };
 
+import { tileUv, SIGN_TILES } from './signs.js';
+
 const _e = new THREE.Euler(), _q = new THREE.Quaternion();
 const _v = new THREE.Vector3(), _s = new THREE.Vector3();
 
@@ -33,6 +35,12 @@ export function place(x, y, z, yaw, scale = 1) {
   return new THREE.Matrix4().compose(
     _v.set(x, y, z), _q.setFromEuler(_e), _s.set(scale, scale, scale),
   );
+}
+
+/** Same, with a width and height: the sign quad is unit-sized and stretched here. */
+function placeBoard(x, y, z, yaw, w, h) {
+  _e.set(0, yaw, 0);
+  return new THREE.Matrix4().compose(_v.set(x, y, z), _q.setFromEuler(_e), _s.set(w, h, 1));
 }
 
 /* ------------------------------------------------------------------ *
@@ -486,7 +494,7 @@ function styleFor(box, r) {
  * irregular, so any rule based on the block's own axes picks the back wall
  * about as often as the front.
  */
-export function dressFacades(batch, boxes, district, roadNear) {
+export function dressFacades(batch, boxes, district, roadNear, signs = null) {
   for (const box of boxes) {
     const { x, z, angle, hw, hd, height } = box;
     if (height < 5 || hw < 2.4 || hd < 2.4) continue;
@@ -548,6 +556,26 @@ export function dressFacades(batch, boxes, district, roadNear) {
         batch.add('props/sign_wall_box', place(mx, base + 3.1, mz, yaw));
       }
 
+      /* Phase 1: the shop's own name.
+         A fascia board over every ground module (industrial stock: half of
+         them), 0.14m proud of the wall so it clears the module face, cell
+         hashed from the module position so the same shop keeps its sign. A
+         projecting sign on every second module and an A-frame on the
+         pavement outside the cafes -- the kit already has both, they were
+         just never placed. This is the layer Shibuya sells on. */
+      if (signs && (style !== STYLES.industrial || r < 0.5)) {
+        const [u, v] = tileUv(Math.floor(hash(mx * 0.37, mz * 1.3) * SIGN_TILES));
+        signs.push({
+          m: placeBoard(mx + best.nx * 0.14, base + 3.55, mz + best.nz * 0.14, yaw, 3.3, 0.85), u, v,
+        });
+        if (i % 2 === 1 && r < 0.7) {
+          batch.add('props/sign_projecting', place(mx + ux * 1.55, base + 3.0, mz + uz * 1.55, yaw));
+        }
+        if (g.includes('cafe') && r < 0.6) {
+          batch.add('props/a_frame_sign', place(mx + best.nx * 1.4 + ux * 0.9, base, mz + best.nz * 1.4 + uz * 0.9, yaw));
+        }
+      }
+
       /* Toppers only where the roofline is in shot. Above about 22m you are
          looking at the underside of the building from a car and the cornice
          is off-screen. */
@@ -567,6 +595,28 @@ export function dressFacades(batch, boxes, district, roadNear) {
     }
     if (style.escape && seed < 0.4 && height > 9) {
       batch.add(style.escape, place(px, base + GROUND_H, pz, yaw));
+    }
+
+    /* Side walls: air-con units and junction boxes, the clutter a real flank
+       carries. Every 6m along each face that is not the frontage, a little
+       under half of the slots, 3-7m up. Kit assets, lod1, one draw each per
+       chunk through the same batch. */
+    if (signs) {
+      for (const f of faces) {
+        if (f === best || (f.lx === -best.lx && f.lz === -best.lz)) continue;   // frontage and its back
+        const nx = f.lx * ca - f.lz * sa, nz = f.lx * sa + f.lz * ca;
+        const sx = -nz, sz = nx;
+        const fyaw = Math.atan2(nx, nz);
+        const fx = x + nx * (f.out + 0.05), fz = z + nz * (f.out + 0.05);
+        for (let o = -f.half + 3; o < f.half - 2; o += 6) {
+          const h = hash(fx + o, fz - o);
+          if (h > 0.45) continue;
+          const asset = h < 0.32 ? 'props/hvac_unit' : 'props/junction_box';
+          const hy = asset === 'props/hvac_unit' ? 3 + h * 12 : 1.4 + h * 4;
+          if (hy > height - 2) continue;
+          batch.add(asset, place(fx + sx * o, base + hy, fz + sz * o, fyaw));
+        }
+      }
     }
   }
 }

@@ -116,6 +116,7 @@ function daylightAssets(A) {
   for (const m of A.base.materials) m.emissiveIntensity = 0.05;
   A.mat.pool.opacity = 0;                 // sodium pools on sunlit tarmac: no
   A.mat.lampGlow.emissiveIntensity = 0.15;
+  A.mat.sign.emissiveIntensity = 0.06;    // a shop sign at noon is a painted board, not a light
   A.mat.road.envMapIntensity = 0.35;
   A.mat.parked.emissiveIntensity = 0;
   A.mat.parked.roughness = 0.42;

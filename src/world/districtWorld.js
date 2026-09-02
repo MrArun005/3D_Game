@@ -1134,8 +1134,25 @@ export class DistrictWorld {
       group.add(faces);
       this.facadeGroups.set(k, faces);
       const fbatch = new InstanceBatch(this.catalogue);
-      dressFacades(fbatch, boxes, this.district, roadDepth);
+      const signs = [];
+      dressFacades(fbatch, boxes, this.district, roadDepth, signs);
       yield;
+      /* Phase 1: the shop signs, one instanced draw per chunk. Per-instance
+         atlas cell in aTile; the quad's width/height ride the matrix. They
+         live in the facade group so they share its tighter visibility ring.
+         No shadow: a 0.85m board's shadow is a smear on the wall behind it. */
+      if (signs.length) {
+        const sg = A.geo.sign.clone();
+        sg.userData.owned = true;
+        const tiles = new Float32Array(signs.length * 2);
+        const sm = new THREE.InstancedMesh(sg, A.mat.sign, signs.length);
+        signs.forEach((s, i) => { sm.setMatrixAt(i, s.m); tiles[i * 2] = s.u; tiles[i * 2 + 1] = s.v; });
+        sg.setAttribute('aTile', new THREE.InstancedBufferAttribute(tiles, 2));
+        sm.instanceMatrix.needsUpdate = true;
+        sm.computeBoundingSphere();
+        sm.receiveShadow = true;
+        faces.add(sm);
+      }
       fbatch.emit(faces, { shadow: false, lod: 1 })
         .catch((e) => console.warn('facades failed:', e.message));
       // fire and forget: the chunk is usable now, the props land a frame later
