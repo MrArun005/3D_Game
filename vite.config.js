@@ -11,6 +11,29 @@ export default defineConfig({
      The regex matters: a plain string alias would also rewrite
      'three/examples/...' and 'three/tsl'. */
   resolve: { alias: [{ find: /^three$/, replacement: 'three/webgpu' }] },
-  server: { port: 5173, open: false },
+  /* Pre-bundle every three entry the app touches. Vite's dep optimizer
+     otherwise DISCOVERS them while the page loads -- each examples/jsm file is
+     its own entry under the alias -- re-bundles, and reloads the page; with a
+     dozen such entries added in one day that became a reload loop at the boot
+     screen (2026-09-03). Listing them here means one bundle at server start
+     and no mid-load reloads. Add any new 'three/...' import path to this list. */
+  optimizeDeps: {
+    include: [
+      'three/webgpu', 'three/tsl',
+      'three/examples/jsm/loaders/GLTFLoader.js',
+      'three/examples/jsm/loaders/OBJLoader.js',
+      'three/examples/jsm/loaders/MTLLoader.js',
+      'three/examples/jsm/utils/BufferGeometryUtils.js',
+      'three/examples/jsm/utils/SkeletonUtils.js',
+      'three/examples/jsm/libs/meshopt_decoder.module.js',
+      'three/examples/jsm/csm/CSMShadowNode.js',
+      'three/examples/jsm/tsl/display/BloomNode.js',
+      'three/examples/jsm/tsl/display/GTAONode.js',
+      'three/examples/jsm/tsl/display/DenoiseNode.js',
+      'three/examples/jsm/tsl/display/SMAANode.js',
+    ],
+    holdUntilCrawlEnd: true,
+  },
+  server: { port: 5173, open: false, warmup: { clientFiles: ['./src/main.js'] } },
   build: { target: 'es2022', outDir: 'dist', sourcemap: true },
 });
