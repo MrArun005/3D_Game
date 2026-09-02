@@ -82,6 +82,8 @@ export class Crowd {
       p.speed = this.rand() < 0.12 ? 0 : 1.0 + this.rand() * 0.5;   // some just stand: phones, shop windows
       p.phase = this.rand() * 6.28;
       p.wait = 0; p.jitter = this.rand() * CYCLE;
+      // the far pavement: mirror this spot across the road's centreline (Phase 4b crossing target)
+      p.ox = 2 * uz * off; p.oz = -2 * ux * off; p.cross = null; p.crossed = false;
       const ja = this.junctions.get(e.a), jb = this.junctions.get(e.b);
       const near = [ja, jb].filter(Boolean).sort((m, n) => Math.hypot(m.x - x, m.y - z) - Math.hypot(n.x - x, n.y - z))[0];
       p.j = near && Math.hypot(near.x - x, near.y - z) < 60 ? near : null;
@@ -129,9 +131,25 @@ export class Crowd {
            the crowd holds on the kerb during the red half of the signal cycle
            and moves off together on the green half. */
         let speed = p.speed;
-        if (p.j && Math.hypot(p.j.x - p.x, p.j.y - p.z) < 7) {
+        const atKerb = p.j && Math.hypot(p.j.x - p.x, p.j.y - p.z) < 7;
+        if (atKerb && !p.cross) {
           const ph = ((this.clock + p.jitter * 0.1) % CYCLE) / CYCLE;
           if (ph < 0.45) speed = 0;
+          // green: the ones who waited cross together to the far pavement
+          else if (!p.crossed && p.ox !== undefined && this.rand() < dt * 1.5) {
+            p.cross = { tx: p.x + p.ox, tz: p.z + p.oz };
+          }
+        }
+        if (p.cross) {
+          const dx = p.cross.tx - p.x, dz = p.cross.tz - p.z, dist = Math.hypot(dx, dz);
+          const step = Math.min(dist, 1.4 * dt);
+          p.x += dx / dist * step; p.z += dz / dist * step;
+          p.yaw = Math.atan2(-dz, dx);
+          if (dist < 0.3) { p.cross = null; p.crossed = true; p.hx = p.x; p.hz = p.z; p.yaw += Math.PI / 2 * (this.rand() < 0.5 ? 1 : -1); }
+          p.phase += 1.4 * dt * 2.6;
+          if (gap > DESPAWN) { p.live = false; continue; }
+          this.fleet.write(i, p.x, FOOT_DROP * p.height + (this.district?.elevationAt?.(p.x, p.z) ?? 0), p.z, p.yaw, p.phase, 1, p.height);
+          continue;
         }
         const nx = p.x + Math.cos(p.yaw) * speed * dt;
         const nz = p.z - Math.sin(p.yaw) * speed * dt;
