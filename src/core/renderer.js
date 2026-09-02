@@ -58,7 +58,36 @@ export function createRenderer(canvas) {
      adding a warning to the console. Softer contact shadows are real work --
      the cascaded shadow map in docs/ROADMAP Tier 1.2 -- not a one-line enum. */
   renderer.shadowMap.type = THREE.PCFShadowMap;
+  patchNestedRenderInBundle(renderer);
   return renderer;
+}
+
+/**
+ * three r185: a nested render inside a bundle recording truncates the bundle.
+ *
+ * Bundles are rendered before the plain render lists, so the first lit object
+ * of the frame is usually inside a bundle being recorded. Its
+ * nodes.updateBefore() lazily renders the shadow maps -- a nested
+ * renderer.render(scene, shadowCamera) -- and _renderBundle() ends every
+ * (nested) bundle with `this._currentRenderBundle = null`, which the outer
+ * recording never gets back. Every object after it is drawn directly (so the
+ * frame looks right) but is not recorded: measured 2026-09-02, the spawn
+ * chunk's render list had 81 objects and its recording 1, while the three
+ * shadow-cascade recordings (no nesting) held 44/12/12. On replay the 80
+ * missing objects vanish -- the tower next to the spawn disappeared and the
+ * scene changed by 21% of pixels after a forced re-record.
+ * Saving and restoring the pointer around render() makes nested renders
+ * transparent to the recording. Private field, so guarded.
+ */
+function patchNestedRenderInBundle(renderer) {
+  if (!('_currentRenderBundle' in renderer) || renderer.__bundleSafe) return;
+  const render = renderer.render;
+  renderer.render = function (...args) {
+    const outer = this._currentRenderBundle;
+    this._currentRenderBundle = null;           // the nested pass records its own bundles, not ours
+    try { return render.apply(this, args); } finally { this._currentRenderBundle = outer; }
+  };
+  renderer.__bundleSafe = true;
 }
 
 /**
