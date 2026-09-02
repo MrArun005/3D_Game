@@ -298,7 +298,11 @@ export class DistrictWorld {
         this.building.gen = this.#buildSteps(w.cx, w.cz, this.building.group);
       }
       const b = this.building;
-      if (b.gen.next().done) {
+      const t1 = performance.now();
+      const done = b.gen.next().done;
+      b.ms = (b.ms || 0) + performance.now() - t1;   // whole-chunk cost, across frames
+      if (done) {
+        if (wasPrimed && this.onChunkDone) this.onChunkDone(b.ms);
         this.chunks.set(b.k, b.group);
         this.pending.delete(b.k);
         this.building = null;

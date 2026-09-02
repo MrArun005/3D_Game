@@ -28,6 +28,7 @@ export class Stats {
     this.samples = [];
     this.chunkMs = 0;
     this.worstChunkMs = 0;
+    this.chunkTotals = [];      // whole-chunk build cost, last ten, for photo.line()
     this.el = null;
     this.snapshot = { draws: 0, tris: 0 };
     addEventListener('keydown', (e) => {
@@ -49,6 +50,12 @@ export class Stats {
   }
 
   /** Called by the world when it builds a chunk, in milliseconds. */
+  /** Whole cost of one chunk, summed over its slices. */
+  reportChunkTotal(ms) {
+    this.chunkTotals.push(ms);
+    if (this.chunkTotals.length > 10) this.chunkTotals.shift();
+  }
+
   reportChunkBuild(ms) {
     this.chunkMs = ms;
     this.worstChunkMs = Math.max(this.worstChunkMs * 0.995, ms);

@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>&#128663;</text></svg>" />
   <title>Nightfall Drive</title>
+  <style>
+/* photo mode (P) hides the HUD so a shot is just the frame */
+body.photo #minimap, body.photo #cluster, body.photo #readout, body.photo #dials, body.photo #stats { display: none; }
+  </style>
 </head>
 <body>
   <!-- Boot overlay: static HTML + a compositor-thread spinner, so it paints
@@ -41,7 +45,7 @@
       <div class="keys">
         <kbd>W</kbd> throttle &nbsp; <kbd>S</kbd> brake / reverse &nbsp; <kbd>A</kbd><kbd>D</kbd> steer<br />
         <kbd>Space</kbd> handbrake &nbsp; <kbd>Shift</kbd> hold gear &nbsp;
-        <kbd>C</kbd> camera &nbsp; <kbd>H</kbd> lights &nbsp; <kbd>R</kbd> reset &nbsp; <kbd>M</kbd> mute<br />
+        <kbd>C</kbd> camera &nbsp; <kbd>H</kbd> lights &nbsp; <kbd>R</kbd> reset &nbsp; <kbd>M</kbd> mute &nbsp; <kbd>P</kbd> photo mode<br />
         <kbd>F</kbd> get out / steal a car / break into a parked one &nbsp; <kbd>E</kbd> or <kbd>LMB</kbd> fire &nbsp;
         <kbd>G</kbd> start a run &nbsp; <kbd>J</kbd> play with a friend<br />
         Mouse look after clicking &nbsp;·&nbsp; in a helicopter: <kbd>Space</kbd> up, <kbd>Shift</kbd> down<br />

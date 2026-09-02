@@ -34,6 +34,7 @@ import { Damage } from './game/damage.js';
 import { signalState } from './world/signals.js';
 import { Hud } from './ui/hud.js';
 import { Stats } from './ui/stats.js';
+import { Photo } from './game/photo.js';
 import { buildRoute, Autopilot, useGraphForRoutes } from './game/autopilot.js';
 import { Cinematic } from './game/cinematic.js';
 import { Recorder } from './game/recorder.js';
@@ -567,6 +568,7 @@ Promise.all([loadDistrict(), catalogueReady]).then(([district, catalogue]) => {
     console.info(`car materials dressed: ${n}`);
   }
   world.onChunkBuilt = (ms) => stats.reportChunkBuild(ms);
+  world.onChunkDone = (ms) => stats.reportChunkTotal(ms);
   water = buildWater(scene, district, DAY);
   buildSurrounds(scene, district.bounds, DAY);
   buildPlaces(scene, district, DAY);
@@ -655,6 +657,7 @@ const chase = new ChaseCamera(camera);
 const weather = DAY ? null : createWeather(scene);
 const hud = new Hud();
 const stats = new Stats();
+const photo = new Photo(camera, stats);
 
 const audio = createAudio();
 let started = false;
@@ -707,6 +710,7 @@ async function stopFilm({ download = true } = {}) {
 const input = createInput((action) => {
   if (action === 'camera') chase.cycle();
   if (action === 'lights') car.headlights = !car.headlights;
+  if (action === 'photo') photo.toggle();
   if (action === 'reset') respawnCar();
   if (action === 'avatar' && onFoot.character) {
     const i = onFoot.character.swap(onFoot.character.index + 1);
@@ -740,6 +744,7 @@ addEventListener('mouseup', () => { firing = false; });
 
 addEventListener('mousemove', (e) => {
   if (document.pointerLockElement !== canvas) return;
+  if (photo.on) return photo.look(e.movementX, e.movementY);
   if (onFoot.active) onFoot.look(e.movementX, e.movementY);
   else chase.look(e.movementX, e.movementY);
 });
@@ -794,7 +799,7 @@ function frame() {
   /* While a carjack beat is playing the pedals are dead: you are not in the
      seat yet, so the car cannot answer the throttle. Steering stays live so
      the wheel can be seen turning through the open door. */
-  const busy = performance.now() < controlsLockedUntil;
+  const busy = performance.now() < controlsLockedUntil || photo.on;   // WASD flies the camera in photo mode
   const fwdKey = started && !busy ? c.throttle : 0;
   const revKey = started && !busy ? c.brake : 0;
   // The gearbox needs the raw intent, not the pedal, to know when to leave R.
@@ -912,6 +917,8 @@ function frame() {
   if (film) {
     film.shots.update(car, camera, dt);
     if (film.shots.finished || film.pilot.done) stopFilm();
+  } else if (photo.on) {
+    photo.update(dt);          // the chase camera is frozen while photo mode owns the view
   } else {
     if (!onFoot.active && !flying) {
       // ease the free look back behind the car once you are driving again
@@ -1039,7 +1046,7 @@ frame();
 Object.assign(window, {
   THREE, scene, renderer, camera, car, city, traffic, chase, start,
   startFilm, stopFilm, Recorder, grade, audio, weather, signalState, onFoot,
-  weapon, pullTrigger, skids, damageModel, useVehicle, debris,
+  weapon, pullTrigger, skids, damageModel, useVehicle, debris, photo,
 });
 // defineProperty, not Object.assign: assign copies a getter's VALUE once, so
 // window.film would be frozen at null for the life of the page

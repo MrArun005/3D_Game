@@ -121,6 +121,7 @@ export function createInput(onAction) {
     if (e.code === 'KeyJ') onAction('room');   // create / join a multiplayer room
     if (e.code === 'KeyE') onAction('fire');   // fire; left mouse does the same
     if (e.code === 'KeyK') onAction('avatar'); // cycle which character you are
+    if (e.code === 'KeyP') onAction('photo');  // photo mode: free camera + the plan's acceptance presets
   });
   addEventListener('keyup', (e) => { keys[e.code] = false; });
 
