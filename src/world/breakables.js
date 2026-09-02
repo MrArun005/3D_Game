@@ -106,7 +106,7 @@ export class Debris {
         name: t.name, cls: spec.cls, effect: spec.effect,
         x: e[12], y: e[13], z: e[14],
         scale: Math.hypot(e[0], e[1], e[2]) || 1,
-        ranges: t.ranges, solids, solid: null, pool: null, broken: false,
+        ranges: t.ranges, instances: t.instances ?? [], solids, solid: null, pool: null, broken: false,
       };
       if (spec.cls === 'heavy') {
         // dressing.js pushed a collision solid for lamps and phone boxes;
@@ -212,6 +212,8 @@ export class Debris {
       pos.addUpdateRange(r.start * 3, r.count * 3);
       pos.needsUpdate = true;
     }
+    // city-wide batches: the prop is an instance, so it just stops being drawn
+    for (const b of entry.instances) { try { b.batch.setVisibleAt(b.id, false); } catch (e) { /* chunk gone */ } }
     // a felled lamp stops blocking the car, and its glow pool goes with it
     if (entry.solid) {
       const i = entry.solids.indexOf(entry.solid);

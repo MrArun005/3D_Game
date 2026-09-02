@@ -30,7 +30,7 @@ export class Stats {
     this.worstChunkMs = 0;
     this.chunkTotals = [];      // whole-chunk build cost, last ten, for photo.line()
     this.el = null;
-    this.snapshot = { draws: 0, tris: 0 };
+    this.snapshot = { draws: 0, tris: 0, bundledDraws: 0, bundledTris: 0 };
     addEventListener('keydown', (e) => {
       if (e.code === 'F3') { this.on = !this.on; this.#ensure().style.display = this.on ? 'block' : 'none'; }
     });
@@ -83,6 +83,10 @@ export class Stats {
   update(dt, world, renderer) {
     this.samples.push(dt * 1000);
     if (this.samples.length > 180) this.samples.shift();
+    // every 10th frame, overlay or not: photo.line() reads these too
+    if (world?.bundleStats && (this.samples.length % 10) === 0) {
+      const b = world.bundleStats(); this.snapshot.bundledDraws = b.draws; this.snapshot.bundledTris = b.tris;
+    }
     if (!this.on) return;
 
     const s = [...this.samples].sort((a, b) => a - b);
@@ -100,8 +104,10 @@ export class Stats {
     let out = '';
     out += row('frame med', median, BUDGET.frameMs, ' ms', (v) => v.toFixed(1));
     out += row('frame 1% low', worst, 20, ' ms', (v) => v.toFixed(1));
-    out += row('draw calls', this.snapshot.draws, BUDGET.draws);
-    out += row('triangles', this.snapshot.tris / 1e6, BUDGET.tris / 1e6, ' M', (v) => v.toFixed(2));
+    // counted draws + what the chunk bundles replay: the number the budget is about
+    out += row('draw calls', this.snapshot.draws + this.snapshot.bundledDraws, BUDGET.draws);
+    out += row('triangles', (this.snapshot.tris + this.snapshot.bundledTris) / 1e6, BUDGET.tris / 1e6, ' M', (v) => v.toFixed(2));
+    out += `  of which bundled ${String(this.snapshot.bundledDraws).padStart(5)} draws / ${(this.snapshot.bundledTris / 1e6).toFixed(2)} M\n`;
     out += row('texture mem', texMB, BUDGET.textureMB, ' MB');
     out += row('live chunks', live, BUDGET.chunks);
     out += row('chunk build', this.worstChunkMs, BUDGET.chunkBuildMs, ' ms', (v) => v.toFixed(1));

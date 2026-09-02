@@ -214,6 +214,26 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   Harness lesson: toggling `castShadow` or `shadowMap.enabled` at runtime
   under WebGPU invalidates a pipeline and blacks out every later frame while
   the counters keep working -- profile in one load, screenshot in another.
+- **Chunks are render bundles** (`THREE.BundleGroup`, districtWorld build).
+  Profiled 2026-09-02: 11.6 ms of CPU per frame inside the render call for
+  ~1,500 meshes; with each chunk recorded once and replayed, 8.8 ms, and the
+  JS heap 525 -> 304 MB. Rules that come with it: every mesh inside a chunk
+  is `frustumCulled = false` (bundle contents are culled only when recorded),
+  the chunk is culled as a whole in `update()` (3x3 ring always drawn for
+  shadows, outer rings by frustum box), and any change to what a chunk shows
+  (ring visibility, parked LOD, castShadow, a late-landing dressing mesh)
+  must bump `group.needsUpdate`. `renderer.info` does NOT count replayed
+  draws: the F3 overlay and `photo.line()` add `world.bundleStats()` (761 of
+  987 draws at kingsway-corner are bundled). Do not trust a raw
+  `renderer.info.render.drawCalls` again.
+- **City-wide BatchedMesh is written but dormant** (`Catalogue.attach`,
+  gated on `catalogue.multiDraw`). Without multi-draw-indirect three's WebGPU
+  backend issues one draw per instance: measured 8,938 draws / 17.9 ms
+  against 1,090 / 11.6 ms. It turns itself on the day the device reports
+  `chromium-experimental-multi-draw-indirect`.
+- **Traffic and pedestrians ride bridges** (`groundHeightAt` / `elevationAt`
+  for their y). The hero always did (measured 8.22 m on a 7.6 m deck); the
+  fleet and crowd drove through the deck at y=0.
 - **The fleet is Kenney's Car Kit (CC0)** -- `world/vendorCars.js` loads
   `public/models/vendor/kenney/cars/*.glb` (+ its external
   `Textures/colormap.png`, which the GLBs reference by relative path) and

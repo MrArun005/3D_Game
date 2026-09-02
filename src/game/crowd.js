@@ -128,7 +128,8 @@ export class Crowd {
       const state = p.down ? 3 : p.speed > 2.2 ? 2 : p.speed > 0.15 ? 1 : 0;
       if (!p.down && state === 0) p.phase += dt * 1.4;      // idle breathing
       // lift by FOOT_DROP or they hover 11.5 cm above the pavement
-      this.fleet.write(i, p.x, FOOT_DROP * p.height, p.z, p.yaw, p.phase, state, p.height);
+      const lift = this.district?.elevationAt ? this.district.elevationAt(p.x, p.z) : 0;   // bridge pavements
+      this.fleet.write(i, p.x, FOOT_DROP * p.height + lift, p.z, p.yaw, p.phase, state, p.height);
     }
     this.fleet.flush();
   }

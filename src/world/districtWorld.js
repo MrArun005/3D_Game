@@ -76,6 +76,8 @@ export class DistrictWorld {
        the texture library fails to load, the city falls back to the procedural
        props it shipped with rather than appearing empty. */
     this.catalogue = opts.catalogue ?? null;
+    // city-wide BatchedMesh per material (catalogue.js) -- the draw-call fix of 2026-09-02
+    if (this.catalogue?.multiDraw) this.catalogue.attach(scene);
     this.propGroups = new Map();
     this.facadeGroups = new Map();
     this.parkedLod = new Map();
@@ -290,9 +292,18 @@ export class DistrictWorld {
           continue;
         }
         // stays in `pending` until the build completes, or the rescan re-queues it
+        /* A chunk is a RENDER BUNDLE (three BundleGroup). Its contents are
+           static, so the renderer records their draws once and replays the
+           recording every frame -- the CPU stops re-walking, re-culling and
+           re-binding ~40 meshes per chunk. Two consequences, both handled
+           below: children inside a bundle are culled only when the bundle is
+           recorded, so every mesh in a chunk is marked frustumCulled=false
+           and the CHUNK is culled as a whole in update(); and any change to
+           what the chunk shows (ring visibility, parked LOD, castShadow)
+           has to bump group.needsUpdate so the recording is redone. */
         this.building = {
           k: w.k, cx: w.cx, cz: w.cz,
-          group: new THREE.Group(),
+          group: new THREE.BundleGroup(),
           gen: null,
         };
         this.building.gen = this.#buildSteps(w.cx, w.cz, this.building.group);
@@ -303,6 +314,9 @@ export class DistrictWorld {
       b.ms = (b.ms || 0) + performance.now() - t1;   // whole-chunk cost, across frames
       if (done) {
         if (wasPrimed && this.onChunkDone) this.onChunkDone(b.ms);
+        // bundle rule: nothing inside a bundle is culled per object
+        b.group.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+        b.group.needsUpdate = true;
         this.chunks.set(b.k, b.group);
         this.pending.delete(b.k);
         this.building = null;
@@ -321,6 +335,7 @@ export class DistrictWorld {
       const b = this.building;
       if (Math.abs(b.cx - ix) > this.radius || Math.abs(b.cz - iz) > this.radius) {
         b.group.traverse((o) => {
+          if (o.userData?.batched) this.catalogue.releaseBatched(o.userData.batched);
           if (!o.isMesh) return;
           if (o.isInstancedMesh) o.dispose();
           if (o.geometry?.userData?.owned) o.geometry.dispose();
@@ -337,14 +352,42 @@ export class DistrictWorld {
        the single biggest contributor to the draw count; at 400m they are a few
        pixels each and cost exactly as much as they do at 10m. One boolean per
        chunk is the whole LOD system for them. */
+    /* Chunk-level frustum culling, because the meshes inside a bundle are not
+       culled per object any more. The 3x3 ring around the player is always
+       drawn -- it casts the shadows that fall into view from behind the camera
+       -- and rings beyond it are drawn only when their box meets the frustum. */
+    if (this.camera) {
+      _frustum.setFromProjectionMatrix(_pv.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
+      for (const [k, g] of this.chunks) {
+        const [a, b] = k.split(',').map(Number);
+        const d = Math.max(Math.abs(a - ix), Math.abs(b - iz));
+        if (d <= 1) { g.visible = true; continue; }
+        _box.min.set(a * CHUNK, -6, b * CHUNK); _box.max.set((a + 1) * CHUNK, 140, (b + 1) * CHUNK);
+        g.visible = _frustum.intersectsBox(_box);
+      }
+    }
     for (const [key, g] of this.propGroups) {
       const [a, b] = key.split(',').map(Number);
       const d = Math.max(Math.abs(a - ix), Math.abs(b - iz));
+      const wasVisible = g.visible;
       g.visible = d <= this.propRadius;
+      if (g.visible !== wasVisible) g.parent.needsUpdate = true;      // re-record the chunk's bundle
+      if (g.userData.batched && g.userData.batchedVisible !== g.visible) {
+        g.userData.batchedVisible = g.visible;
+        this.catalogue.setBatchedVisible(g.userData.batched, g.visible);
+      }
       const fg = this.facadeGroups.get(key);
-      if (fg) fg.visible = d <= 1;
+      if (fg) {
+        if (fg.visible !== (d <= 1)) fg.parent.needsUpdate = true;
+        fg.visible = d <= 1;
+        if (fg.userData.batched && fg.userData.batchedVisible !== fg.visible) {
+          fg.userData.batchedVisible = fg.visible;
+          this.catalogue.setBatchedVisible(fg.userData.batched, fg.visible);
+        }
+      }
       const pl = this.parkedLod.get(key);
       if (pl) {
+        if (pl.ring !== d) { pl.ring = d; (pl.near[0] ?? pl.far[0])?.parent && ((pl.near[0] ?? pl.far[0]).parent.needsUpdate = true); }
         for (const m of pl.near) { m.visible = d <= 1; m.castShadow = d === 0; }
         for (const m of pl.far) m.visible = d > 1;
         /* Shadows from the chunk you are standing in, and nowhere else.
@@ -360,6 +403,7 @@ export class DistrictWorld {
          shadow is sub-pixel long before the prop is. */
       if (g.userData.shadowRing !== d) {
         g.userData.shadowRing = d;
+        g.needsUpdate = true;                                            // casters changed: re-record
         const cast = d === 0;
         /* Building shells are the exception: they are what the far cascade
            exists for (a tower's shadow falls across the next street), so they
@@ -379,6 +423,7 @@ export class DistrictWorld {
         this.facadeGroups.delete(k);
         this.parkedLod.delete(k);
         g.traverse((o) => {
+          if (o.userData?.batched) this.catalogue.releaseBatched(o.userData.batched);   // city-wide batches: free the ids
           if (!o.isMesh) return;
           if (o.isInstancedMesh) o.dispose();      // frees the instance buffers
           if (o.geometry?.userData?.owned) o.geometry.dispose();
@@ -1343,6 +1388,29 @@ export class DistrictWorld {
    * nothing, which is how #cullFar hides the far stand-ins too. Returns the
    * paint so the hero can take it.
    */
+  /**
+   * What the chunk bundles replay in the main pass. renderer.info counts only
+   * the draws the CPU issues; a replayed render bundle is invisible to it, so
+   * after 2026-09-02 the HUD's own figure would have read 211 draws for a
+   * frame that really drew ~1,000. Summed over visible chunks, visible meshes.
+   */
+  bundleStats() {
+    let draws = 0, tris = 0;
+    for (const g of this.chunks.values()) {
+      if (!g.visible) continue;
+      g.traverse((o) => {
+        if (!o.isMesh || !o.geometry) return;
+        for (let p = o; p && p !== g; p = p.parent) if (!p.visible) return;
+        const geo = o.geometry;
+        const n = (geo.index ? geo.index.count : geo.attributes.position?.count ?? 0) / 3;
+        const k = o.isInstancedMesh ? o.count : 1;
+        if (k === 0) return;
+        draws++; tris += n * k;
+      });
+    }
+    return { draws, tris };
+  }
+
   takeParked(solid) {
     const lod = this.parkedLod.get(solid.chunk);
     const meshes = lod?.byBody?.[solid.body];
@@ -1388,6 +1456,7 @@ export class DistrictWorld {
 }
 
 const _colour = new THREE.Color();
+const _frustum = new THREE.Frustum(), _pv = new THREE.Matrix4(), _box = new THREE.Box3();
 const _zero = new THREE.Matrix4().makeScale(0, 0, 0);   // hides an instance in place
 const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
 /** a ground-plane quad, laid flat and scaled — light pools, decals */

@@ -4,6 +4,7 @@ import { signalState, STOP_LINE } from '../world/signals.js';
 import { mulberry32 } from '../core/rng.js';
 import { personGeometry } from '../world/beach.js';
 import { PAINT_COLOURS, BODY_KEYS, BODY_TYPES } from '../vehicle/config.js';
+import { groundHeightAt } from '../world/metrics.js';
 
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
 
@@ -472,7 +473,8 @@ export class Traffic {
     car.x = a[0] + (b[0] - a[0]) * t;
     car.z = a[1] + (b[1] - a[1]) * t;
     car.yaw = Math.atan2(-(b[1] - a[1]), b[0] - a[0]);
-    car.mesh.position.set(car.x, 0, car.z);
+    // bridges: the deck is 7.6m up, and a car at y=0 drives through it
+    car.mesh.position.set(car.x, groundHeightAt(car.x, car.z), car.z);
     car.mesh.rotation.y = car.yaw;
   }
 
@@ -687,7 +689,7 @@ export class Traffic {
           c.z += (oz / od) * push;
         }
 
-        c.mesh.position.set(c.x, 0, c.z);
+        c.mesh.position.set(c.x, groundHeightAt(c.x, c.z), c.z);
         c.mesh.rotation.y = c.yaw;
         continue;
       }

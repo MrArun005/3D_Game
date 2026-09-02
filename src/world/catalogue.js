@@ -49,6 +49,78 @@ export class Catalogue {
     this.assets = new Map();        // 'props/bench' -> { lods: [...], bounds, tags }
     this.byTag = new Map();         // 'kerb' -> ['props/bench', ...]
     this.ready = false;
+    /* City-wide batching (2026-09-02). One BatchedMesh per (material, casts
+       shadow) for the WHOLE city, instead of one merged mesh per material per
+       chunk. Profiled before: ~800 dressing/facade meshes in the scene, 160MB
+       of per-chunk vertex copies, 11.6ms of CPU per frame in the render call.
+       A BatchedMesh stores each kit part once and draws every instance of a
+       material in one call, culled per instance. attach(scene) turns it on;
+       without it emit() falls back to the per-chunk merge. */
+    this.batchRoot = null;
+    this.batches = new Map();       // key -> { mesh, geoIds: Map(part -> geometryId) }
+  }
+
+  /** Enable city-wide batching: the root group lives in the scene for good. */
+  attach(scene) {
+    if (this.batchRoot) return;
+    this.batchRoot = new THREE.Group();
+    this.batchRoot.name = 'catalogueBatches';
+    scene.add(this.batchRoot);
+  }
+
+  /** The batch for a material, created on first use and grown on demand. */
+  batchFor(material, shadow) {
+    const key = material.uuid + (shadow ? ':s' : ':n');
+    let b = this.batches.get(key);
+    if (b) return b;
+    const mesh = new THREE.BatchedMesh(2048, 65536, 131072, material);
+    mesh.name = `batch:${material.name}${shadow ? '' : ':noshadow'}`;
+    mesh.castShadow = shadow;
+    mesh.receiveShadow = true;
+    mesh.sortObjects = false;          // opaque kit: the sort buys nothing and costs a frame's worth of CPU at scale
+    mesh.perObjectFrustumCulled = true;
+    mesh.frustumCulled = false;        // the whole-batch sphere would span the city; per-instance culling does the work
+    this.batchRoot.add(mesh);
+    b = { mesh, geoIds: new Map(), maxInst: 2048, maxVerts: 65536 };
+    this.batches.set(key, b);
+    return b;
+  }
+
+  /** Geometry id of a kit part inside a batch, registering it on first use. */
+  geometryIdFor(b, part) {
+    let id = b.geoIds.get(part);
+    if (id !== undefined) return id;
+    const g = batchReady(part);
+    for (let attempt = 0; attempt < 8; attempt++) {
+      try { id = b.mesh.addGeometry(g); break; } catch (e) {
+        // out of vertex room or geometry slots: double and retry
+        b.maxVerts *= 2; b.mesh.setGeometrySize(b.maxVerts, b.maxVerts * 2);
+        b.maxInst *= 2; b.mesh.setInstanceCount(b.maxInst);
+      }
+    }
+    b.geoIds.set(part, id);
+    return id;
+  }
+
+  /** One placement; returns its instance id. */
+  addBatched(b, geoId, matrix) {
+    let id;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      try { id = b.mesh.addInstance(geoId); break; } catch (e) {
+        b.maxInst *= 2; b.mesh.setInstanceCount(b.maxInst);
+      }
+    }
+    b.mesh.setMatrixAt(id, matrix);
+    return id;
+  }
+
+  setBatchedVisible(list, visible) {
+    for (const { batch, id } of list) batch.setVisibleAt(id, visible);
+  }
+
+  releaseBatched(list) {
+    for (const { batch, id } of list) { try { batch.deleteInstance(id); } catch (e) { /* already gone */ } }
+    list.length = 0;
   }
 
   /** Fetch both indexes and build every material. Models load lazily after. */
@@ -58,6 +130,13 @@ export class Catalogue {
       fetch(LIBRARY).then((r) => r.json()),
     ]);
     this.manifest = manifest;
+    /* City-wide BatchedMesh only pays where the device can multi-draw. On a
+       WebGPU device without chromium-experimental-multi-draw-indirect three
+       issues ONE draw per instance -- measured 2026-09-02: 8,938 draws and
+       17.9ms of render CPU against 1,090 / 11.6ms for the per-chunk merge.
+       So the batch path stays dormant until the feature exists. */
+    this.multiDraw = !!(renderer.hasFeature?.('chromium-experimental-multi-draw-indirect')
+      || (renderer.backend?.isWebGLBackend && renderer.hasFeature?.('WEBGL_multi_draw')));
     const aniso = anisotropyOf(renderer);
     const loader = new THREE.TextureLoader();
 
@@ -268,6 +347,27 @@ function boxProjectUv(g) {
 }
 
 const MISSING = new Set();
+
+/**
+ * A kit part in the one layout every BatchedMesh geometry must share:
+ * non-indexed, position/normal/uv only. Cached on the part, since the same
+ * geometry is instanced by every chunk.
+ */
+function batchReady(part) {
+  if (part.batchGeo) return part.batchGeo;
+  const src = part.geometry;
+  const g = src.index ? src.toNonIndexed() : src.clone();
+  for (const attr of Object.keys(g.attributes)) {
+    if (attr !== 'position' && attr !== 'normal' && attr !== 'uv') g.deleteAttribute(attr);
+  }
+  if (!g.attributes.uv) {
+    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+  }
+  if (!g.attributes.normal) g.computeVertexNormals();
+  g.computeBoundingSphere();
+  part.batchGeo = g;
+  return g;
+}
 const LOADER = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
 const FALLBACK = new THREE.MeshStandardMaterial({ color: 0x8d8d90, roughness: 0.9 });
 
@@ -301,7 +401,7 @@ export class InstanceBatch {
 
   #trackRec(name, matrix) {
     let rec = this.tracked.find((r) => r.matrix === matrix);
-    if (!rec) this.tracked.push(rec = { name, matrix, ranges: [] });
+    if (!rec) this.tracked.push(rec = { name, matrix, ranges: [], instances: [] });
     return rec;
   }
 
@@ -337,11 +437,31 @@ export class InstanceBatch {
         for (const p of parts) {
           let b = byMaterial.get(p.material);
           if (!b) byMaterial.set(p.material, (b = []));
-          for (const mm of list) b.push({ geo: p.geometry, matrix: mm, name });
+          for (const mm of list) b.push({ geo: p.geometry, part: p, matrix: mm, name });
         }
       }));
     }
     await Promise.all(jobs);
+
+    /* City-wide batches (Catalogue.attach): every placement becomes an
+       instance in its material's BatchedMesh, and the chunk group only
+       remembers the ids so it can hide or delete them. No merge, no per-chunk
+       vertex copies, one draw per material for the whole city. */
+    if (this.cat.batchRoot) {
+      const list = group.userData.batched ?? (group.userData.batched = []);
+      for (const [material, items] of byMaterial) {
+        const b = this.cat.batchFor(material, shadow);
+        for (const it of items) {
+          const geoId = this.cat.geometryIdFor(b, it.part);
+          const id = this.cat.addBatched(b, geoId, it.matrix);
+          list.push({ batch: b.mesh, id });
+          if (this.trackNames?.has(it.name)) this.#trackRec(it.name, it.matrix).instances.push({ batch: b.mesh, id });
+        }
+      }
+      // a hidden group (ring LOD) hides its instances too
+      if (!group.visible) this.cat.setBatchedVisible(list, false);
+      return group;
+    }
 
     /* One material's merge per macrotask. The merges used to run as a single
        microtask continuation — the whole kit's mergeGeometries in one gulp,
@@ -389,6 +509,11 @@ export class InstanceBatch {
       mesh.receiveShadow = true;
       mesh.userData.fromCatalogue = true;
       group.add(mesh);
+      /* The chunk is a render bundle (districtWorld): meshes inside it are
+         never culled per object, and a mesh landing after the recording
+         has to trigger a new one. */
+      mesh.frustumCulled = false;
+      for (let p = group; p; p = p.parent) if (p.isBundleGroup) { p.needsUpdate = true; break; }
       for (const p of pending) p.rec.ranges.push({ mesh, start: p.start, count: p.count });
     }
     return group;

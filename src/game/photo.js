@@ -133,8 +133,9 @@ export class Photo {
     const chunk = s.chunkTotals.length
       ? `chunk ${Math.max(...s.chunkTotals).toFixed(1)}ms worst total, ${s.worstChunkMs.toFixed(1)}ms worst slice (last ${s.chunkTotals.length})`
       : 'chunk: none built since load';
+    const draws = s.snapshot.draws + (s.snapshot.bundledDraws || 0), tris = s.snapshot.tris + (s.snapshot.bundledTris || 0);
     return `${this.preset || 'free'} @ ${p.x.toFixed(0)},${p.y.toFixed(1)},${p.z.toFixed(0)}`
-      + ` · ${s.snapshot.draws} draws · ${(s.snapshot.tris / 1e6).toFixed(2)}M tris`
+      + ` · ${draws} draws (${s.snapshot.bundledDraws || 0} bundled) · ${(tris / 1e6).toFixed(2)}M tris`
       + ` · frame ${med.toFixed(1)}ms med, ${low.toFixed(1)}ms 1% low · ${chunk}`;
   }
 

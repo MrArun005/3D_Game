@@ -558,6 +558,7 @@ Promise.all([loadDistrict(), catalogueReady]).then(([district, catalogue]) => {
   for (const g of city.cells.values()) scene.remove(g);
   city.cells.clear();
   world = new DistrictWorld(scene, assets, district, { day: DAY, catalogue });
+  world.camera = camera;                  // chunk-level frustum culling for the render bundles
   debris.catalogue = catalogue;
   world.onBreakables = (k, tracked, solids, pools) => debris.registerChunk(k, tracked, solids, pools);
   world.onBreakablesGone = (k) => debris.dropChunk(k);
