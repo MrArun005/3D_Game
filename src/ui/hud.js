@@ -27,9 +27,53 @@ export class Hud {
     this.gear.innerHTML = `GEAR <b>${name}</b>${car.holdGear ? ' · HOLD' : ''}`;
     this.#drawDials(car);
     this.#drawMap(car, traffic);
+    this.#drawBigMap(car, mission);
   }
 
   setStats(text) { this.stats.textContent = text; }
+
+  /** Tab: the whole city on one canvas -- roads, you, the job markers. */
+  toggleMap() {
+    if (!this.mapEl) {
+      const el = document.createElement('canvas');
+      el.width = 1120; el.height = 800;
+      el.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:70;display:none;'
+        + 'background:rgba(8,11,16,.92);border:1px solid rgba(150,172,200,.35);border-radius:10px';
+      document.body.appendChild(el);
+      this.mapEl = el;
+    }
+    this.mapOpen = !this.mapOpen;
+    this.mapEl.style.display = this.mapOpen ? 'block' : 'none';
+  }
+
+  #drawBigMap(car, mission) {
+    if (!this.mapOpen || !this.district) return;
+    const g = this.mapEl.getContext('2d'), W = this.mapEl.width, H = this.mapEl.height;
+    const b = this.district.bounds, sc = Math.min((W - 40) / b.w, (H - 40) / b.h), ox = (W - b.w * sc) / 2, oz = (H - b.h * sc) / 2;
+    g.clearRect(0, 0, W, H);
+    g.strokeStyle = 'rgba(150,172,200,0.55)'; g.lineCap = 'round';
+    for (const s of this.district.segments) {
+      g.lineWidth = Math.max(1, s.half * 2 * sc);
+      g.beginPath(); g.moveTo(ox + s.ax * sc, oz + s.az * sc); g.lineTo(ox + s.bx * sc, oz + s.bz * sc); g.stroke();
+    }
+    g.fillStyle = 'rgba(200,214,232,0.9)'; g.font = '12px ui-monospace, Menlo, monospace';
+    for (const [name, c] of Object.entries(this.districtCentres())) g.fillText(name, ox + c[0] * sc - 30, oz + c[1] * sc);
+    if (mission?.active) mission.points.forEach((p, i) => {
+      g.fillStyle = i === mission.index ? '#ffc23c' : 'rgba(74,163,255,0.8)';
+      g.beginPath(); g.arc(ox + p.x * sc, oz + p.y * sc, i === mission.index ? 7 : 4, 0, 7); g.fill();
+    });
+    g.fillStyle = '#ffffff'; g.beginPath(); g.arc(ox + car.x * sc, oz + car.z * sc, 5, 0, 7); g.fill();
+    g.strokeStyle = '#ffffff'; g.lineWidth = 2; g.beginPath(); g.moveTo(ox + car.x * sc, oz + car.z * sc);
+    g.lineTo(ox + (car.x + Math.cos(car.yaw) * 60) * sc, oz + (car.z - Math.sin(car.yaw) * 60) * sc); g.stroke();
+  }
+
+  districtCentres() {
+    if (this._centres) return this._centres;
+    const acc = {};
+    for (const b of this.district.blocks) { const c = acc[b.district] || (acc[b.district] = [0, 0, 0]); c[0] += b.x; c[1] += b.y; c[2]++; }
+    this._centres = Object.fromEntries(Object.entries(acc).map(([k, c]) => [k, [c[0] / c[2], c[1] / c[2]]]));
+    return this._centres;
+  }
 
   /** Player condition, shown only once you have actually been hurt. */
   setHealth(v) {

@@ -9,6 +9,7 @@ import { createAssets } from './world/assets.js';
 import { loadVendorCars, loadHeroSkin } from './world/vendorCars.js';
 import { LightPool } from './game/lighting.js';
 import { Jobs, onPavementAtSpeed } from './game/jobs.js';
+import { Garage } from './game/garage.js';
 import { Catalogue, dressCarMaterials } from './world/catalogue.js';
 import { City } from './world/city.js';
 import { DistrictWorld } from './world/districtWorld.js';
@@ -161,7 +162,7 @@ if (new URLSearchParams(location.search).has('debug')) {
 }
 let beach = null, water = null, crowd = null, heli = null, districtRef = null, drowning = 0;
 let lightPool = null;
-let jobs = null;                            // the GTA loop: jobs, cash, heat (game/jobs.js)                       // night: real lights on the nearest lamp heads (game/lighting.js)
+let jobs = null, garage = null;                            // the GTA loop: jobs, cash, heat (game/jobs.js)                       // night: real lights on the nearest lamp heads (game/lighting.js)
 const person = buildHuman();
 scene.add(person.root);
 let muted = false;
@@ -601,6 +602,8 @@ Promise.all([loadDistrict(), catalogueReady]).then(([district, catalogue]) => {
   heli.onArrive = () => hud.flash('AIR SUPPORT INBOUND');
   mission = new Mission(scene, district);
   jobs = new Jobs(mission, traffic, hud, district);
+  garage = new Garage(jobs, assets, hero, damageModel, hud);
+  garage.restore();
   /* The other half of the race handshake: say when YOU finish. Set here
      rather than on join, because the room can be joined before the district
      has loaded and there would be no mission to hang it on. */
@@ -735,6 +738,9 @@ const input = createInput((action) => {
   if (action === 'camera') chase.cycle();
   if (action === 'lights') car.headlights = !car.headlights;
   if (action === 'photo') photo.toggle();
+  if (action === 'garage') garage?.browse();
+  if (action === 'buy') garage?.act();
+  if (action === 'map') hud.toggleMap();
   if (action === 'reset') respawnCar();
   if (action === 'avatar' && onFoot.character) {
     const i = onFoot.character.swap(onFoot.character.index + 1);

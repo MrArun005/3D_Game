@@ -116,6 +116,9 @@ export function createInput(onAction) {
     if (e.code === 'KeyR') onAction('reset');
     if (e.code === 'KeyV') onAction('film');
     if (e.code === 'KeyM') onAction('mute');
+    if (e.code === 'KeyB') onAction('garage'); // browse bodies
+    if (e.code === 'KeyN') onAction('buy');    // buy / fit / repair
+    if (e.code === 'Tab') { e.preventDefault(); onAction('map'); }
     if (e.code === 'KeyF') onAction('use');    // in or out of a vehicle
     if (e.code === 'KeyG') onAction('run');    // start / abandon a checkpoint run
     if (e.code === 'KeyJ') onAction('room');   // create / join a multiplayer room

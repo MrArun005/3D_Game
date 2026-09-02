@@ -183,6 +183,16 @@ export class Damage {
     this.dentCount = 0;
   }
 
+  /** The garage puts it right: pristine hull, clear glass, round tyres, no fire. */
+  repair() {
+    const p = this.parts; if (!p) return;
+    p.hull.geometry.attributes.position.array.set(p.pristine);
+    p.hull.geometry.attributes.position.needsUpdate = true;
+    if (p.glass) { p.glass.material.opacity = p.glassOpacity; p.glass.material.roughness = p.glassRough; }
+    for (const w of p.wheels || []) w.flat = 0;
+    this.value = 0; this.dead = false; this.critical = false; this.fuse = 0; this.dentCount = 0;
+  }
+
   /**
    * `force` is closing speed in m/s, `at` the world contact point if the
    * collider knew one.

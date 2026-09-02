@@ -95,6 +95,8 @@ export class Jobs {
     this.job = null; this.#show();
   }
 
+  persist() { try { localStorage.setItem('hb.cash', String(this.cash)); } catch { /* private mode */ } this.#show(); }
+
   fail(why) {
     if (!this.job) return;
     this.mission.stop(why);
