@@ -411,7 +411,8 @@ export function dressRoofs(batch, boxes, district) {
   for (const b of boxes) {
     if (b.hw < 3.5 || b.hd < 3.5) continue;
     const y = KERB_H + b.height;
-    const n = 1 + Math.floor(hash(b.x, b.z) * 3);
+    // Phase 5: clutter scales with the roof, 1 unit per ~45 m2, capped at 12
+    const n = Math.max(1, Math.min(12, Math.round((b.hw * b.hd * 4) / 45 * (0.7 + hash(b.x, b.z) * 0.6))));
     const ca = Math.cos(b.angle), sa = Math.sin(b.angle);
     for (let i = 0; i < n; i++) {
       const r = hash(b.x + i * 3.7, b.z - i * 1.9);
@@ -502,7 +503,7 @@ function styleFor(box, r) {
  * irregular, so any rule based on the block's own axes picks the back wall
  * about as often as the front.
  */
-export function dressFacades(batch, boxes, district, roadNear, signs = null) {
+export function dressFacades(batch, boxes, district, roadNear, signs = null, windows = null) {
   for (const box of boxes) {
     const { x, z, angle, hw, hd, height } = box;
     if (height < 5 || hw < 2.4 || hd < 2.4) continue;
@@ -562,6 +563,20 @@ export function dressFacades(batch, boxes, district, roadNear, signs = null) {
         batch.add('props/billboard_wall', place(mx, base + GROUND_H + 0.4, mz, yaw));
       } else if (r > 0.86) {
         batch.add('props/sign_wall_box', place(mx, base + 3.1, mz, yaw));
+      }
+
+      /* Phase 2: window quads on the two storeys above the shopfront, two per
+         module, tinted warm/cool or dark by a hash of their position. */
+      if (windows && height > GROUND_H + 4) {
+        for (let st = 0; st < 2 && GROUND_H + 3.4 * (st + 1) + 1 < height; st++) {
+          for (const dx of [-0.9, 0.9]) {
+            const wy = base + GROUND_H + 1.9 + st * 3.4;
+            const hh = hash(mx * 0.71 + dx, mz * 1.13 + st);
+            const tint = hh < 0.42 ? [0, 0, 0] : hh < 0.75 ? [1.0, 0.82, 0.55] : [0.72, 0.86, 1.0];
+            const lv = hh < 0.42 ? 0 : 0.45 + hash(mz + st, mx + dx) * 0.55;
+            windows.push({ m: placeBoard(mx + ux * dx + best.nx * 0.08, wy, mz + uz * dx + best.nz * 0.08, yaw, 1.1, 1.5), tint: tint.map((c) => c * lv) });
+          }
+        }
       }
 
       /* Phase 1: the shop's own name.

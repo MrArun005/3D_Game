@@ -243,6 +243,13 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
 - **Night light pool** (`game/lighting.js`): 6 real point lights (`?lights=N`)
   on the nearest lamp heads, 0.25 s re-rank, 20% hysteresis, 1 s hold.
   `grade.setNight()` retunes bloom for night.
+- **Light the City, phases 2-5 landed 2026-09-02**: window quads
+  (`signs.js:buildWindowMaterial`, per-instance `aTint`), traffic headlamps
+  and 4 pooled spots (`lighting.js`), crowd 320 with a first-cut kerb wave
+  at junction nodes (`crowd.js`, uses `CYCLE`), roof clutter by area, mast
+  beacons (`A.mat.beacon`), wider sodium horizon. shopfront-night: 931
+  draws / 3.79M tris -- 0.2M under budget, so the next layer must pay for
+  itself.
 - **City-wide BatchedMesh is written but dormant** (`Catalogue.attach`,
   gated on `catalogue.multiDraw`). Without multi-draw-indirect three's WebGPU
   backend issues one draw per instance: measured 8,938 draws / 17.9 ms

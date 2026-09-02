@@ -261,9 +261,11 @@ export function texSky(day = false, sunDir = null) {
   const gr = g.createLinearGradient(0, 512, 0, 0);
   gr.addColorStop(0.0, '#090b11');
   gr.addColorStop(0.4, '#161c28');
-  gr.addColorStop(0.485, '#4e3d4c');
-  gr.addColorStop(0.505, '#a86f4a');
-  gr.addColorStop(0.525, '#755f68');
+  // city glow: the sodium band sits wider and warmer above the skyline (Phase 5)
+  gr.addColorStop(0.47, '#4a3846');
+  gr.addColorStop(0.495, '#8a5a44');
+  gr.addColorStop(0.505, '#b8784c');
+  gr.addColorStop(0.53, '#6e5560');
   gr.addColorStop(0.6, '#33405c');
   gr.addColorStop(0.78, '#1d2942');
   gr.addColorStop(1.0, '#0d1424');

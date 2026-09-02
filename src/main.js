@@ -122,7 +122,9 @@ function daylightAssets(A) {
   for (const m of A.base.materials) m.emissiveIntensity = 0.05;
   A.mat.pool.opacity = 0;                 // sodium pools on sunlit tarmac: no
   A.mat.lampGlow.emissiveIntensity = 0.15;
-  A.mat.sign.emissiveIntensity = 0.06;    // a shop sign at noon is a painted board, not a light
+  A.mat.sign.emissiveIntensity = 0.06;
+  A.mat.windowQuad.emissiveIntensity = 0.0;   // daylight: glass, not lamps
+  A.mat.beacon.emissiveIntensity = 0.6;    // a shop sign at noon is a painted board, not a light
   A.mat.road.envMapIntensity = 0.35;
   A.mat.parked.emissiveIntensity = 0;
   A.mat.parked.roughness = 0.42;
@@ -666,7 +668,7 @@ beamPool.rotation.x = -Math.PI / 2;
 beamPool.scale.set(8, 20, 1);
 scene.add(beamPool);
 
-const traffic = new Traffic(scene, assets);
+const traffic = new Traffic(scene, assets, DAY ? 24 : 30, !DAY);   // Phase 5: denser, and lit at night
 const chase = new ChaseCamera(camera);
 const weather = DAY ? null : createWeather(scene);
 const hud = new Hud();
@@ -941,7 +943,7 @@ function frame() {
     }
   }
   if (!DAY) weather.update(camera, car, dt);
-  lightPool?.update(dt, car.x, car.z);
+  lightPool?.update(dt, car.x, car.z, traffic);
   grade.setDrops(DAY ? 0 : chase.mode >= 2 ? 1.2 : 0.68);
   world.update(car.x, car.z);
   resolution(dt);

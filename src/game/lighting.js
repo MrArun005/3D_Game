@@ -28,6 +28,29 @@ export class LightPool {
     }
     this.intensity = intensity;
     this.t = 0; this.next = 0;
+    // four headlight spots, lent to the nearest moving traffic cars
+    this.spots = [];
+    for (let i = 0; i < 4; i++) {
+      const sp = new THREE.SpotLight(0xdce8ff, 0, 42, 0.45, 0.7, 1.4);
+      sp.castShadow = false;
+      scene.add(sp, sp.target);
+      this.spots.push(sp);
+    }
+  }
+
+  #traffic(traffic, x, z) {
+    if (!traffic) return;
+    const live = traffic.cars.filter((c) => c.live && c.mesh.visible && c.speed > 1)
+      .sort((a, b) => Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z));
+    this.spots.forEach((sp, i) => {
+      const c = live[i];
+      if (!c || Math.hypot(c.x - x, c.z - z) > 70) { sp.intensity = 0; return; }
+      const fx = Math.cos(c.yaw), fz = -Math.sin(c.yaw), y = c.mesh.position.y;
+      sp.position.set(c.x + fx * (c.spec.L * 0.5), y + 0.8, c.z + fz * (c.spec.L * 0.5));
+      sp.target.position.set(c.x + fx * 26, y - 0.4, c.z + fz * 26);
+      sp.target.updateMatrixWorld();
+      sp.intensity = 38;
+    });
   }
 
   #candidates(x, z) {
@@ -39,8 +62,9 @@ export class LightPool {
     return out;
   }
 
-  update(dt, x, z) {
+  update(dt, x, z, traffic = null) {
     this.t += dt;
+    this.#traffic(traffic, x, z);
     if (this.t >= this.next) {
       this.next = this.t + 0.25;
       const cands = this.#candidates(x, z);

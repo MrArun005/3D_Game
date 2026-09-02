@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { texAsphalt, texWalk, texPool, toTex, cv, normalFromCanvas } from './textures.js';
 import { buildFacadeMaterials, buildBaseMaterials, BASE_H } from './facades.js';
 import { makeTileable } from './city.js';
-import { texSignAtlas, buildSignMaterial, signGeometry } from './signs.js';
+import { texSignAtlas, buildSignMaterial, signGeometry, buildWindowMaterial } from './signs.js';
 import {
   buildStreetLamp, buildLampHead, buildTrafficPost, buildTree,
   buildCanopy, buildBollard, buildBin, buildShelter,
@@ -142,6 +142,9 @@ export function createAssets() {
   // Phase 1 shop signs: one atlas, one node material, one quad (world/signs.js)
   geo.sign = signGeometry();
   mat.sign = buildSignMaterial(texSignAtlas());
+  mat.windowQuad = buildWindowMaterial();
+  mat.beacon = new THREE.MeshStandardMaterial({ color: 0x3a0a0a, emissive: 0xff2a1a, emissiveIntensity: 4.0, roughness: 0.6 });
+  mat.beacon.name = 'beacon';
   geo.species = Object.fromEntries(TREE_SPECIES.map((k) => [k, buildSpecies(k)]));
 
   return {

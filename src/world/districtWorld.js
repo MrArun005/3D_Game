@@ -1249,8 +1249,8 @@ export class DistrictWorld {
       group.add(faces);
       this.facadeGroups.set(k, faces);
       const fbatch = new InstanceBatch(this.catalogue);
-      const signs = [];
-      dressFacades(fbatch, boxes, this.district, roadDepth, signs);
+      const signs = [], windows = [];
+      dressFacades(fbatch, boxes, this.district, roadDepth, signs, windows);
       yield;
       /* Phase 1: the shop signs, one instanced draw per chunk. Per-instance
          atlas cell in aTile; the quad's width/height ride the matrix. They
@@ -1267,6 +1267,17 @@ export class DistrictWorld {
         sm.computeBoundingSphere();
         sm.receiveShadow = true;
         faces.add(sm);
+      }
+      if (windows.length) {
+        const wg = A.geo.sign.clone();
+        wg.userData.owned = true;
+        const tints = new Float32Array(windows.length * 3);
+        const wm = new THREE.InstancedMesh(wg, A.mat.windowQuad, windows.length);
+        windows.forEach((w, i) => { wm.setMatrixAt(i, w.m); tints.set(w.tint, i * 3); });
+        wg.setAttribute('aTint', new THREE.InstancedBufferAttribute(tints, 3));
+        wm.instanceMatrix.needsUpdate = true;
+        wm.computeBoundingSphere();
+        faces.add(wm);
       }
       fbatch.emit(faces, { shadow: false, lod: 1 })
         .catch((e) => console.warn('facades failed:', e.message));
@@ -1442,6 +1453,8 @@ export class DistrictWorld {
     inst(slabGeo, A.mat.roofGlass, glassRoofs);
     inst(slabGeo, A.mat.crown, crowns);
     inst(slabGeo, A.mat.pole, masts);
+    // Phase 5: a red beacon on every mast tip
+    inst(A.geo.lampCap, A.mat.beacon, masts.map((m) => { const e = m.elements; return mat4(e[12], e[13] + e[5] / 2 + 0.2, e[14], 0, 1.2, 1.2, 1.2); }));
     inst(A.geo.ac, A.mat.plant, plant.ac, true);
     inst(A.geo.tank, A.mat.plant, plant.tank, true);
     inst(A.geo.hut, A.mat.plant, plant.hut, true);

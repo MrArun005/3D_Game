@@ -78,6 +78,18 @@ export function texSignAtlas() {
   return toTex(c);
 }
 
+/**
+ * Window quads (Phase 2): a dark glass face with a per-instance emissive tint
+ * in `aTint`. About 40% are unlit (tint 0). Stands 8cm proud of the wall on
+ * the storeys above the shopfront so the facade stops reading as a print.
+ */
+export function buildWindowMaterial() {
+  const m = new THREE.MeshStandardNodeMaterial({ color: 0x1a2028, emissive: 0xffffff, emissiveIntensity: 0.9, roughness: 0.25, metalness: 0.1 });
+  m.name = 'window_quad';
+  m.emissiveNode = attribute('aTint', 'vec3').mul(materialReference('emissiveIntensity', 'float', m));
+  return m;
+}
+
 /** One quad, +Z out of the board, unit size: the instance matrix carries width and height. */
 export function signGeometry() {
   return new THREE.PlaneGeometry(1, 1);

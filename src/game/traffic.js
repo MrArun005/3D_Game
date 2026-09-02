@@ -35,7 +35,8 @@ function lanePoint(i, j, d, lane) {
  * driving through streams out behind it.
  */
 export class Traffic {
-  constructor(scene, assets, count = 18) {
+  constructor(scene, assets, count = 18, night = false) {
+    this.night = night;
     this.scene = scene;
     this.assets = assets;
     this.rand = mulberry32(4242);
@@ -188,6 +189,15 @@ export class Traffic {
        tell on a hull with no lamps of its own. */
     tail.position.set(-(spec.L * 0.5 - 0.06), spec.bonnetY * 0.86, 0);
     mesh.add(tail);
+    // headlamps: every car reads as lit at night (Phase 5), the nearest four also get a real spot
+    if (this.night) {
+      const lampMat = new THREE.MeshStandardMaterial({ color: 0xfff2d0, emissive: 0xfff2d0, emissiveIntensity: 2.6 });
+      for (const s of [-1, 1]) {
+        const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.3), lampMat);
+        lamp.position.set(spec.L * 0.5 - 0.04, spec.bonnetY * 0.78, s * spec.wMax * 0.62);
+        mesh.add(lamp);
+      }
+    }
     this.scene.add(mesh);
 
     return {
