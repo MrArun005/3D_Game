@@ -25,13 +25,13 @@ export class Landmarks {
   async #place() {
     const loader = new GLTFLoader();
     const used = new Set();
-    for (const lm of LANDMARKS) {
+    await Promise.all(LANDMARKS.map(async (lm) => {
       const lots = this.district.blocks.filter((b) => (b.type === 'lot' || b.type === 'vacant') && b.district === lm.district && !used.has(b) && Math.min(b.w, b.h) >= lm.minW)
         .sort((a, b) => Math.min(a.w, a.h) - Math.min(b.w, b.h));
       const lot = lots[0] ?? this.district.blocks.filter((b) => (b.type === 'lot' || b.type === 'vacant') && !used.has(b) && Math.min(b.w, b.h) >= lm.minW).sort((a, b) => Math.min(a.w, a.h) - Math.min(b.w, b.h))[0];
-      if (!lot) { console.warn('landmark: no lot for', lm.file); continue; }
+      if (!lot) { console.warn('landmark: no lot for', lm.file); return; }
       used.add(lot);
-      let gltf; try { gltf = await new Promise((res, rej) => loader.load(BASE + lm.file + '.glb', res, undefined, rej)); } catch (e) { console.warn('landmark', lm.file, e.message); continue; }
+      let gltf; try { gltf = await new Promise((res, rej) => loader.load(BASE + lm.file + '.glb', res, undefined, rej)); } catch (e) { console.warn('landmark', lm.file, e.message); return; }
       const obj = gltf.scene;
       obj.updateMatrixWorld(true);
       const bb = new THREE.Box3().setFromObject(obj), size = bb.getSize(new THREE.Vector3()), c = bb.getCenter(new THREE.Vector3());
@@ -46,6 +46,6 @@ export class Landmarks {
       this.scene.add(wrap);
       this.placed.push({ ...lm, x: lot.x, z: lot.y, scale: k });
       console.info(`landmark ${lm.name} at ${lot.x | 0},${lot.y | 0} (${lm.district}) x${k.toFixed(2)}`);
-    }
+    }));
   }
 }

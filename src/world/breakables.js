@@ -137,10 +137,47 @@ export class Debris {
 
   dropChunk(key) { this.byChunk.delete(key); }
 
-  update(car, dt) {
-    if (this.catalogue) this.#collide(car, dt);
+  update(car, dt, extraVehicles = null) {
+    if (this.catalogue) {
+      this.#collide(car, dt);
+      if (extraVehicles) this.collideVehicles(extraVehicles, dt);
+    }
     this.#integrate(dt);
     this.#runEffects(dt);
+  }
+
+  collideVehicles(vehicles, dt) {
+    if (!this.catalogue || !vehicles || !vehicles.length) return;
+    for (const v of vehicles) {
+      if (!v || (v.live === false) || !v.speed || v.speed < LIGHT_SPEED) continue;
+      const speed = v.speed;
+      const hitR = (v.radius || CAR_R) + PROP_R + speed * dt;
+      const hitD2 = hitR * hitR;
+      const rough = (4 + speed * dt) ** 2;
+      const cy = Math.cos(v.yaw || 0), sy = Math.sin(v.yaw || 0);
+      const fx = cy, fz = -sy;
+      const ix = Math.floor(v.x / 256), iz = Math.floor(v.z / 256);
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          const entries = this.byChunk.get(`${ix + dx},${iz + dz}`);
+          if (!entries) continue;
+          for (const en of entries) {
+            if (en.broken) continue;
+            const rx = en.x - v.x, rz = en.z - v.z;
+            if (rx * rx + rz * rz > rough) continue;
+            const offsets = v.offsets || CAR_OFFSETS;
+            for (const o of offsets) {
+              const px = v.x + fx * o, pz = v.z + fz * o;
+              const ddx = en.x - px, ddz = en.z - pz;
+              if (ddx * ddx + ddz * ddz > hitD2) continue;
+              if (en.cls === 'heavy' && speed < HEAVY_SPEED) break;
+              this.#break(en, v, speed);
+              break;
+            }
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -229,15 +266,21 @@ export class Debris {
     }
     // the car feels it: a bin is a tap, a lamp post is a proper hit
     if (entry.cls === 'heavy') {
-      car.vx *= 0.82; car.vz *= 0.82;
-      car.yawRate += (Math.random() - 0.5) * speed * 0.02;
+      if (typeof car.vx === 'number' && typeof car.vz === 'number') {
+        car.vx *= 0.82; car.vz *= 0.82;
+      }
+      if (typeof car.speed === 'number') car.speed *= 0.82;
+      if (typeof car.yawRate === 'number') car.yawRate += (Math.random() - 0.5) * speed * 0.02;
       if (speed * 0.5 > (car.hitForce || 0)) {
         car.hitForce = speed * 0.5;
         car.hitTag = 'prop';
         car.hitAt = { x: entry.x, z: entry.z };
       }
     } else {
-      car.vx *= 0.996; car.vz *= 0.996;
+      if (typeof car.vx === 'number' && typeof car.vz === 'number') {
+        car.vx *= 0.996; car.vz *= 0.996;
+      }
+      if (typeof car.speed === 'number') car.speed *= 0.996;
     }
     this.#spawnDebris(entry, car, speed);
     if (entry.effect === 'water') this.#fountain(entry);

@@ -103,10 +103,16 @@ export function makeTileable(material) {
     const warm = vec3(1.0, 0.86, 0.62), cool = vec3(0.80, 0.90, 1.0);
     const tint = mix(warm, cool, step(0.55, h2));
     const level = lit.mul(mix(0.55, 1.0, h2));                   // lit ones vary too
+    
+    // Faux interior window frame & depth mask: darkens window borders to sell 3D depth
+    const cellUv = fract(scaled);
+    const roomFrame = smoothstep(0.06, 0.16, cellUv.x).mul(smoothstep(0.94, 0.84, cellUv.x))
+      .mul(smoothstep(0.06, 0.16, cellUv.y)).mul(smoothstep(0.94, 0.84, cellUv.y));
+    
     material.emissiveNode = texture(material.emissiveMap, scaled)
       .mul(materialReference('emissive', 'color', material))
       .mul(materialReference('emissiveIntensity', 'float', material))
-      .mul(tint).mul(level);
+      .mul(tint).mul(level).mul(roomFrame);
   }
   return material;
 }

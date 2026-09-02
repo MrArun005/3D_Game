@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { texSignAtlas } from './signs.js';
 
 /**
  * The 99 places the planner named.
@@ -90,7 +91,7 @@ export function buildPlaces(scene, district, day = true) {
      night when it is the only light on the block, knocked back at noon where
      a glowing panel would look like a bug. */
   inst(panels, new THREE.MeshStandardMaterial({
-    color: 0xffffff, emissive: 0xffffff, emissiveIntensity: day ? 0.35 : 1.9,
+    map: texSignAtlas(), color: 0xffffff, emissive: 0xffffff, emissiveIntensity: day ? 0.35 : 1.9,
     roughness: 0.5, metalness: 0,
   }), panelCol);
 

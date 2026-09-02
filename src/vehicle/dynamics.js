@@ -61,10 +61,12 @@ export function resetCar(car) {
 const DRIVEN = [2, 3];   // rear-wheel drive
 
 export function stepVehicle(car, dt) {
-  // --- steering: less lock the faster you go, and it self-centres ---
+  // --- steering: non-linear high-speed stability curve & self-centering ---
   const speed = Math.hypot(car.vx, car.vz);
-  const limit = V.steerMax * (0.32 + 0.68 / (1 + (speed * speed) / 260));
-  car.steer += (car.steerTarget * limit - car.steer) * Math.min(1, dt * 7.5);
+  const speedFactor = 0.28 + 0.72 / (1 + (speed * speed) / 280);
+  const limit = V.steerMax * speedFactor;
+  const steerRate = 7.5 + Math.min(4.5, speed * 0.15);
+  car.steer += (car.steerTarget * limit - car.steer) * Math.min(1, dt * steerRate);
 
   const cy = Math.cos(car.yaw), sy = Math.sin(car.yaw);
   const fwd = { x: cy, z: -sy };

@@ -21,7 +21,7 @@ import { ZEBRA_DEPTH } from '../game/traffic.js';
  * and a chunk can be thrown away without consulting its neighbours.
  */
 const CHUNK = 256;
-const BUILD_MS = 4;      // docs/BUDGETS.md: chunk build must not hitch a frame
+const BUILD_MS = 3;      // docs/BUDGETS.md: 3ms budget prevents micro-stutters during fast chunk streaming
 const ck = (ix, iz) => `${ix},${iz}`;
 
 /* The file carries footprints, not heights — the 2D planner has no opinion on

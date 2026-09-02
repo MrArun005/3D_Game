@@ -15,20 +15,24 @@ body.photo #minimap, body.photo #cluster, body.photo #readout, body.photo #dials
        before any module loads and keeps moving even while the main thread is
        pinned by shader compilation. main.js updates #bootmsg per phase and
        removes the whole thing on the first rendered frame. -->
-  <div id="boot" style="position:fixed;inset:0;z-index:99;background:#0b0e14;
+  <!-- Boot overlay with 0%-100% progress bar -->
+  <div id="boot" style="position:fixed;inset:0;z-index:99;background:#080b11;
        display:flex;flex-direction:column;align-items:center;justify-content:center;
-       gap:18px;color:#cfe0f5;font:14px/1.5 system-ui,sans-serif;letter-spacing:.22em">
-    <div style="font-size:26px;font-weight:200;letter-spacing:.45em">NIGHTFALL&nbsp;DRIVE</div>
-    <div style="width:34px;height:34px;border-radius:50%;border:2px solid #2a3346;
-         border-top-color:#cfe0f5;animation:bootspin 0.9s linear infinite"></div>
-    <span id="bootmsg">loading modules…</span>
-    <style>@keyframes bootspin{to{transform:rotate(360deg)}}</style>
+       gap:22px;color:#cfe0f5;font:14px/1.5 system-ui,sans-serif;letter-spacing:.22em">
+    <div style="font-size:28px;font-weight:300;letter-spacing:.5em;color:#ffffff;text-shadow:0 0 20px rgba(57,255,176,0.3)">NIGHTFALL&nbsp;DRIVE</div>
+    <div style="width:320px;height:6px;background:#151c28;border-radius:3px;overflow:hidden;position:relative;box-shadow:inset 0 1px 3px rgba(0,0,0,0.6)">
+      <div id="bootprogress" style="width:0%;height:100%;background:linear-gradient(90deg, #39ffb0, #3fd2ff);border-radius:3px;transition:width 0.2s ease-out"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <span id="bootmsg" style="color:#94a3b8;font-size:12px">Waking the GPU…</span>
+      <span id="bootpercent" style="color:#39ffb0;font-weight:600;font-size:13px">0%</span>
+    </div>
   </div>
 
   <canvas id="gl"></canvas>
 
   <div id="stats"></div>
-  <canvas id="minimap" width="150" height="150"></canvas>
+  <canvas id="minimap" width="210" height="210"></canvas>
 
   <div id="cluster">
     <div id="readout">

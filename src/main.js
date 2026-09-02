@@ -63,36 +63,29 @@ const canvas = document.getElementById('gl');
    frame() removes it on the first rendered frame. */
 let boot = document.getElementById('boot');
 const bootMsg = document.getElementById('bootmsg');
+const bootProgress = document.getElementById('bootprogress');
+const bootPercent = document.getElementById('bootpercent');
 // whatever happens, the loading screen is gone inside 12 s
 setTimeout(() => { if (boot) { console.warn('boot: 12 s cap hit, dropping the loading screen'); boot.remove(); boot = null; } }, 12000);
-const bootSay = (m) => { if (bootMsg) bootMsg.textContent = m; };
-bootSay('waking the GPU…');
+const setBootProgress = (pct, m) => {
+  if (bootMsg) bootMsg.textContent = m;
+  if (bootProgress) bootProgress.style.width = `${pct}%`;
+  if (bootPercent) bootPercent.textContent = `${pct}%`;
+};
+setBootProgress(10, 'Waking the GPU…');
 const renderer = createRenderer(canvas);
-/* WebGPU acquires its adapter and device asynchronously, and nothing that
-   touches the backend -- PMREM for the sky's environment map, the first
-   render, a render target -- may run before that resolves. Top-level await is
-   the honest expression of it: the module simply does not finish evaluating
-   until the GPU is ready. Vite is on an es2022 target, so this ships. */
-bootMsg.textContent = 'starting the renderer…';
+setBootProgress(25, 'Starting the renderer…');
 await renderer.init();
-bootSay('building the city & compiling shaders — the first load is the slow one…');
+setBootProgress(45, 'Building the scene & lights…');
 const resolution = autoResolution(renderer);
-/* WebGPURenderer exposes no capabilities.getMaxAnisotropy(); 16 is the
-   guaranteed WebGPU maximum and the value the WebGL path was returning here
-   anyway. */
 setAnisotropy(renderer.capabilities?.getMaxAnisotropy?.() ?? 16);
 
 const scene = createScene(DAY);
-/* 900m of far plane was enough for a fogged night grid. Daylight sees the
-   mountain ring 5km out, so the frustum has to reach it -- 24-bit depth over
-   0.5..14000 still resolves the kerb the car is sitting on. */
 const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.5, 14000);
 const { sun } = createLights(scene, DAY);
 const { dome } = createSky(scene, renderer, DAY);
-/* Tier 1.1: the grade is now the whole post stack — scene MRT pass, GTAO,
-   emissive-fed bloom, tone map, then the vignette/grain/rain folded into the
-   same node graph (see core/grade.js). ?noao / ?nobloom drop a stage for an
-   A/B against the stats overlay. */
+
+setBootProgress(60, 'Initializing TSL post-processing pipeline…');
 const grade = createGrade(renderer, scene, camera, {
   ao: !new URLSearchParams(location.search).has('noao'),
   bloom: !new URLSearchParams(location.search).has('nobloom'),
@@ -101,12 +94,9 @@ const grade = createGrade(renderer, scene, camera, {
 });
 
 const assets = createAssets();
-/* Kenney Car Kit (CC0) over the lofted fleet -- world/vendorCars.js. Awaited
-   here so traffic and the streamer never see a half-swapped kit; a missing
-   file leaves that style on the loft and logs once. */
-bootMsg.textContent = 'loading the cars…';
+setBootProgress(75, 'Loading car fleet…');
 await loadVendorCars(assets).catch((e) => console.warn('vendor cars:', e.message));
-bootMsg.textContent = 'reading the city plan…';
+setBootProgress(90, 'Reading the city plan…');
 grade.resize(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio());
 /* Bloom needs no day/night switch: it reads the emissive MRT channel, and
    daylightAssets() below dims facade emissive to 0.04 — under the bloom
@@ -890,12 +880,13 @@ function frameBody() {
   /* Breakables go BEFORE the physics step: a lamp post the car is about to
      fell must lose its collision solid before the tyre model resolves against
      it, or the car eats a dead stop on the frame it breaks through. */
-  debris.update(car, dt);
+  debris.update(car, dt, traffic.cars);
 
-  // fixed-step physics keeps the tyre model stable regardless of frame rate
+  // fixed-step physics keeps the tyre model stable; clamp accumulator to prevent death spirals on dt spikes
+  if (dt > 0.05) physicsAccumulator = Math.min(physicsAccumulator, STEP * 4);
   physicsAccumulator += dt;
   let guard = 0;
-  while (physicsAccumulator >= STEP && guard++ < 8) {
+  while (physicsAccumulator >= STEP && guard++ < 4) {
     stepVehicle(car, STEP);
     physicsAccumulator -= STEP;
   }
@@ -1032,12 +1023,16 @@ function frameBody() {
      speed, not one that stalls on its first crash. */
   if (boot && !warming && (world.primed ?? true)) {
     warming = true;
-    bootMsg.textContent = 'warming the shaders…';
+    setBootProgress(95, 'Warming shaders…');
     const hidden = [];
     scene.traverse((o) => { if ((o.isPoints || o.isMesh) && !o.visible && !o.isInstancedMesh && !o.userData?.shell) { hidden.push(o); o.visible = true; } });
-    // never let the warm-up hold the game hostage: 3 s, then in you go regardless
-    const drop = () => { for (const o of hidden) o.visible = false; if (boot) { boot.remove(); boot = null; } };
-    Promise.race([renderer.compileAsync(scene, camera), new Promise((r) => setTimeout(r, 3000))])
+    // never let the warm-up hold the game hostage: 1.5 s, then in you go regardless
+    const drop = () => {
+      setBootProgress(100, 'Ready!');
+      for (const o of hidden) o.visible = false;
+      if (boot) { boot.remove(); boot = null; }
+    };
+    Promise.race([renderer.compileAsync(scene, camera), new Promise((r) => setTimeout(r, 1500))])
       .catch((e) => console.warn('warm-up:', e.message)).then(drop);
   }
   stats.sample(renderer);

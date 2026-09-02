@@ -27,6 +27,7 @@ export class Hud {
     this.gear.innerHTML = `GEAR <b>${name}</b>${car.holdGear ? ' · HOLD' : ''}`;
     this.#drawDials(car);
     this.#drawMap(car, traffic);
+    this.#drawMapOverlay(car, traffic, mission);
     this.#drawBigMap(car, mission);
   }
 
@@ -44,6 +45,49 @@ export class Hud {
     }
     this.mapOpen = !this.mapOpen;
     this.mapEl.style.display = this.mapOpen ? 'block' : 'none';
+  }
+
+  /* On top of the rotating minimap: the job marker (and the next one), live
+     police as red dots, a north tick, and the district you are in. Drawn in
+     screen space with the rotation applied by hand, so nothing here depends on
+     the core drawer's save/restore. */
+  #drawMapOverlay(car, traffic, mission) {
+    const g = this.map, S = g.canvas.width, C = S / 2, SC = S / 1150, rot = car.yaw - Math.PI / 2;
+    const cs = Math.cos(rot), sn = Math.sin(rot);
+    const toMap = (x, z) => { const dx = (x - car.x) * SC, dz = (z - car.z) * SC; return [C + dx * cs - dz * sn, C + dx * sn + dz * cs]; };
+    const clampR = (p, r) => { const dx = p[0] - C, dz = p[1] - C, d = Math.hypot(dx, dz); return d > r ? [C + dx / d * r, C + dz / d * r] : p; };
+    if (mission?.active) {
+      mission.points.forEach((pt, i) => {
+        if (i < mission.index || i > mission.index + 1) return;
+        const p = clampR(toMap(pt.x, pt.y), C - 8);
+        g.fillStyle = i === mission.index ? '#ffc23c' : 'rgba(74,163,255,0.85)';
+        g.beginPath(); g.arc(p[0], p[1], i === mission.index ? 5.5 : 3.5, 0, 7); g.fill();
+      });
+    }
+    if (traffic?.police) for (const c of traffic.police) {
+      if (!c.live) continue;
+      const p = clampR(toMap(c.x, c.z), C - 6);
+      g.fillStyle = '#ff4a4a'; g.beginPath(); g.arc(p[0], p[1], 3, 0, 7); g.fill();
+    }
+    // north tick on the rim
+    const n = [C - Math.sin(rot) * (C - 6), C - Math.cos(rot) * (C - 6)];
+    g.fillStyle = 'rgba(220,230,245,0.9)'; g.font = '700 10px ui-sans-serif,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('N', n[0], n[1]);
+    // the district under your wheels
+    if (this.district) {
+      const t = performance.now();
+      if (!this._distAt || t - this._distAt > 500) {
+        this._distAt = t; let best = null, bd = Infinity;
+        for (const b of this.district.blocks) { const d = Math.hypot(b.x - car.x, b.y - car.z); if (d < bd) { bd = d; best = b.district; } }
+        this._dist = best;
+      }
+      if (this._dist) {
+        g.fillStyle = 'rgba(8,11,16,0.55)'; g.fillRect(C - 60, S - 18, 120, 15);
+        g.fillStyle = 'rgba(232,238,247,0.95)'; g.font = '600 10px ui-monospace,Menlo,monospace';
+        g.fillText(this._dist, C, S - 10.5);
+      }
+    }
+    g.textAlign = 'start'; g.textBaseline = 'alphabetic';
   }
 
   #drawBigMap(car, mission) {
@@ -254,7 +298,7 @@ export class Hud {
   }
 
   #drawMap(car, traffic) {
-    const g = this.map, S = 150, C = S / 2, SC = 0.13;
+    const g = this.map, S = g.canvas.width, C = S / 2, SC = S / 1150;   // ~210 px shows ~180 m across
     g.clearRect(0, 0, S, S);
     g.save();
     g.translate(C, C);
