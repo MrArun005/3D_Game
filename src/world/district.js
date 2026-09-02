@@ -201,12 +201,27 @@ export class District {
    * span you are and how far off its centre.
    */
   elevationAt(x, z) {
-    let best = 0;
+    let best = 0, bs = null;
     for (let i = 0; i < this.spans.length; i++) {
       const s = this.spans[i];
       if (x < s.minX || x > s.maxX || z < s.minZ || z > s.maxZ) continue;
       const h = spanHeight(s, x, z);
-      if (h > best) best = h;
+      if (h > best) { best = h; bs = s; }
+    }
+    /* Under a flyover, not on it. The span band is the deck's footprint, and
+       a surface street crossing beneath the expressway lies inside it -- the
+       car (and traffic) used to climb 9.4 m onto the deck the moment it drove
+       under. If the point sits on the tarmac of a ground-level segment that
+       is not parallel to the span, it is underneath: no lift. */
+    if (best > 0 && bs) {
+      const d = spanDir(bs, x, z);
+      for (const seg of this.segmentsNear(x, z, 30)) {
+        if (seg.cls === 'freeway' || seg.cls === 'ramp') continue;
+        const vx = seg.bx - seg.ax, vz = seg.bz - seg.az, l = Math.hypot(vx, vz) || 1;
+        if (Math.abs((vx * d[0] + vz * d[1]) / l) > 0.7) continue;      // runs with the span: it IS the approach
+        let t = ((x - seg.ax) * vx + (z - seg.az) * vz) / (l * l); t = Math.max(0, Math.min(1, t));
+        if (Math.hypot(x - seg.ax - vx * t, z - seg.az - vz * t) <= seg.half) return 0;
+      }
     }
     return best;
   }
@@ -306,6 +321,19 @@ function makeSpan(points, width, height, ramp, taper = false) {
 }
 
 const smooth = (t) => t * t * (3 - 2 * t);
+
+/** Unit direction of the span's nearest piece to (x, z). */
+function spanDir(s, x, z) {
+  let bestD = Infinity, dir = [1, 0];
+  for (let i = 0; i < s.pts.length - 1; i++) {
+    const ax = s.pts[i][0], az = s.pts[i][1];
+    const vx = s.pts[i + 1][0] - ax, vz = s.pts[i + 1][1] - az, l2 = vx * vx + vz * vz;
+    let t = l2 ? ((x - ax) * vx + (z - az) * vz) / l2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const d = Math.hypot(x - ax - vx * t, z - az - vz * t);
+    if (d < bestD) { bestD = d; const l = Math.sqrt(l2) || 1; dir = [vx / l, vz / l]; }
+  }
+  return dir;
+}
 
 /** Height of one span at a point: 0 if the point is not over or approaching it. */
 function spanHeight(s, x, z) {

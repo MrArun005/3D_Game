@@ -80,8 +80,8 @@ const KERB_ROWS = [
 
 /** Flat things that belong ON the carriageway, not the pavement. */
 const ROAD_ROWS = [
-  { asset: 'props/manhole',     every: 41, chance: 0.55, lateral: 1.8 },
-  { asset: 'props/drain_grate', every: 23, chance: 0.6,  lateral: 6.2 },
+  { asset: 'props/manhole',     every: 41, chance: 0.55, lateral: 0.35 },   // lateral is a FRACTION of the half-width
+  { asset: 'props/drain_grate', every: 23, chance: 0.6,  lateral: 0.90 },   // in the gutter, by the kerb
   { asset: 'props/manhole',     every: 44, chance: 0.40, lateral: 0.35 },
   { asset: 'props/drain_grate', every: 30, chance: 0.45, lateral: 0.92 },
 ];

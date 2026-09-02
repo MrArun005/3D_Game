@@ -102,6 +102,10 @@ export class Debris {
       const spec = BREAK_CLASS.get(t.name);
       if (!spec) continue;
       const e = t.matrix.elements;
+      /* Wall-mounted (junction boxes and units 1.4-7 m up a side wall, Phase 1):
+         the hit test is horizontal, so a car brushing the wall line broke
+         things it could not see and took the crime report for it. */
+      if (e[13] > 1.2) continue;
       const entry = {
         name: t.name, cls: spec.cls, effect: spec.effect,
         x: e[12], y: e[13], z: e[14],
