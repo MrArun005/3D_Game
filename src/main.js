@@ -361,6 +361,40 @@ function flightUpdate(c, dt) {
   camera.lookAt(h.pos.x + Math.cos(h.heading) * 12, h.pos.y - 1, h.pos.z - Math.sin(h.heading) * 12);
 }
 
+let controlsLockedUntil = 0;
+
+/**
+ * The carjack, as beats.
+ *
+ * Phase 1 of the plan: one interaction built all the way, then copied. Until
+ * the Mixamo clips land (docs/MIXAMO-CLIPS.md) the bodies are stand-ins, but
+ * the TIMING is the interaction -- door, driver out, you in, door shut, pedals
+ * live -- and it is the timing that stops this being a teleport.
+ *
+ *   0.0s  door swings open
+ *   0.5s  the driver is hauled out and hits the tarmac running; the car is yours
+ *   1.2s  you are in the seat
+ *   2.0s  door shuts
+ *   2.6s  pedals live
+ */
+function carjackSequence(best) {
+  const d = hero.userData.doors?.doorFR;
+  const at = (ms, fn) => setTimeout(fn, ms);
+  controlsLockedUntil = performance.now() + 2600;
+  if (d) { d.target = d.open; clearTimeout(d.timer); }
+  at(500, () => {
+    if (crowd) crowd.eject(best.x, best.z, best.yaw);
+    resetCar(car);
+    car.x = best.x; car.z = best.z; car.yaw = best.yaw; car.y = 0.62;
+    hero.userData.paint.color.copy(best.mesh.material.color);
+    best.live = false; best.mesh.visible = false;
+    hero.visible = true;
+    traffic.reportCrime(best.hunt ? 'police' : 'traffic', 6);
+  });
+  at(1200, () => { onFoot.enter(); });
+  at(2000, () => { if (d) d.target = 0; });
+}
+
 /** Swing the driver's door: open, then close after `hold` seconds. */
 function driverDoor(hold = 0.9) {
   const d = hero.userData.doors?.doorFR;
@@ -405,18 +439,12 @@ function useVehicle() {
       }
     }
     if (!best) return;
-    onFoot.enter();
-    driverDoor(1.1);                       // you climb in; the door follows you
-    if (best !== 'own') {
-      // the driver bails out and runs
-      if (crowd) crowd.eject(best.x, best.z, best.yaw);
-      resetCar(car);
-      car.x = best.x; car.z = best.z; car.yaw = best.yaw; car.y = 0.62;
-      hero.userData.paint.color.copy(best.mesh.material.color);
-      best.live = false; best.mesh.visible = false;
-      traffic.reportCrime(best.hunt ? 'police' : 'traffic', 6);
-    }
-    hero.visible = true;
+    if (performance.now() < controlsLockedUntil) return;   // one beat at a time
+    if (best !== 'own') { carjackSequence(best); return; }
+    // your own car: door, a beat, then you are in
+    driverDoor(1.1);
+    controlsLockedUntil = performance.now() + 900;
+    setTimeout(() => { onFoot.enter(); hero.visible = true; }, 600);
   } else {
     if (Math.abs(car.fwdSpeed) > 4) return;          // not at speed
     driverDoor(1.4);                       // step out; it swings shut behind you
@@ -684,8 +712,12 @@ function frame() {
     car.throttle = 0; car.brake = 1; car.steerTarget = 0;
   } else {
   car.holdGear = c.hold;
-  const fwdKey = started ? c.throttle : 0;
-  const revKey = started ? c.brake : 0;
+  /* While a carjack beat is playing the pedals are dead: you are not in the
+     seat yet, so the car cannot answer the throttle. Steering stays live so
+     the wheel can be seen turning through the open door. */
+  const busy = performance.now() < controlsLockedUntil;
+  const fwdKey = started && !busy ? c.throttle : 0;
+  const revKey = started && !busy ? c.brake : 0;
   // The gearbox needs the raw intent, not the pedal, to know when to leave R.
   car.wantsForward = fwdKey > 0.18;
   car.wantsReverse = revKey > 0.18;
