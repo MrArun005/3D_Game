@@ -52,23 +52,39 @@ export function createAssets() {
     stunt: buildStuntGeometries(),      // keyed by body style
   };
 
+  const texLoader = new THREE.TextureLoader();
+  const loadPBR = (path, srgb = true, tile = 1) => {
+    const t = texLoader.load(path);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(tile, tile);
+    t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    t.anisotropy = 8;
+    return t;
+  };
+  const setORM = (m, ormTex) => {
+    m.aoMap = ormTex;
+    m.roughnessMap = ormTex;
+    m.metalnessMap = ormTex;
+    ormTex.channel = 0;
+  };
+
   const mat = {
     // Standard rather than Lambert on the carriageway: roughness plus the
     // environment map is what makes wet asphalt catch the sky and the lamps.
     road: new THREE.MeshStandardMaterial({
       map: road, roughness: 0.36, metalness: 0.08, envMapIntensity: 1.05,
     }),
-    // the district's carriageway: unpainted, tiled by the metre
-    /* Asphalt needs relief, not just a picture of asphalt.
-       With albedo alone the carriageway is a flat sheet under the sun and the
-       aggregate painted into the texture never catches a highlight -- it read
-       as grey plastic. The normal map comes from the texture's own luminance,
-       so the stones that are drawn bright are the stones that stand proud. */
-    tarmac: new THREE.MeshStandardMaterial({
-      map: plain, normalMap: plainNormal,
-      normalScale: new THREE.Vector2(0.85, 0.85),
-      roughness: 0.42, metalness: 0.06, envMapIntensity: 0.8,
-    }),
+    // Scanned PBR tarmac with aggregate, wet surface sheen, and normal relief
+    tarmac: (() => {
+      const m = new THREE.MeshStandardMaterial({
+        map: loadPBR('/textures/asphalt_wet_albedo.png', true, 2),
+        normalMap: loadPBR('/textures/asphalt_wet_normal.png', false, 2),
+        normalScale: new THREE.Vector2(1.1, 1.1),
+        roughness: 0.52, metalness: 0.06, envMapIntensity: 1.15,
+      });
+      setORM(m, loadPBR('/textures/asphalt_wet_orm.png', false, 2));
+      return m;
+    })(),
     // road paint, drawn as geometry a hair above the tarmac
     paint: new THREE.MeshBasicMaterial({
       color: 0xd6d8d2, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
@@ -81,20 +97,28 @@ export function createAssets() {
       map: intersection, roughness: 0.38, metalness: 0.08, envMapIntensity: 1.0,
     }),
     walk: new THREE.MeshLambertMaterial({ map: walk }),
-    /* The same slabs, tiled ONCE.
-       `walk` carries repeat = (WALK_W/2.4, CELL/2.4) for the legacy 130m grid,
-       which writes no UVs of its own. districtWorld DOES write real UVs, in
-       units of tiles -- so the repeat multiplied on top of them, crushing a
-       4x4 slab pattern to roughly a fiftieth of a texel down the length of
-       every pavement. At a grazing angle that aliases into black corrugation,
-       which is what the pavements have looked like all along. */
-    walkDistrict: new THREE.MeshLambertMaterial({ map: (() => {
-      const t = walk.clone();
-      t.repeat.set(1, 1);
-      t.needsUpdate = true;
-      return t;
-    })() }),
-    kerb: new THREE.MeshLambertMaterial({ color: 0x44474c }),
+    // Scanned PBR pavement slabs with mortar relief and surface roughness
+    walkDistrict: (() => {
+      const m = new THREE.MeshStandardMaterial({
+        map: loadPBR('/textures/pavement_slab_albedo.png', true, 1),
+        normalMap: loadPBR('/textures/pavement_slab_normal.png', false, 1),
+        normalScale: new THREE.Vector2(0.9, 0.9),
+        roughness: 0.72, metalness: 0.04,
+      });
+      setORM(m, loadPBR('/textures/pavement_slab_orm.png', false, 1));
+      return m;
+    })(),
+    // Scanned weathered kerb stones with chipped edges and occlusion
+    kerb: (() => {
+      const m = new THREE.MeshStandardMaterial({
+        map: loadPBR('/textures/kerb_stone_albedo.png', true, 1),
+        normalMap: loadPBR('/textures/kerb_stone_normal.png', false, 1),
+        normalScale: new THREE.Vector2(0.85, 0.85),
+        roughness: 0.68, metalness: 0.05,
+      });
+      setORM(m, loadPBR('/textures/kerb_stone_orm.png', false, 1));
+      return m;
+    })(),
     roof: new THREE.MeshLambertMaterial({ color: 0x2a2e34 }),
     roofGlass: new THREE.MeshStandardMaterial({
       color: 0x1a222c, roughness: 0.18, metalness: 0.55, envMapIntensity: 1.35,
@@ -103,7 +127,17 @@ export function createAssets() {
       color: 0xc8e0f4, emissive: 0x8ec4e8, emissiveIntensity: 1.7,
       roughness: 0.28, metalness: 0.2,
     }),
-    pole: new THREE.MeshStandardMaterial({ color: 0x23262b, roughness: 0.62, metalness: 0.55 }),
+    // Scanned galvanised painted metal for posts and street fixtures
+    pole: (() => {
+      const m = new THREE.MeshStandardMaterial({
+        map: loadPBR('/textures/metal_galv_albedo.png', true, 2),
+        normalMap: loadPBR('/textures/metal_galv_normal.png', false, 2),
+        normalScale: new THREE.Vector2(0.8, 0.8),
+        roughness: 0.5, metalness: 0.65,
+      });
+      setORM(m, loadPBR('/textures/metal_galv_orm.png', false, 2));
+      return m;
+    })(),
     /* Emissive, not Basic. main.js dims lampGlow.emissiveIntensity for daylight
        -- a property a MeshBasicMaterial does not have -- and the bloom pass
        reads the emissive MRT channel, so as a Basic material the lamp heads

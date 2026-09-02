@@ -607,7 +607,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   buildPlaces(scene, district, DAY);
   beach = buildBeach(scene, district, DAY);
   crowd = new Crowd(scene, district);
-  people = new People(scene, +(new URLSearchParams(location.search).get('people') ?? 16));
+  people = new People(scene, +(new URLSearchParams(location.search).get('people') ?? 32));
   heli = new Helicopter(scene, DAY);
   heli.district = district;
   heli.nearbyBuildings = (x, z) => (world.nearbyBuildings ? world.nearbyBuildings(x, z) : []);
@@ -892,8 +892,9 @@ function frameBody() {
   }
 
   // ---- pose ----
-  // group carries yaw; the body carries the sprung motion; the wheels ride the road
-  hero.position.set(car.x, 0, car.z);
+  // group carries x/y/z and yaw; the body carries the sprung motion; the wheels ride the road
+  const gy = (world.district?.elevationAt?.(car.x, car.z) ?? groundHeightAt(car.x, car.z));
+  hero.position.set(car.x, gy, car.z);
   hero.rotation.set(0, car.yaw, 0);
   const body = hero.userData.body;
   /* A flat tyre drops the CAR, not just the wheel. Lowering the hub alone

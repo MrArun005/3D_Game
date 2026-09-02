@@ -112,18 +112,12 @@ export function createGrade(renderer, scene, camera, {
   let aoPass = null;
   if (withAO) {
     aoPass = ao(depthTex, normalTex, camera);
-    aoPass.radius.value = 0.5;
-    /* convertToTexture keeps the denoiser out of the output shader: inlined,
-       its 16-sample bilateral loop (three fetches per sample) would fuse with
-       the bloom composite, tone map and grade into one very large WGSL
-       shader. As its own render-to-texture pass it compiles once, moderately,
-       and the output quad samples a single texture. (Measured impact on cold
-       load: inconclusive — every measurement that day was taken on a machine
-       already saturated by stuck tabs. Kept because smaller shaders are the
-       safer default either way.) */
+    aoPass.radius.value = 0.42;
+    /* convertToTexture keeps the denoiser out of the output shader */
     const aoDenoised = convertToTexture(
       denoise(aoPass.getTextureNode(), depthTex, normalTex, camera));
-    lit = beauty.mul(vec4(vec3(aoDenoised.r), 1));
+    const contactAO = clamp(aoDenoised.r.pow(1.2), 0.0, 1.0);
+    lit = beauty.mul(vec4(vec3(contactAO), 1));
   }
 
   /* --- bloom -------------------------------------------------------------
@@ -164,6 +158,15 @@ export function createGrade(renderer, scene, camera, {
     // cool in the upper frame, warm down at street level
     const tint = mix(vec3(1.05, 1.00, 0.93), vec3(0.93, 0.96, 1.07), uv().y);
     c.mulAssign(vec3(v).mul(tint));
+
+    // cinematic film S-curve contrast: expands highlights, deepens shadows
+    const contrasted = c.mul(c).mul(float(3.0).sub(c.mul(2.0)));
+    c.assign(mix(c, contrasted, 0.22));
+
+    // subtle lens edge chromatic aberration on periphery
+    const chromaOffset = r.mul(r).mul(0.0025);
+    c.r.addAssign(chromaOffset.mul(0.12));
+    c.b.subAssign(chromaOffset.mul(0.12));
 
     // grain
     const n = hash2(uv().mul(vec2(1920.0, 1080.0)).add(fract(gTime).mul(91.7)));

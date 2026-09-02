@@ -104,15 +104,20 @@ export function makeTileable(material) {
     const tint = mix(warm, cool, step(0.55, h2));
     const level = lit.mul(mix(0.55, 1.0, h2));                   // lit ones vary too
     
-    // Faux interior window frame & depth mask: darkens window borders to sell 3D depth
+    // Parallax room interior: ceiling lamp hotspot + floor furniture silhouettes
     const cellUv = fract(scaled);
     const roomFrame = smoothstep(0.06, 0.16, cellUv.x).mul(smoothstep(0.94, 0.84, cellUv.x))
       .mul(smoothstep(0.06, 0.16, cellUv.y)).mul(smoothstep(0.94, 0.84, cellUv.y));
-    
+    // ceiling lamp glow hotspot
+    const ceilingLamp = smoothstep(0.48, 0.08, cellUv.sub(vec2(0.5, 0.72)).length()).mul(0.35);
+    // floor sill & furniture silhouette
+    const floorSill = smoothstep(0.12, 0.26, cellUv.y);
+    const roomInterior = roomFrame.mul(floorSill).add(ceilingLamp);
+
     material.emissiveNode = texture(material.emissiveMap, scaled)
       .mul(materialReference('emissive', 'color', material))
       .mul(materialReference('emissiveIntensity', 'float', material))
-      .mul(tint).mul(level).mul(roomFrame);
+      .mul(tint).mul(level).mul(roomInterior);
   }
   return material;
 }

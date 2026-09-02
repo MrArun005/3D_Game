@@ -14,14 +14,15 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
  * Kenney characters are 2.7 units tall and face +Z; ours are ~1.75 m and head
  * along (cos yaw, -sin yaw), so scale 0.65 * height and rotation yaw + pi/2.
  */
-const BASE = '/models/vendor/kenney/characters/';
-const VARIANTS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+const BASE = '/models/characters/';
+const VARIANTS = ['civilian_casual', 'civilian_man', 'civilian_woman', 'civilian_suit', 'civilian_longsleeve', 'civilian_woman2'];
 
 export class People {
-  constructor(scene, count = 16) {
+  constructor(scene, count = 12) {
     this.scene = scene; this.count = count;
     this.slots = [];          // { obj, mixer, actions, current, person }
     this.ready = false;
+    this._nearBuf = [];
     this.#load();
   }
 
@@ -30,25 +31,40 @@ export class People {
     const load = (f) => new Promise((res, rej) => loader.load(BASE + f + '.glb', res, undefined, rej));
     const kits = [];
     for (const v of VARIANTS) {
-      try { kits.push(await load('character-' + v)); } catch (e) { console.warn('character', v, e.message); }
+      try { kits.push(await load(v)); } catch (e) { console.warn('character', v, e.message); }
     }
     if (!kits.length) return;
     for (let i = 0; i < this.count; i++) {
       const k = kits[i % kits.length];
       const obj = k.scene.clone(true);
-      obj.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+      obj.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = true; o.frustumCulled = true; } });
       obj.visible = false;
       this.scene.add(obj);
       const mixer = new THREE.AnimationMixer(obj);
       const actions = {};
-      for (const name of ['idle', 'walk', 'sprint', 'die']) {
-        const clip = THREE.AnimationClip.findByName(k.animations, name);
-        if (clip) { actions[name] = mixer.clipAction(clip); if (name === 'die') { actions[name].setLoop(THREE.LoopOnce); actions[name].clampWhenFinished = true; } }
+      const findClip = (names) => {
+        for (const n of names) {
+          const c = THREE.AnimationClip.findByName(k.animations, n);
+          if (c) return c;
+        }
+        return k.animations[0] || null;
+      };
+      const idleC = findClip(['Idle', 'Standing', 'idle']);
+      if (idleC) actions.idle = mixer.clipAction(idleC);
+      const walkC = findClip(['Walk', 'walk']);
+      if (walkC) actions.walk = mixer.clipAction(walkC);
+      const sprintC = findClip(['Run', 'run', 'sprint']);
+      if (sprintC) actions.sprint = mixer.clipAction(sprintC);
+      const dieC = findClip(['Death', 'die', 'hit']);
+      if (dieC) {
+        actions.die = mixer.clipAction(dieC);
+        actions.die.setLoop(THREE.LoopOnce);
+        actions.die.clampWhenFinished = true;
       }
       this.slots.push({ obj, mixer, actions, current: null, person: null });
     }
     this.ready = true;
-    console.info(`people: ${this.slots.length} near-field characters from ${kits.length} bodies`);
+    console.info(`people: ${this.slots.length} high-detail human characters from ${kits.length} models`);
   }
 
   #play(slot, name, rate = 1) {
@@ -62,8 +78,14 @@ export class People {
   update(dt, crowd, car, elevationAt) {
     if (!this.ready || !crowd) return;
     const people = crowd.people;
-    const near = [];
-    for (let i = 0; i < people.length; i++) { const p = people[i]; if (!p.live) continue; near.push([Math.hypot(p.x - car.x, p.z - car.z), i]); }
+    const near = this._nearBuf;
+    near.length = 0;
+    for (let i = 0; i < people.length; i++) {
+      const p = people[i];
+      if (!p.live) continue;
+      const d = Math.hypot(p.x - car.x, p.z - car.z);
+      if (d < 50) near.push([d, i]);
+    }
     near.sort((a, b) => a[0] - b[0]);
     const take = near.slice(0, this.slots.length).map((n) => n[1]);
     let dirty = false;
@@ -76,7 +98,7 @@ export class People {
       s.obj.visible = true;
       s.obj.position.set(p.x, lift, p.z);
       s.obj.rotation.y = p.yaw + Math.PI / 2;
-      const sc = 0.65 * (p.height || 1);
+      const sc = 0.95 * (p.height || 1);
       s.obj.scale.set(sc, sc, sc);
       if (p.down) this.#play(s, 'die');
       else if (p.panic > 0) this.#play(s, 'sprint', 1.1);

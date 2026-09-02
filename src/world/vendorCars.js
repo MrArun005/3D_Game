@@ -350,6 +350,15 @@ export async function loadHeroSkin(assets, hero, file = 'q-sports') {
  */
 export async function loadVendorCars(assets) {
   const installed = [];
+  // Pre-cache all BODIES in parallel so mid-game car stealing & garage fitting is 100% instant
+  const allBodyIds = [...new Set([...Object.values(KENNEY_CARS), ...Object.keys(BODIES)])];
+  await Promise.all(allBodyIds.map(async (id) => {
+    try {
+      const spec = BODY_TYPES.sedan;
+      await fetchKit(id, spec, assets).catch(() => null);
+    } catch (e) { /* ignore pre-cache errors */ }
+  }));
+
   await Promise.all(Object.entries(KENNEY_CARS).map(async ([key, id]) => {
     try {
       const spec = BODY_TYPES[key] ?? BODY_TYPES[SPEC_OF[key]] ?? BODY_TYPES.sedan;

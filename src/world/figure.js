@@ -47,6 +47,7 @@ export function buildParts() {
   const head = mergeGeos([
     eggAt(0.105, 0, 0.12, 0),
     cylAt(0.045, 0.05, 0.12, 0, -0.02, 0),         // neck
+    eggAt(0.110, 0, 0.15, -0.02),                 // hair / cap volume
   ]);
   const arm = mergeGeos([
     sphereAt(0.052, 0, 0, 0),                      // shoulder joint
@@ -59,7 +60,8 @@ export function buildParts() {
     cylAt(0.072, 0.056, 0.34, 0, -0.18, 0),        // thigh
     sphereAt(0.056, 0, -0.36, 0),                  // knee
     cylAt(0.052, 0.040, 0.34, 0, -0.53, 0),        // shin
-    boxAt(0.09, 0.06, 0.24, 0, -0.715, 0.05),      // foot, sole at -0.745
+    boxAt(0.090, 0.06, 0.24, 0, -0.715, 0.05),     // foot
+    boxAt(0.096, 0.02, 0.26, 0, -0.735, 0.06),     // shoe sole rim, sole at -0.745
   ]);
   return { torso, head, armL: arm, armR: arm.clone(), legL: leg, legR: leg.clone() };
 }

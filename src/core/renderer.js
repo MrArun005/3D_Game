@@ -48,11 +48,11 @@ export function createRenderer(canvas) {
   const renderer = new THREE.WebGPURenderer({
     canvas, antialias: true, powerPreference: 'high-performance',
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  renderer.setPixelRatio(1.0);
   renderer.setSize(window.innerWidth, window.innerHeight, false);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  renderer.toneMapping = THREE.AgXToneMapping;
+  renderer.toneMappingExposure = 1.05;
   renderer.shadowMap.enabled = true;
   /* PCF, and it is not a choice.
      The original comment here said PCFSoft was deprecated. I decided that was
@@ -103,23 +103,7 @@ function patchNestedRenderInBundle(renderer) {
  * frame time and let the panel earn its pixels back.
  */
 export function autoResolution(renderer) {
-  const MIN = 1, MAX = Math.min(window.devicePixelRatio, 2);
-  let acc = 0, n = 0, hold = 0;
-  return (dt) => {
-    if (hold > 0) { hold -= dt; return; }
-    acc += dt; n++;
-    if (n < 45) return;
-    const ms = (acc / n) * 1000; acc = 0; n = 0;
-    const pr = renderer.getPixelRatio();
-    // 19ms leaves headroom under the 16.7ms budget; 13.5 means we have spare
-    const next = ms > 19 ? pr - 0.25 : ms < 13.5 ? pr + 0.25 : pr;
-    const want = Math.max(MIN, Math.min(MAX, next));
-    if (want !== pr) {
-      renderer.setPixelRatio(want);
-      renderer.setSize(window.innerWidth, window.innerHeight, false);
-      hold = 0.6;   // let the new resolution settle before judging it
-    }
-  };
+  return () => {};
 }
 
 /**

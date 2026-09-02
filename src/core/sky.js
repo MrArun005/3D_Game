@@ -27,7 +27,7 @@ export function createSky(scene, renderer, day = false) {
   ));
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(400, 400),
-    new THREE.MeshBasicMaterial({ color: 0x15181d, side: THREE.DoubleSide }),
+    new THREE.MeshBasicMaterial({ color: day ? 0x23272e : 0x0d1015, side: THREE.DoubleSide }),
   );
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -0.5;
@@ -36,6 +36,7 @@ export function createSky(scene, renderer, day = false) {
   const pmrem = new THREE.PMREMGenerator(renderer);
   pmrem.compileEquirectangularShader();
   scene.environment = pmrem.fromScene(envScene, 0, 1, 200).texture;
+  scene.environmentIntensity = day ? 1.15 : 0.85;
   pmrem.dispose();
 
   // stars, only well clear of the afterglow

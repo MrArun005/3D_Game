@@ -22,8 +22,9 @@ export class Metro {
       .sort((a, b) => b.len - a.len);
     const concrete = new THREE.MeshStandardMaterial({ color: 0x9a978f, roughness: 0.85 });
     const steel = new THREE.MeshStandardMaterial({ color: 0x3a3d44, roughness: 0.45, metalness: 0.6 });
-    for (const { r, len } of withLen.slice(0, 2)) {
-      if (len < 600) break;
+    for (const { r, len } of withLen) {
+      if (len < 150) continue;
+      if (this.lines.length >= 4) break;
       this.lines.push(this.#build(r, len, concrete, steel));
     }
     this.#loadTrains();
