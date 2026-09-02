@@ -411,7 +411,7 @@ function blockDressing(batch, blocks, district, solids) {
  */
 export function dressRoofs(batch, boxes, district) {
   for (const b of boxes) {
-    if (b.hw < 3.5 || b.hd < 3.5) continue;
+    if (b.kit || b.hw < 3.5 || b.hd < 3.5) continue;
     const y = KERB_H + b.height;
     // Phase 5: clutter scales with the roof, 1 unit per ~45 m2, capped at 12
     const n = Math.max(1, Math.min(12, Math.round((b.hw * b.hd * 4) / 45 * (0.7 + hash(b.x, b.z) * 0.6))));
@@ -507,6 +507,7 @@ function styleFor(box, r) {
  */
 export function dressFacades(batch, boxes, district, roadNear, signs = null, windows = null) {
   for (const box of boxes) {
+    if (box.kit) continue;                         // a whole kit building carries its own detail
     const { x, z, angle, hw, hd, height } = box;
     if (height < 5 || hw < 2.4 || hd < 2.4) continue;
     const ca = Math.cos(angle), sa = Math.sin(angle);

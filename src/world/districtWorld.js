@@ -6,6 +6,7 @@ import { KERB_H, roadDepth } from './metrics.js';
 import { ARCH, TOWER, MID, LOFT, PODIUM, DECK } from './facades.js';
 import { mulberry32 } from '../core/rng.js';
 import { SHADOW_FAR_LAYER } from '../core/renderer.js';
+import { KIT_DISTRICT, pickKitModel } from './kitBuildings.js';
 import { PAINT_COLOURS, BODY_KEYS } from '../vehicle/config.js';
 import { signalState, LAMP_COLOURS } from './signals.js';
 import { BREAK_CLASS } from './breakables.js';
@@ -1100,6 +1101,7 @@ export class DistrictWorld {
     /* --- blocks: a raised slab is its own kerb, and buildings stand on it --- */
     const blocks = this.blkByChunk.get(k) ?? [];
     const boxes = [];              // solid building footprints in this chunk
+    const kitPlaced = {};          // kit -> [geometry with matrix applied] (whole Kenney buildings)
     const slabs = { block: [], park: [], lot: [], vacant: [] };
     const facades = {}, bases = {};
     const roofs = [], glassRoofs = [], crowns = [], masts = [];
@@ -1125,6 +1127,21 @@ export class DistrictWorld {
         const lx = g.x + g.w / 2, lz = g.y + g.d / 2;
         const wx = bl.x + lx * ca - lz * sa;
         const wz = bl.y + lx * sa + lz * ca;
+        /* A whole kit building instead of the box, where the district builds that
+           way (kitBuildings.js). Height stays in the model's proportion to its
+           footprint, so a scaled house is house-height and a skyscraper towers. */
+        const kd = KIT_DISTRICT[bl.district], kits = this.assets.kitBuildings;
+        const kit = kd && kits?.[kd[0]];
+        if (kit && hash(wx * 0.37, wz * 0.61) < kd[1] && g.w > 6 && g.d > 6) {
+          const wantTall = bl.type === 'tower' || (bl.type === 'mid' && h > 30);
+          const m = pickKitModel(kit, g.w, g.d, wantTall, hash(wz, wx));
+          const sx = g.w / m.w, sz = g.d / m.d, sy = Math.min(sx, sz) * (wantTall ? 1.15 : 1.0);
+          const geo = m.geo.clone().applyMatrix4(new THREE.Matrix4().compose(
+            new THREE.Vector3(wx, KERB_H, wz), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, bl.angle, 0)), new THREE.Vector3(sx, sy, sz)));
+          (kitPlaced[kd[0]] ??= []).push(geo);
+          boxes.push({ x: wx, z: wz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: m.h * sy, district: bl.district, kit: true });
+          continue;
+        }
         this.#massing(arch, wx, wz, bl.angle, g.w, g.d, h,
                       { bases, facades, roofs, glassRoofs, crowns, masts, plant }, bl.district);
         boxes.push({ x: wx, z: wz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: h, district: bl.district });
@@ -1311,6 +1328,20 @@ export class DistrictWorld {
       for (const p of dressPools) pools.push(flat(p.x, p.y, p.z, p.size));
     }
 
+    // one merged mesh per kit per chunk: the whole Kenney buildings placed above
+    for (const [kitName, geos] of Object.entries(kitPlaced)) {
+      const merged = mergeGeometries(geos, false);
+      for (const g of geos) g.dispose();
+      if (!merged) continue;
+      merged.userData.owned = true;
+      merged.computeBoundingSphere();
+      const km = new THREE.Mesh(merged, this.assets.kitBuildings[kitName].mat);
+      km.castShadow = true; km.receiveShadow = true;
+      km.userData.shell = true;                       // casts into the far cascades like a shell
+      km.layers.enable(SHADOW_FAR_LAYER);
+      group.add(km);
+    }
+    yield;
     const inst = (geo, mat, list, shadow, colours) => {
       if (!list.length) return;
       const m = new THREE.InstancedMesh(geo, mat, list.length);

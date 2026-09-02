@@ -13,6 +13,8 @@ import { Garage } from './game/garage.js';
 import { People } from './game/people.js';
 import { Roadblock } from './game/roadblock.js';
 import { Radio } from './game/radio.js';
+import { loadKitBuildings } from './world/kitBuildings.js';
+import { Metro } from './world/metro.js';
 import { Catalogue, dressCarMaterials } from './world/catalogue.js';
 import { City } from './world/city.js';
 import { DistrictWorld } from './world/districtWorld.js';
@@ -172,7 +174,7 @@ let jobs = null, garage = null;
 let people = null;
 let hornCooldown = 0;
 let warming = false;
-let roadblock = null;
+let roadblock = null, metro = null;
 let radio = null;                           // generative car radio (game/radio.js), built once audio exists
 const person = buildHuman();
 scene.add(person.root);
@@ -575,7 +577,7 @@ const catalogueReady = new Catalogue().load(renderer)
   })
   .catch((e) => { console.warn('catalogue unavailable:', e.message); return null; });
 
-Promise.all([loadDistrict(), catalogueReady]).then(([district, catalogue]) => {
+Promise.all([loadDistrict(), catalogueReady, loadKitBuildings(assets).catch((e) => console.warn('kit buildings:', e.message))]).then(([district, catalogue]) => {
   useDistrict(district);                  // roadDepth() now answers from the file
   traffic.useGraph(district);
   useGraphForRoutes(district);             // and the fleet drives the real streets
@@ -622,6 +624,7 @@ Promise.all([loadDistrict(), catalogueReady]).then(([district, catalogue]) => {
   garage = new Garage(jobs, assets, hero, damageModel, hud);
   traffic.hud = hud;
   roadblock = new Roadblock(scene, assets, district, world, traffic, hero);
+  metro = new Metro(scene, district, assets);   // two elevated lines and their trains (world/metro.js)
   garage.restore();
   /* The other half of the race handshake: say when YOU finish. Set here
      rather than on join, because the room can be joined before the district
@@ -698,7 +701,7 @@ beamPool.rotation.x = -Math.PI / 2;
 beamPool.scale.set(8, 20, 1);
 scene.add(beamPool);
 
-const traffic = new Traffic(scene, assets, DAY ? 24 : 30, !DAY);   // Phase 5: denser, and lit at night
+const traffic = new Traffic(scene, assets, DAY ? 36 : 40, !DAY);   // Phase 5: denser, and lit at night
 const chase = new ChaseCamera(camera);
 const weather = DAY ? null : createWeather(scene);
 const hud = new Hud();
@@ -958,6 +961,7 @@ function frameBody() {
   /* Traffic reacts: a car you cut within 6 m of at speed blows its horn,
      panned to where it is, no more than once a second and a half. */
   roadblock?.update(dt, car);
+  metro?.update(dt);
   hornCooldown -= dt;
   if (hornCooldown <= 0 && Math.abs(car.fwdSpeed) > 7) {
     for (const t of traffic.cars) {

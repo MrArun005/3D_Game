@@ -67,10 +67,11 @@ export const KENNEY_CARS = {
   sedan: 'q-normal1', hatch: 'q-normal2', suv: 'q-suv', van: 'k-van',
   wagon: 'k-suv-luxury', pickup: 'k-truck',
   taxi: 'q-taxi', police: 'q-cop',
+  sports: 'q-sports', sports2: 'q-sports2', hatch2: 'k-hatch',   // extra traffic styles, sedan-sized specs
 };
 const NEUTRAL = new Set(['black', 'grey', 'gray', 'windows', 'window', 'glass', 'headlights', 'taillights', 'chrome', 'silver', 'lights', 'darkgrey', 'darkgray', 'white', 'tyre', 'tire', 'rubber']);
 // styles with no spec of their own borrow the sedan's dimensions
-const SPEC_OF = { taxi: 'sedan', police: 'sedan' };
+const SPEC_OF = { taxi: 'sedan', police: 'sedan', sports: 'sedan', sports2: 'sedan', hatch2: 'hatch' };
 
 const loader = new GLTFLoader();
 const gltfCache = new Map();          // file -> Promise<gltf>; the fleet, the hero skin and the garage share one fetch
@@ -356,7 +357,8 @@ export async function loadVendorCars(assets) {
       installed.push(key);
     } catch (e) { console.warn(`vendor car ${key} (${id}) failed: ${e.message}; keeping the loft`); }
   }));
-  assets.geo.stuntKeys = [...BODY_KEYS, ...(installed.includes('taxi') ? ['taxi'] : [])];
+  // traffic picks from every installed style except the police cruiser
+  assets.geo.stuntKeys = [...new Set([...BODY_KEYS, ...installed.filter((k) => k !== 'police')])];
   console.info(`vendor cars: ${installed.length}/${Object.keys(KENNEY_CARS).length} installed (${installed.join(', ')})`);
   return installed;
 }
