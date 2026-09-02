@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CSMShadowNode } from 'three/examples/jsm/csm/CSMShadowNode.js';
 
 export const FOG_COLOUR = 0x222a3a;
 export const FOG_DAY = 0xb7c9dd;
@@ -6,6 +7,32 @@ export const FOG_DAY = 0xb7c9dd;
 export const DAY_SUN = new THREE.Vector3(-190, 250, 120);
 /** Layer bit the far shadow cascade renders. Building shells enable it; nothing else does. */
 export const SHADOW_FAR_LAYER = 3;
+
+/**
+ * CSMShadowNode with two additions it does not offer as options:
+ * - every cascade but the first renders SHADOW_FAR_LAYER only (building
+ *   shells), the layer gate Phase 0 measured -- a far map with everything
+ *   casting was 1.36M triangles, with shells only ~5k;
+ * - the cascade splits follow the camera. CSM fits its slices to the
+ *   camera's fov/aspect/near/far once at init; photo mode zooms the fov and
+ *   the window resizes, so we re-fit whenever those change.
+ * Both hook methods three's own subclasses hook (_init, updateBefore).
+ */
+class GatedCSM extends CSMShadowNode {
+  _init(builder) {
+    super._init(builder);
+    for (let i = 1; i < this.lights.length; i++) this.lights[i].shadow.camera.layers.set(SHADOW_FAR_LAYER);
+    this._fit = '';
+  }
+  updateBefore(builder) {
+    const c = this.camera;
+    if (c) {
+      const fit = `${c.fov}|${c.aspect}|${c.near}|${c.far}`;
+      if (fit !== this._fit) { this._fit = fit; this.updateFrustums(); }
+    }
+    super.updateBefore(builder);
+  }
+}
 
 export function createRenderer(canvas) {
   /* WebGPURenderer, from the three/webgpu build the vite alias points at.
@@ -73,54 +100,48 @@ function createDayLights(scene) {
   const hemi = new THREE.HemisphereLight(0xa9c4e0, 0x8f8873, 0.55);
   scene.add(hemi);
 
-  /* Two suns, one shadow each: a poor man's cascade.
-     A single 2048 map over 240m of width is 8.5 texels per metre, which is why
-     a kerb five metres away had no shadow worth the name. `near` spans 80m at
-     25.6 texels/m -- three times the density, over the street you are actually
-     in; `far` spans 460m at 4.5 texels/m for the towers whose shadows have to
-     fall across it. Both are the same light direction and colour
-     so they read as one sun. Four true cascades want a CSM pass; this buys
-     most of the difference for two draws. */
+  /* One sun, three real cascades.
+     The previous rig was two directional lights, "a poor man's cascade": a
+     3.4 sun with an 80m shadow box and a 0-intensity twin with a 460m box,
+     "shadows only". A shadow multiplies its own light's contribution, and
+     this one's was zero -- so the far map never darkened a single pixel in
+     the life of the project (verified 2026-09-02: splitting the intensity
+     1.7/1.7 made the Kingsway tower's shadow appear on the grass; at 3.4/0
+     it was not there). Every triangle drawn into it was waste.
+
+     CSMShadowNode is three's cascaded shadow map for the WebGPU renderer:
+     one light, N slices of the view frustum, each with its own 2048 map
+     fitted to that slice, so shadow density falls off with distance instead
+     of stepping between two boxes. Cascade 0 (the street you are in) and 1
+     take every caster; the far cascade takes SHADOW_FAR_LAYER only -- the
+     building shells -- because at its texel size nothing smaller resolves. */
   const sun = new THREE.DirectionalLight(0xffeac6, 3.4);
   sun.position.copy(DAY_SUN);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 620;
-  sun.shadow.camera.left = -40;
-  sun.shadow.camera.right = 40;
-  sun.shadow.camera.top = 40;
-  sun.shadow.camera.bottom = -40;
-  sun.shadow.bias = -0.0004;
-  sun.shadow.normalBias = 0.025;
+  sun.shadow.camera.far = 900;
+  sun.shadow.bias = -0.0003;      // CSM multiplies bias by (cascade + 1)
+  sun.shadow.normalBias = 0.03;
+  /* Splits measured 2026-09-02 at kingsway-corner (draws / Mtris):
+       practical 89/199/520, cascade 1 all casters   1327 / 4.66
+       practical 89/199/520, cascade 1 shells only   1054 / 3.39
+       custom    52/156/520, cascade 1 shells only   1017 / 3.32  <- this
+       custom    52/156/520, cascade 1 all casters   1259 / 4.57
+     The gated two-light rig it replaces was 939 / 3.31 with no working far
+     shadow at all, so real tower shadows cost one extra pass and ~10k
+     triangles. Cascade 0 carries every caster to 52m; beyond that only the
+     shells, whose shadows are the only ones that still resolve. */
+  const csm = new GatedCSM(sun, { cascades: 3, maxFar: 520, mode: 'custom', lightMargin: 300 });
+  csm.customSplitsCallback = (n, near, far, target) => { target.push(0.1, 0.3, 1); };
+  csm.fade = true;
+  sun.shadow.shadowNode = csm;
   scene.add(sun, sun.target);
-
-  const sunFar = new THREE.DirectionalLight(0xfff0d2, 0);   // shadows only
-  sunFar.castShadow = true;
-  sunFar.shadow.mapSize.set(2048, 2048);
-  sunFar.shadow.camera.near = 1;
-  sunFar.shadow.camera.far = 900;
-  sunFar.shadow.camera.left = -230;
-  sunFar.shadow.camera.right = 230;
-  sunFar.shadow.camera.top = 260;
-  sunFar.shadow.camera.bottom = -230;
-  sunFar.shadow.bias = -0.0012;
-  sunFar.shadow.normalBias = 0.09;
-  /* The far cascade only sees SHADOW_FAR_LAYER. At 4.5 texels/m a bin, a
-     pedestrian or a parked car casts nothing you can see, yet every caster
-     was re-drawn into this map: profiled 2026-09-02 at the downtown spawn,
-     the far pass cost 1.36M triangles with everything casting and 0.2M with
-     only the building shells. The WebGPU shadow pass renders through
-     renderer.render(scene, shadow.camera), which honours camera.layers, so
-     the shells enable the bit (districtWorld) and this camera looks only at
-     it. The near cascade keeps every caster. */
-  sunFar.shadow.camera.layers.set(SHADOW_FAR_LAYER);
-  scene.add(sunFar, sunFar.target);
 
   const fill = new THREE.DirectionalLight(0xd8e6f5, 0.22);
   fill.position.set(180, 80, -160);
   scene.add(fill);
-  return { hemi, sun, sunFar, fill };
+  return { hemi, sun, csm, fill };
 }
 
 export function createScene(day = false) {

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import './style.css';
 
-import { autoResolution, createRenderer, createScene, createLights } from './core/renderer.js';
+import { autoResolution, createRenderer, createScene, createLights, DAY_SUN } from './core/renderer.js';
 import { createSky } from './core/sky.js';
 import { createGrade } from './core/grade.js';
 import { setAnisotropy } from './world/textures.js';
@@ -74,7 +74,7 @@ const scene = createScene(DAY);
    mountain ring 5km out, so the frustum has to reach it -- 24-bit depth over
    0.5..14000 still resolves the kerb the car is sitting on. */
 const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.5, 14000);
-const { sun, sunFar } = createLights(scene, DAY);
+const { sun } = createLights(scene, DAY);
 const { dome } = createSky(scene, renderer, DAY);
 /* Tier 1.1: the grade is now the whole post stack — scene MRT pass, GTAO,
    emissive-fed bloom, tone map, then the vignette/grain/rain folded into the
@@ -902,16 +902,11 @@ function frame() {
   /* The shadow frustum follows the car -- but the daylight rig is a high sun
      and the night rig is a low raking one, and this line was silently putting
      the noon sun 46m off the deck every frame. */
-  if (DAY) sun.position.set(car.x - 150, 230, car.z + 105);
+  // the same direction the sky dome paints its disc from (DAY_SUN), so shadows point away from the drawn sun
+  if (DAY) sun.position.set(car.x + DAY_SUN.x, DAY_SUN.y, car.z + DAY_SUN.z);
   else sun.position.set(car.x - 90, 46, car.z + 62);
   sun.target.position.set(car.x, 0, car.z);
   sun.target.updateMatrixWorld();
-  if (sunFar) {
-    // the wide cascade follows the same light, further out and further back
-    sunFar.position.set(car.x - 300, 460, car.z + 210);
-    sunFar.target.position.set(car.x, 0, car.z);
-    sunFar.target.updateMatrixWorld();
-  }
   dome.position.set(car.x, 0, car.z);
 
   if (film) {

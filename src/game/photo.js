@@ -100,7 +100,7 @@ export class Photo {
 
   /** Mouse delta in pixels, from the pointer-lock handler in main.js. */
   look(dx, dy) {
-    if (!this.on) return;
+    if (!this.on || (!dx && !dy)) return;   // a click's zero-delta mousemove must not clear the preset
     this.yaw -= dx * 0.0025;
     this.pitch = THREE.MathUtils.clamp(this.pitch - dy * 0.0025, -1.5, 1.5);
     this.preset = null;
