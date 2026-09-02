@@ -10,6 +10,7 @@ import { loadVendorCars, loadHeroSkin } from './world/vendorCars.js';
 import { LightPool } from './game/lighting.js';
 import { Jobs, onPavementAtSpeed } from './game/jobs.js';
 import { Garage } from './game/garage.js';
+import { People } from './game/people.js';
 import { Catalogue, dressCarMaterials } from './world/catalogue.js';
 import { City } from './world/city.js';
 import { DistrictWorld } from './world/districtWorld.js';
@@ -162,7 +163,8 @@ if (new URLSearchParams(location.search).has('debug')) {
 }
 let beach = null, water = null, crowd = null, heli = null, districtRef = null, drowning = 0;
 let lightPool = null;
-let jobs = null, garage = null;                            // the GTA loop: jobs, cash, heat (game/jobs.js)                       // night: real lights on the nearest lamp heads (game/lighting.js)
+let jobs = null, garage = null;
+let people = null;                          // near-field Kenney characters over the crowd (game/people.js)                            // the GTA loop: jobs, cash, heat (game/jobs.js)                       // night: real lights on the nearest lamp heads (game/lighting.js)
 const person = buildHuman();
 scene.add(person.root);
 let muted = false;
@@ -596,6 +598,7 @@ Promise.all([loadDistrict(), catalogueReady]).then(([district, catalogue]) => {
   buildPlaces(scene, district, DAY);
   beach = buildBeach(scene, district, DAY);
   crowd = new Crowd(scene, district);
+  people = new People(scene, +(new URLSearchParams(location.search).get('people') ?? 16));
   heli = new Helicopter(scene, DAY);
   heli.district = district;
   heli.nearbyBuildings = (x, z) => (world.nearbyBuildings ? world.nearbyBuildings(x, z) : []);
@@ -927,6 +930,7 @@ function frame() {
   skids.update(car, car.wheelGround ? car.wheelGround[2] : 0);
   if (firing) pullTrigger();
   if (crowd) crowd.update(car, dt, (speed) => traffic.reportCrime('person', speed));
+  people?.update(dt, crowd, car, (x, z) => districtRef?.elevationAt?.(x, z) ?? 0);
   if (beach) beach.update(dt);
   if (water) water.update(dt);
 
