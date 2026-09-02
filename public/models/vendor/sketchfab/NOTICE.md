@@ -10,3 +10,12 @@ Optimised copies of files supplied by the project owner from ~/Downloads. Not CC
 - monza.glb: 2023_chevrolet_monza — author Ddiaz Design (https://sketchfab.com/ddiaz-design) — licence CC-BY-NC-SA-4.0 (http://creativecommons.org/licenses/by-nc-sa/4.0/) — https://sketchfab.com/3d-models/2023-chevrolet-monza-dfda867b4f3b4696819b3e55d04d6db4
 
 Five of the six are CC-BY-NC-SA-4.0: attribution, NON-COMMERCIAL, share-alike. They are dev / personal-build content and must be removed before any sale or public release. corvette-c6r is CC-BY-4.0 (attribution only). All are branded Chevrolet models; CC licences do not clear trademarks.
+
+## Set pieces (landmarks)
+
+- props/gun-shop.glb: gun_shop_-_schneiders_gun_shop — author Pinos (https://sketchfab.com/PauloWardson) — licence SKETCHFAB Standard (https://sketchfab.com/licenses)
+- props/supermarket.glb: super_market_for_free — author dasy444 (https://sketchfab.com/dasy444) — licence SKETCHFAB Standard (https://sketchfab.com/licenses)
+- props/street-set.glb: city-street_2_free_for_game — author dasy444 (https://sketchfab.com/dasy444) — licence SKETCHFAB Standard (https://sketchfab.com/licenses)
+- props/gun.glb: gun — author Dries Deryckere (https://sketchfab.com/deryckeredries) — licence CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+
+"SKETCHFAB" is the Sketchfab Standard licence: usable inside this game, including commercially, but the files themselves may not be redistributed as assets. gun.glb is CC-BY-4.0 (credit Dries Deryckere).

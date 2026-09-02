@@ -15,6 +15,7 @@ import { Roadblock } from './game/roadblock.js';
 import { Radio } from './game/radio.js';
 import { loadKitBuildings } from './world/kitBuildings.js';
 import { Metro } from './world/metro.js';
+import { Landmarks } from './world/landmarks.js';
 import { Catalogue, dressCarMaterials } from './world/catalogue.js';
 import { City } from './world/city.js';
 import { DistrictWorld } from './world/districtWorld.js';
@@ -174,7 +175,7 @@ let jobs = null, garage = null;
 let people = null;
 let hornCooldown = 0;
 let warming = false;
-let roadblock = null, metro = null;
+let roadblock = null, metro = null, landmarks = null;
 let radio = null;                           // generative car radio (game/radio.js), built once audio exists
 const person = buildHuman();
 scene.add(person.root);
@@ -625,6 +626,7 @@ Promise.all([loadDistrict(), catalogueReady, loadKitBuildings(assets).catch((e) 
   traffic.hud = hud;
   roadblock = new Roadblock(scene, assets, district, world, traffic, hero);
   metro = new Metro(scene, district, assets);   // two elevated lines and their trains (world/metro.js)
+  landmarks = new Landmarks(scene, district);   // gun shop, supermarket, street set on their lots (world/landmarks.js)
   garage.restore();
   /* The other half of the race handshake: say when YOU finish. Set here
      rather than on join, because the room can be joined before the district
