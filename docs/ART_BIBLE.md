@@ -54,6 +54,8 @@ plaster_worn         stone_dressed        glass_curtain      glass_shop
 metal_painted        metal_galv           metal_rust         alloy_polished
 asphalt              asphalt_wet          pavement_slab      kerb_stone
 timber_painted       timber_bare          fabric_awning      plastic_signage
+sign_emissive        (Phase 1 shop-sign boards: the 64-cell fascia atlas as colour AND emissive,
+                      per-instance cell -- world/signs.js. Not a kit material; the ingest never binds it.)
 car_paint            car_glass            tyre_rubber        chrome_trim
 foliage              bark                 grass
 ```
