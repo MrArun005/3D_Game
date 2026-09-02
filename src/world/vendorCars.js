@@ -28,11 +28,36 @@ import { toTex } from './textures.js';
  * a quarter turn (see buildKit).
  */
 const BASE = '/models/vendor/kenney/cars/';
-export const KENNEY_CARS = {
-  sedan: 'sedan', hatch: 'hatchback-sports', suv: 'suv', van: 'van',
-  wagon: 'suv-luxury', pickup: 'truck',
-  taxi: 'taxi', police: 'police',
+const QBASE = '/models/vendor/quaternius/cars/';
+
+/**
+ * Every body the game can wear, from two CC0 sources. Quaternius' Realistic
+ * Car Pack (OBJ, flat colours, real proportions: a sports car is 3.96 x 1.8 x
+ * 1.15 m) is the GTA-looking set; Kenney's Car Kit fills the shapes it lacks
+ * (van, pickup). `k-` ids load a GLB with the palette texture, `q-` ids load
+ * OBJ + MTL and bake the material colours into vertex colours.
+ */
+export const BODIES = {
+  'q-sports':  { src: 'q', file: 'SportsCar' },
+  'q-sports2': { src: 'q', file: 'SportsCar2' },
+  'q-normal1': { src: 'q', file: 'NormalCar1' },
+  'q-normal2': { src: 'q', file: 'NormalCar2' },
+  'q-suv':     { src: 'q', file: 'SUV' },
+  'q-taxi':    { src: 'q', file: 'Taxi' },
+  'q-cop':     { src: 'q', file: 'Cop' },
+  'k-van':     { src: 'k', file: 'van' },
+  'k-truck':   { src: 'k', file: 'truck' },
+  'k-suv-luxury': { src: 'k', file: 'suv-luxury' },
+  'k-hatch':   { src: 'k', file: 'hatchback-sports' },
+  'k-sedan':   { src: 'k', file: 'sedan' },
 };
+/** Traffic / parked style -> body id. */
+export const KENNEY_CARS = {
+  sedan: 'q-normal1', hatch: 'q-normal2', suv: 'q-suv', van: 'k-van',
+  wagon: 'k-suv-luxury', pickup: 'k-truck',
+  taxi: 'q-taxi', police: 'q-cop',
+};
+const NEUTRAL = new Set(['black', 'grey', 'gray', 'windows', 'window', 'glass', 'headlights', 'taillights', 'chrome', 'silver', 'lights', 'darkgrey', 'darkgray', 'white', 'tyre', 'tire', 'rubber']);
 // styles with no spec of their own borrow the sedan's dimensions
 const SPEC_OF = { taxi: 'sedan', police: 'sedan' };
 
@@ -136,6 +161,96 @@ function buildKit(gltf, spec, palette, { wheels: keepWheels = true } = {}) {
   return { paint, detail: detailAll, lodBody };
 }
 
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
+
+const objCache = new Map();
+/** OBJ + MTL as a Group of Meshes with material arrays and geometry groups. */
+function fetchObj(file) {
+  let p = objCache.get(file);
+  if (!p) {
+    p = new Promise((res, rej) => {
+      new MTLLoader().setPath(QBASE).load(file + '.mtl', (mtl) => {
+        mtl.preload();
+        new OBJLoader().setMaterials(mtl).setPath(QBASE).load(file + '.obj', res, undefined, rej);
+      }, undefined, rej);
+    });
+    objCache.set(file, p);
+  }
+  return p;
+}
+
+/**
+ * A Quaternius car into the kit contract. Every mesh is non-indexed with
+ * material groups; the paint is the largest-area group whose material name
+ * is not a neutral (black, grey, glass, lamps). Detail keeps every other
+ * group with its MTL colour baked as vertex colour, wheels included, so one
+ * vertexColors material draws all of it. Front is wherever the objects named
+ * Front*Wheel sit, so the quarter turn onto +X is decided per car.
+ */
+function buildKitFromObj(group, spec, { wheels: keepWheels = true } = {}) {
+  const bodies = [], wheels = [];
+  group.updateMatrixWorld(true);
+  group.traverse((o) => { if (o.isMesh) (/wheel/i.test(o.name) ? wheels : bodies).push(o); });
+  if (!bodies.length) throw new Error('no body mesh');
+  // front: mean z of the front wheels
+  let fz = 0, fn = 0;
+  for (const w of wheels) if (/front/i.test(w.name)) { w.geometry.computeBoundingBox(); fz += (w.geometry.boundingBox.min.z + w.geometry.boundingBox.max.z) / 2; fn++; }
+  const frontPlusZ = fn ? fz / fn > 0 : true;
+  // area per material name across the body meshes
+  const area = new Map(), colourOf = new Map();
+  const faceArea = (p, i) => { const ax = p[i + 3] - p[i], ay = p[i + 4] - p[i + 1], az = p[i + 5] - p[i + 2], bx = p[i + 6] - p[i], by = p[i + 7] - p[i + 1], bz = p[i + 8] - p[i + 2]; return Math.hypot(ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx); };
+  const groupsOf = (m) => { const mats = Array.isArray(m.material) ? m.material : [m.material]; const gs = m.geometry.groups.length ? m.geometry.groups : [{ start: 0, count: m.geometry.attributes.position.count, materialIndex: 0 }]; return gs.map((g) => ({ ...g, mat: mats[g.materialIndex] || mats[0] })); };
+  for (const m of bodies) { const p = m.geometry.attributes.position.array; for (const g of groupsOf(m)) { let a = 0; for (let v = g.start; v < g.start + g.count; v += 3) a += faceArea(p, v * 3); const n = (g.mat.name || '').toLowerCase(); area.set(n, (area.get(n) || 0) + a); colourOf.set(n, g.mat.color); } }
+  let paintName = null, best = -1;
+  for (const [n, a] of area) if (!NEUTRAL.has(n.replace(/[^a-z]/g, '')) && a > best) { best = a; paintName = n; }
+  // split: paint ranges vs detail ranges (detail gets vertex colours)
+  const paintParts = [], detailParts = [];
+  const slice = (m, g, withColour) => {
+    const src = m.geometry, geo = new THREE.BufferGeometry();
+    for (const k of ['position', 'normal', 'uv']) { const at = src.attributes[k]; if (!at) continue; geo.setAttribute(k, new THREE.BufferAttribute(at.array.slice(g.start * at.itemSize, (g.start + g.count) * at.itemSize), at.itemSize)); }
+    if (!geo.attributes.uv) geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.count * 2), 2));
+    if (withColour) { const c = g.mat.color, arr = new Float32Array(g.count * 3); for (let i = 0; i < g.count; i++) { arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; } geo.setAttribute('color', new THREE.BufferAttribute(arr, 3)); }
+    geo.applyMatrix4(m.matrixWorld);
+    return geo;
+  };
+  // every part carries a colour attribute (paint parts too) so mergeGeometries accepts any mix of them
+  for (const m of bodies) for (const g of groupsOf(m)) ((g.mat.name || '').toLowerCase() === paintName ? paintParts : detailParts).push(slice(m, g, true));
+  if (keepWheels) for (const w of wheels) for (const g of groupsOf(w)) detailParts.push(slice(w, g, true));
+  const paint = mergeGeometries(paintParts, false), detail = mergeGeometries(detailParts, false);
+  const all = mergeGeometries([...paintParts, ...detailParts], false);
+  if (!paint || !detail || !all) throw new Error('merge failed (mixed attributes)');
+  // centre on the footprint, scale to the spec, turn the front onto +X
+  paint.computeBoundingBox(); const bb = paint.boundingBox.clone();
+  for (const g of [detail, all]) { g.computeBoundingBox(); bb.union(g.boundingBox); }
+  const len = bb.max.z - bb.min.z, wid = bb.max.x - bb.min.x, cx = (bb.min.x + bb.max.x) / 2, cz = (bb.min.z + bb.max.z) / 2, y0 = bb.min.y;
+  const M = new THREE.Matrix4().makeRotationY(frontPlusZ ? Math.PI / 2 : -Math.PI / 2)
+    .multiply(new THREE.Matrix4().makeScale((spec.wMax * 2) / wid, (spec.wMax * 2) / wid, spec.L / len))
+    .multiply(new THREE.Matrix4().makeTranslation(-cx, -y0, -cz));
+  for (const g of [paint, detail, all]) { g.applyMatrix4(M); g.computeBoundingSphere(); }
+  paint.userData = { length: spec.L, width: spec.wMax * 2 };
+  return { paint, detail, lodBody: all };
+}
+
+/** Any body id -> { paint, detail, detailMat, lodBody }, from either source. */
+export async function fetchKit(id, spec, assets, opts = {}) {
+  const def = BODIES[id] ?? BODIES['q-sports'];
+  if (def.src === 'q') {
+    const group = await fetchObj(def.file);
+    const kit = buildKitFromObj(group, spec, opts);
+    assets.mat.carVertex ??= (() => { const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.15 }); m.name = 'car_vertex'; return m; })();
+    return { ...kit, detailMat: assets.mat.carVertex };
+  }
+  const gltf = await fetchGltf(def.file);
+  if (!assets.mat.carKit) {
+    let map = null; gltf.scene.traverse((o) => { if (!map && o.isMesh && o.material?.map) map = o.material.map; });
+    map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 4;
+    assets.mat.carKit = new THREE.MeshStandardMaterial({ map, roughness: 0.55, metalness: 0.08 }); assets.mat.carKit.name = 'car_kit_palette';
+    assets.kenneyPalette = samplePalette(map.image);
+  }
+  return { ...buildKit(gltf, spec, assets.kenneyPalette, opts), detailMat: assets.mat.carKit };
+}
+
 /**
  * The hero wears a Kenney body too (item 1 of the visual list, 2026-09-02).
  *
@@ -149,23 +264,20 @@ function buildKit(gltf, spec, palette, { wheels: keepWheels = true } = {}) {
  * userData.hull so the crumple lands on what you see. Known loss: the doors
  * no longer swing open on a carjack; the body is one piece.
  */
-export async function loadHeroSkin(assets, hero, file = 'sedan-sports') {
+export async function loadHeroSkin(assets, hero, file = 'q-sports') {
   const u = hero.userData;
   /* Re-fits: after the first skin userData.hull is the Kenney paint mesh, not
      the loft -- measuring that (and its parent, the old skin group) put the
      second body nowhere. Keep the loft hull as the fixed reference. */
   u.loftHull ??= u.hull;
   const hull = u.loftHull;
-  if (!hull || !assets.mat.carKit) return false;
+  if (!hull) return false;
   if (u.skin) { u.skin.parent?.remove(u.skin); u.skin = null; }
-  const gltf = await fetchGltf(file).catch(() => null);
-  if (!gltf) return false;
-  let map = null; gltf.scene.traverse((o) => { if (!map && o.isMesh && o.material?.map) map = o.material.map; });
-  const palette = samplePalette(map.image);
   hull.geometry.computeBoundingBox();
   const bb = hull.geometry.boundingBox;                 // shell space: nose at 0, tail at +L
   const L = bb.max.x - bb.min.x, W = bb.max.z - bb.min.z;
-  const kit = buildKit(gltf, { L, wMax: W / 2 }, palette, { wheels: false });
+  const kit = await fetchKit(file, { L, wMax: W / 2 }, assets, { wheels: false }).catch((e) => { console.warn('hero skin', file, e.message); return null; });
+  if (!kit) return false;
   const shell = hull.parent;
   // hide the loft skin: body, glass, doors and trim; keep lamps, interior, driver, wheel
   const trim = assets.carMats.trim, paint = hull.material, glass = u.glass?.material;
@@ -178,7 +290,7 @@ export async function loadHeroSkin(assets, hero, file = 'sedan-sports') {
   const cx = (bb.min.x + bb.max.x) / 2;
   skin.position.set(shell.position.x - cx, bb.min.y, 0);
   const pm = new THREE.Mesh(paintGeo, paint); pm.castShadow = true; pm.receiveShadow = true;
-  const dm = new THREE.Mesh(kit.detail, assets.mat.carKit); dm.castShadow = true; dm.receiveShadow = true;
+  const dm = new THREE.Mesh(kit.detail, kit.detailMat); dm.castShadow = true; dm.receiveShadow = true;
   skin.add(pm, dm);
   shell.parent.add(skin);
   u.hull = pm;                                           // damage.attach() reads this
@@ -192,41 +304,19 @@ export async function loadHeroSkin(assets, hero, file = 'sedan-sports') {
  * waits on or breaks for a missing file.
  */
 export async function loadVendorCars(assets) {
-  let detailMat = null, palette = null;
   const installed = [];
-  // one round trip for the whole kit instead of eight in a row
-  const entries = Object.entries(KENNEY_CARS);
-  const loaded = await Promise.all(entries.map(([, file]) => fetchGltf(file).catch((e) => e)));
-  for (let n = 0; n < entries.length; n++) {
-    const [key, file] = entries[n];
+  await Promise.all(Object.entries(KENNEY_CARS).map(async ([key, id]) => {
     try {
-      const gltf = loaded[n];
-      if (gltf instanceof Error) throw gltf;
-      if (!detailMat) {
-        let map = null;
-        gltf.scene.traverse((o) => { if (!map && o.isMesh && o.material?.map) map = o.material.map; });
-        if (!map) throw new Error('no colormap');
-        palette = samplePalette(map.image);
-        map.colorSpace = THREE.SRGBColorSpace;
-        map.anisotropy = 4;
-        detailMat = new THREE.MeshStandardMaterial({ map, roughness: 0.55, metalness: 0.08 });
-        detailMat.name = 'car_kit_palette';
-        assets.mat.carKit = detailMat;
-      }
       const spec = BODY_TYPES[key] ?? BODY_TYPES[SPEC_OF[key]] ?? BODY_TYPES.sedan;
-      const kit = buildKit(gltf, spec, palette);
+      const kit = await fetchKit(id, spec, assets);
       const old = assets.geo.stunt[key];
       assets.geo.stunt[key] = {
-        body: kit.paint, glass: kit.detail, detail: kit.detail, detailMat,
-        lodBody: kit.lodBody, occupant: old?.occupant ?? assets.geo.stunt.sedan.occupant,
-        vendor: true,
+        body: kit.paint, glass: kit.detail, detail: kit.detail, detailMat: kit.detailMat,
+        lodBody: kit.lodBody, occupant: old?.occupant ?? assets.geo.stunt.sedan.occupant, vendor: true,
       };
       installed.push(key);
-    } catch (e) {
-      console.warn(`vendor car ${key} (${file}) failed: ${e.message}; keeping the loft`);
-    }
-  }
-  // traffic may pick any installed style that has a spec to drive with
+    } catch (e) { console.warn(`vendor car ${key} (${id}) failed: ${e.message}; keeping the loft`); }
+  }));
   assets.geo.stuntKeys = [...BODY_KEYS, ...(installed.includes('taxi') ? ['taxi'] : [])];
   console.info(`vendor cars: ${installed.length}/${Object.keys(KENNEY_CARS).length} installed (${installed.join(', ')})`);
   return installed;

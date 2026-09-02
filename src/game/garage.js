@@ -12,30 +12,33 @@ import { loadHeroSkin } from '../world/vendorCars.js';
  * fitted one persist in localStorage.
  */
 const CATALOGUE = [
-  { file: 'sedan-sports',     name: 'SPORTS SEDAN', price: 0 },
-  { file: 'sedan',            name: 'SEDAN',        price: 400 },
-  { file: 'hatchback-sports', name: 'HOT HATCH',    price: 900 },
-  { file: 'van',              name: 'VAN',          price: 1200 },
-  { file: 'suv',              name: 'SUV',          price: 1400 },
-  { file: 'truck',            name: 'PICKUP',       price: 1500 },
-  { file: 'taxi',             name: 'TAXI',         price: 1000 },
-  { file: 'suv-luxury',       name: 'LUXURY SUV',   price: 2600 },
-  { file: 'police',           name: 'CRUISER',      price: 4000 },
+  { file: 'q-sports',     name: 'SPORTS COUPE',  price: 0 },
+  { file: 'q-normal1',    name: 'SALOON',        price: 500 },
+  { file: 'q-normal2',    name: 'COMPACT',       price: 700 },
+  { file: 'k-hatch',      name: 'HOT HATCH',     price: 900 },
+  { file: 'q-taxi',       name: 'TAXI',          price: 1000 },
+  { file: 'k-van',        name: 'VAN',           price: 1200 },
+  { file: 'k-truck',      name: 'PICKUP',        price: 1500 },
+  { file: 'q-suv',        name: 'SUV',           price: 1800 },
+  { file: 'k-suv-luxury', name: 'LUXURY SUV',    price: 2600 },
+  { file: 'q-sports2',    name: 'SUPERCAR',      price: 3800 },
+  { file: 'q-cop',        name: 'CRUISER',       price: 4000 },
 ];
 const REPAIR = 150;
 
 export class Garage {
   constructor(jobs, assets, hero, damage, hud) {
     this.jobs = jobs; this.assets = assets; this.hero = hero; this.damage = damage; this.hud = hud;
-    this.owned = new Set(JSON.parse(localStorage.getItem('hb.garage') || '["sedan-sports"]'));
-    this.fitted = localStorage.getItem('hb.body') || 'sedan-sports';
+    this.owned = new Set(JSON.parse(localStorage.getItem('hb.garage') || '["q-sports"]'));
+    this.fitted = localStorage.getItem('hb.body') || 'q-sports';
+    if (!CATALOGUE.some((c) => c.file === this.fitted)) this.fitted = 'q-sports';   // ids changed 2026-09-02
     this.cursor = CATALOGUE.findIndex((c) => c.file === this.fitted);
     this.browsing = false;
   }
 
   /** Fit the persisted body at start-up (the default is already on). */
   async restore() {
-    if (this.fitted !== 'sedan-sports') await this.#fit(this.fitted);
+    if (this.fitted !== 'q-sports') await this.#fit(this.fitted);
   }
 
   browse() {

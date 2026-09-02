@@ -275,6 +275,14 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   pedestrians are Kenney Blocky Characters with the kit's own clips
   (`?people=N`); yaw offset `+PI/2` is unverified -- if they walk sideways,
   that constant is the fix.
+- **Quaternius Realistic Car Pack (CC0, OBJ)** is the fleet's main body set
+  (`public/models/vendor/quaternius/cars/`, downloaded from the Drive folder
+  with `gdown --folder`). `vendorCars.js:BODIES` registers every body id
+  (`q-*` OBJ+MTL with material colours baked to vertex colours, `k-*` Kenney
+  GLB with the palette); `KENNEY_CARS` maps traffic styles to ids; the
+  garage and the hero skin take ids. Paint = largest non-neutral material
+  group; front = side the Front*Wheel objects sit on. Note: mergeGeometries
+  needs identical attribute sets -- every part gets a colour attribute.
 - **City-wide BatchedMesh is written but dormant** (`Catalogue.attach`,
   gated on `catalogue.multiDraw`). Without multi-draw-indirect three's WebGPU
   backend issues one draw per instance: measured 8,938 draws / 17.9 ms
