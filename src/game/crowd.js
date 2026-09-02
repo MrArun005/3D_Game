@@ -18,6 +18,8 @@ const SPAWN_MIN = 25, SPAWN_MAX = 190, DESPAWN = 260;
 
 const SKIN = [0xf0c8a0, 0xd9a173, 0xa8724a, 0x7a4f33, 0x5a3a26];
 const WEAR = [0x2b3444, 0x6a3f38, 0x2f5d4a, 0x7a6a48, 0x4a3f5e, 0x8a3a3a, 0x35485e, 0xa8a29a];
+// trousers: denim, black, khaki, grey -- deliberately duller than the tops
+const TROUSERS = [0x2a3550, 0x1d1f24, 0x6b6045, 0x3b3f47, 0x27303d];
 
 export class Crowd {
   constructor(scene, district) {
@@ -30,7 +32,7 @@ export class Crowd {
 
     this.fleet = new FigureFleet(scene, COUNT, { shadows: true });
     for (let i = 0; i < COUNT; i++) {
-      this.fleet.colour(i, WEAR[i % WEAR.length], SKIN[(i * 3) % SKIN.length]);
+      this.fleet.colour(i, WEAR[i % WEAR.length], SKIN[(i * 3) % SKIN.length], TROUSERS[(i * 7) % TROUSERS.length]);
       this.people.push({ live: false, x: 0, z: 0, yaw: 0, speed: 0, phase: 0, down: 0,
                          height: 0.94 + this.rand() * 0.14 });
     }

@@ -31,24 +31,35 @@ const HIP = 0.86, SHOULDER = 1.30, HEAD_Y = 1.52;
 export const FOOT_DROP = 0.745 - HIP;
 
 export function buildParts() {
+  /* Rounded, tapered, jointed -- not boxes.
+     The joints, offsets and the sole at -0.745 are unchanged, so poseInto()
+     and FOOT_DROP are untouched; only the silhouette is. A box-man reads as a
+     placeholder from the driver's seat at any distance; a figure with a neck,
+     shoulders, tapered limbs and knees reads as a person at forty metres,
+     which is the range the crowd actually lives at. ~150 triangles a part. */
   const torso = mergeGeos([
-    boxAt(0.30, 0.52, 0.20, 0, 1.12, 0),          // chest and belly
-    boxAt(0.34, 0.14, 0.22, 0, 1.34, 0),          // shoulders
-    boxAt(0.26, 0.14, 0.20, 0, 0.86, 0),          // hips
+    cylAt(0.165, 0.13, 0.60, 0, 1.08, 0),          // chest tapering to the waist
+    cylAt(0.145, 0.15, 0.16, 0, 0.87, 0),          // pelvis
+    sphereAt(0.075, 0, 1.33, 0.155),               // shoulder caps
+    sphereAt(0.075, 0, 1.33, -0.155),
+    boxAt(0.28, 0.10, 0.19, 0, 1.34, 0),           // shoulder yoke
   ]);
   const head = mergeGeos([
-    sphereAt(0.115, 0, 0.10, 0),
-    boxAt(0.09, 0.10, 0.09, 0, -0.02, 0),         // neck
+    eggAt(0.105, 0, 0.12, 0),
+    cylAt(0.045, 0.05, 0.12, 0, -0.02, 0),         // neck
   ]);
   const arm = mergeGeos([
-    boxAt(0.085, 0.28, 0.085, 0, -0.15, 0),       // upper
-    boxAt(0.075, 0.28, 0.075, 0, -0.44, 0),       // fore
-    sphereAt(0.055, 0, -0.60, 0),                 // hand
+    sphereAt(0.052, 0, 0, 0),                      // shoulder joint
+    cylAt(0.046, 0.040, 0.28, 0, -0.15, 0),        // upper
+    sphereAt(0.042, 0, -0.30, 0),                  // elbow
+    cylAt(0.038, 0.030, 0.28, 0, -0.44, 0),        // fore
+    eggAt(0.045, 0, -0.61, 0.01),                  // hand
   ]);
   const leg = mergeGeos([
-    boxAt(0.115, 0.34, 0.115, 0, -0.18, 0),       // thigh
-    boxAt(0.10, 0.34, 0.10, 0, -0.53, 0),         // shin
-    boxAt(0.11, 0.07, 0.22, 0, -0.71, 0.045),     // foot
+    cylAt(0.072, 0.056, 0.34, 0, -0.18, 0),        // thigh
+    sphereAt(0.056, 0, -0.36, 0),                  // knee
+    cylAt(0.052, 0.040, 0.34, 0, -0.53, 0),        // shin
+    boxAt(0.09, 0.06, 0.24, 0, -0.715, 0.05),      // foot, sole at -0.745
   ]);
   return { torso, head, armL: arm, armR: arm.clone(), legL: leg, legR: leg.clone() };
 }
@@ -123,6 +134,18 @@ function sphereAt(r, x, y, z) {
   g.applyMatrix4(M4(x, y, z));
   return g;
 }
+/** A limb segment: radius `rTop` at the joint tapering to `rBot`, centred at y. */
+function cylAt(rTop, rBot, h, x, y, z) {
+  const g = new THREE.CylinderGeometry(rTop, rBot, h, 10, 1);
+  g.applyMatrix4(M4(x, y, z));
+  return g;
+}
+/** A head or a hand: a sphere pulled taller than it is wide. */
+function eggAt(r, x, y, z) {
+  const g = new THREE.SphereGeometry(r, 10, 8);
+  g.applyMatrix4(M4(x, y, z, 0, 0, 0, 1, 1.18, 1));
+  return g;
+}
 
 /**
  * A crowd of `count` articulated figures drawn in six instanced meshes.
@@ -145,11 +168,17 @@ export class FigureFleet {
     this.hidden = new THREE.Matrix4().makeScale(0, 0, 0);
   }
 
-  /** Per-person colours: `wear` tints everything but the head, `skin` the head. */
-  colour(i, wear, skinHex) {
+  /**
+   * Per-person colours: `wear` for the torso and arms, `skin` for the head,
+   * `trousers` for the legs. One colour for the whole body was the other
+   * half of the box-man read -- nobody dresses in a single block of colour.
+   */
+  colour(i, wear, skinHex, trousers = wear) {
     const c = _colour;
     for (let k = 0; k < this.meshes.length; k++) {
-      this.meshes[k].setColorAt(i, c.setHex(PARTS[k] === 'head' ? skinHex : wear));
+      const part = PARTS[k];
+      const hex = part === 'head' ? skinHex : part.startsWith('leg') ? trousers : wear;
+      this.meshes[k].setColorAt(i, c.setHex(hex));
     }
   }
 
