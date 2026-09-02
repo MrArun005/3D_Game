@@ -226,6 +226,23 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   draws: the F3 overlay and `photo.line()` add `world.bundleStats()` (761 of
   987 draws at kingsway-corner are bundled). Do not trust a raw
   `renderer.info.render.drawCalls` again.
+- **Render-bundle ghosts, root cause** (`core/renderer.js:patchNestedRenderInBundle`):
+  bundles render first, so the frame's first lit object sits inside a
+  recording; its lazy shadow-map update is a nested `renderer.render()`, and
+  three's `_renderBundle` ends every nested bundle with
+  `_currentRenderBundle = null`, which the outer recording never gets back.
+  Everything after it is drawn directly (the frame looks right) but not
+  recorded: spawn chunk list 81, recording 1; shadow cascades 44/12/12.
+  `renderer.render` is wrapped to save/restore the pointer. 76/76 after.
+  `tools/framediff.mjs a.png b.png` measures a stale frame (as-rendered vs
+  forced re-record): 21% before, expected ~0 after. Bundles default ON,
+  `?nobundles` for A/B.
+- **District character** (`DISTRICT_FORM` in districtWorld, `DISTRICT_STYLE`
+  in dressing): podium-and-tower, L-wings, terraces, sheds by district; the
+  facade kit style follows the district two times in three.
+- **Night light pool** (`game/lighting.js`): 6 real point lights (`?lights=N`)
+  on the nearest lamp heads, 0.25 s re-rank, 20% hysteresis, 1 s hold.
+  `grade.setNight()` retunes bloom for night.
 - **City-wide BatchedMesh is written but dormant** (`Catalogue.attach`,
   gated on `catalogue.multiDraw`). Without multi-draw-indirect three's WebGPU
   backend issues one draw per instance: measured 8,938 draws / 17.9 ms

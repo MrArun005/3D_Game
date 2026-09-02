@@ -1544,13 +1544,14 @@ export class DistrictWorld {
 
 const _colour = new THREE.Color();
 const _frustum = new THREE.Frustum(), _pv = new THREE.Matrix4(), _box = new THREE.Box3();
-/* Render bundles are OFF by default (2026-09-02). They cut render CPU
-   11.6 -> 8.8 ms, but a recording goes stale in ways re-recording on release
-   does not cover: after streaming, live bundles drew a building at the
-   player's transform and parked cars in the sky (seen; forcing every bundle
-   to re-record made both vanish). Until the trigger is understood, opt in
-   with ?bundles. */
-const USE_BUNDLES = typeof location !== 'undefined' && new URLSearchParams(location.search).has('bundles');
+/* Render bundles are ON by default (2026-09-02, after the fix in
+   core/renderer.js:patchNestedRenderInBundle). They cut render CPU
+   11.6 -> 8.8 ms. The ghosts (a building at the player's transform, cars in
+   the sky) were truncated recordings: a nested shadow-map render inside a
+   recording cleared three's current-bundle pointer, so the spawn chunk's
+   recording held 1 of 81 objects. Fixed at the renderer; verified 76/76
+   recorded afterwards. ?nobundles turns them off for A/B. */
+const USE_BUNDLES = typeof location === 'undefined' || !new URLSearchParams(location.search).has('nobundles');
 const _zero = new THREE.Matrix4().makeScale(0, 0, 0);   // hides an instance in place
 const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
 /** a ground-plane quad, laid flat and scaled — light pools, decals */
