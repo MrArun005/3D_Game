@@ -2,6 +2,8 @@ import * as THREE from 'three';
 
 export const FOG_COLOUR = 0x222a3a;
 export const FOG_DAY = 0xb7c9dd;
+/** Where the day sun is. The sky dome paints its disc from this same vector. */
+export const DAY_SUN = new THREE.Vector3(-190, 250, 120);
 
 export function createRenderer(canvas) {
   /* WebGPURenderer, from the three/webgpu build the vite alias points at.
@@ -62,7 +64,11 @@ export function autoResolution(renderer) {
  * and adding a coloured fill is what makes a "day" scene look like a lit set.
  */
 function createDayLights(scene) {
-  const hemi = new THREE.HemisphereLight(0xa9c4e0, 0x8f8873, 1.05);
+  /* Less fill, more sun. At 1.05 the hemisphere lit every face the same and
+     the 2.6 sun never produced light-and-shade -- a facade turned away from
+     the sun was the same tone as one facing it, which is most of why day read
+     as milky. Ambient is now the sky's job at 0.55; the sun carries the form. */
+  const hemi = new THREE.HemisphereLight(0xa9c4e0, 0x8f8873, 0.55);
   scene.add(hemi);
 
   /* Two suns, one shadow each: a poor man's cascade.
@@ -73,8 +79,8 @@ function createDayLights(scene) {
      fall across it. Both are the same light direction and colour
      so they read as one sun. Four true cascades want a CSM pass; this buys
      most of the difference for two draws. */
-  const sun = new THREE.DirectionalLight(0xfff0d2, 2.6);
-  sun.position.set(-190, 250, 120);
+  const sun = new THREE.DirectionalLight(0xffeac6, 3.4);
+  sun.position.copy(DAY_SUN);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.camera.near = 1;
@@ -109,7 +115,7 @@ function createDayLights(scene) {
 export function createScene(day = false) {
   const scene = new THREE.Scene();
   // clear daylight sees a long way; a 4.2km city is worth showing off
-  scene.fog = day ? new THREE.FogExp2(FOG_DAY, 0.00013)
+  scene.fog = day ? new THREE.FogExp2(FOG_DAY, 0.00017)   // aerial perspective: depth, not murk
                   : new THREE.FogExp2(FOG_COLOUR, 0.0034);
   return scene;
 }

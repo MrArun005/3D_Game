@@ -161,18 +161,104 @@ export function texPool() {
    AND less saturated than the zenith, or distant geometry never separates from
    the sky and the whole city reads as a flat cut-out. */
 const SKY_DAY = [
-  [0.00, '#8ea6bd'], [0.40, '#b9cbdc'], [0.482, '#dce7f0'], [0.50, '#e8f0f6'],
-  [0.53, '#cddff0'], [0.64, '#93b6dd'], [0.80, '#5f8fcb'], [1.00, '#3d6cb0'],
+  [0.00, '#7f95ad'], [0.40, '#b3c5d6'], [0.482, '#e0e6ea'], [0.50, '#ece9df'],
+  [0.53, '#bfd3e9'], [0.64, '#7ea8d9'], [0.80, '#3f78bf'], [1.00, '#1f4f98'],
 ];
 
-export function texSky(day = false) {
+
+/**
+ * A day sky with a sun in it and weather above the horizon.
+ *
+ * The old day sky was a 64px-wide vertical gradient: no sun, no cloud, no
+ * variation around the compass, and every daytime frame read as milky because
+ * the brightest thing in the sky was the same everywhere. This is 1024 wide so
+ * features have a position: a hot disc with a glare halo at the light's
+ * direction, a seeded band of cumulus with lit tops toward the sun, and a
+ * zenith deep enough that the horizon haze reads as haze rather than as the
+ * whole sky being pale.
+ */
+function texDaySky(sunDir) {
+  const W = 1024, H = 512;
+  const c = cv(W, H), g = c.getContext('2d');
+  // canvas y = 0 is the top of the texture = v = 1 = zenith
+  const gr = g.createLinearGradient(0, H, 0, 0);
+  for (const [at, col] of SKY_DAY) gr.addColorStop(at, col);
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+
+  // where the sun sits on the dome
+  let su = 0.62, sv = 0.78;
+  if (sunDir) {
+    const L = Math.hypot(sunDir.x, sunDir.y, sunDir.z) || 1;
+    const x = sunDir.x / L, y = sunDir.y / L, z = sunDir.z / L;
+    sv = 1 - Math.acos(Math.max(-1, Math.min(1, y))) / Math.PI;
+    su = (Math.atan2(z, -x) / (2 * Math.PI) + 1) % 1;
+  }
+  const sx = su * W, sy = (1 - sv) * H;
+
+  // glare: a broad warm halo the eye reads as brightness
+  /* Cumulus FIRST, sun on top: the first pass painted the sun and then
+     buried it under cloud. Eleven sparse clusters, not twenty-six dense ones
+     -- the first pass fused into an unbroken overcast strip sitting on the
+     horizon haze, which is what turned the sky white in every daytime frame.
+     The band starts well above the horizon (v 0.58) so the clouds sit in blue,
+     and no cluster is seeded within 100px (~35deg) of the sun. Seeded, so the same sky
+     comes back on every load. */
+  seed(31);
+  const bandTop = H * 0.24, bandBot = H * 0.40;     // v 0.60..0.76
+  let placed = 0, tries = 0;
+  while (placed < 11 && tries++ < 200) {
+    const cx = rp() * W, cy = bandTop + rp() * (bandBot - bandTop);
+    if (Math.hypot(((cx - sx + W * 1.5) % W) - W / 2, cy - sy) < 100) continue;
+    placed++;
+    const size = 26 + rp() * 42;
+    const puffs = 3 + Math.floor(rp() * 4);
+    const towardSun = Math.sign(((sx - cx + W * 1.5) % W) - W / 2) || 1;
+    for (let i = 0; i < puffs; i++) {
+      const px = cx + rr(-1, 1) * size * 0.9, py = cy + rr(-0.35, 0.2) * size;
+      const r = size * rr(0.35, 0.6);
+      // a light grey underside, then a lit top over it
+      const shade = g.createRadialGradient(px, py + r * 0.3, 0, px, py + r * 0.3, r * 0.9);
+      shade.addColorStop(0, 'rgba(196,206,218,0.5)'); shade.addColorStop(1, 'rgba(196,206,218,0)');
+      g.fillStyle = shade; g.beginPath(); g.ellipse(px, py + r * 0.3, r * 1.05, r * 0.55, 0, 0, 7); g.fill();
+      const lit = g.createRadialGradient(px + towardSun * r * 0.25, py - r * 0.2, 0, px, py - r * 0.1, r * 0.9);
+      lit.addColorStop(0, 'rgba(255,255,255,0.86)'); lit.addColorStop(0.55, 'rgba(250,252,255,0.42)'); lit.addColorStop(1, 'rgba(250,252,255,0)');
+      g.fillStyle = lit; g.beginPath(); g.ellipse(px, py - r * 0.1, r, r * 0.68, 0, 0, 7); g.fill();
+    }
+  }
+  // thin high haze so the zenith is not a flat fill
+  noiseWash(g, W, Math.floor(H * 0.5), 900, 0.05, '235,242,250');
+
+  /* Glare and disc. The canvas is equirectangular, so a circle drawn here
+     projects onto the dome squeezed by cos(elevation) horizontally -- at the
+     sun's 48deg it came out as a tall oval. Both are drawn under an x-scale
+     of 1/cos(el) so they project round. */
+  const el = Math.asin(Math.min(1, Math.max(-1, sunDir.y / Math.hypot(sunDir.x, sunDir.y, sunDir.z))));
+  const stretch = 1 / Math.max(0.3, Math.cos(el));
+  g.save(); g.translate(sx, sy); g.scale(stretch, 1);
+  const halo = g.createRadialGradient(0, 0, 0, 0, 0, 130);   // 130px = ~45deg of glare; 210 filled a whole frame
+  halo.addColorStop(0, 'rgba(255,246,225,0.9)');
+  halo.addColorStop(0.14, 'rgba(255,240,210,0.55)');
+  halo.addColorStop(0.45, 'rgba(255,235,200,0.14)');
+  halo.addColorStop(1, 'rgba(255,235,200,0)');
+  g.fillStyle = halo; g.fillRect(-W, -H, 2 * W, 2 * H);
+  // the disc itself: hard-edged, and big enough to be a sun rather than a star
+  const disc = g.createRadialGradient(0, 0, 0, 0, 0, 18);
+  disc.addColorStop(0, '#ffffff'); disc.addColorStop(0.78, '#fffaf0'); disc.addColorStop(1, 'rgba(255,250,240,0)');
+  g.fillStyle = disc; g.beginPath(); g.arc(0, 0, 18, 0, 7); g.fill();
+  g.restore();
+  return toTex(c);
+}
+
+/**
+ * `sunDir` (unit vector, world space) puts a sun disc on the day sky exactly
+ * where the day light is, so the highlight on a bonnet and the glare in the
+ * sky agree. The dome is a three SphereGeometry seen from inside: for a
+ * direction (x, y, z), v = 1 - acos(y)/PI and u = atan2(z, -x)/2PI.
+ */
+export function texSky(day = false, sunDir = null) {
+  if (day) return texDaySky(sunDir);
   const c = cv(64, 512), g = c.getContext('2d');
   const gr = g.createLinearGradient(0, 512, 0, 0);
-  if (day) {
-    for (const [at, col] of SKY_DAY) gr.addColorStop(at, col);
-    g.fillStyle = gr; g.fillRect(0, 0, 64, 512);
-    return toTex(c);
-  }
   gr.addColorStop(0.0, '#090b11');
   gr.addColorStop(0.4, '#161c28');
   gr.addColorStop(0.485, '#4e3d4c');

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { texSky } from '../world/textures.js';
+import { DAY_SUN } from './renderer.js';
 import { seed, rp, rr } from './rng.js';
 
 /**
@@ -8,10 +9,10 @@ import { seed, rp, rr } from './rng.js';
  * reads as flat plastic no matter how good the material is.
  */
 export function createSky(scene, renderer, day = false) {
-  const skyTex = texSky(day);
+  const skyTex = texSky(day, day ? DAY_SUN : null);
 
   const dome = new THREE.Mesh(
-    new THREE.SphereGeometry(9000, 24, 16),   // must contain the mountain ring
+    new THREE.SphereGeometry(9000, 64, 32),   // must contain the mountain ring; 24 segments banded the sun glare
     new THREE.MeshBasicMaterial({
       map: skyTex, side: THREE.BackSide, fog: false, depthWrite: false,
     }),
