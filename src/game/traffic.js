@@ -542,6 +542,13 @@ export class Traffic {
 
       /* --- whatever is in front, including the player --- */
       limit = Math.min(limit, this.#leaderLimit(car, player));
+      /* Sirens: civilians within 70 m of a pursuit slow to a crawl and drift
+         to the kerb lane, so a chase runs through parting traffic. */
+      if (!car.hunt && this.wanted >= 1 && this.police.some((p) => p.live)
+          && Math.hypot(car.x - player.x, car.z - player.z) < 70) {
+        limit = Math.min(limit, 2.5);
+        car.lane = Math.max(car.lane, Math.max(1, car.edge?.lanes || 1) - 1);
+      }
 
       const accel = limit > car.speed ? 4.5 : 9.0;
       car.speed += Math.max(-accel, Math.min(accel, limit - car.speed)) * dt * 2.2;

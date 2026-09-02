@@ -11,6 +11,8 @@ import { LightPool } from './game/lighting.js';
 import { Jobs, onPavementAtSpeed } from './game/jobs.js';
 import { Garage } from './game/garage.js';
 import { People } from './game/people.js';
+import { Roadblock } from './game/roadblock.js';
+import { Radio } from './game/radio.js';
 import { Catalogue, dressCarMaterials } from './world/catalogue.js';
 import { City } from './world/city.js';
 import { DistrictWorld } from './world/districtWorld.js';
@@ -165,7 +167,9 @@ let beach = null, water = null, crowd = null, heli = null, districtRef = null, d
 let lightPool = null;
 let jobs = null, garage = null;
 let people = null;
-let hornCooldown = 0;                          // near-field Kenney characters over the crowd (game/people.js)                            // the GTA loop: jobs, cash, heat (game/jobs.js)                       // night: real lights on the nearest lamp heads (game/lighting.js)
+let hornCooldown = 0;
+let roadblock = null;
+let radio = null;                           // generative car radio (game/radio.js), built once audio exists
 const person = buildHuman();
 scene.add(person.root);
 let muted = false;
@@ -607,6 +611,8 @@ Promise.all([loadDistrict(), catalogueReady]).then(([district, catalogue]) => {
   mission = new Mission(scene, district);
   jobs = new Jobs(mission, traffic, hud, district);
   garage = new Garage(jobs, assets, hero, damageModel, hud);
+  traffic.hud = hud;
+  roadblock = new Roadblock(scene, assets, district, world, traffic, hero);
   garage.restore();
   /* The other half of the race handshake: say when YOU finish. Set here
      rather than on join, because the room can be joined before the district
@@ -691,6 +697,7 @@ const stats = new Stats();
 const photo = new Photo(camera, stats);
 
 const audio = createAudio();
+radio = new Radio(audio, hud);
 let started = false;
 const start = () => {
   if (!started) { started = true; hud.dismiss(); }
@@ -745,6 +752,7 @@ const input = createInput((action) => {
   if (action === 'garage') garage?.browse();
   if (action === 'buy') garage?.act();
   if (action === 'map') hud.toggleMap();
+  if (action === 'radio') radio?.cycle();
   if (action === 'reset') respawnCar();
   if (action === 'avatar' && onFoot.character) {
     const i = onFoot.character.swap(onFoot.character.index + 1);
@@ -934,6 +942,7 @@ function frame() {
   people?.update(dt, crowd, car, (x, z) => districtRef?.elevationAt?.(x, z) ?? 0);
   /* Traffic reacts: a car you cut within 6 m of at speed blows its horn,
      panned to where it is, no more than once a second and a half. */
+  roadblock?.update(dt, car);
   hornCooldown -= dt;
   if (hornCooldown <= 0 && Math.abs(car.fwdSpeed) > 7) {
     for (const t of traffic.cars) {

@@ -219,6 +219,8 @@ export function createAudio() {
     /* A car horn: two detuned tones through a fast envelope. `pan` is -1..1
        across the stereo field, `far` 0..1 fades it with distance. Traffic
        sounds it at near misses (main.js); the city stops being silent. */
+    context() { return ready && ctx && ctx.state === 'running' ? ctx : null; },
+    bus() { return master; },
     horn(pan = 0, far = 0) {
       if (!ready || !ctx || ctx.state !== 'running') return;
       const now = ctx.currentTime, g = ctx.createGain(), p = ctx.createStereoPanner();
