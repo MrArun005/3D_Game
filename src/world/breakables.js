@@ -321,16 +321,25 @@ export class Debris {
        itself -- without the attribute every burst logs "Vertex attribute uv
        not found". Zero-filled is correct here: it is never read. */
     geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
-    const mat = new THREE.PointsMaterial({
-      map: this.dot, color: colour, size, transparent: true, depthWrite: false,
-      blending, sizeAttenuation: true,
-    });
+    /* One material per (colour, size, blending), shared by every burst of
+       that kind: a fresh material per break meant a fresh render pipeline,
+       compiled synchronously on the frame you crashed. */
+    this.mats ??= new Map();
+    const key = `${colour}|${size}|${blending}`;
+    let mat = this.mats.get(key);
+    if (!mat) {
+      mat = new THREE.PointsMaterial({
+        map: this.dot, color: colour, size, transparent: true, depthWrite: false,
+        blending, sizeAttenuation: true,
+      });
+      this.mats.set(key, mat);
+    }
     /* Blending applies to EVERY MRT target, so an additive sprite would smear
        its garbage normal into the post stack's normal buffer and GTAO turns
        that into dark speckles (the night-rain bug, same mechanism). Writing a
        zero normal — additive identity — keeps the geometry's normals under
        the particles intact. */
-    mat.mrtNode = mrt({ normal: vec4(0) });
+    if (!mat.mrtNode) mat.mrtNode = mrt({ normal: vec4(0) });
     const pts = new THREE.Points(geo, mat);
     pts.frustumCulled = false;
     this.group.add(pts);

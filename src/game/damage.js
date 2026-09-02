@@ -206,7 +206,8 @@ export class Damage {
     if (force <= 1.8) return;                    // kerbs and taps do nothing
     const bite = Math.min(0.11, (force - 1.8) * 0.009);
     this.value = Math.min(1, this.value + bite);
-    if (at) this.#dent(force, at);
+    // a scrape along a wall reports every frame; one dent per 0.12 s is what the eye sees anyway
+    if (at && this.t - (this.lastDent ?? -1) > 0.12) { this.lastDent = this.t; this.#dent(force, at); }
   }
 
   #dent(force, at) {

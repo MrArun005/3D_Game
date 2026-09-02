@@ -1096,6 +1096,18 @@ function frame() {
     );
   }
 }
+/* Warm-up. WebGPU builds a render pipeline the first time a material is
+   drawn, synchronously, and the effects that appear on a collision -- sparks,
+   debris, fire, smoke, the blast, police liveries -- all sit hidden until then.
+   The first crash used to pay for every one of them in one frame. Show them,
+   compile, hide them again. */
+(async () => {
+  const hidden = [];
+  scene.traverse((o) => { if ((o.isPoints || o.isMesh) && !o.visible && !o.isInstancedMesh && !o.userData?.shell) { hidden.push(o); o.visible = true; } });
+  try { await renderer.compileAsync(scene, camera); } catch (e) { console.warn('warm-up:', e.message); }
+  for (const o of hidden) o.visible = false;
+})();
+
 frame();
 
 // handy for poking at the sim from the console
