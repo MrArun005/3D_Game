@@ -106,7 +106,7 @@ function buildKit(gltf, spec, palette, { wheels: keepWheels = true } = {}) {
   body.computeBoundingBox();
   const bb = body.boundingBox;
   const len = bb.max.z - bb.min.z, wid = bb.max.x - bb.min.x;
-  const sx = spec.L / len, sz = (spec.wMax * 2) / wid, sy = sz;
+  const sx = spec.L / len, sz = (spec.wMax * 2) / wid, sy = sz * 0.9;   // a touch lower than the toy proportions
   // centre the body on its footprint before scaling so the hubs land right
   const cz = (bb.max.z + bb.min.z) / 2, cx = (bb.max.x + bb.min.x) / 2;
   body.translate(-cx, 0, -cz);
@@ -151,8 +151,13 @@ function buildKit(gltf, spec, palette, { wheels: keepWheels = true } = {}) {
  */
 export async function loadHeroSkin(assets, hero, file = 'sedan-sports') {
   const u = hero.userData;
-  const hull = u.hull;
+  /* Re-fits: after the first skin userData.hull is the Kenney paint mesh, not
+     the loft -- measuring that (and its parent, the old skin group) put the
+     second body nowhere. Keep the loft hull as the fixed reference. */
+  u.loftHull ??= u.hull;
+  const hull = u.loftHull;
   if (!hull || !assets.mat.carKit) return false;
+  if (u.skin) { u.skin.parent?.remove(u.skin); u.skin = null; }
   const gltf = await fetchGltf(file).catch(() => null);
   if (!gltf) return false;
   let map = null; gltf.scene.traverse((o) => { if (!map && o.isMesh && o.material?.map) map = o.material.map; });
