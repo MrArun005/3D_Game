@@ -49,6 +49,8 @@ export class Hud {
 
   /** A transient line under the mission text. */
   flash(text) { this.flashText = text; this.flashUntil = performance.now() + 3200; }
+  /** Cash and the current job, first line of the mission drawer (jobs.js). */
+  setJob(text) { this.jobLine = text; }
 
   /** The invite link, sitting where it can be selected and copied. */
   setRoom(url) {
@@ -121,6 +123,7 @@ export class Hud {
     if (!mission) { this.missionEl.textContent = ''; return; }
     const st = mission.status();
     const lines = [];
+    if (this.jobLine) lines.push(this.jobLine);
     if (this.flashUntil > performance.now()) lines.push(this.flashText);
     if (mission.messageFor > 0 && mission.message) lines.push(mission.message);
     if (st && st.time !== null) {
@@ -129,7 +132,7 @@ export class Hud {
     } else if (!lines.length && st && st.best) {
       lines.push(`G — START RUN   BEST ${st.best.toFixed(1)}s`);
     } else if (!lines.length && !mission.active) {
-      lines.push('G — START RUN');
+      lines.push('G — TAKE A JOB');
     }
     this.missionEl.textContent = lines.join('\n');
   }

@@ -8,6 +8,7 @@ import { setAnisotropy } from './world/textures.js';
 import { createAssets } from './world/assets.js';
 import { loadVendorCars } from './world/vendorCars.js';
 import { LightPool } from './game/lighting.js';
+import { Jobs, onPavementAtSpeed } from './game/jobs.js';
 import { Catalogue, dressCarMaterials } from './world/catalogue.js';
 import { City } from './world/city.js';
 import { DistrictWorld } from './world/districtWorld.js';
@@ -159,7 +160,8 @@ if (new URLSearchParams(location.search).has('debug')) {
   window.__perf = () => ({ frames: [...stats.samples], chunk: stats.worstChunkMs });
 }
 let beach = null, water = null, crowd = null, heli = null, districtRef = null, drowning = 0;
-let lightPool = null;                       // night: real lights on the nearest lamp heads (game/lighting.js)
+let lightPool = null;
+let jobs = null;                            // the GTA loop: jobs, cash, heat (game/jobs.js)                       // night: real lights on the nearest lamp heads (game/lighting.js)
 const person = buildHuman();
 scene.add(person.root);
 let muted = false;
@@ -249,6 +251,7 @@ function respawnCar(nearX = car.x, nearZ = car.z, kinds = null) {
  */
 function onDeath() {
   bustFlash = 2.8;
+  jobs?.fail('WASTED · JOB LOST');
   hud.setDead(true);
   traffic.standDown();
   if (mission && mission.active) mission.stop('WASTED');
@@ -263,6 +266,7 @@ function onDeath() {
 }
 
 function onBust() {
+  jobs?.fail('BUSTED · JOB LOST');
   bustFlash = 2.6;
   traffic.standDown();
   if (heli) heli.update(car, traffic, 0);
@@ -307,6 +311,7 @@ function pullTrigger() {
   for (const v of traffic.police) if (v.live) targets.push({ x: v.x, z: v.z, y: 0.8, r: 1.35, kind: 'police', ref: v });
 
   const hit = weapon.fire(ox, oy, oz, dir.x, dir.y, dir.z, targets);
+  crowd?.panic(ox, oz, 24);                     // gunfire scatters the street
   audio.gunshot();
   // firing at all is a crime; hitting something is a worse one
   traffic.reportCrime(hit ? (hit.kind === 'person' ? 'person' : hit.kind === 'police' ? 'police' : 'traffic') : 'traffic',
@@ -595,6 +600,7 @@ Promise.all([loadDistrict(), catalogueReady]).then(([district, catalogue]) => {
   heli.nearbyBuildings = (x, z) => (world.nearbyBuildings ? world.nearbyBuildings(x, z) : []);
   heli.onArrive = () => hud.flash('AIR SUPPORT INBOUND');
   mission = new Mission(scene, district);
+  jobs = new Jobs(mission, traffic, hud, district);
   /* The other half of the race handshake: say when YOU finish. Set here
      rather than on join, because the room can be joined before the district
      has loaded and there would be no mission to hang it on. */
@@ -738,11 +744,10 @@ const input = createInput((action) => {
   if (action === 'fire') pullTrigger();
   if (action === 'run' && mission) {
     if (!started) { started = true; hud.dismiss(); }
-    if (mission.active) mission.stop('RUN ABANDONED');
-    else {
-      mission.start(car);
-      if (net) net.race({ k: 'start', seed: mission.seed });
-    }
+    if (net) {                                   // a room races; alone you work
+      if (mission.active) mission.stop('RUN ABANDONED');
+      else { mission.start(car); net.race({ k: 'start', seed: mission.seed }); }
+    } else jobs?.toggle(car);
   }
   if (action === 'film') { if (film) stopFilm(); else { started = true; hud.dismiss(); startFilm(); } }
 });
@@ -907,6 +912,8 @@ function frame() {
   if (world.updateSignals) world.updateSignals(worldTime);
   if (heli && !flying) { heli.update(quarry, traffic, dt); traffic.eyesOn = heli.eyesOn; }
   if (mission) mission.update(onFoot.active ? quarry : car, dt);
+  jobs?.update(car, dt);
+  if (crowd && !onFoot.active && onPavementAtSpeed(car)) crowd.panic(car.x, car.z, 14);
   if (net) net.update(car, dt);
   weapon.update(dt);
   skids.update(car, car.wheelGround ? car.wheelGround[2] : 0);
@@ -1068,9 +1075,9 @@ Object.defineProperty(window, 'worldTime', { get: () => worldTime, configurable:
 // same reason: these are all assigned long after this module finishes
 // ROUTE is reassigned once the district loads, so it needs a getter too --
 // Object.assign would freeze the pre-district lattice route on window forever
-for (const k of ['heli', 'crowd', 'beach', 'water', 'world', 'mission', 'net', 'flying', 'ROUTE', 'stats']) {
+for (const k of ['heli', 'crowd', 'beach', 'water', 'world', 'mission', 'net', 'flying', 'ROUTE', 'stats', 'jobs']) {
   Object.defineProperty(window, k, {
-    get: () => ({ heli, crowd, beach, water, world, mission, net, flying, ROUTE, stats })[k],
+    get: () => ({ heli, crowd, beach, water, world, mission, net, flying, ROUTE, stats, jobs })[k],
     configurable: true,
   });
 }

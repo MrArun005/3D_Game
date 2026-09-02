@@ -46,6 +46,18 @@ export class Crowd {
     this.junctions = new Map(district.graph.nodes.filter((n) => (deg.get(n.id) || 0) >= 3).map((n) => [n.id, n]));
   }
 
+  /** Something frightening happened at (x,z): everyone within r runs from it. */
+  panic(x, z, r = 18) {
+    for (const p of this.people) {
+      if (!p.live || p.down) continue;
+      const d = Math.hypot(p.x - x, p.z - z);
+      if (d > r) continue;
+      p.panic = 5 + this.rand() * 3;
+      p.yaw = Math.atan2(-(p.z - z), p.x - x);      // away from it
+      p.cross = null;
+    }
+  }
+
   /** Put a pedestrian on the pavement of some edge in a ring around the car. */
   #spawn(p, car) {
     for (let tries = 0; tries < 40; tries++) {
@@ -131,6 +143,7 @@ export class Crowd {
            the crowd holds on the kerb during the red half of the signal cycle
            and moves off together on the green half. */
         let speed = p.speed;
+        if (p.panic > 0) { p.panic -= dt; speed = 2.8; }   // running
         const atKerb = p.j && Math.hypot(p.j.x - p.x, p.j.y - p.z) < 7;
         if (atKerb && !p.cross) {
           const ph = ((this.clock + p.jitter * 0.1) % CYCLE) / CYCLE;
@@ -158,16 +171,16 @@ export class Crowd {
            them to the stretch of kerb they started on, and turn them round if
            the next step would put them on tarmac. */
         const fromHome = Math.hypot(nx - p.hx, nz - p.hz);
-        if (fromHome > 26 || this.district.roadDepth(nx, nz) < 0.5) {
+        if (p.panic > 0 ? fromHome > 60 : (fromHome > 26 || this.district.roadDepth(nx, nz) < 0.5)) {
           p.yaw += Math.PI;
         } else { p.x = nx; p.z = nz; }
         if (gap > DESPAWN) { p.live = false; continue; }
       }
 
       // the stride advances with distance covered, so feet do not skate
-      const moving = p.speed > 0.15 && !(p.j && Math.hypot(p.j.x - p.x, p.j.y - p.z) < 7 && ((this.clock + p.jitter * 0.1) % CYCLE) / CYCLE < 0.45);
+      const moving = p.panic > 0 || p.speed > 0.15 && !(p.j && Math.hypot(p.j.x - p.x, p.j.y - p.z) < 7 && ((this.clock + p.jitter * 0.1) % CYCLE) / CYCLE < 0.45);
       if (!p.down && moving) p.phase += p.speed * dt * 2.6;
-      const state = p.down ? 3 : !moving ? 0 : p.speed > 2.2 ? 2 : 1;
+      const state = p.down ? 3 : !moving ? 0 : (p.panic > 0 || p.speed > 2.2) ? 2 : 1;
       if (!p.down && state === 0) p.phase += dt * 1.4;      // idle breathing
       // lift by FOOT_DROP or they hover 11.5 cm above the pavement
       const lift = this.district?.elevationAt ? this.district.elevationAt(p.x, p.z) : 0;   // bridge pavements

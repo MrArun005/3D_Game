@@ -65,6 +65,7 @@ export class Mission {
 
   /** Lay a course out from wherever the car is standing. */
   start(car, seed) {
+    this.isJob = false;
     const nodes = this.district.graph.nodes.filter(
       (n) => n.kind === 'cross' || n.kind === 'tee',
     );
@@ -115,6 +116,12 @@ export class Mission {
     this.#place();
   }
 
+  /** Route to a given list of graph nodes (jobs.js). No best-time bookkeeping. */
+  route(points, label) {
+    this.points = points; this.index = 0; this.time = 0; this.active = true; this.isJob = true;
+    this.#say(label); this.#place();
+  }
+
   stop(reason) {
     this.active = false;
     this.marker.visible = false;
@@ -151,9 +158,9 @@ export class Mission {
     this.index++;
     if (this.index >= this.points.length) {
       const t = this.time;
-      const record = !this.best || t < this.best;
+      const record = !this.isJob && (!this.best || t < this.best);
       if (record) { this.best = t; try { localStorage.setItem('hb.best', String(t)); } catch { /* private mode */ } }
-      this.stop(`${record ? 'NEW BEST' : 'FINISHED'} · ${t.toFixed(1)}s`);
+      this.stop(this.isJob ? '' : `${record ? 'NEW BEST' : 'FINISHED'} · ${t.toFixed(1)}s`);
       /* Tell the room. Without this a race had no finish condition at all:
          both players ran the course and nothing ever ended for the loser. */
       if (this.onFinish) this.onFinish(t);
