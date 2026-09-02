@@ -87,7 +87,7 @@ function splitByPaint(geo, sample) {
   return { paint: sub(pi), detail: sub(di) };
 }
 
-function buildKit(gltf, spec, palette) {
+function buildKit(gltf, spec, palette, { wheels: keepWheels = true } = {}) {
   gltf.scene.updateMatrixWorld(true);
   let body = null; const wheels = [], extras = [];
   gltf.scene.traverse((o) => {
@@ -122,7 +122,7 @@ function buildKit(gltf, spec, palette) {
     w.translate((_v.x - cx) * sz, _v.y * sz, (_v.z - cz) * sx);
     wheelParts.push(w);
   }
-  const detailAll = mergeGeometries([detail, ...wheelParts], false);
+  const detailAll = mergeGeometries(keepWheels ? [detail, ...wheelParts] : [detail], false);
 
   /* Kenney faces +Z; the fleet drives along local +X, so +Z -> +X. Verified
      the assumption-free way: camera placed 8m ahead along a moving van's
@@ -132,6 +132,51 @@ function buildKit(gltf, spec, palette) {
   for (const g of [paint, detailAll, lodBody]) { g.applyMatrix4(q); g.computeBoundingSphere(); }
   paint.userData = { length: spec.L, width: spec.wMax * 2 };
   return { paint, detail: detailAll, lodBody };
+}
+
+/**
+ * The hero wears a Kenney body too (item 1 of the visual list, 2026-09-02).
+ *
+ * The lofted hull stays as the PHYSICS and damage carrier -- its wheels
+ * steer and spin, its interior, driver, steering wheel and lamps stay -- but
+ * the visible skin becomes the kit's sports sedan, scaled to the hull's own
+ * length and width so nothing downstream (camera offsets, collision probes,
+ * door hinge maths) moves. Hidden: the hull body and glass, the four hinged
+ * doors and the box trim. The paint mesh shares the hero's `paint` material
+ * so damage soot and stolen-car colours still apply, and it becomes
+ * userData.hull so the crumple lands on what you see. Known loss: the doors
+ * no longer swing open on a carjack; the body is one piece.
+ */
+export async function loadHeroSkin(assets, hero, file = 'sedan-sports') {
+  const u = hero.userData;
+  const hull = u.hull;
+  if (!hull || !assets.mat.carKit) return false;
+  const gltf = await new Promise((res, rej) => loader.load(BASE + file + '.glb', res, undefined, rej)).catch(() => null);
+  if (!gltf) return false;
+  let map = null; gltf.scene.traverse((o) => { if (!map && o.isMesh && o.material?.map) map = o.material.map; });
+  const palette = samplePalette(map.image);
+  hull.geometry.computeBoundingBox();
+  const bb = hull.geometry.boundingBox;                 // shell space: nose at 0, tail at +L
+  const L = bb.max.x - bb.min.x, W = bb.max.z - bb.min.z;
+  const kit = buildKit(gltf, { L, wMax: W / 2 }, palette, { wheels: false });
+  const shell = hull.parent;
+  // hide the loft skin: body, glass, doors and trim; keep lamps, interior, driver, wheel
+  const trim = assets.carMats.trim, paint = hull.material, glass = u.glass?.material;
+  shell.traverse((o) => { if (o.isMesh && (o.material === paint || o.material === glass || o.material === trim)) o.visible = false; });
+  const paintGeo = kit.paint.clone();                    // the hero crumples its own copy
+  paintGeo.userData.owned = true;
+  const skin = new THREE.Group();
+  // the kit body is centred and faces +X; the hull is centred at (min+max)/2 in shell space, which the
+  // half-turned shell puts at CG_X - centre in body space, nose forward
+  const cx = (bb.min.x + bb.max.x) / 2;
+  skin.position.set(shell.position.x - cx, bb.min.y, 0);
+  const pm = new THREE.Mesh(paintGeo, paint); pm.castShadow = true; pm.receiveShadow = true;
+  const dm = new THREE.Mesh(kit.detail, assets.mat.carKit); dm.castShadow = true; dm.receiveShadow = true;
+  skin.add(pm, dm);
+  shell.parent.add(skin);
+  u.hull = pm;                                           // damage.attach() reads this
+  u.skin = skin;
+  return true;
 }
 
 /**

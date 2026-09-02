@@ -6,7 +6,7 @@ import { createSky } from './core/sky.js';
 import { createGrade } from './core/grade.js';
 import { setAnisotropy } from './world/textures.js';
 import { createAssets } from './world/assets.js';
-import { loadVendorCars } from './world/vendorCars.js';
+import { loadVendorCars, loadHeroSkin } from './world/vendorCars.js';
 import { LightPool } from './game/lighting.js';
 import { Jobs, onPavementAtSpeed } from './game/jobs.js';
 import { Catalogue, dressCarMaterials } from './world/catalogue.js';
@@ -634,6 +634,8 @@ car.headlights = !DAY;
 const hero = buildCar(assets.carMats, 0x5b636d);
 scene.add(hero);
 // the damage model marks the real bodywork, so it needs the real meshes
+// the hero's visible body is the kit's sports sedan over the lofted physics hull
+await loadHeroSkin(assets, hero).catch((e) => console.warn('hero skin:', e.message));
 damageModel.attach(hero);
 
 const NOSE_X = CG_X;          // distance from the CG forward to the nose
