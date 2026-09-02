@@ -68,10 +68,15 @@ export const KENNEY_CARS = {
   wagon: 'k-suv-luxury', pickup: 'k-truck',
   taxi: 'q-taxi', police: 'q-cop',
   sports: 'q-sports', sports2: 'q-sports2', hatch2: 'k-hatch',   // extra traffic styles, sedan-sized specs
+  // the owner's Sketchfab cars, the three lightest, as rare traffic (whole textured groups)
+  chev1: 's-camaro-jewel', chev2: 's-corvette-c6r', chev3: 's-camaro-350',
 };
+/* Spawn weights: the pooled fleet picks a style per car at start, so common
+   bodies are listed several times and the heavy textured ones once. */
+const STYLE_WEIGHT = { sedan: 4, hatch: 3, suv: 3, van: 2, wagon: 2, pickup: 2, taxi: 3, hatch2: 2, sports: 1, sports2: 1, chev1: 1, chev2: 1, chev3: 1 };
 const NEUTRAL = new Set(['black', 'grey', 'gray', 'windows', 'window', 'glass', 'headlights', 'taillights', 'chrome', 'silver', 'lights', 'darkgrey', 'darkgray', 'white', 'tyre', 'tire', 'rubber']);
 // styles with no spec of their own borrow the sedan's dimensions
-const SPEC_OF = { taxi: 'sedan', police: 'sedan', sports: 'sedan', sports2: 'sedan', hatch2: 'hatch' };
+const SPEC_OF = { taxi: 'sedan', police: 'sedan', sports: 'sedan', sports2: 'sedan', hatch2: 'hatch', chev1: 'sedan', chev2: 'sedan', chev3: 'sedan' };
 
 const loader = new GLTFLoader();
 const gltfCache = new Map();          // file -> Promise<gltf>; the fleet, the hero skin and the garage share one fetch
@@ -350,15 +355,18 @@ export async function loadVendorCars(assets) {
       const spec = BODY_TYPES[key] ?? BODY_TYPES[SPEC_OF[key]] ?? BODY_TYPES.sedan;
       const kit = await fetchKit(id, spec, assets);
       const old = assets.geo.stunt[key];
-      assets.geo.stunt[key] = {
-        body: kit.paint, glass: kit.detail, detail: kit.detail, detailMat: kit.detailMat,
-        lodBody: kit.lodBody, occupant: old?.occupant ?? assets.geo.stunt.sedan.occupant, vendor: true,
-      };
+      assets.geo.stunt[key] = kit.group
+        ? { group: kit.group, heavy: true, occupant: old?.occupant ?? assets.geo.stunt.sedan.occupant, vendor: true }
+        : {
+          body: kit.paint, glass: kit.detail, detail: kit.detail, detailMat: kit.detailMat,
+          lodBody: kit.lodBody, occupant: old?.occupant ?? assets.geo.stunt.sedan.occupant, vendor: true,
+        };
       installed.push(key);
     } catch (e) { console.warn(`vendor car ${key} (${id}) failed: ${e.message}; keeping the loft`); }
   }));
-  // traffic picks from every installed style except the police cruiser
-  assets.geo.stuntKeys = [...new Set([...BODY_KEYS, ...installed.filter((k) => k !== 'police')])];
+  // traffic picks from every installed style except the police cruiser, weighted (STYLE_WEIGHT)
+  const keys = [...new Set([...BODY_KEYS, ...installed.filter((k) => k !== 'police')])];
+  assets.geo.stuntKeys = keys.flatMap((k) => Array(STYLE_WEIGHT[k] ?? 1).fill(k));
   console.info(`vendor cars: ${installed.length}/${Object.keys(KENNEY_CARS).length} installed (${installed.join(', ')})`);
   return installed;
 }
