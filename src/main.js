@@ -63,6 +63,8 @@ const canvas = document.getElementById('gl');
    frame() removes it on the first rendered frame. */
 let boot = document.getElementById('boot');
 const bootMsg = document.getElementById('bootmsg');
+// whatever happens, the loading screen is gone inside 12 s
+setTimeout(() => { if (boot) { console.warn('boot: 12 s cap hit, dropping the loading screen'); boot.remove(); boot = null; } }, 12000);
 const bootSay = (m) => { if (bootMsg) bootMsg.textContent = m; };
 bootSay('waking the GPU…');
 const renderer = createRenderer(canvas);
@@ -578,7 +580,7 @@ const catalogueReady = new Catalogue().load(renderer)
   })
   .catch((e) => { console.warn('catalogue unavailable:', e.message); return null; });
 
-Promise.all([loadDistrict(), catalogueReady, loadKitBuildings(assets).catch((e) => console.warn('kit buildings:', e.message))]).then(([district, catalogue]) => {
+Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search).has('nokit') ? null : loadKitBuildings(assets).catch((e) => console.warn('kit buildings:', e.message))]).then(([district, catalogue]) => {
   useDistrict(district);                  // roadDepth() now answers from the file
   traffic.useGraph(district);
   useGraphForRoutes(district);             // and the fleet drives the real streets
@@ -833,7 +835,13 @@ let frames = 0, elapsed = 0;
 function frame() {
   requestAnimationFrame(frame);
   try { frameBody(); } catch (e) {
-    if (!frame.failed) { frame.failed = true; console.error('frame error (game continues):', e); }
+    if (!frame.failed) {
+      frame.failed = true;
+      console.error('frame error (game continues):', e);
+      // a stuck loading screen used to be the only symptom: say what broke, then let the game in
+      if (bootMsg) bootMsg.textContent = 'frame error: ' + String(e && e.message || e).slice(0, 120);
+      setTimeout(() => { if (boot) { boot.remove(); boot = null; } }, 2500);
+    }
   }
 }
 
