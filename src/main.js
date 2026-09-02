@@ -68,6 +68,7 @@ const renderer = createRenderer(canvas);
    render, a render target -- may run before that resolves. Top-level await is
    the honest expression of it: the module simply does not finish evaluating
    until the GPU is ready. Vite is on an es2022 target, so this ships. */
+bootMsg.textContent = 'starting the renderer…';
 await renderer.init();
 bootSay('building the city & compiling shaders — the first load is the slow one…');
 const resolution = autoResolution(renderer);
@@ -98,7 +99,9 @@ const assets = createAssets();
 /* Kenney Car Kit (CC0) over the lofted fleet -- world/vendorCars.js. Awaited
    here so traffic and the streamer never see a half-swapped kit; a missing
    file leaves that style on the loft and logs once. */
+bootMsg.textContent = 'loading the cars…';
 await loadVendorCars(assets).catch((e) => console.warn('vendor cars:', e.message));
+bootMsg.textContent = 'reading the city plan…';
 grade.resize(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio());
 /* Bloom needs no day/night switch: it reads the emissive MRT channel, and
    daylightAssets() below dims facade emissive to 0.04 — under the bloom
@@ -168,6 +171,7 @@ let lightPool = null;
 let jobs = null, garage = null;
 let people = null;
 let hornCooldown = 0;
+let warming = false;
 let roadblock = null;
 let radio = null;                           // generative car radio (game/radio.js), built once audio exists
 const person = buildHuman();
@@ -574,6 +578,7 @@ Promise.all([loadDistrict(), catalogueReady]).then(([district, catalogue]) => {
   hud.useDistrict(district);              // minimap draws real streets, not a lattice
   for (const g of city.cells.values()) scene.remove(g);
   city.cells.clear();
+  bootMsg.textContent = 'building the streets…';
   world = new DistrictWorld(scene, assets, district, { day: DAY, catalogue });
   world.camera = camera;                  // chunk-level frustum culling for the render bundles
   if (!DAY) {
@@ -818,6 +823,12 @@ let frames = 0, elapsed = 0;
 
 function frame() {
   requestAnimationFrame(frame);
+  try { frameBody(); } catch (e) {
+    if (!frame.failed) { frame.failed = true; console.error('frame error (game continues):', e); }
+  }
+}
+
+function frameBody() {
   const now = performance.now();
   const dt = Math.min((now - lastTime) / 1000, 0.05);
   lastTime = now;
@@ -997,7 +1008,20 @@ function frame() {
      scene + shadow passes + ~15 fullscreen post quads. */
   grade.render(renderer, now / 1000);
   // the first real frame is on screen: drop the boot overlay
-  if (boot) { boot.remove(); boot = null; }
+  /* The loading screen comes down only once the first ring of chunks is
+     built AND every pipeline is compiled -- including the hidden collision
+     effects -- so the first thing you see is a frame that already runs at
+     speed, not one that stalls on its first crash. */
+  if (boot && !warming && (world.primed ?? true)) {
+    warming = true;
+    bootMsg.textContent = 'warming the shaders…';
+    const hidden = [];
+    scene.traverse((o) => { if ((o.isPoints || o.isMesh) && !o.visible && !o.isInstancedMesh && !o.userData?.shell) { hidden.push(o); o.visible = true; } });
+    renderer.compileAsync(scene, camera).catch((e) => console.warn('warm-up:', e.message)).then(() => {
+      for (const o of hidden) o.visible = false;
+      if (boot) { boot.remove(); boot = null; }
+    });
+  }
   stats.sample(renderer);
   /* drawCalls, not calls: `render.calls` counts render-pass INVOCATIONS since
      load and is never reset, so the banner's old "907 DRAWS" was a lifetime
@@ -1096,18 +1120,6 @@ function frame() {
     );
   }
 }
-/* Warm-up. WebGPU builds a render pipeline the first time a material is
-   drawn, synchronously, and the effects that appear on a collision -- sparks,
-   debris, fire, smoke, the blast, police liveries -- all sit hidden until then.
-   The first crash used to pay for every one of them in one frame. Show them,
-   compile, hide them again. */
-(async () => {
-  const hidden = [];
-  scene.traverse((o) => { if ((o.isPoints || o.isMesh) && !o.visible && !o.isInstancedMesh && !o.userData?.shell) { hidden.push(o); o.visible = true; } });
-  try { await renderer.compileAsync(scene, camera); } catch (e) { console.warn('warm-up:', e.message); }
-  for (const o of hidden) o.visible = false;
-})();
-
 frame();
 
 // handy for poking at the sim from the console

@@ -37,6 +37,8 @@ export const KENNEY_CARS = {
 const SPEC_OF = { taxi: 'sedan', police: 'sedan' };
 
 const loader = new GLTFLoader();
+const gltfCache = new Map();          // file -> Promise<gltf>; the fleet, the hero skin and the garage share one fetch
+const fetchGltf = (file) => { let p = gltfCache.get(file); if (!p) { p = new Promise((res, rej) => loader.load(BASE + file + '.glb', res, undefined, rej)); gltfCache.set(file, p); } return p; };
 const _m = new THREE.Matrix4(), _v = new THREE.Vector3();
 
 function samplePalette(image) {
@@ -151,7 +153,7 @@ export async function loadHeroSkin(assets, hero, file = 'sedan-sports') {
   const u = hero.userData;
   const hull = u.hull;
   if (!hull || !assets.mat.carKit) return false;
-  const gltf = await new Promise((res, rej) => loader.load(BASE + file + '.glb', res, undefined, rej)).catch(() => null);
+  const gltf = await fetchGltf(file).catch(() => null);
   if (!gltf) return false;
   let map = null; gltf.scene.traverse((o) => { if (!map && o.isMesh && o.material?.map) map = o.material.map; });
   const palette = samplePalette(map.image);
@@ -185,12 +187,16 @@ export async function loadHeroSkin(assets, hero, file = 'sedan-sports') {
  * waits on or breaks for a missing file.
  */
 export async function loadVendorCars(assets) {
-  const load = (f) => new Promise((res, rej) => loader.load(BASE + f + '.glb', res, undefined, rej));
   let detailMat = null, palette = null;
   const installed = [];
-  for (const [key, file] of Object.entries(KENNEY_CARS)) {
+  // one round trip for the whole kit instead of eight in a row
+  const entries = Object.entries(KENNEY_CARS);
+  const loaded = await Promise.all(entries.map(([, file]) => fetchGltf(file).catch((e) => e)));
+  for (let n = 0; n < entries.length; n++) {
+    const [key, file] = entries[n];
     try {
-      const gltf = await load(file);
+      const gltf = loaded[n];
+      if (gltf instanceof Error) throw gltf;
       if (!detailMat) {
         let map = null;
         gltf.scene.traverse((o) => { if (!map && o.isMesh && o.material?.map) map = o.material.map; });

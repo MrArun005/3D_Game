@@ -1253,8 +1253,8 @@ export class DistrictWorld {
       // lamp-head positions for game/lighting.js: the pool of real lights follows the nearest
       this.headsByChunk.set(k, dressHeads.map((hd) => ({ x: hd.x, y: hd.y, z: hd.z })));
       yield;
-      dressRoofs(batch, boxes, this.district);
-      yield;
+      // sliced: one big dressRoofs was a 10+ ms step against a 4 ms budget
+      for (let i = 0; i < boxes.length; i += 24) { dressRoofs(batch, boxes.slice(i, i + 24), this.district); yield; }
 
       /* Facades are their own batch and their own group. They are far and away
          the most expensive thing in the kit -- a dressed frontage is roughly a
@@ -1266,8 +1266,8 @@ export class DistrictWorld {
       this.facadeGroups.set(k, faces);
       const fbatch = new InstanceBatch(this.catalogue);
       const signs = [], windows = [];
-      dressFacades(fbatch, boxes, this.district, roadDepth, signs, windows);
-      yield;
+      // sliced: the frontage walk (modules, signs, windows, side walls) was the worst step
+      for (let i = 0; i < boxes.length; i += 10) { dressFacades(fbatch, boxes.slice(i, i + 10), this.district, roadDepth, signs, windows); yield; }
       /* Phase 1: the shop signs, one instanced draw per chunk. Per-instance
          atlas cell in aTile; the quad's width/height ride the matrix. They
          live in the facade group so they share its tighter visibility ring.
