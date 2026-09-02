@@ -266,6 +266,15 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
 - Vendor kits on disk (GLB + licence only): Kenney car kit, city kits
   commercial / roads / suburban / industrial. Kenney animated characters were
   not downloadable by slug; pedestrians are still the six-part figures.
+- **Reactions and radio (2026-09-02, unverified in-browser)**: `game/roadblock.js`
+  (3+ stars: two cruisers + spike strip ~170 m ahead, solids via
+  `world.parkedByChunk`, strip sets every `wheel.flat = 1`), traffic pulls
+  over within 70 m of a live pursuit (`traffic.js` limit/lane), `audio.horn()`
+  at near misses, `game/radio.js` (L: three generative stations on the game
+  AudioContext; `audio.context()`/`bus()`). `game/people.js`: 16 nearest
+  pedestrians are Kenney Blocky Characters with the kit's own clips
+  (`?people=N`); yaw offset `+PI/2` is unverified -- if they walk sideways,
+  that constant is the fix.
 - **City-wide BatchedMesh is written but dormant** (`Catalogue.attach`,
   gated on `catalogue.multiDraw`). Without multi-draw-indirect three's WebGPU
   backend issues one draw per instance: measured 8,938 draws / 17.9 ms
