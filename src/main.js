@@ -169,7 +169,8 @@ if (new URLSearchParams(location.search).has('debug')) {
   window.__perf = () => ({ frames: [...stats.samples], chunk: stats.worstChunkMs });
 }
 let beach = null, water = null, crowd = null, heli = null, districtRef = null, drowning = 0;
-let districtFailed = false;   // lets the boot gate drop on the legacy grid if the district never lands
+let districtFailed = false;
+let spawnSnap = false;        // the frame loop snaps the chase camera on its next update (chase is declared later; see the top-level awaits)   // lets the boot gate drop on the legacy grid if the district never lands
 let lightPool = null;
 let jobs = null, garage = null, story = null, phone = null;
 let vehicleVFX = null, puddles = null;
@@ -260,7 +261,7 @@ function respawnCar(nearX = car.x, nearZ = car.z, kinds = null) {
   }
   car.y = groundHeightAt(car.x, car.z) + 0.62;
   damageModel.repair();
-  chase.snap(car);
+  spawnSnap = true;
 }
 
 /**
@@ -654,7 +655,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   resetCar(car);
   car.x = n.x; car.z = n.y; car.y = 0.62;
   world.update(car.x, car.z);
-  chase.snap(car);
+  spawnSnap = true;
   {
     const rx = Math.sin(car.yaw), rz = Math.cos(car.yaw);
     person.place(car.x + rx * 7.5, car.z + rz * 7.5, car.yaw + Math.PI);
@@ -1035,6 +1036,7 @@ function frameBody() {
         chase.lookPitch -= chase.lookPitch * d;
         if (Math.abs(chase.lookYaw) < 0.01 && Math.abs(chase.lookPitch) < 0.01) chase.recentre();
       }
+      if (spawnSnap) { spawnSnap = false; chase.snap(car); }
       chase.update(car, dt);
     }
   }
