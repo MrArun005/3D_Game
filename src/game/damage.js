@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 
+const FIRE_AT = Infinity;   // damage fraction at which the car catches fire; Infinity = never (ponytail: no blast)
+
 /**
  * Wear on the car.
  *

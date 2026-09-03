@@ -874,9 +874,9 @@ function frameBody() {
   }
   if (vehicleVFX) vehicleVFX.update(dt, car, garage);
   if (puddles) puddles.update(dt, car);
-  if (billboards) billboards.update(t);
+  if (billboards) billboards.update(worldTime);
   if (streetLife) streetLife.update(dt, car);
-  if (airspace) airspace.update(dt, t);
+  if (airspace) airspace.update(dt, worldTime);
   if (story) story.update(car, dt);
   if (!started && (c.throttle > 0.08 || c.brake > 0.25 || Math.abs(c.steer) > 0.3)) start();
   if (flying) {
