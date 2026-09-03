@@ -90,9 +90,10 @@ export class ChaseCamera {
     this.camera.lookAt(this.aim);
     if (rig.tilt) this.camera.rotation.z += car.roll * 0.35 - car.yawRate * 0.018;
 
-    const fov = rig.fov + speedK * 9;
+    const nosBoost = car.nosActive ? 11 : 0;
+    const fov = rig.fov + speedK * 9 + nosBoost;
     if (Math.abs(this.camera.fov - fov) > 0.01) {
-      this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 3);
+      this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 5.5);
       this.camera.updateProjectionMatrix();
     }
   }

@@ -12,12 +12,17 @@ import { Jobs, onPavementAtSpeed } from './game/jobs.js';
 import { Garage } from './game/garage.js';
 import { StoryManager } from './game/storyMissions.js';
 import { Phone } from './ui/phone.js';
+import { VehicleVFX } from './vehicle/vfx.js';
+import { PuddleSystem } from './world/puddles.js';
 import { People } from './game/people.js';
 import { Roadblock } from './game/roadblock.js';
 import { Radio } from './game/radio.js';
 import { loadKitBuildings } from './world/kitBuildings.js';
 import { Metro } from './world/metro.js';
 import { Landmarks } from './world/landmarks.js';
+import { BillboardSystem } from './world/billboards.js';
+import { StreetLife } from './world/streetLife.js';
+import { Airspace } from './world/airspace.js';
 import { Catalogue, dressCarMaterials } from './world/catalogue.js';
 import { City } from './world/city.js';
 import { DistrictWorld } from './world/districtWorld.js';
@@ -166,10 +171,12 @@ if (new URLSearchParams(location.search).has('debug')) {
 let beach = null, water = null, crowd = null, heli = null, districtRef = null, drowning = 0;
 let lightPool = null;
 let jobs = null, garage = null, story = null, phone = null;
+let vehicleVFX = null, puddles = null;
 let people = null;
 let hornCooldown = 0;
 let warming = false;
 let roadblock = null, metro = null, landmarks = null;
+let billboards = null, streetLife = null, airspace = null;
 let radio = null;                           // generative car radio (game/radio.js), built once audio exists
 const person = buildHuman();
 scene.add(person.root);
@@ -624,6 +631,12 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   garage.restore();
   story = new StoryManager(mission, traffic, hud, garage);
   phone = new Phone(story, garage, hero, traffic);
+  vehicleVFX = new VehicleVFX(scene, hero);
+  window.vehicleVFX = vehicleVFX;
+  puddles = new PuddleSystem(scene, district);
+  billboards = new BillboardSystem(scene, district);
+  streetLife = new StreetLife(scene, district);
+  airspace = new Airspace(scene);
   /* The other half of the race handshake: say when YOU finish. Set here
      rather than on join, because the room can be joined before the district
      has loaded and there would be no mission to hang it on. */
@@ -855,6 +868,11 @@ function frameBody() {
     garage.setNos(c.nos);
     garage.update(dt, car);
   }
+  if (vehicleVFX) vehicleVFX.update(dt, car, garage);
+  if (puddles) puddles.update(dt, car);
+  if (billboards) billboards.update(t);
+  if (streetLife) streetLife.update(dt, car);
+  if (airspace) airspace.update(dt, t);
   if (story) story.update(car, dt);
   if (!started && (c.throttle > 0.08 || c.brake > 0.25 || Math.abs(c.steer) > 0.3)) start();
   if (flying) {

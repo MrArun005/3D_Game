@@ -11,6 +11,10 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
  * to end at 15 m/s, pauses 6 s at stations and turns back at the ends.
  */
 const DECK_Y = 12.5, PIER_EVERY = 18, STATION_EVERY = 350, SPEED = 15, DWELL = 6;
+/* Trains per line. With one train on a 3 km line a spot on the viaduct saw a
+   train every four minutes, which reads as an empty flyover; four spaced
+   evenly bring that under a minute. Each is two carriages. */
+const TRAINS = 4, CARS = 2;
 const TRAIN = '/models/vendor/kenney/train/';
 
 export class Metro {
@@ -67,7 +71,9 @@ export class Metro {
     }
     const mk = (parts, mat) => { const g = mergeGeometries(parts, false); const m = new THREE.Mesh(g, mat); m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; this.scene.add(m); return m; };
     mk(conc, concrete); mk(stl, steel);
-    return { pts, cum, len, stations, s: 40, dir: 1, dwell: 0, cars: [] };
+    const trains = [];
+    for (let i = 0; i < TRAINS; i++) trains.push({ s: 40 + (len - 80) * (i + 0.5) / TRAINS, dir: i % 2 ? -1 : 1, dwell: 0, cars: [] });
+    return { pts, cum, len, stations, trains };
   }
 
   #at(pts, cum, s) {
@@ -88,7 +94,8 @@ export class Metro {
       ];
       gltf.scene.traverse((o) => {
         const name = (o.name || '').toLowerCase();
-        if (STATION_PARTS.some((p) => name.includes(p))) {
+        // the train's own 'top rails' and 'back platform' carry the station words too
+        if (!name.includes('train') && STATION_PARTS.some((p) => name.includes(p))) {
           o.visible = false;
         } else if (o.isMesh) {
           o.castShadow = false;
@@ -116,26 +123,27 @@ export class Metro {
       template.scale.setScalar(s);
     }
 
-    for (const line of this.lines) {
-      for (let i = 0; i < 2; i++) {
+    for (const line of this.lines) for (const tr of line.trains) {
+      for (let i = 0; i < CARS; i++) {
         const car = template ? template.clone(true) : new THREE.Mesh(new THREE.BoxGeometry(14, 3.8, 3.2), new THREE.MeshStandardMaterial({ color: 0xd8dde4 }));
         this.scene.add(car);
-        line.cars.push(car);
+        tr.cars.push(car);
       }
     }
   }
 
   update(dt) {
-    for (const l of this.lines) {
+    for (const line of this.lines) for (const l of line.trains) {
+      const { pts, cum, len, stations } = line;
       if (l.dwell > 0) { l.dwell -= dt; } else {
         const before = l.s;
         l.s += l.dir * SPEED * dt;
-        if (l.s > l.len - 40 || l.s < 40) { l.dir *= -1; l.s = Math.max(40, Math.min(l.len - 40, l.s)); l.dwell = DWELL; }
-        for (const st of l.stations) if ((before - st) * (l.s - st) <= 0 && before !== l.s) { l.dwell = DWELL; l.s = st; }
+        if (l.s > len - 40 || l.s < 40) { l.dir *= -1; l.s = Math.max(40, Math.min(len - 40, l.s)); l.dwell = DWELL; }
+        for (const st of stations) if ((before - st) * (l.s - st) <= 0 && before !== l.s) { l.dwell = DWELL; l.s = st; }
       }
       l.cars.forEach((car, i) => {
         const s = l.s - l.dir * i * 14.8;
-        const p = this.#at(l.pts, l.cum, s), q = this.#at(l.pts, l.cum, s + l.dir * 2);
+        const p = this.#at(pts, cum, s), q = this.#at(pts, cum, s + l.dir * 2);
         car.position.set(p.x, DECK_Y + 0.65, p.z);
         car.rotation.y = Math.atan2(-(q.z - p.z), q.x - p.x) + Math.PI / 2;
       });

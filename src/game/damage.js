@@ -323,7 +323,10 @@ export class Damage {
        The car does NOT throw you out. It tells you it is going to go, and how
        long you have; staying in is a decision, and it is the decision that
        kills you. */
-    if (d >= 0.86 && !this.critical) { this.critical = true; this.fuse = 7.5; }
+    /* ponytail: no fire, no blast (Arun, 2026-09-03). Damage stays cosmetic and
+       mechanical -- dents, soot, flat tyres, lost power -- but the car never
+       goes critical. Restore with FIRE_AT = 0.86 if the fireball comes back. */
+    if (d >= FIRE_AT && !this.critical) { this.critical = true; this.fuse = 7.5; }
 
     if (this.critical && !this.dead) {
       this.fuse -= dt;

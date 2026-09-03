@@ -185,6 +185,26 @@ export class Phone {
       };
       this.content.appendChild(tuneCard);
 
+      // Chassis Underglow Neon
+      const neonCard = document.createElement('div');
+      neonCard.style.cssText = 'background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 10px; display:flex; flex-direction:column; gap:6px;';
+      neonCard.innerHTML = `
+        <div style="font-weight:800; font-size:12px; color:#00d4ff;">CHASSIS UNDERGLOW NEON</div>
+        <div style="display:flex; gap:6px; margin-top:2px;">
+          <button class="neon-col-btn" data-col="0x00d4ff" style="flex:1; padding:6px 0; border:none; border-radius:6px; background:#00d4ff; color:#000; font-weight:800; font-size:10px; cursor:pointer;">CYAN</button>
+          <button class="neon-col-btn" data-col="0xff0077" style="flex:1; padding:6px 0; border:none; border-radius:6px; background:#ff0077; color:#fff; font-weight:800; font-size:10px; cursor:pointer;">PINK</button>
+          <button class="neon-col-btn" data-col="0x9900ff" style="flex:1; padding:6px 0; border:none; border-radius:6px; background:#9900ff; color:#fff; font-weight:800; font-size:10px; cursor:pointer;">PURPLE</button>
+          <button class="neon-col-btn" data-col="0x00ff66" style="flex:1; padding:6px 0; border:none; border-radius:6px; background:#00ff66; color:#000; font-weight:800; font-size:10px; cursor:pointer;">GREEN</button>
+        </div>
+      `;
+      neonCard.querySelectorAll('.neon-col-btn').forEach((btn) => {
+        btn.onclick = (e) => {
+          const col = Number(e.target.getAttribute('data-col'));
+          if (window.vehicleVFX) window.vehicleVFX.setNeonColor(col);
+        };
+      });
+      this.content.appendChild(neonCard);
+
       // Supercar Deliveries
       const cars = [
         { id: 's-corvette-zr1', name: 'Corvette ZR1 Supercar', cost: 25000 },
