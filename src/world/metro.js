@@ -21,6 +21,7 @@ export class Metro {
   constructor(scene, district, assets) {
     this.scene = scene; this.district = district;
     this.lines = [];
+    this.stationXZ = [];   // every platform, for the spawn and the map
     const roads = (district.data?.roads || []).filter((r) => r.class === 'arterial' && r.points.length >= 3);
     const withLen = roads.map((r) => ({ r, len: r.points.slice(1).reduce((a, p, i) => a + Math.hypot(p[0] - r.points[i][0], p[1] - r.points[i][1]), 0) }))
       .sort((a, b) => b.len - a.len);
@@ -68,6 +69,7 @@ export class Metro {
       conc.push(box(40, 0.3, 4.5, p.x + Math.sin(yaw) * 3.0, DECK_Y + 5.2, p.z + Math.cos(yaw) * 3.0, yaw));   // roof
       for (const t of [-18, 0, 18]) stl.push(box(0.3, 4.6, 0.3, p.x + Math.cos(yaw) * t + Math.sin(yaw) * 4.6, DECK_Y + 2.8, p.z - Math.sin(yaw) * t + Math.cos(yaw) * 4.6, yaw));
       stations.push(s);
+      this.stationXZ.push({ x: p.x, z: p.z });
     }
     const mk = (parts, mat) => { const g = mergeGeometries(parts, false); const m = new THREE.Mesh(g, mat); m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; this.scene.add(m); return m; };
     mk(conc, concrete); mk(stl, steel);
@@ -116,7 +118,7 @@ export class Metro {
       const size = box.getSize(new THREE.Vector3());
       const center = box.getCenter(new THREE.Vector3());
       const len = Math.max(size.x, size.z);
-      const s = len > 0 ? 14 / len : 1;
+      const s = len > 0 ? 18 / len : 1;   // 18 m carriages: at 14 the train read as a toy from the street
       template = new THREE.Group();
       gltf.scene.position.set(-center.x, -box.min.y, -center.z);
       template.add(gltf.scene);
@@ -132,6 +134,13 @@ export class Metro {
     }
   }
 
+  /** Nearest platform to a point, or null before any line was built. */
+  nearestStation(x, z) {
+    let best = null, bd = Infinity;
+    for (const st of this.stationXZ) { const d = Math.hypot(st.x - x, st.z - z); if (d < bd) { bd = d; best = st; } }
+    return best;
+  }
+
   update(dt) {
     for (const line of this.lines) for (const l of line.trains) {
       const { pts, cum, len, stations } = line;
@@ -142,7 +151,7 @@ export class Metro {
         for (const st of stations) if ((before - st) * (l.s - st) <= 0 && before !== l.s) { l.dwell = DWELL; l.s = st; }
       }
       l.cars.forEach((car, i) => {
-        const s = l.s - l.dir * i * 14.8;
+        const s = l.s - l.dir * i * 18.8;
         const p = this.#at(pts, cum, s), q = this.#at(pts, cum, s + l.dir * 2);
         car.position.set(p.x, DECK_Y + 0.65, p.z);
         car.rotation.y = Math.atan2(-(q.z - p.z), q.x - p.x) + Math.PI / 2;

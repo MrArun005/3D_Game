@@ -649,9 +649,12 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   window.district = district;
   districtRef = district;
   // put the car on a real road: the Kingsway node nearest the district centre
+  // ...next to the metro platform nearest downtown, so the viaduct and a
+  // train are in the first frame (Arun, 2026-09-03)
+  const anchor = metro?.nearestStation(CITY_CENTRE.x, CITY_CENTRE.z) ?? { x: CITY_CENTRE.x, z: CITY_CENTRE.z };
   const n = district.graph.nodes.reduce((best, q) =>
-    Math.hypot(q.x - CITY_CENTRE.x, q.y - CITY_CENTRE.z)
-      < Math.hypot(best.x - CITY_CENTRE.x, best.y - CITY_CENTRE.z) ? q : best);
+    Math.hypot(q.x - anchor.x, q.y - anchor.z)
+      < Math.hypot(best.x - anchor.x, best.y - anchor.z) ? q : best);
   resetCar(car);
   car.x = n.x; car.z = n.y; car.y = 0.62;
   world.update(car.x, car.z);
@@ -681,39 +684,47 @@ damageModel.attach(hero);
 const NOSE_X = CG_X;          // distance from the CG forward to the nose
 const headlightBeams = [];
 for (const s of [-1, 1]) {
-  // three uses physical light units, so a spot needs candela, not the 2.6 that
-  // read correctly under the old legacy-lighting model
-  // 190cd with a 1.4 falloff put several units of radiance on tarmac ten metres
-  // out — far past white once tone-mapped. A dipped beam should light the road,
-  // not brand it.
-  const spot = new THREE.SpotLight(0xdce8ff, 42, 70, 0.50, 0.85, 1.1);
-  // hero space, where +X is forward: the nose sits CG_X ahead of the origin
-  spot.position.set(NOSE_X - 0.30, 0.76, s * 0.5);
-  // aim the beam far enough down the road that its hot core is not on our own
-  // bonnet — the old target met the ground about six metres out and blew white
-  spot.target.position.set(NOSE_X + 34, -0.35, s * 2.2);
+  // High-performance Xenon LED projector headlights: 105 cd, 85m throw
+  const spot = new THREE.SpotLight(0xf0f7ff, 105, 85, 0.54, 0.78, 1.15);
+  spot.position.set(NOSE_X - 0.25, 0.76, s * 0.52);
+  spot.target.position.set(NOSE_X + 42, -0.32, s * 1.6);
   hero.add(spot, spot.target);
 
-  const cone = new THREE.Mesh(
-    new THREE.ConeGeometry(1.9, 17, 14, 1, true),
+  // 1. Inner focused volumetric beam core (reaches 28m)
+  const coreCone = new THREE.Mesh(
+    new THREE.ConeGeometry(1.3, 26, 14, 1, true),
     new THREE.MeshBasicMaterial({
-      color: 0xbcd2ff, transparent: true, opacity: 0.032,
+      color: 0xebf4ff, transparent: true, opacity: 0.16,
       blending: THREE.AdditiveBlending, depthWrite: false,
       side: THREE.DoubleSide, fog: true,
     }),
   );
-  cone.rotation.z = Math.PI / 2 + 0.055;
-  cone.position.set(NOSE_X + 8.0, 0.62, s * 0.5);
-  hero.add(cone);
-  headlightBeams.push(spot, cone);
+  coreCone.rotation.z = Math.PI / 2 + 0.045;
+  coreCone.position.set(NOSE_X + 12.5, 0.60, s * 0.52);
+
+  // 2. Wide atmospheric mist spill cone (reaches 38m)
+  const outerCone = new THREE.Mesh(
+    new THREE.ConeGeometry(3.2, 38, 14, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0x99ccff, transparent: true, opacity: 0.075,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+      side: THREE.DoubleSide, fog: true,
+    }),
+  );
+  outerCone.rotation.z = Math.PI / 2 + 0.052;
+  outerCone.position.set(NOSE_X + 18.0, 0.56, s * 0.52);
+
+  hero.add(coreCone, outerCone);
+  headlightBeams.push(spot, coreCone, outerCone);
 }
 
+// Broad, high-visibility dual-pattern ground illumination pool on the asphalt
 const beamPool = new THREE.Mesh(assets.geo.plane, new THREE.MeshBasicMaterial({
   map: assets.poolTexture, transparent: true, blending: THREE.AdditiveBlending,
-  depthWrite: false, opacity: 0.20, color: 0xa8c4ff, fog: true,
+  depthWrite: false, opacity: 0.42, color: 0xd8e8ff, fog: true,
 }));
 beamPool.rotation.x = -Math.PI / 2;
-beamPool.scale.set(8, 20, 1);
+beamPool.scale.set(12, 34, 1);
 scene.add(beamPool);
 
 const traffic = new Traffic(scene, assets, DAY ? 36 : 40, !DAY);   // Phase 5: denser, and lit at night
@@ -960,14 +971,17 @@ function frameBody() {
   // gear 0 is reverse (the HUD prints it as R)
   if (hero.userData.reverseMat) hero.userData.reverseMat.emissiveIntensity = car.gear === 0 ? 2.4 : 0;
   const headMat = hero.userData.headMat;
-  headMat.emissiveIntensity = car.headlights ? 2.2 : 0;
+  if (headMat) {
+    headMat.emissiveIntensity = car.headlights ? 6.8 : 0;
+    headMat.emissive = car.headlights ? new THREE.Color(0xddeeff) : new THREE.Color(0x000000);
+  }
   for (const b of headlightBeams) {
-    if (b.isSpotLight) b.intensity = car.headlights ? 42 : 0;
+    if (b.isSpotLight) b.intensity = car.headlights ? 105 : 0;
     else b.visible = car.headlights;
   }
 
   const cy = Math.cos(car.yaw), sy = Math.sin(car.yaw);
-  beamPool.position.set(car.x + cy * 11, 0.028, car.z - sy * 11);
+  beamPool.position.set(car.x + cy * 16, 0.028, car.z - sy * 16);
   beamPool.rotation.z = -car.yaw;
   beamPool.visible = car.headlights;
 
