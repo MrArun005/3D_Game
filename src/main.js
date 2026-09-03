@@ -681,51 +681,117 @@ scene.add(hero);
 await loadHeroSkin(assets, hero).catch((e) => console.warn('hero skin:', e.message));
 damageModel.attach(hero);
 
-const NOSE_X = CG_X;          // distance from the CG forward to the nose
+// --- Modern High-Performance Headlight System ---
+const NOSE_X = CG_X;
+
+// 1. Dual-projector road decal texture (photorealistic road beam footprint)
+const headlightDecalTex = (() => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512; canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, 512, 512);
+
+  const drawLobe = (cx, cy, rx, ry) => {
+    const grad = ctx.createRadialGradient(cx, cy, 15, cx, cy, ry);
+    grad.addColorStop(0, 'rgba(245, 252, 255, 0.92)');
+    grad.addColorStop(0.28, 'rgba(220, 240, 255, 0.60)');
+    grad.addColorStop(0.62, 'rgba(170, 210, 255, 0.22)');
+    grad.addColorStop(1, 'rgba(140, 190, 255, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  // Left and right beam footprints thrown forward
+  drawLobe(215, 256, 75, 190);
+  drawLobe(297, 256, 75, 190);
+
+  // Central intense hotspot merge
+  const centerGrad = ctx.createRadialGradient(256, 270, 10, 256, 270, 120);
+  centerGrad.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
+  centerGrad.addColorStop(0.45, 'rgba(225, 245, 255, 0.40)');
+  centerGrad.addColorStop(1, 'rgba(180, 220, 255, 0)');
+  ctx.fillStyle = centerGrad;
+  ctx.beginPath();
+  ctx.ellipse(256, 270, 85, 140, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+})();
+
+// Lens flare glow sprite texture for dazzling headlights when viewed from front
+const lensGlowTex = (() => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128; canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createRadialGradient(64, 64, 2, 64, 64, 60);
+  grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+  grad.addColorStop(0.22, 'rgba(225, 242, 255, 0.85)');
+  grad.addColorStop(0.55, 'rgba(160, 210, 255, 0.32)');
+  grad.addColorStop(1, 'rgba(120, 180, 255, 0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 128, 128);
+  const tex = new THREE.CanvasTexture(canvas);
+  return tex;
+})();
+
 const headlightBeams = [];
+const lensSprites = [];
+
 for (const s of [-1, 1]) {
-  // High-performance Xenon LED projector headlights: 105 cd, 85m throw
-  const spot = new THREE.SpotLight(0xf0f7ff, 105, 85, 0.54, 0.78, 1.15);
-  spot.position.set(NOSE_X - 0.25, 0.76, s * 0.52);
-  spot.target.position.set(NOSE_X + 42, -0.32, s * 1.6);
+  // Physical SpotLight illuminating the 3D world (walls, cars, props)
+  /* Candela, since three's lights went physical: 120 cd is a bicycle lamp
+     and threw nothing readable on the tarmac. A projector headlamp is a few
+     thousand; 1800 with decay 1.2 reads at 40 m without whiting the crossing. */
+  const spot = new THREE.SpotLight(0xf2f8ff, 1800, 110, 0.50, 0.65, 1.2);
+  spot.position.set(NOSE_X - 0.25, 0.76, s * 0.55);
+  spot.target.position.set(NOSE_X + 45, -0.30, s * 1.5);
   hero.add(spot, spot.target);
+  headlightBeams.push(spot);
 
-  // 1. Inner focused volumetric beam core (reaches 28m)
-  const coreCone = new THREE.Mesh(
-    new THREE.ConeGeometry(1.3, 26, 14, 1, true),
-    new THREE.MeshBasicMaterial({
-      color: 0xebf4ff, transparent: true, opacity: 0.16,
-      blending: THREE.AdditiveBlending, depthWrite: false,
-      side: THREE.DoubleSide, fog: true,
-    }),
-  );
-  coreCone.rotation.z = Math.PI / 2 + 0.045;
-  coreCone.position.set(NOSE_X + 12.5, 0.60, s * 0.52);
-
-  // 2. Wide atmospheric mist spill cone (reaches 38m)
-  const outerCone = new THREE.Mesh(
-    new THREE.ConeGeometry(3.2, 38, 14, 1, true),
-    new THREE.MeshBasicMaterial({
-      color: 0x99ccff, transparent: true, opacity: 0.075,
-      blending: THREE.AdditiveBlending, depthWrite: false,
-      side: THREE.DoubleSide, fog: true,
-    }),
-  );
-  outerCone.rotation.z = Math.PI / 2 + 0.052;
-  outerCone.position.set(NOSE_X + 18.0, 0.56, s * 0.52);
-
-  hero.add(coreCone, outerCone);
-  headlightBeams.push(spot, coreCone, outerCone);
+  // Front projector lens glare sprite
+  const spriteMat = new THREE.SpriteMaterial({
+    map: lensGlowTex,
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.95,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.scale.set(0.9, 0.9, 1);
+  sprite.position.set(NOSE_X - 0.05, 0.74, s * 0.55);
+  hero.add(sprite);
+  lensSprites.push(sprite);
 }
 
-// Broad, high-visibility dual-pattern ground illumination pool on the asphalt
-const beamPool = new THREE.Mesh(assets.geo.plane, new THREE.MeshBasicMaterial({
-  map: assets.poolTexture, transparent: true, blending: THREE.AdditiveBlending,
-  depthWrite: false, opacity: 0.42, color: 0xd8e8ff, fog: true,
-}));
-beamPool.rotation.x = -Math.PI / 2;
-beamPool.scale.set(12, 34, 1);
-scene.add(beamPool);
+// Photorealistic asphalt road projection decal
+const beamPool = new THREE.Mesh(
+  new THREE.PlaneGeometry(1, 1),
+  new THREE.MeshBasicMaterial({
+    map: headlightDecalTex,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    opacity: 0.58,
+    side: THREE.DoubleSide,
+  })
+);
+/* No mrtNode override here: on a quad (unlike the weather's point sprites) a
+   zero normal reads as full occlusion to GTAO and the whole decal goes black. */
+beamPool.material.opacity = 0.72;
+/* A child of the hero group, so it rides the car's yaw and ground height for
+   free. Euler XYZ applies Z first: spin the texture's long axis onto local +X
+   (the car's nose), then lay the quad flat. Centred 17 m ahead, 44 m long, so
+   the footprint starts under the bumper and fades out past the crossing. */
+beamPool.rotation.set(-Math.PI / 2, 0, -Math.PI / 2);
+beamPool.scale.set(14, 44, 1);
+beamPool.position.set(NOSE_X + 17, 0.05, 0);
+beamPool.renderOrder = 2;
+hero.add(beamPool);
 
 const traffic = new Traffic(scene, assets, DAY ? 36 : 40, !DAY);   // Phase 5: denser, and lit at night
 const chase = new ChaseCamera(camera);
@@ -972,17 +1038,16 @@ function frameBody() {
   if (hero.userData.reverseMat) hero.userData.reverseMat.emissiveIntensity = car.gear === 0 ? 2.4 : 0;
   const headMat = hero.userData.headMat;
   if (headMat) {
-    headMat.emissiveIntensity = car.headlights ? 6.8 : 0;
-    headMat.emissive = car.headlights ? new THREE.Color(0xddeeff) : new THREE.Color(0x000000);
+    headMat.emissiveIntensity = car.headlights ? 5.5 : 0;
+    headMat.emissive.setHex(car.headlights ? 0xeef6ff : 0x000000);
   }
   for (const b of headlightBeams) {
-    if (b.isSpotLight) b.intensity = car.headlights ? 105 : 0;
-    else b.visible = car.headlights;
+    b.intensity = car.headlights ? 1800 : 0;
+  }
+  for (const sp of lensSprites) {
+    sp.visible = car.headlights;
   }
 
-  const cy = Math.cos(car.yaw), sy = Math.sin(car.yaw);
-  beamPool.position.set(car.x + cy * 16, 0.028, car.z - sy * 16);
-  beamPool.rotation.z = -car.yaw;
   beamPool.visible = car.headlights;
 
   worldTime += dt;
