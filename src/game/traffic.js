@@ -170,8 +170,15 @@ export class Traffic {
     let mesh;
     if (kit.group) {
       // a whole textured body (the owner's Sketchfab cars): one clone, its own materials, no paint tint
-      mesh = kit.group.clone(true);
-      mesh.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      /* Inside a unit-scale group. The kit's wrap carries the scale that
+         brings a 5 cm Sketchfab export up to car length (~98x); the brake box
+         and headlamps below are sized in metres and hung on `mesh`, so on the
+         wrap itself they became 100 m red slabs and 30 m white blocks at 75 m
+         up -- the "glow blocks in the sky" (measured 2026-09-03). */
+      mesh = new THREE.Group();
+      const body = kit.group.clone(true);
+      body.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      mesh.add(body);
       mesh.material = mat;                          // keeps the .material.color callers happy
     } else {
       mesh = new THREE.Mesh(kit.body, mat);

@@ -42,6 +42,28 @@ const hash = (x, z) => {
   const n = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
   return n - Math.floor(n);
 };
+
+/**
+ * The tallest roofs within `radius` of a point, in world space, from the same
+ * formula the massing uses -- so a sign placed here lands on a roof that exists.
+ * Each: { x, z, h, w, d, angle } (centre, height, footprint, block yaw).
+ */
+export function roofsNear(district, x, z, radius, n = 6) {
+  const out = [];
+  for (const bl of district.data.blocks) {
+    if (Math.hypot(bl.x - x, bl.y - z) > radius) continue;
+    const range = HEIGHT[bl.type];
+    if (!range || range[1] === 0) continue;
+    const scale = DISTRICT_SCALE[bl.district] ?? 1;
+    const ca = Math.cos(bl.angle), sa = Math.sin(bl.angle);
+    for (const g of district.buildingsOf(bl.id)) {
+      const h = (range[0] + hash(g.x + bl.x, g.y + bl.y) * (range[1] - range[0])) * scale;
+      const lx = g.x + g.w / 2, lz = g.y + g.d / 2;
+      out.push({ x: bl.x + lx * ca - lz * sa, z: bl.y + lx * sa + lz * ca, h, w: g.w, d: g.d, angle: bl.angle });
+    }
+  }
+  return out.sort((p, q) => q.h - p.h).slice(0, n);
+}
 const ARCHETYPE = { tower: TOWER, mid: MID, row: LOFT, yard: DECK, lot: PODIUM };
 /* Each district builds differently, not just taller or shorter. `forms` are
    the massing shapes #massing may choose (weights), `style` biases the facade

@@ -124,7 +124,7 @@ export function createAssets() {
       color: 0x1a222c, roughness: 0.18, metalness: 0.55, envMapIntensity: 1.35,
     }),
     crown: new THREE.MeshStandardMaterial({
-      color: 0x90e0ef, emissive: 0x00b4d8, emissiveIntensity: 3.4,
+      color: 0x90e0ef, emissive: 0x00b4d8, emissiveIntensity: 2.2,
       roughness: 0.2, metalness: 0.35,
     }),
     // Scanned galvanised painted metal for posts and street fixtures
@@ -143,7 +143,7 @@ export function createAssets() {
        reads the emissive MRT channel, so as a Basic material the lamp heads
        neither dimmed by day nor bloomed by night. Now they do both. */
     lampGlow: new THREE.MeshStandardMaterial({
-      color: 0x3a3226, emissive: 0xffe2b2, emissiveIntensity: 4.8, roughness: 0.35,
+      color: 0x3a3226, emissive: 0xffe2b2, emissiveIntensity: 3.2, roughness: 0.35,
     }),
     // unlit so a red lens stays red at night; brightness comes from instance colour
     signalLamp: new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
@@ -177,7 +177,7 @@ export function createAssets() {
   geo.sign = signGeometry();
   mat.sign = buildSignMaterial(texSignAtlas());
   mat.windowQuad = buildWindowMaterial();
-  mat.beacon = new THREE.MeshStandardMaterial({ color: 0x3a0a0a, emissive: 0xff2a1a, emissiveIntensity: 4.0, roughness: 0.6 });
+  mat.beacon = new THREE.MeshStandardMaterial({ color: 0x3a0a0a, emissive: 0xff2a1a, emissiveIntensity: 1.5, roughness: 0.6 });
   mat.beacon.name = 'beacon';
   geo.species = Object.fromEntries(TREE_SPECIES.map((k) => [k, buildSpecies(k)]));
 

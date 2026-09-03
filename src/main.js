@@ -637,7 +637,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   vehicleVFX = new VehicleVFX(scene, hero);
   window.vehicleVFX = vehicleVFX;
   puddles = new PuddleSystem(scene, district);
-  billboards = new BillboardSystem(scene, district);
+  billboards = new BillboardSystem(scene, district, CITY_CENTRE);
   streetLife = new StreetLife(scene, district);
   airspace = new Airspace(scene);
   /* The other half of the race handshake: say when YOU finish. Set here

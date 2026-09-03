@@ -1,13 +1,19 @@
 import * as THREE from 'three';
+import { roofsNear } from './districtWorld.js';
 
 /**
  * Giant Animated Times Square & Akihabara Neon Billboards
  * and Skyscraper Rooftop Neon Signs.
  */
 export class BillboardSystem {
-  constructor(scene, district) {
+  constructor(scene, district, anchor = { x: 0, z: 0 }) {
     this.scene = scene;
     this.district = district;
+    /* Real roofs, not hard-coded coordinates: the first version placed six
+       screens and three neons around the world ORIGIN, 2 km from Kingsway,
+       floating in the air. Now the nine tallest buildings within 350 m of the
+       spawn anchor wear them, screens on the facade top, neons on the roof. */
+    this.roofs = roofsNear(district, anchor.x, anchor.z, 350, 9);
     this.billboards = [];
     this.animations = [];
 
@@ -168,14 +174,13 @@ export class BillboardSystem {
     }, 512, 256);
 
     // Mount boards to prominent building facades
-    const BOARDS = [
-      { mat: cola.mat, x: 35, y: 16, z: -40, w: 18, h: 9, yaw: 0 },
-      { mat: ramen.mat, x: -35, y: 18, z: 28, w: 20, h: 10, yaw: Math.PI / 2 },
-      { mat: casino.mat, x: 45, y: 22, z: 85, w: 22, h: 11, yaw: -Math.PI / 2 },
-      { mat: guns.mat, x: -90, y: 14, z: -70, w: 18, h: 9, yaw: Math.PI },
-      { mat: cola.mat, x: 120, y: 24, z: 140, w: 22, h: 11, yaw: Math.PI * 0.75 },
-      { mat: ramen.mat, x: -140, y: 20, z: 120, w: 20, h: 10, yaw: -Math.PI * 0.25 },
-    ];
+    const mats = [cola.mat, ramen.mat, casino.mat, guns.mat, cola.mat, ramen.mat];
+    const BOARDS = this.roofs.slice(3, 9).map((r, i) => {
+      const w = Math.min(22, r.w * 0.8), h = w / 2;
+      // hang on the facade that faces +local-z, just under the parapet
+      const fx = Math.sin(r.angle) * -1, fz = Math.cos(r.angle);
+      return { mat: mats[i % mats.length], x: r.x + fx * (r.d / 2 + 0.3), y: Math.max(6, r.h - h / 2 - 1.5), z: r.z + fz * (r.d / 2 + 0.3), w, h, yaw: r.angle };
+    });
 
     const frameMat = new THREE.MeshStandardMaterial({ color: 0x22252c, metalness: 0.8, roughness: 0.4 });
 
@@ -203,11 +208,8 @@ export class BillboardSystem {
   #buildRooftopNeons() {
     // 3D glowing rooftop signs on tall skyscrapers
     const group = new THREE.Group();
-    const ROOFS = [
-      { text: 'HOTEL NOIR', col: 0xff0055, x: 25, y: 56, z: -45, yaw: 0 },
-      { text: 'BANK OF HALSTEAD', col: 0x00e5ff, x: -45, y: 72, z: 35, yaw: Math.PI / 2 },
-      { text: 'NIGHTFALL TOWER', col: 0xffaa00, x: 85, y: 64, z: 90, yaw: -Math.PI * 0.4 },
-    ];
+    const NAMES = [['HOTEL NOIR', 0xff0055], ['BANK OF HALSTEAD', 0x00e5ff], ['NIGHTFALL TOWER', 0xffaa00]];
+    const ROOFS = this.roofs.slice(0, 3).map((r, i) => ({ text: NAMES[i][0], col: NAMES[i][1], x: r.x, y: r.h + 3.5, z: r.z, yaw: r.angle }));
 
     for (const r of ROOFS) {
       const canvas = document.createElement('canvas');

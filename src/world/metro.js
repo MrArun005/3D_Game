@@ -96,18 +96,17 @@ export class Metro {
       ];
       gltf.scene.traverse((o) => {
         const name = (o.name || '').toLowerCase();
-        // the train's own 'top rails' and 'back platform' carry the station words too
-        if (!name.includes('train') && STATION_PARTS.some((p) => name.includes(p))) {
+        if (STATION_PARTS.some((p) => name.includes(p))) {   // 'back platform' etc. are station pieces even when their material is the train's
           o.visible = false;
         } else if (o.isMesh) {
           o.castShadow = false;
           o.receiveShadow = true;
           o.frustumCulled = false;
           if (o.material) {
-            o.material.envMapIntensity = 1.3;
-            if (o.material.emissive || o.material.emissiveMap) {
-              o.material.emissiveIntensity = 2.4;
-            }
+            o.material.envMapIntensity = 1.0;
+            /* 2.4 here turned every carriage into a white slab under the night
+               bloom -- the 'glow blocks in the sky'. Window light, not a lamp. */
+            if (o.material.emissive || o.material.emissiveMap) o.material.emissiveIntensity = 0.5;
           }
         }
       });
