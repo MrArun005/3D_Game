@@ -99,6 +99,12 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
 ## Current state
 
 - Tests: `npm test` — 20/20 passing. Node's built-in runner, no framework.
+- Deploy (2026-09-03): Vercel project `halstead-bay`, public at
+  https://halstead-bay.vercel.app. Git-triggered builds never leave UNKNOWN;
+  deploy with `vercel --prod --yes` run detached (>6 min upload), then check
+  `curl -sI https://halstead-bay.vercel.app/models/manifest.json`. Heavy vendor
+  GLBs go through `tools/optimise-glb.mjs` first (`--keep-nodes` when code
+  hides parts by node name); originals live in `assets/source/originals/`.
 - `npm run dev` (vite, :5173), `npm run build`, `npm run preview`.
 - three r185, **WebGPURenderer** (WebGL2 backend where WebGPU is absent).
   `vite.config.js` aliases `three` -> `three/webgpu` with an exact-match
