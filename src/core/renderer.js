@@ -33,7 +33,10 @@ class GatedCSM extends CSMShadowNode {
   updateBefore(builder) {
     const c = this.camera;
     if (c) {
-      const fit = `${c.fov}|${c.aspect}|${c.near}|${c.far}`;
+      const px = Math.round(this.light.position.x * 0.1);
+      const py = Math.round(this.light.position.y * 0.1);
+      const pz = Math.round(this.light.position.z * 0.1);
+      const fit = `${c.fov}|${c.aspect}|${c.near}|${c.far}|${px}|${py}|${pz}`;
       if (fit !== this._fit) { this._fit = fit; this.updateFrustums(); }
     }
     super.updateBefore(builder);

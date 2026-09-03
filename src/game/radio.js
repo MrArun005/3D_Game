@@ -15,6 +15,34 @@ const STATIONS = [
   { name: 'HARBOUR DUB',    bpm: 70, root: 196, scale: [0, 3, 5, 7, 10], swing: 0.18, lead: 'triangle', bass: 'sine' },
 ];
 
+const DJ_BUMPERS = {
+  'HALSTEAD LO-FI': [
+    'Chill beats for cruising Halstead Bay at dusk.',
+    'No traffic, no stress, just mellow vibes.',
+    'Midnight rain on the windscreen. Keep it locked.'
+  ],
+  'KINGSWAY FM': [
+    "You're locked to 104.2 Kingsway FM — no adverts, just asphalt.",
+    'Speed camera warning on Kingsway East. Mind the throttle.',
+    'Banging basslines straight from Downtown.'
+  ],
+  'SYNTHWAVE 84': [
+    'Retro neon drives and analog sunsets on 84.8.',
+    'Outrun the grid. Halstead by night never sleeps.',
+    'Synthesizers at maximum velocity.'
+  ],
+  'WEST COAST RAP': [
+    'Heavy 808s rolling through the Southside flats.',
+    'Street level frequencies. Representing Halstead Bay.',
+    'Drop the clutch, spin the block.'
+  ],
+  'HARBOUR DUB': [
+    'Echoes rolling off the quay. Deep sub-frequencies.',
+    'Low-end heavy from Harbour Point to the docks.',
+    'Heavy tape delay for the night drive.'
+  ]
+};
+
 export class Radio {
   constructor(audio, hud) {
     this.audio = audio; this.hud = hud; this.station = -1; this.timer = null; this.next = 0; this.step = 0; this.leadNote = 2;
@@ -29,7 +57,10 @@ export class Radio {
     this.ctx = ctx;
     this.bus = ctx.createGain(); this.bus.gain.value = 0.16; this.bus.connect(this.audio.bus());
     this.next = ctx.currentTime + 0.1; this.step = 0;
-    this.hud.flash(`RADIO · ${STATIONS[this.station].name}`);
+    const st = STATIONS[this.station];
+    const bumpers = DJ_BUMPERS[st.name] || [];
+    const b = bumpers[Math.floor(Math.random() * bumpers.length)] || '';
+    this.hud.flash(`📻 ${st.name}\n"${b}"`);
     this.timer = setInterval(() => this.#schedule(), 90);
   }
 

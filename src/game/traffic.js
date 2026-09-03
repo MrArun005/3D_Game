@@ -506,11 +506,11 @@ export class Traffic {
     const out = [];
     for (const c of this.police) {
       if (!c.live) continue;
-      out.push({ x: c.x, z: c.z, yaw: c.yaw, offsets: c.offsets, radius: c.radius, reach: c.reach, tag: 'police' });
+      out.push({ x: c.x, z: c.z, yaw: c.yaw, offsets: c.offsets, radius: c.radius, reach: c.reach, tag: 'police', car: c });
     }
     for (const c of this.cars) {
       if (!c.live) continue;
-      out.push({ x: c.x, z: c.z, yaw: c.yaw, offsets: c.offsets, radius: c.radius, reach: c.reach, tag: 'traffic' });
+      out.push({ x: c.x, z: c.z, yaw: c.yaw, offsets: c.offsets, radius: c.radius, reach: c.reach, tag: 'traffic', car: c });
     }
     return out;
   }
@@ -566,9 +566,14 @@ export class Traffic {
 
       const accel = limit > car.speed ? 4.5 : 9.0;
       car.speed += Math.max(-accel, Math.min(accel, limit - car.speed)) * dt * 2.2;
-      car.speed = Math.max(0, Math.min(car.cruise, car.speed));
       car.stopped = car.speed < 0.4;
-      car.brakeMat.emissiveIntensity = limit < car.speed - 0.3 || car.stopped ? 2.4 : 0.35;
+      if (car.panic > 0) {
+        car.panic -= dt;
+        const flash = Math.sin(t * 18) > 0;
+        car.brakeMat.emissiveIntensity = flash ? 3.2 : 0.2;
+      } else {
+        car.brakeMat.emissiveIntensity = limit < car.speed - 0.3 || car.stopped ? 2.4 : 0.35;
+      }
 
       car.s += car.speed * dt;
       if (hold !== null && car.s > hold) { car.s = hold; car.speed = 0; }

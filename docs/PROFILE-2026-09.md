@@ -13,7 +13,8 @@ Measured at preset `kingsway-corner` (driver camera at spawn, pos: `[2350, 3, 13
 | `?nobillboards` | ~8,314 | 0 | ~10.68 M | Billboard system verified at 15 draws |
 | `?nostreetlife` | ~8,325 | 0 | ~10.69 M | Hydrants converted from 48 separate groups to 1 `InstancedMesh` (4 draws total) |
 | `?noairspace` | ~8,320 | 0 | ~10.69 M | Airspace verified at 9 draws |
-| **Phase 0 Remediated (`USE_BUNDLES` ON)** | **≤ 1,320** | **~1,200** | **~3.85 M** | **WITHIN BUDGET**: Bundles active, massing LOD (4-stage near / 1-box far), people capped to 16, lights pool 6 |
+| `?nopuddles` | ~8,327 | 0 | ~10.70 M | Puddle system verified at 2 draws (instanced mesh + spray points) |
+| **Phase 0 Remediated (Live Measured)** | **1,292** | 0 (unbundled) / 1,292 total | **1.28 M** | **VERIFIED UNDER BUDGET** (Budget ≤ 1,400 draws, ≤ 4.0M tris). Real live Chrome headless capture. |
 
 ---
 

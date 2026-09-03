@@ -63,31 +63,35 @@ export class PuddleSystem {
       polygonOffsetUnits: -3,
     });
 
-    const roads = this.district?.data?.roads || [];
-    const group = new THREE.Group();
+    const segments = this.district?.segments || [];
+    const MAX_PUDDLES = 120;
+    const instGeom = new THREE.PlaneGeometry(3.5, 2.6);
+    instGeom.rotateX(-Math.PI / 2);
+    const puddleMesh = new THREE.InstancedMesh(instGeom, puddleMat, MAX_PUDDLES);
+    puddleMesh.receiveShadow = true;
 
-    // Place puddles along road sections
+    const dummy = new THREE.Object3D();
     let count = 0;
-    for (const r of roads) {
-      if (!r.points || r.points.length < 2) continue;
-      for (let i = 0; i < r.points.length - 1; i += 2) {
-        if (count >= 120) break;
-        const p1 = r.points[i], p2 = r.points[i + 1];
-        const mx = (p1[0] + p2[0]) / 2 + (Math.sin(count * 3.7) * 2.5);
-        const mz = (p1[1] + p2[1]) / 2 + (Math.cos(count * 2.3) * 2.5);
-        const size = 3.5 + (count % 4) * 1.2;
+    for (let i = 0; i < segments.length && count < MAX_PUDDLES; i += 3) {
+      const s = segments[i];
+      if (!s || s.cls === 'freeway' || s.cls === 'ramp') continue;
+      const mx = (s.ax + s.bx) / 2 + (Math.sin(count * 3.7) * 2.2);
+      const mz = (s.az + s.bz) / 2 + (Math.cos(count * 2.3) * 2.2);
+      const size = 0.85 + (count % 4) * 0.25;
 
-        const quad = new THREE.Mesh(new THREE.PlaneGeometry(size, size * 0.75), puddleMat);
-        quad.rotateX(-Math.PI / 2);
-        quad.rotation.z = Math.random() * Math.PI;
-        quad.position.set(mx, 0.035, mz);
-        quad.receiveShadow = true;
-        group.add(quad);
-        this.puddles.push({ x: mx, z: mz, radius: size * 0.6 });
-        count++;
-      }
+      dummy.position.set(mx, 0.035, mz);
+      dummy.rotation.set(0, (count * 1.37) % Math.PI, 0);
+      dummy.scale.set(size, 1, size * 0.75);
+      dummy.updateMatrix();
+
+      puddleMesh.setMatrixAt(count, dummy.matrix);
+      this.puddles.push({ x: mx, z: mz, radius: 2.0 * size });
+      count++;
     }
-    this.scene.add(group);
+    puddleMesh.count = count;
+    puddleMesh.instanceMatrix.needsUpdate = true;
+    this.scene.add(puddleMesh);
+    console.info(`puddles: 2 draws (1 instanced puddle decal, 1 spray points; ${count} puddles)`);
   }
 
   #buildSpraySystem() {

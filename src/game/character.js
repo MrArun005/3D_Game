@@ -36,6 +36,12 @@ export const CHARACTERS = [
   '/models/avatar/female.wardrobe.glb',
 ];
 
+export const NAMED_CHARACTERS = [
+  { id: 'leo', name: 'LEO VANCE', role: 'GETAWAY SPECIALIST', perk: 'Sharper steering response', index: 0 },
+  { id: 'marcus', name: 'MARCUS STERLING', role: 'MASTERMIND', perk: 'Cool heat & +20% payouts', index: 3 },
+  { id: 'jax', name: 'JAX MILLER', role: 'ENFORCER', perk: 'Heavy ram force & NOS boost', index: 6 },
+];
+
 /* The wardrobe GLBs carry 11 generated parts (beards, hair shells, torso
    layers) as plain meshes — glTF has no visibility flag and the loader keeps
    everything visible, so an un-hidden avatar wears five beards at once. The

@@ -187,13 +187,65 @@ export class Hud {
       g.strokeStyle = '#ffffff'; g.lineWidth = 2; g.stroke();
     }
 
+    // Places: Hospitals, Police, Landmarks
+    if (this.district?.places) {
+      for (const p of this.district.places) {
+        const px = ox + p.x * sc, pz = oz + (p.z ?? p.y ?? 0) * sc;
+        if (p.type === 'hosp') {
+          g.fillStyle = '#2fe675';
+          g.beginPath(); g.arc(px, pz, 6, 0, 7); g.fill();
+          g.fillStyle = '#ffffff'; g.font = '700 9px monospace'; g.textAlign = 'center';
+          g.fillText('+', px, pz + 3);
+        } else if (p.type === 'police') {
+          g.fillStyle = '#3f7dff';
+          g.beginPath(); g.arc(px, pz, 6, 0, 7); g.fill();
+          g.fillStyle = '#ffffff'; g.font = '700 8px monospace'; g.textAlign = 'center';
+          g.fillText('P', px, pz + 3);
+        }
+      }
+    }
+
     if (mission?.active) mission.points.forEach((p, i) => {
       g.fillStyle = i === mission.index ? '#ffc23c' : 'rgba(74,163,255,0.8)';
       g.beginPath(); g.arc(ox + p.x * sc, oz + p.y * sc, i === mission.index ? 7 : 4, 0, 7); g.fill();
     });
+
+    // Player position & heading
     g.fillStyle = '#ffffff'; g.beginPath(); g.arc(ox + car.x * sc, oz + car.z * sc, 5, 0, 7); g.fill();
     g.strokeStyle = '#ffffff'; g.lineWidth = 2; g.beginPath(); g.moveTo(ox + car.x * sc, oz + car.z * sc);
     g.lineTo(ox + (car.x + Math.cos(car.yaw) * 60) * sc, oz + (car.z - Math.sin(car.yaw) * 60) * sc); g.stroke();
+
+    // --- Task 5: Map Legend ---
+    const lx = W - 230, ly = H - 165;
+    g.fillStyle = 'rgba(8,11,16,0.88)';
+    g.fillRect(lx, ly, 215, 150);
+    g.strokeStyle = 'rgba(150,172,200,0.3)';
+    g.lineWidth = 1;
+    g.strokeRect(lx, ly, 215, 150);
+
+    g.fillStyle = '#cfe0f5';
+    g.font = '700 11px ui-sans-serif,system-ui,sans-serif';
+    g.textAlign = 'left';
+    g.fillText('MAP LEGEND', lx + 12, ly + 20);
+
+    const legendItems = [
+      { color: '#ffffff', icon: '▶', text: 'You (Heading)' },
+      { color: '#b026ff', icon: '●', text: 'GPS Waypoint (Click map)' },
+      { color: '#ff00aa', icon: '―', text: 'Navigation Route' },
+      { color: '#ffc23c', icon: '●', text: 'Active Objective' },
+      { color: '#2fe675', icon: '+', text: 'Hospital (Respawn)' },
+      { color: '#3f7dff', icon: 'P', text: 'Police Station' },
+    ];
+
+    legendItems.forEach((item, idx) => {
+      const iy = ly + 40 + idx * 17;
+      g.fillStyle = item.color;
+      g.font = '700 11px monospace';
+      g.fillText(item.icon, lx + 12, iy);
+      g.fillStyle = 'rgba(207,224,245,0.85)';
+      g.font = '10px ui-sans-serif,sans-serif';
+      g.fillText(item.text, lx + 30, iy);
+    });
   }
 
   districtCentres() {

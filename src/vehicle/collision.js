@@ -154,13 +154,17 @@ export function resolveObstacles(car, obstacles) {
         car.x += nx * pen;
         car.z += nz * pen;
         const into = -(car.vx * nx + car.vz * nz);
-        if (into > 0) {
-          if (into > 1.2) {
-            if (into > (car.impact || 0)) car.hitAt = { x: sx, z: sz };
-            car.impact = Math.max(car.impact || 0, into);
-            // who you hit decides whether anyone comes looking for you
-            if (into > (car.hitForce || 0)) { car.hitForce = into; car.hitTag = o.tag || 'prop'; }
-          }
+          if (into > 0) {
+            if (into > 1.2) {
+              if (into > (car.impact || 0)) car.hitAt = { x: sx, z: sz };
+              car.impact = Math.max(car.impact || 0, into);
+              // who you hit decides whether anyone comes looking for you
+              if (into > (car.hitForce || 0)) { car.hitForce = into; car.hitTag = o.tag || 'prop'; }
+              if (o.car) {
+                o.car.panic = 4.0;
+                o.car.speed = Math.max(0, o.car.speed - into * 0.4);
+              }
+            }
           car.vx += nx * into * 1.05;    // a parked car gives a little, a wall none
           car.vz += nz * into * 1.05;
           // glancing blows should slew you, not stop you dead

@@ -116,6 +116,16 @@ export function createAudio() {
     rainFilter.connect(rainGain);
     rainGain.connect(master);
 
+    // City ambience bed (Task 6.1): low rumble of distant traffic & urban air
+    const cityFilter = ctx.createBiquadFilter();
+    cityFilter.type = 'lowpass';
+    cityFilter.frequency.value = 180;
+    const cityGain = ctx.createGain();
+    cityGain.gain.value = 0.024;
+    split.connect(cityFilter);
+    cityFilter.connect(cityGain);
+    cityGain.connect(master);
+
     noise.start();
     ready = true;
     return ctx.state === 'running';

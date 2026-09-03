@@ -86,12 +86,47 @@ export class GameClock {
       hemi.groundColor.copy(this.hemiGround);
       hemi.intensity = hemiIntensity;
     }
-    if (scene && scene.fog) {
-      scene.fog.color.copy(this.fogColor);
-      scene.fog.density = isNight ? 0.0028 : isDusk ? 0.00028 : 0.00018;
+    if (scene) {
+      if (scene.fog) {
+        scene.fog.color.copy(this.fogColor);
+        scene.fog.density = isNight ? 0.0028 : isDusk ? 0.00028 : 0.00018;
+      }
+      // Task 2.4: Sky radiance & HDRI environment intensity follows the solar cycle
+      scene.environmentIntensity = isDay ? 1.15 : (isDusk || isDawn) ? 0.85 : 0.45;
     }
 
-    // Night lighting state: streetlamps & headlights active at night & dusk
+    // Task 2.3: Staggered dusk switch-on for streetlamps, signs, windows (18.2 - 19.8)
+    const duskProgress = Math.max(0, Math.min(1, (this.hour - 18.0) / 1.8));
+    const dawnProgress = Math.max(0, Math.min(1, 1 - (this.hour - 5.4) / 1.6));
+    const nightFactor = isNight ? 1 : isDusk ? duskProgress : isDawn ? dawnProgress : 0;
+
+    if (assets) {
+      // Stagger 1: Street lamps & sodium pools turn on at 35% dusk
+      const lampOn = nightFactor > 0.35;
+      if (assets.mat?.pool) assets.mat.pool.opacity = lampOn ? 0.88 * Math.min(1, (nightFactor - 0.35) / 0.3) : 0;
+      if (assets.mat?.lampGlow) assets.mat.lampGlow.emissiveIntensity = lampOn ? 0.15 + 2.0 * nightFactor : 0.15;
+
+      // Stagger 2: Commercial neon signs ignite at 20% dusk
+      const signOn = nightFactor > 0.20;
+      if (assets.mat?.sign) assets.mat.sign.emissiveIntensity = signOn ? 0.06 + 1.6 * nightFactor : 0.06;
+      if (assets.mat?.beacon) assets.mat.beacon.emissiveIntensity = signOn ? 0.6 + 1.8 * nightFactor : 0.6;
+
+      // Stagger 3: Tower & residential window illumination staggers between 40% and 85% dusk
+      if (assets.facades) {
+        let idx = 0;
+        for (const k of Object.keys(assets.facades)) {
+          const threshold = 0.35 + ((idx * 0.13) % 0.50); // staggered per facade group
+          const on = nightFactor > threshold;
+          const factor = on ? Math.min(1, (nightFactor - threshold) / 0.25) : 0;
+          for (const m of assets.facades[k]) {
+            m.emissiveIntensity = 0.04 + 0.96 * factor;
+          }
+          idx++;
+        }
+      }
+    }
+
+    // Night lighting state: headlights active at night & dusk
     const lightsActive = this.hour >= 18.2 || this.hour < 6.4;
     if (heroLights) heroLights.visible = lightsActive;
 

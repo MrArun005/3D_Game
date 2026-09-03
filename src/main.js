@@ -42,7 +42,7 @@ import { Traffic } from './game/traffic.js';
 import { Crowd } from './game/crowd.js';
 import { Helicopter } from './game/helicopter.js';
 import { OnFoot, makeSolver } from './game/onfoot.js';
-import { CHARACTERS } from './game/character.js';
+import { CHARACTERS, NAMED_CHARACTERS } from './game/character.js';
 import { Navigation } from './game/navigation.js';
 import { GameClock } from './game/clock.js';
 import { Mission } from './game/mission.js';
@@ -807,10 +807,12 @@ const traffic = new Traffic(scene, assets, DAY ? 36 : 40, !DAY);   // Phase 5: d
 const chase = new ChaseCamera(camera);
 const weather = DAY ? null : createWeather(scene);
 const hud = new Hud();
+let navigation = null;
 const clock = new GameClock({ startHour: +(new URLSearchParams(location.search).get('time') ?? (DAY ? 12.0 : 19.5)) });
 hud.useClock(clock);
-let navigation = null;
 const stats = new Stats();
+window.stats = stats;
+window.renderer = renderer;
 const photo = new Photo(camera, stats);
 
 const audio = createAudio();
@@ -874,8 +876,10 @@ const input = createInput((action) => {
   if (action === 'reset') respawnCar();
   if (action === 'time') { clock.hour = (clock.hour + 3) % 24; hud.flash(`TIME · ${clock.formattedTime}`); }
   if (action === 'avatar' && onFoot.character) {
-    const i = onFoot.character.swap(onFoot.character.index + 1);
-    hud.flash(`CHARACTER ${i + 1}/${CHARACTERS.length}`);
+    window._charIdx = ((window._charIdx || 0) + 1) % NAMED_CHARACTERS.length;
+    const persona = NAMED_CHARACTERS[window._charIdx];
+    onFoot.character.swap(persona.index);
+    hud.flash(`${persona.name} (${persona.role}) · ${persona.perk}`);
   }
   if (action === 'mute') { muted = !muted; audio.mute(muted); }
   if (action === 'use') useVehicle();
@@ -1005,7 +1009,7 @@ function frameBody() {
   /* Breakables go BEFORE the physics step: a lamp post the car is about to
      fell must lose its collision solid before the tyre model resolves against
      it, or the car eats a dead stop on the frame it breaks through. */
-  debris.update(car, dt, traffic.cars);
+  debris.update(car, dt, traffic.police?.length ? [...traffic.cars, ...traffic.police] : traffic.cars);
 
   // fixed-step physics keeps the tyre model stable; clamp accumulator to prevent death spirals on dt spikes
   if (dt > 0.05) physicsAccumulator = Math.min(physicsAccumulator, STEP * 4);
@@ -1136,7 +1140,7 @@ function frameBody() {
       chase.update(car, dt);
     }
   }
-  clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather });
+  clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets });
   if (weather) weather.update(camera, car, dt);
   lightPool?.update(dt, car.x, car.z, traffic);
   grade.setDrops(DAY ? 0 : chase.mode >= 2 ? 1.2 : 0.68);
