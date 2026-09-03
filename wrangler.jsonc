@@ -3,7 +3,7 @@
   // skips the interactive framework setup that failed the CI deploy
   // ("Cannot modify Vite config: could not find a valid plugins array").
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "halstead-bay",
+  "name": "3d-game",     // must match the Worker the Cloudflare build is attached to (its log detected "3d-game")
   "compatibility_date": "2026-08-31",
   "assets": {
     "directory": "./dist",
