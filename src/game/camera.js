@@ -21,6 +21,8 @@ export class ChaseCamera {
     this.lookYaw = 0;
     this.lookPitch = 0;
     this.looking = false;
+    this.lookBehind = false;
+    this.mouseIdle = 0;
   }
 
   /** Mouse delta, in pixels. */
@@ -28,9 +30,14 @@ export class ChaseCamera {
     this.lookYaw -= dx * 0.0032;
     this.lookPitch = Math.max(-0.5, Math.min(1.15, this.lookPitch - dy * 0.0026));
     this.looking = true;
+    this.mouseIdle = 0;
   }
 
-  recentre() { this.lookYaw = 0; this.lookPitch = 0; this.looking = false; }
+  setLookBack(active) {
+    this.lookBehind = !!active;
+  }
+
+  recentre() { this.lookYaw = 0; this.lookPitch = 0; this.looking = false; this.mouseIdle = 0; }
 
   cycle() { this.mode = (this.mode + 1) % RIGS.length; }
   /** Put the camera where it would settle, now. For spawns and respawns: the
@@ -54,10 +61,17 @@ export class ChaseCamera {
       }
     }
 
+    // Auto-recenter after 2 seconds of no mouse look input
+    if (this.looking) {
+      this.mouseIdle += dt;
+      if (this.mouseIdle > 2.0) this.recentre();
+    }
+
     /* The look offset orbits the rig around the car rather than just turning
        the camera, so you can see the flank of your own car, the road behind,
        and the sky above it. */
-    const ly = this.lookYaw;
+    let ly = this.lookYaw;
+    if (this.lookBehind) ly += Math.PI; // Instant look-back snap
     const lift = Math.sin(this.lookPitch);
     const flat = Math.cos(this.lookPitch);
     const ox = Math.cos(ly) * (-cy) - Math.sin(ly) * (sy);
@@ -83,8 +97,8 @@ export class ChaseCamera {
        standstill turns the whole screen when the car itself cannot move,
        which reads as the camera steering instead of the car. */
     const look = car.steer * speedK * 6.0;
-    // when free-looking, aim through the car rather than down the road
-    const aimD = this.looking ? 2.0 : rig.aim;
+    // when free-looking or looking behind, aim through the car rather than down the road
+    const aimD = (this.looking || this.lookBehind) ? 2.0 : rig.aim;
     this.aim.set(
       car.x - ox * aimD * flat + rx * look,
       0.95 + car.heave - lift * aimD * 0.4,
@@ -94,7 +108,9 @@ export class ChaseCamera {
     if (rig.tilt) this.camera.rotation.z += car.roll * 0.35 - car.yawRate * 0.018;
 
     const nosBoost = car.nosActive ? 11 : 0;
-    const fov = rig.fov + speedK * 9 + nosBoost;
+    // FOV 62 at rest to 74 at ~150 km/h (speedK reaches 1.0)
+    const baseFov = 62;
+    const fov = baseFov + speedK * 12 + nosBoost;
     if (Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 5.5);
       this.camera.updateProjectionMatrix();

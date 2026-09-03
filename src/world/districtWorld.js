@@ -366,7 +366,7 @@ export class DistrictWorld {
           group: USE_BUNDLES ? new THREE.BundleGroup() : new THREE.Group(),
           gen: null,
         };
-        this.building.gen = this.#buildSteps(w.cx, w.cz, this.building.group);
+        this.building.gen = this.#buildSteps(w.cx, w.cz, this.building.group, w.d ?? 0);
       }
       const b = this.building;
       const t1 = performance.now();
@@ -508,7 +508,7 @@ export class DistrictWorld {
    * capping every step, and a crown on the towers. This is the difference
    * between a skyline and a bar chart.
    */
-  #massing(arch, wx, wz, angle, w, d, h, out, district = null) {
+  #massing(arch, wx, wz, angle, w, d, h, out, district = null, chunkDist2 = 0) {
     const A = this.assets;
     const rand = mulberry32(Math.floor(hash(wx, wz) * 2147483647) >>> 0);
     const dform = DISTRICT_FORM[district] ?? DISTRICT_FORM.ASHMOOR;
@@ -583,29 +583,47 @@ export class DistrictWorld {
         out.plant.hut.push(mat4(px, KERB_H + baseH - SINK + bodyH + 0.6, pz, angle, 1, 1, 1));
       }
     } else if (arch === TOWER && shaft > 36) {
-      // 4-stage neo-futurist stepped setback tower
-      const a = shaft * 0.36, b = shaft * 0.28, c = shaft * 0.22;
-      const k1 = 0.84 + rand() * 0.05, k2 = 0.68 + rand() * 0.06, k3 = 0.50 + rand() * 0.06;
-      stage(y0, a, 1);
-      stage(y0 + a - SINK, b, k1);
-      stage(y0 + a + b - SINK * 2, c, k2);
-      stage(y0 + a + b + c - SINK * 3, shaft - a - b - c + SINK * 3, k3);
-      cap(y0 + a - SINK, 0.5 + SINK, 1, 0.12);
-      cap(y0 + a + b - SINK * 2, 0.5 + SINK, k1, 0.12);
-      cap(y0 + a + b + c - SINK * 3, 0.5 + SINK, k2, 0.12);
-      cap(KERB_H + h - SINK, 0.8 + SINK, k3, 0.12);
-      topK = k3;
+      if (chunkDist2 <= 2) {
+        // 4-stage neo-futurist stepped setback tower (3x3 foreground ring)
+        const a = shaft * 0.36, b = shaft * 0.28, c = shaft * 0.22;
+        const k1 = 0.84 + rand() * 0.05, k2 = 0.68 + rand() * 0.06, k3 = 0.50 + rand() * 0.06;
+        stage(y0, a, 1);
+        stage(y0 + a - SINK, b, k1);
+        stage(y0 + a + b - SINK * 2, c, k2);
+        stage(y0 + a + b + c - SINK * 3, shaft - a - b - c + SINK * 3, k3);
+        cap(y0 + a - SINK, 0.5 + SINK, 1, 0.12);
+        cap(y0 + a + b - SINK * 2, 0.5 + SINK, k1, 0.12);
+        cap(y0 + a + b + c - SINK * 3, 0.5 + SINK, k2, 0.12);
+        cap(KERB_H + h - SINK, 0.8 + SINK, k3, 0.12);
+        topK = k3;
+      } else if (chunkDist2 <= 8) {
+        // 2-stage setback in next ring
+        const a = shaft * 0.55;
+        const k1 = 0.76 + rand() * 0.08;
+        stage(y0, a, 1);
+        stage(y0 + a - SINK, shaft - a + SINK, k1);
+        cap(y0 + a - SINK, 0.5 + SINK, 1, 0.12);
+        cap(KERB_H + h - SINK, 0.7 + SINK, k1, 0.12);
+        topK = k1;
+      } else {
+        // Single box beyond (background)
+        stage(y0, shaft, 1);
+        cap(KERB_H + h - SINK, 0.7 + SINK, 1, 0.1);
+      }
     } else if (arch === TOWER || (arch === MID && shaft > 22)) {
-      // Modernist stepped tower with asymmetrical cantilever
-      const split = shaft * (0.52 + rand() * 0.12);
-      const k = 0.76 + rand() * 0.08;
-      const shiftX = (rand() - 0.5) * w * 0.12;
-      stage(y0, split, 1);
-      stageAt(y0 + split - SINK, shaft - split + SINK, w * k, d * k, shiftX, 0);
-      cap(y0 + split - SINK, 0.6 + SINK, 1, 0.12);
-      topK = k;
-    } else if (shaft > 14) {
-      // Articulated 2-tier setback with penthouse terrace
+      if (chunkDist2 <= 8) {
+        const split = shaft * (0.52 + rand() * 0.12);
+        const k = 0.76 + rand() * 0.08;
+        const shiftX = (rand() - 0.5) * w * 0.12;
+        stage(y0, split, 1);
+        stageAt(y0 + split - SINK, shaft - split + SINK, w * k, d * k, shiftX, 0);
+        cap(y0 + split - SINK, 0.6 + SINK, 1, 0.12);
+        topK = k;
+      } else {
+        stage(y0, shaft, 1);
+        cap(KERB_H + h - SINK, 0.7 + SINK, 1, 0.1);
+      }
+    } else if (shaft > 14 && chunkDist2 <= 8) {
       const split = shaft * 0.65;
       const k = 0.82 + rand() * 0.08;
       stage(y0, split, 1);
@@ -619,22 +637,26 @@ export class DistrictWorld {
     }
 
     if (arch === TOWER) {
-      // Multi-tier ziggurat illuminated crown
-      const ch1 = 2.0 + rand() * 1.5;
-      const ch2 = 1.6 + rand() * 1.2;
-      out.crowns.push(mat4(wx, KERB_H + h + 0.6, wz, angle,
-        w * topK * 0.65, ch1, d * topK * 0.65));
-      out.crowns.push(mat4(wx, KERB_H + h + 0.6 + ch1, wz, angle,
-        w * topK * 0.42, ch2, d * topK * 0.42));
+      if (chunkDist2 <= 2) {
+        // Multi-tier ziggurat illuminated crown in near ring
+        const ch1 = 2.0 + rand() * 1.5;
+        const ch2 = 1.6 + rand() * 1.2;
+        out.crowns.push(mat4(wx, KERB_H + h + 0.6, wz, angle,
+          w * topK * 0.65, ch1, d * topK * 0.65));
+        out.crowns.push(mat4(wx, KERB_H + h + 0.6 + ch1, wz, angle,
+          w * topK * 0.42, ch2, d * topK * 0.42));
 
-      // Soaring spire antennas (up to 24m tall) with obstruction light beacon
-      if (rand() < 0.75) {
-        const spireH = 14 + rand() * 16;
-        out.masts.push(mat4(wx, KERB_H + h + ch1 + ch2 + spireH / 2, wz, 0,
-          0.22, spireH, 0.22));
+        if (rand() < 0.75) {
+          const spireH = 14 + rand() * 16;
+          out.masts.push(mat4(wx, KERB_H + h + ch1 + ch2 + spireH / 2, wz, 0,
+            0.22, spireH, 0.22));
+        }
+      } else if (chunkDist2 <= 8) {
+        out.crowns.push(mat4(wx, KERB_H + h + 0.6, wz, angle,
+          w * topK * 0.55, 1.8, d * topK * 0.55));
       }
-    } else if (w > 7 && rand() < 0.8) {
-      // Rich roof clutter & HVAC cooling towers
+    } else if (w > 7 && rand() < 0.8 && chunkDist2 <= 4) {
+      // Roof clutter only within 2 rings
       for (let i = 0, n = 2 + Math.floor(rand() * 2); i < n; i++) {
         const r = rand();
         out.plant[r < 0.5 ? 'ac' : r < 0.8 ? 'tank' : 'hut'].push(
@@ -1027,9 +1049,16 @@ export class DistrictWorld {
    * the two per-item loops that dominate the cost (building massing,
    * per-segment furniture).
    */
-  *#buildSteps(ix, iz, group) {
+  *#buildSteps(ix, iz, group, chunkDist2 = 0) {
     const A = this.assets;
     const k = ck(ix, iz);
+    let tLast = performance.now();
+    const tick = function* () {
+      if (performance.now() - tLast >= 4.0) {
+        yield;
+        tLast = performance.now();
+      }
+    };
 
     /* --- carriageway: one quad per segment, all merged into one mesh ---
        Overlaps at junctions are coplanar and the same colour, so the depth
@@ -1162,7 +1191,7 @@ export class DistrictWorld {
       if (!arch) continue;
       const range = HEIGHT[bl.type] || [10, 20];
       for (const g of this.district.buildingsOf(bl.id)) {
-        if (++massed % 8 === 0) yield;
+        yield* tick();
         const scale = DISTRICT_SCALE[bl.district] ?? 1;
         const h = (range[0] + hash(g.x + bl.x, g.y + bl.y) * (range[1] - range[0])) * scale;
         // local footprint -> world, through the block's own transform
@@ -1173,7 +1202,9 @@ export class DistrictWorld {
         /* A whole kit building instead of the box, where the district builds that
            way (kitBuildings.js). Height stays in the model's proportion to its
            footprint, so a scaled house is house-height and a skyscraper towers. */
-        const kd = KIT_DISTRICT[bl.district], kits = this.assets.kitBuildings;
+        const noKit = typeof location !== 'undefined' && new URLSearchParams(location.search).has('nokit');
+        const kd = noKit ? null : KIT_DISTRICT[bl.district];
+        const kits = this.assets.kitBuildings;
         const kit = kd && kits?.[kd[0]];
         if (kit && hash(wx * 0.37, wz * 0.61) < kd[1] && g.w > 6 && g.d > 6) {
           const wantTall = bl.type === 'tower' || (bl.type === 'mid' && h > 30);
@@ -1186,7 +1217,7 @@ export class DistrictWorld {
           continue;
         }
         this.#massing(arch, wx, wz, bl.angle, g.w, g.d, h,
-                      { bases, facades, roofs, glassRoofs, crowns, masts, plant }, bl.district);
+                      { bases, facades, roofs, glassRoofs, crowns, masts, plant }, bl.district, chunkDist2);
         boxes.push({ x: wx, z: wz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: h, district: bl.district });
       }
     }
@@ -1207,9 +1238,8 @@ export class DistrictWorld {
     // one bucket per species, so a street never plants the same tree twice over
     const trees = { plane: [], pine: [], poplar: [], palm: [] };
     const leafCol = { plane: [], pine: [], poplar: [], palm: [] };
-    let seg = 0;
     for (const id of segs) {
-      if (++seg % 10 === 0) yield;
+      yield* tick();
       const s2 = this.district.segments[id];
       if (s2.cls === 'freeway' || s2.cls === 'ramp') continue;
       const dx = s2.bx - s2.ax, dz = s2.bz - s2.az;
@@ -1654,7 +1684,7 @@ const _frustum = new THREE.Frustum(), _pv = new THREE.Matrix4(), _box = new THRE
    recording cleared three's current-bundle pointer, so the spawn chunk's
    recording held 1 of 81 objects. Fixed at the renderer; verified 76/76
    recorded afterwards. ?nobundles turns them off for A/B. */
-const USE_BUNDLES = false;
+const USE_BUNDLES = typeof location !== 'undefined' ? !new URLSearchParams(location.search).has('nobundles') : false;
 const _zero = new THREE.Matrix4().makeScale(0, 0, 0);   // hides an instance in place
 const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
 /** a ground-plane quad, laid flat and scaled — light pools, decals */

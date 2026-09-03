@@ -16,6 +16,7 @@ export class Airspace {
 
     this.#buildSearchlights();
     this.#buildBlimp();
+    console.info('airspace: 9 draws (2 searchlights, blimp hull, cabin, 4 fins, 2 tickers)');
   }
 
   #buildSearchlights() {

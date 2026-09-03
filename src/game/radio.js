@@ -10,6 +10,8 @@
 const STATIONS = [
   { name: 'HALSTEAD LO-FI', bpm: 84, root: 220, scale: [0, 3, 5, 7, 10], swing: 0.12, lead: 'sine', bass: 'triangle' },
   { name: 'KINGSWAY FM',    bpm: 118, root: 261.6, scale: [0, 2, 4, 7, 9], swing: 0, lead: 'sawtooth', bass: 'square' },
+  { name: 'SYNTHWAVE 84',   bpm: 124, root: 146.8, scale: [0, 3, 5, 7, 8, 10], swing: 0.05, lead: 'sawtooth', bass: 'sawtooth' },
+  { name: 'WEST COAST RAP', bpm: 92, root: 164.8, scale: [0, 3, 5, 7, 10], swing: 0.16, lead: 'triangle', bass: 'sine' },
   { name: 'HARBOUR DUB',    bpm: 70, root: 196, scale: [0, 3, 5, 7, 10], swing: 0.18, lead: 'triangle', bass: 'sine' },
 ];
 

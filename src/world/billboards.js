@@ -19,6 +19,7 @@ export class BillboardSystem {
 
     this.#buildBillboards();
     this.#buildRooftopNeons();
+    console.info('billboards: 15 draws (6 screens, 6 frames, 3 rooftop neons)');
   }
 
   #createAnimatedCanvas(drawFn, width = 512, height = 256) {

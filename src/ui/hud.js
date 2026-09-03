@@ -13,7 +13,12 @@ export class Hud {
   }
 
   /** Once Halstead Bay is loaded the minimap draws real streets. */
+  /** Once Halstead Bay is loaded the minimap draws real streets. */
   useDistrict(d) { this.district = d; }
+
+  useNavigation(nav) { this.navigation = nav; }
+
+  useClock(clock) { this.clock = clock; }
 
   dismiss() { this.overlay.classList.add('gone'); }
 
@@ -33,13 +38,29 @@ export class Hud {
 
   setStats(text) { this.stats.textContent = text; }
 
-  /** Tab: the whole city on one canvas -- roads, you, the job markers. */
+  /** Tab: the whole city on one canvas -- roads, you, the job markers. Click sets waypoint. */
   toggleMap() {
     if (!this.mapEl) {
       const el = document.createElement('canvas');
       el.width = 1120; el.height = 800;
       el.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:70;display:none;'
-        + 'background:rgba(8,11,16,.92);border:1px solid rgba(150,172,200,.35);border-radius:10px';
+        + 'background:rgba(8,11,16,.92);border:1px solid rgba(150,172,200,.35);border-radius:10px;cursor:crosshair';
+      el.addEventListener('click', (e) => {
+        if (!this.district) return;
+        const rect = el.getBoundingClientRect();
+        const px = (e.clientX - rect.left) * (el.width / rect.width);
+        const py = (e.clientY - rect.top) * (el.height / rect.height);
+        const b = this.district.bounds;
+        const sc = Math.min((el.width - 40) / b.w, (el.height - 40) / b.h);
+        const ox = (el.width - b.w * sc) / 2;
+        const oz = (el.height - b.h * sc) / 2;
+        const wx = (px - ox) / sc;
+        const wz = (py - oz) / sc;
+        if (this.navigation) {
+          this.navigation.setWaypoint(wx, wz);
+          this.flash('GPS WAYPOINT SET');
+        }
+      });
       document.body.appendChild(el);
       this.mapEl = el;
     }
@@ -56,6 +77,40 @@ export class Hud {
     const cs = Math.cos(rot), sn = Math.sin(rot);
     const toMap = (x, z) => { const dx = (x - car.x) * SC, dz = (z - car.z) * SC; return [C + dx * cs - dz * sn, C + dx * sn + dz * cs]; };
     const clampR = (p, r) => { const dx = p[0] - C, dz = p[1] - C, d = Math.hypot(dx, dz); return d > r ? [C + dx / d * r, C + dz / d * r] : p; };
+
+    // --- Task 1.1: GPS route line (3px neon magenta with glow) ---
+    if (this.navigation?.routePoints?.length > 1) {
+      g.save();
+      g.strokeStyle = '#ff00aa';
+      g.lineWidth = 3;
+      g.lineCap = 'round';
+      g.lineJoin = 'round';
+      g.shadowColor = '#ff00aa';
+      g.shadowBlur = 5;
+      g.beginPath();
+      for (let i = 0; i < this.navigation.routePoints.length; i++) {
+        const pt = this.navigation.routePoints[i];
+        const p = clampR(toMap(pt[0], pt[1]), C - 2);
+        if (i === 0) g.moveTo(p[0], p[1]);
+        else g.lineTo(p[0], p[1]);
+      }
+      g.stroke();
+      g.restore();
+    }
+
+    // --- Task 1.2: Waypoint marker on minimap ---
+    if (this.navigation?.waypoint) {
+      const wp = this.navigation.waypoint;
+      const wpP = clampR(toMap(wp.x, wp.z), C - 6);
+      const dWp = Math.round(Math.hypot(car.x - wp.x, car.z - wp.z));
+      g.fillStyle = '#b026ff';
+      g.beginPath(); g.arc(wpP[0], wpP[1], 5.5, 0, 7); g.fill();
+      g.strokeStyle = '#ffffff'; g.lineWidth = 1.5; g.stroke();
+      g.fillStyle = '#ffffff'; g.font = '700 9px ui-monospace,monospace';
+      g.textAlign = 'center';
+      g.fillText(`${dWp}m`, wpP[0], wpP[1] - 8);
+    }
+
     if (mission?.active) {
       mission.points.forEach((pt, i) => {
         if (i < mission.index || i > mission.index + 1) return;
@@ -87,6 +142,14 @@ export class Hud {
         g.fillText(this._dist, C, S - 10.5);
       }
     }
+
+    // --- Task 2.1: Game Clock Time on Minimap ---
+    if (this.clock) {
+      g.fillStyle = 'rgba(8,11,16,0.65)'; g.fillRect(C - 28, 5, 56, 15);
+      g.fillStyle = '#ffd98a'; g.font = '700 11px ui-monospace,Menlo,monospace';
+      g.textAlign = 'center';
+      g.fillText(this.clock.formattedTime, C, 16.5);
+    }
     g.textAlign = 'start'; g.textBaseline = 'alphabetic';
   }
 
@@ -102,6 +165,28 @@ export class Hud {
     }
     g.fillStyle = 'rgba(200,214,232,0.9)'; g.font = '12px ui-monospace, Menlo, monospace';
     for (const [name, c] of Object.entries(this.districtCentres())) g.fillText(name, ox + c[0] * sc - 30, oz + c[1] * sc);
+
+    // Route on big map
+    if (this.navigation?.routePoints?.length > 1) {
+      g.strokeStyle = '#ff00aa';
+      g.lineWidth = 4;
+      g.beginPath();
+      for (let i = 0; i < this.navigation.routePoints.length; i++) {
+        const pt = this.navigation.routePoints[i];
+        if (i === 0) g.moveTo(ox + pt[0] * sc, oz + pt[1] * sc);
+        else g.lineTo(ox + pt[0] * sc, oz + pt[1] * sc);
+      }
+      g.stroke();
+    }
+
+    // Waypoint on big map
+    if (this.navigation?.waypoint) {
+      const wp = this.navigation.waypoint;
+      g.fillStyle = '#b026ff';
+      g.beginPath(); g.arc(ox + wp.x * sc, oz + wp.z * sc, 8, 0, 7); g.fill();
+      g.strokeStyle = '#ffffff'; g.lineWidth = 2; g.stroke();
+    }
+
     if (mission?.active) mission.points.forEach((p, i) => {
       g.fillStyle = i === mission.index ? '#ffc23c' : 'rgba(74,163,255,0.8)';
       g.beginPath(); g.arc(ox + p.x * sc, oz + p.y * sc, i === mission.index ? 7 : 4, 0, 7); g.fill();
@@ -214,13 +299,29 @@ export class Hud {
     if (this.jobLine) lines.push(this.jobLine);
     if (this.flashUntil > performance.now()) lines.push(this.flashText);
     if (mission.messageFor > 0 && mission.message) lines.push(mission.message);
+
+    // Turn arrow within 60m
+    if (this.navigation?.turnInfo) {
+      lines.unshift(`🧭 ${this.navigation.turnInfo.arrow} ${this.navigation.turnInfo.dir} IN ${this.navigation.turnInfo.dist}m`);
+    }
+
     if (st && st.time !== null) {
       lines.push(`CHECKPOINT ${st.line}   ${st.time.toFixed(1)}s`
         + (st.best ? `   BEST ${st.best.toFixed(1)}s` : ''));
     } else if (!lines.length && st && st.best) {
       lines.push(`G — START RUN   BEST ${st.best.toFixed(1)}s`);
-    } else if (!lines.length && !mission.active) {
-      lines.push('G — TAKE A JOB');
+    } else if (!mission.active) {
+      // First-minute onboarding sequence (Task 1.7)
+      const elapsed = (performance.now() - (this.bootTime || (this.bootTime = performance.now()))) / 1000;
+      if (elapsed < 8) {
+        lines.push('🎮 DRIVE: WASD / Left Stick · SPACE: Handbrake · Q: Look Back');
+      } else if (elapsed < 16) {
+        lines.push('💼 MISSIONS: Press G or Start to take a contract');
+      } else if (elapsed < 24) {
+        lines.push('📍 GPS: Follow magenta route · TAB for City Map & Waypoints');
+      } else if (!lines.length) {
+        lines.push('G — TAKE A JOB');
+      }
     }
     this.missionEl.textContent = lines.join('\n');
   }

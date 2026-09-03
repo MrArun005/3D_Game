@@ -62,11 +62,12 @@ export function resetCar(car) {
 const DRIVEN = [2, 3];   // rear-wheel drive
 
 export function stepVehicle(car, dt) {
-  // --- steering: non-linear high-speed stability curve & self-centering ---
+  // --- Task 1.3: steering curve by speed (6 rad/s at rest, 2.5 at 120 km/h, 1.5x return-to-centre) ---
   const speed = Math.hypot(car.vx, car.vz);
-  const speedFactor = 0.28 + 0.72 / (1 + (speed * speed) / 280);
-  const limit = V.steerMax * speedFactor;
-  const steerRate = 7.5 + Math.min(4.5, speed * 0.15);
+  const speedNorm = Math.min(1, Math.max(0, speed / 33.3)); // 0 to 120 km/h (33.3 m/s)
+  const limit = V.steerMax * (1.0 - 0.68 * speedNorm);
+  const returning = (car.steerTarget === 0) || (Math.sign(car.steerTarget) !== Math.sign(car.steer));
+  const steerRate = (6.0 - 3.5 * speedNorm) * (returning ? 1.5 : 1.0);
   car.steer += (car.steerTarget * limit - car.steer) * Math.min(1, dt * steerRate);
 
   const cy = Math.cos(car.yaw), sy = Math.sin(car.yaw);

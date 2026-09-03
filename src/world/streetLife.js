@@ -18,6 +18,7 @@ export class StreetLife {
     this.#buildManholeSteam();
     this.#buildHydrants();
     this.#buildWindDebris();
+    console.info('streetLife: 4 draws (steam, hydrants instanced, geyser, debris)');
   }
 
   #buildManholeSteam() {
@@ -87,11 +88,11 @@ export class StreetLife {
     });
 
     const roads = this.district?.data?.roads || [];
-    let count = 0;
+    const spots = [];
     for (const r of roads) {
       if (!r.points || r.points.length < 2) continue;
       for (let i = 0; i < r.points.length - 1; i += 2) {
-        if (count >= 24) break;
+        if (spots.length >= 24) break;
         const p1 = r.points[i], p2 = r.points[i + 1];
         const dx = p2[0] - p1[0], dz = p2[1] - p1[1];
         const L = Math.hypot(dx, dz) || 1;
@@ -100,19 +101,29 @@ export class StreetLife {
         // Place on pavement curb edge
         const cx = (p1[0] + p2[0]) / 2 + nx * (r.width / 2 + 0.8);
         const cz = (p1[1] + p2[1]) / 2 + nz * (r.width / 2 + 0.8);
-
-        const group = new THREE.Group();
-        const base = new THREE.Mesh(hydrantGeo, redMat);
-        const top = new THREE.Mesh(topCap, redMat);
-        group.add(base, top);
-        group.position.set(cx, 0.15, cz);
-        group.castShadow = true;
-        this.scene.add(group);
-
-        this.hydrants.push({ group, x: cx, z: cz, broken: false });
-        count++;
+        spots.push({ x: cx, z: cz });
       }
     }
+
+    const count = spots.length || 1;
+    this.hydrantMesh = new THREE.InstancedMesh(hydrantGeo, redMat, count);
+    this.hydrantMesh.castShadow = false;
+    this.hydrantMesh.receiveShadow = true;
+
+    const m = new THREE.Matrix4();
+    const pos = new THREE.Vector3();
+    const q = new THREE.Quaternion();
+    const s = new THREE.Vector3(1, 1, 1);
+
+    for (let i = 0; i < spots.length; i++) {
+      const sp = spots[i];
+      pos.set(sp.x, 0.15, sp.z);
+      m.compose(pos, q, s);
+      this.hydrantMesh.setMatrixAt(i, m);
+      this.hydrants.push({ idx: i, x: sp.x, z: sp.z, broken: false });
+    }
+    this.hydrantMesh.instanceMatrix.needsUpdate = true;
+    this.scene.add(this.hydrantMesh);
 
     // Water geyser particles (96 droplets)
     const G_COUNT = 96;
@@ -193,14 +204,23 @@ export class StreetLife {
     this.steamGeo.attributes.position.needsUpdate = true;
 
     // --- 2. Fire Hydrant Collision & Water Geyser ---
+    const _hPos = new THREE.Vector3();
+    const _hQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 1.3));
+    const _hS = new THREE.Vector3(1, 1, 1);
+    const _hMat = new THREE.Matrix4();
+    let hydUpdated = false;
+
     for (const h of this.hydrants) {
       if (!h.broken && Math.hypot(car.x - h.x, car.z - h.z) < 2.3) {
         h.broken = true;
-        h.group.rotation.z = 1.3; // knocked over
-        h.group.position.y = 0.1;
+        _hPos.set(h.x, 0.08, h.z);
+        _hMat.compose(_hPos, _hQ, _hS);
+        this.hydrantMesh.setMatrixAt(h.idx, _hMat);
+        hydUpdated = true;
         this.activeGeysers.push({ x: h.x, z: h.z, t: 18.0 });
       }
     }
+    if (hydUpdated) this.hydrantMesh.instanceMatrix.needsUpdate = true;
 
     // Geyser particles
     const gPos = this.geyserGeo.attributes.position.array;

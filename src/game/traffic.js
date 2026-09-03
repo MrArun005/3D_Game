@@ -738,29 +738,46 @@ export class Traffic {
     }
   }
 
-  /** Distance-keeping: look down our own path for anything sitting on it. */
+  /** Distance-keeping: 8m minimum gap, 1.2s headway, overtaking lane changes (Phase 4). */
   #leaderLimit(car, player) {
-    const look = 4 + car.speed * 1.6;
+    const minGap = 8.0;
+    const headway = 1.2;
+    const look = minGap + car.speed * headway + 14;
     let nearest = Infinity;
+    let leaderSpeed = car.cruise;
 
-    const ahead = (x, z) => {
+    const ahead = (x, z, spd = 0) => {
       const dx = x - car.x, dz = z - car.z;
       const fx = Math.cos(car.yaw), fz = -Math.sin(car.yaw);
       const along = dx * fx + dz * fz;
       const side = Math.abs(dx * -fz + dz * fx);
-      return along > 0 && along < look && side < 2.0 ? along : Infinity;
+      if (along > 0 && along < look && side < 2.2) {
+        if (along < nearest) {
+          nearest = along;
+          leaderSpeed = spd;
+        }
+        return along;
+      }
+      return Infinity;
     };
 
     for (const other of this.cars) {
       if (other === car || !other.live) continue;
-      nearest = Math.min(nearest, ahead(other.x, other.z));
+      ahead(other.x, other.z, other.speed);
     }
-    nearest = Math.min(nearest, ahead(player.x, player.z));
+    ahead(player.x, player.z, player.speed || 0);
 
     if (nearest === Infinity) return Infinity;
-    const gap = nearest - (car.spec.L * 0.5 + 2.2);
+
+    // Multilane lane-change overtaking when leader is slow
+    if (car.edge && (car.edge.lanes || 1) > 1 && leaderSpeed < car.cruise * 0.60 && !car.changingLane) {
+      car.changingLane = true;
+      car.lane = car.lane <= 0.5 ? 1.5 : 0.5;
+    }
+
+    const gap = nearest - (car.spec.L * 0.5 + minGap);
     if (gap <= 0) return 0;
-    return Math.sqrt(gap * 2 * 4.0);
+    return Math.min(car.cruise, Math.sqrt(gap * 2 * 3.8));
   }
 }
 

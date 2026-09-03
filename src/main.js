@@ -37,12 +37,14 @@ import { createCarState, resetCar, stepVehicle } from './vehicle/dynamics.js';
 import { groundHeightAt } from './world/metrics.js';
 import { CG_X, WHEEL_R } from './vehicle/config.js';
 import { ChaseCamera } from './game/camera.js';
-import { createInput, padConnected } from './game/input.js';
+import { createInput, padConnected, rumble } from './game/input.js';
 import { Traffic } from './game/traffic.js';
 import { Crowd } from './game/crowd.js';
 import { Helicopter } from './game/helicopter.js';
 import { OnFoot, makeSolver } from './game/onfoot.js';
 import { CHARACTERS } from './game/character.js';
+import { Navigation } from './game/navigation.js';
+import { GameClock } from './game/clock.js';
 import { Mission } from './game/mission.js';
 import { Multiplayer, roomFromUrl, createRoom } from './game/multiplayer.js';
 import { Weapon } from './game/weapon.js';
@@ -89,12 +91,13 @@ setAnisotropy(renderer.capabilities?.getMaxAnisotropy?.() ?? 16);
 
 const scene = createScene(DAY);
 const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.5, 14000);
-const { sun } = createLights(scene, DAY);
+const { sun, hemi } = createLights(scene, DAY);
 const { dome } = createSky(scene, renderer, DAY);
 
 setBootProgress(60, 'Initializing TSL post-processing pipeline…');
+const isLite = typeof location !== 'undefined' && new URLSearchParams(location.search).has('lite');
 const grade = createGrade(renderer, scene, camera, {
-  ao: !new URLSearchParams(location.search).has('noao'),
+  ao: !isLite && !new URLSearchParams(location.search).has('noao'),
   bloom: !new URLSearchParams(location.search).has('nobloom'),
   aa: !new URLSearchParams(location.search).has('noaa'),
   post: !new URLSearchParams(location.search).has('nopost'),
@@ -275,10 +278,13 @@ function onDeath() {
   traffic.standDown();
   if (mission && mission.active) mission.stop('WASTED');
   health = 1; hud.setHealth(1);
-  /* Back to the middle of the city. It used to be the nearest hospital, which
-     meant dying in the hills put you back in the hills with the same problem
-     waiting for you; downtown is somewhere you can always drive out of. */
-  respawnCar(CITY_CENTRE.x, CITY_CENTRE.z);
+  // Wake up outside the nearest hospital
+  const hospitals = (districtRef?.places || []).filter((p) => p.type === 'hosp');
+  const at = hospitals.reduce((best, p) => {
+    const d = Math.hypot(p.x - car.x, p.y - car.z);
+    return d < best.d ? { d, p } : best;
+  }, { d: Infinity, p: null }).p;
+  respawnCar(at ? at.x : CITY_CENTRE.x, at ? at.y + 12 : CITY_CENTRE.z);
   if (onFoot.active) onFoot.enter();
   hero.visible = true;
   chase.shake = 0;
@@ -587,13 +593,15 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   traffic.useGraph(district);
   useGraphForRoutes(district);             // and the fleet drives the real streets
   hud.useDistrict(district);              // minimap draws real streets, not a lattice
+  navigation = new Navigation(district);
+  hud.useNavigation(navigation);
   for (const g of city.cells.values()) scene.remove(g);
   city.cells.clear();
   bootMsg.textContent = 'building the streets…';
   world = new DistrictWorld(scene, assets, district, { day: DAY, catalogue });
   world.camera = camera;                  // chunk-level frustum culling for the render bundles
   if (!DAY) {
-    const n = +(new URLSearchParams(location.search).get('lights') ?? 6);
+    const n = +(new URLSearchParams(location.search).get('lights') ?? (isLite ? 4 : 6));
     lightPool = new LightPool(scene, world, { count: n });
     grade.setNight?.(true);
   }
@@ -618,8 +626,8 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   buildSurrounds(scene, district.bounds, DAY);
   buildPlaces(scene, district, DAY);
   beach = buildBeach(scene, district, DAY);
-  crowd = new Crowd(scene, district);
-  people = new People(scene, +(new URLSearchParams(location.search).get('people') ?? 32));
+  crowd = new Crowd(scene, district, isLite ? 160 : 320);
+  people = new People(scene, +(new URLSearchParams(location.search).get('people') ?? (isLite ? 8 : 16)));
   heli = new Helicopter(scene, DAY);
   heli.district = district;
   heli.nearbyBuildings = (x, z) => (world.nearbyBuildings ? world.nearbyBuildings(x, z) : []);
@@ -637,9 +645,11 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   vehicleVFX = new VehicleVFX(scene, hero);
   window.vehicleVFX = vehicleVFX;
   puddles = new PuddleSystem(scene, district);
-  billboards = new BillboardSystem(scene, district, CITY_CENTRE);
-  streetLife = new StreetLife(scene, district);
-  airspace = new Airspace(scene);
+
+  const params = new URLSearchParams(location.search);
+  if (!params.has('nobillboards')) billboards = new BillboardSystem(scene, district, CITY_CENTRE);
+  if (!params.has('nostreetlife')) streetLife = new StreetLife(scene, district);
+  if (!params.has('noairspace')) airspace = new Airspace(scene);
   /* The other half of the race handshake: say when YOU finish. Set here
      rather than on join, because the room can be joined before the district
      has loaded and there would be no mission to hang it on. */
@@ -797,6 +807,9 @@ const traffic = new Traffic(scene, assets, DAY ? 36 : 40, !DAY);   // Phase 5: d
 const chase = new ChaseCamera(camera);
 const weather = DAY ? null : createWeather(scene);
 const hud = new Hud();
+const clock = new GameClock({ startHour: +(new URLSearchParams(location.search).get('time') ?? (DAY ? 12.0 : 19.5)) });
+hud.useClock(clock);
+let navigation = null;
 const stats = new Stats();
 const photo = new Photo(camera, stats);
 
@@ -859,6 +872,7 @@ const input = createInput((action) => {
   if (action === 'map') hud.toggleMap();
   if (action === 'radio') radio?.cycle();
   if (action === 'reset') respawnCar();
+  if (action === 'time') { clock.hour = (clock.hour + 3) % 24; hud.flash(`TIME · ${clock.formattedTime}`); }
   if (action === 'avatar' && onFoot.character) {
     const i = onFoot.character.swap(onFoot.character.index + 1);
     hud.flash(`CHARACTER ${i + 1}/${CHARACTERS.length}`);
@@ -940,11 +954,12 @@ function frameBody() {
   lastTime = now;
 
   // ---- controls ----
+  let c = null;   // this frame's input snapshot; null in film mode (the camera block below reads it)
   if (film) {
     film.pilot.update(car, dt);
     car.holdGear = false;
   } else {
-  const c = input.read();
+  c = input.read();
   if (garage) {
     garage.setNos(c.nos);
     garage.update(dt, car);
@@ -1071,7 +1086,7 @@ function frameBody() {
   skids.update(car, car.wheelGround ? car.wheelGround[2] : 0);
   if (firing) pullTrigger();
   if (crowd) crowd.update(car, dt, (speed) => traffic.reportCrime('person', speed));
-  people?.update(dt, crowd, car, (x, z) => districtRef?.elevationAt?.(x, z) ?? 0);
+  people?.update(dt, crowd, car, (x, z) => districtRef?.elevationAt?.(x, z) ?? 0, camera);
   /* Traffic reacts: a car you cut within 6 m of at speed blows its horn,
      panned to where it is, no more than once a second and a half. */
   roadblock?.update(dt, car);
@@ -1115,11 +1130,14 @@ function frameBody() {
         chase.lookPitch -= chase.lookPitch * d;
         if (Math.abs(chase.lookYaw) < 0.01 && Math.abs(chase.lookPitch) < 0.01) chase.recentre();
       }
+      chase.setLookBack(!!c?.lookBack);
+      if ((car.impact || 0) > 6.0) rumble(Math.min(1.0, car.impact / 18.0), 120);
       if (spawnSnap) { spawnSnap = false; chase.snap(car); }
       chase.update(car, dt);
     }
   }
-  if (!DAY) weather.update(camera, car, dt);
+  clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather });
+  if (weather) weather.update(camera, car, dt);
   lightPool?.update(dt, car.x, car.z, traffic);
   grade.setDrops(DAY ? 0 : chase.mode >= 2 ? 1.2 : 0.68);
   world.update(car.x, car.z);
@@ -1163,6 +1181,14 @@ function frameBody() {
   // counted + replayed-from-bundles: renderer.info alone under-reports by ~75% since the chunks became render bundles
   const draws = renderer.info.render.drawCalls + (stats.snapshot.bundledDraws || 0);
   const tris = renderer.info.render.triangles + (stats.snapshot.bundledTris || 0);
+
+  const missionTarget = (mission && mission.active && mission.points && mission.points[mission.index])
+    ? { x: mission.points[mission.index].x, z: mission.points[mission.index].y }
+    : (jobs && jobs.currentJob?.target)
+      ? { x: jobs.currentJob.target.x, z: jobs.currentJob.target.y }
+      : null;
+  navigation?.update(car, missionTarget);
+
   hud.update(car, traffic, mission, net, heli);
   if (bustFlash > 0) {
     bustFlash -= dt;

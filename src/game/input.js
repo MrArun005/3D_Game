@@ -1,6 +1,6 @@
 /** Keyboard + standard-layout gamepad. Stick and triggers stay analogue. */
 
-const STICK_DZ = 0.14;
+const STICK_DZ = 0.12;
 const TRIG_DZ = 0.04;
 
 export function deadzone(v, dz = STICK_DZ) {
@@ -25,6 +25,8 @@ export function mergeDrive(kb, pad) {
     steer: Math.abs(pad.steer) >= Math.abs(kb.steer) ? pad.steer : kb.steer,
     handbrake: Math.max(kb.handbrake, pad.handbrake),
     hold: !!(kb.hold || pad.hold),
+    nos: !!(kb.nos || pad.nos),
+    lookBack: !!(kb.lookBack || pad.lookBack),
     analogue: !!(padLive && (pad.throttle > 0.02 || pad.brake > 0.02 || Math.abs(pad.steer) > 0.02)),
   };
 }
@@ -54,7 +56,7 @@ function readPad() {
   const empty = { throttle: 0, brake: 0, steer: 0, handbrake: 0, hold: false, downs: {} };
   if (typeof navigator === 'undefined' || !navigator.getGamepads) return empty;
   const pads = navigator.getGamepads();
-  let throttle = 0, brake = 0, steer = 0, handbrake = 0, hold = false;
+  let throttle = 0, brake = 0, steer = 0, handbrake = 0, hold = false, lookBack = false;
   const downs = { camera: false, lights: false, reset: false, film: false,
                   use: false, fire: false, run: false };
   for (const p of pads) {
@@ -66,6 +68,7 @@ function readPad() {
     brake = Math.max(brake, lt);
     handbrake = Math.max(handbrake, buttonValue(p.buttons[0]));
     hold = hold || pressed(p.buttons[4]);
+    lookBack = lookBack || pressed(p.buttons[11]) || pressed(p.buttons[10]); // stick clicks
     if (pressed(p.buttons[3])) downs.camera = true;   // Y
     if (pressed(p.buttons[2])) downs.lights = true;   // X
     if (pressed(p.buttons[8])) downs.reset = true;    // View / Back
@@ -76,7 +79,7 @@ function readPad() {
   return {
     throttle, brake,
     steer: Math.max(-1, Math.min(1, steer)),
-    handbrake, hold, downs,
+    handbrake, hold, lookBack, downs,
   };
 }
 
@@ -127,6 +130,7 @@ export function createInput(onAction) {
     if (e.code === 'KeyE') onAction('fire');   // fire; left mouse does the same
     if (e.code === 'KeyK') onAction('avatar'); // cycle which character you are
     if (e.code === 'KeyP') onAction('photo');  // photo mode: free camera + the plan's acceptance presets
+    if (e.code === 'KeyT') onAction('time');   // advance day-night clock by 3 hours
   });
   addEventListener('keyup', (e) => { keys[e.code] = false; });
 
@@ -140,6 +144,7 @@ export function createInput(onAction) {
         handbrake: keys.Space ? 1 : 0,
         hold: !!(keys.ShiftLeft || keys.ShiftRight),
         nos: !!(keys.ShiftLeft || keys.ShiftRight),
+        lookBack: !!(keys.KeyQ || keys.KeyZ),
       };
       const pad = readPad();
       for (const name of Object.keys(prevDown)) {

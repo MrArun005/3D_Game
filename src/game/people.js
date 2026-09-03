@@ -18,11 +18,12 @@ const BASE = '/models/characters/';
 const VARIANTS = ['civilian_casual', 'civilian_man', 'civilian_woman', 'civilian_suit', 'civilian_longsleeve', 'civilian_woman2'];
 
 export class People {
-  constructor(scene, count = 12) {
+  constructor(scene, count = 16) {
     this.scene = scene; this.count = count;
     this.slots = [];          // { obj, mixer, actions, current, person }
     this.ready = false;
     this._nearBuf = [];
+    this._camFwd = new THREE.Vector3();
     this.#load();
   }
 
@@ -75,7 +76,7 @@ export class People {
   }
 
   /** After crowd.update(): take over the nearest people, hide their fleet instances. */
-  update(dt, crowd, car, elevationAt) {
+  update(dt, crowd, car, elevationAt, camera = null) {
     if (!this.ready || !crowd) return;
     const people = crowd.people;
     const near = this._nearBuf;
@@ -84,11 +85,14 @@ export class People {
       const p = people[i];
       if (!p.live) continue;
       const d = Math.hypot(p.x - car.x, p.z - car.z);
-      if (d < 50) near.push([d, i]);
+      if (d < 40) near.push([d, i]); // Task 0.4: 40m distance limit
     }
     near.sort((a, b) => a[0] - b[0]);
     const take = near.slice(0, this.slots.length).map((n) => n[1]);
     let dirty = false;
+
+    if (camera) camera.getWorldDirection(this._camFwd);
+
     this.slots.forEach((s, k) => {
       const i = take[k];
       if (i === undefined) { s.obj.visible = false; s.person = null; return; }
@@ -105,7 +109,17 @@ export class People {
       else if (p.cross || (p.speed > 0.15 && !(p.j && Math.hypot(p.j.x - p.x, p.j.y - p.z) < 7 && p.waitingNow))) this.#play(s, 'walk', 0.9 + (p.speed || 1) * 0.3);
       else this.#play(s, 'idle');
       if (s.person !== p) { s.person = p; s.mixer.setTime(Math.random() * 2); }
-      s.mixer.update(dt);
+
+      // Skip mixer.update for slots behind camera beyond 20m
+      let skip = false;
+      if (camera) {
+        const dx = p.x - camera.position.x, dz = p.z - camera.position.z;
+        if (dx * dx + dz * dz > 400) {
+          const dot = dx * this._camFwd.x + dz * this._camFwd.z;
+          if (dot < 0) skip = true;
+        }
+      }
+      if (!skip) s.mixer.update(dt);
     });
     if (dirty) crowd.fleet.flush();
   }

@@ -24,7 +24,7 @@ const WEAR = [0x2b3444, 0x6a3f38, 0x2f5d4a, 0x7a6a48, 0x4a3f5e, 0x8a3a3a, 0x3548
 const TROUSERS = [0x2a3550, 0x1d1f24, 0x6b6045, 0x3b3f47, 0x27303d];
 
 export class Crowd {
-  constructor(scene, district) {
+  constructor(scene, district, count = COUNT) {
     this.district = district;
     this.edges = district.graph.edges.filter(
       (e) => e.class !== 'freeway' && e.class !== 'ramp' && (e.length || 0) > 40,
@@ -32,8 +32,8 @@ export class Crowd {
     this.people = [];
     this.rand = mulberry(9137);
 
-    this.fleet = new FigureFleet(scene, COUNT, { shadows: true });
-    for (let i = 0; i < COUNT; i++) {
+    this.fleet = new FigureFleet(scene, count, { shadows: true });
+    for (let i = 0; i < count; i++) {
       this.fleet.colour(i, WEAR[i % WEAR.length], SKIN[(i * 3) % SKIN.length], TROUSERS[(i * 7) % TROUSERS.length]);
       this.people.push({ live: false, x: 0, z: 0, yaw: 0, speed: 0, phase: 0, down: 0,
                          height: 0.94 + this.rand() * 0.14 });
@@ -133,11 +133,24 @@ export class Crowd {
          0.36m circle barely registers against the hull probes anyway. */
       if (!p.down && gap < 1.7 && car.speed > 2.2) {
         p.down = 0.001;
+        const push = Math.max(3.0, car.speed * 0.48);
+        p.vx = Math.cos(car.yaw) * push;
+        p.vz = -Math.sin(car.yaw) * push;
         if (onHit) onHit(car.speed);
       }
       if (p.down) {
         p.down += dt;
-        if (p.down > 7) { p.live = false; continue; }
+        if (p.down < 1.6) {
+          p.x += (p.vx || 0) * dt;
+          p.z += (p.vz || 0) * dt;
+          p.vx = (p.vx || 0) * Math.pow(0.18, dt);
+          p.vz = (p.vz || 0) * Math.pow(0.18, dt);
+        }
+        if (p.down > 4.8) {
+          // Recover: stand back up and panic run away
+          p.down = 0;
+          p.panic = 5.0;
+        }
       } else {
         /* Kerb wave (Phase 4b, first cut): within 7m of a junction node,
            the crowd holds on the kerb during the red half of the signal cycle
