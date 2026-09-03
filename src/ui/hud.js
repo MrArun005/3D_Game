@@ -20,6 +20,8 @@ export class Hud {
 
   useClock(clock) { this.clock = clock; }
 
+  useChat(chat) { this.chat = chat; }
+
   dismiss() { this.overlay.classList.add('gone'); }
 
   update(car, traffic, mission, net, heli) {
@@ -272,8 +274,20 @@ export class Hud {
     this.healthBar.style.width = `${Math.max(0, v) * 100}%`;
   }
 
-  /** A transient line under the mission text. */
-  flash(text) { this.flashText = text; this.flashUntil = performance.now() + 3200; }
+  /** A transient line under the mission text, unified with the multi-line chat feed. */
+  flash(text, channel = null) {
+    this.flashText = text;
+    this.flashUntil = performance.now() + 3200;
+    if (this.chat && text) {
+      let ch = channel;
+      if (!ch) {
+        if (text.includes('📻')) ch = 'RADIO';
+        else if (text.includes('POLICE') || text.includes('10-') || text.includes('WANTED') || text.includes('HEAT')) ch = 'DISPATCH';
+        else ch = 'SYSTEM';
+      }
+      this.chat.post(ch, text.replace(/^📻\s*/, ''));
+    }
+  }
   /** Cash and the current job, first line of the mission drawer (jobs.js). */
   setJob(text) { this.jobLine = text; }
 

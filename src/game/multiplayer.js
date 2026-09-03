@@ -44,6 +44,8 @@ export class Multiplayer {
        old shape threw "object is not iterable" and killed the join silently. */
     this.state = this.room.makeAction('s');
     this.raceAction = this.room.makeAction('race');
+    this.chatAction = this.room.makeAction('chat');
+    this.lastChatSendTime = 0;
 
     this.state.onMessage = (data, ctx) => {
       const id = ctx?.peerId ?? ctx;
@@ -53,12 +55,51 @@ export class Multiplayer {
     };
     this.raceAction.onMessage = (msg) => { if (this.onRace) this.onRace(msg); };
 
-    this.room.onPeerJoin = () => { this.connected = Object.keys(this.room.getPeers()).length; };
+    this.chatAction.onMessage = (data, ctx) => {
+      // Untrusted payload verification
+      if (!data || typeof data !== 'object') return;
+      if (typeof data.text !== 'string') return;
+      const clean = data.text.trim().slice(0, 120);
+      if (!clean) return;
+
+      const id = ctx?.peerId ?? ctx ?? 'PEER';
+      const tag = String(id).slice(0, 4).toUpperCase();
+      if (this.onChatMessage) {
+        this.onChatMessage(clean, tag, 'PEER');
+      }
+    };
+
+    this.room.onPeerJoin = (id) => {
+      this.connected = Object.keys(this.room.getPeers()).length;
+      if (this.onChatMessage) {
+        const tag = String(id).slice(0, 4).toUpperCase();
+        this.onChatMessage(`Player [${tag}] joined the city.`, null, 'SYSTEM');
+      }
+    };
     this.room.onPeerLeave = (id) => {
       const p = this.peers.get(id);
       if (p) { this.scene.remove(p.mesh); this.peers.delete(id); }
       this.connected = Object.keys(this.room.getPeers()).length;
+      if (this.onChatMessage) {
+        const tag = String(id).slice(0, 4).toUpperCase();
+        this.onChatMessage(`Player [${tag}] left the city.`, null, 'SYSTEM');
+      }
     };
+  }
+
+  /**
+   * Broadcast a chat message to all peers with flood control and length capping.
+   */
+  sendChat(text) {
+    if (!text || typeof text !== 'string') return;
+    const clean = text.trim().slice(0, 120);
+    if (!clean) return;
+
+    const now = performance.now();
+    if (now - this.lastChatSendTime < 500) return; // rate limit 500ms
+    this.lastChatSendTime = now;
+
+    this.chatAction.send({ text: clean });
   }
 
   #peer(id) {

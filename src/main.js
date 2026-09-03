@@ -52,6 +52,9 @@ import { SkidMarks } from './world/skidmarks.js';
 import { Damage } from './game/damage.js';
 import { signalState } from './world/signals.js';
 import { Hud } from './ui/hud.js';
+import { Chat } from './ui/chat.js';
+import { CommandEngine } from './game/commands.js';
+import { ChatterEngine } from './game/chatter.js';
 import { Stats } from './ui/stats.js';
 import { Photo } from './game/photo.js';
 import { buildRoute, Autopilot, useGraphForRoutes } from './game/autopilot.js';
@@ -177,6 +180,7 @@ let districtFailed = false;
 let spawnSnap = false;        // the frame loop snaps the chase camera on its next update (chase is declared later; see the top-level awaits)   // lets the boot gate drop on the legacy grid if the district never lands
 let lightPool = null;
 let jobs = null, garage = null, story = null, phone = null;
+let chat = null, chatter = null, commands = null;
 let vehicleVFX = null, puddles = null;
 let people = null;
 let hornCooldown = 0;
@@ -214,6 +218,9 @@ async function joinRoom(id) {
     if (msg.k === 'stop') {
       mission.stop(`BEATEN · ${(msg.t ?? 0).toFixed(1)}s`);
     }
+  };
+  net.onChatMessage = (text, author, channel) => {
+    chat?.post(channel || 'PEER', text, author);
   };
   const url = new URL(location.href);
   url.searchParams.set('room', room);
@@ -826,6 +833,57 @@ window.photo = photo;
 
 const audio = createAudio();
 radio = new Radio(audio, hud);
+
+chat = new Chat();
+hud.useChat(chat);
+chatter = new ChatterEngine(audio, chat);
+
+commands = new CommandEngine({
+  car,
+  traffic,
+  get garage() { return garage; },
+  clock,
+  damageModel,
+  grade,
+  chat,
+  hud,
+  setWanted: (lvl) => {
+    traffic.wanted = lvl;
+    if (lvl === 0 && traffic.police) {
+      traffic.police.forEach((p) => { p.hunt = false; });
+    }
+  },
+  setHealth: (hp) => {
+    health = hp;
+    hud.setHealth(hp);
+  },
+  setTime: (h) => {
+    clock.hour = h;
+    hud.flash(`TIME · ${clock.formattedTime}`);
+  },
+  teleport: (x, z, yaw = 0) => {
+    car.x = x;
+    car.z = z;
+    car.vx = 0;
+    car.vz = 0;
+    car.yaw = yaw;
+    world.update(x, z);
+    spawnSnap = true;
+  },
+  switchCar: (carId) => {
+    if (garage) {
+      garage.wear(carId);
+      return true;
+    }
+    return false;
+  }
+});
+
+chat.onSend((line) => {
+  if (commands.execute(line)) return;
+  chat.post('PEER', line, 'YOU');
+  if (net) net.sendChat(line);
+});
 let started = false;
 const start = () => {
   if (!started) { started = true; hud.dismiss(); }
@@ -920,6 +978,13 @@ const input = createInput((action) => {
       if (mission.active) mission.stop('RUN ABANDONED');
       else { mission.start(car); net.race({ k: 'start', seed: mission.seed }); }
     } else jobs?.toggle(car);
+  }
+  if (action === 'chat') {
+    if (document.pointerLockElement) document.exitPointerLock();
+    chat?.toggle();
+  }
+  if (action === 'chatClose') {
+    chat?.close();
   }
   if (action === 'film') { if (film) stopFilm(); else { started = true; hud.dismiss(); startFilm(); } }
 });
@@ -1109,6 +1174,7 @@ function frameBody() {
         speed: Math.hypot(onFoot.vx, onFoot.vz) }
     : car;
   traffic.update(quarry, dt, worldTime);
+  if (chatter) chatter.updateWanted(traffic.wanted);
   if (world.updateSignals) world.updateSignals(worldTime);
   if (heli && !flying) { heli.update(quarry, traffic, dt); traffic.eyesOn = heli.eyesOn; }
   if (mission) mission.update(onFoot.active ? quarry : car, dt);
@@ -1133,6 +1199,7 @@ function frameBody() {
       const side = -Math.sin(car.yaw) * dx - Math.cos(car.yaw) * dz;   // left/right of the hero's heading
       audio.horn(Math.max(-1, Math.min(1, side / 6)), 0);
       hornCooldown = 1.5;
+      if (chatter) chatter.triggerPedReaction();
       break;
     }
   }

@@ -111,6 +111,21 @@ export function createInput(onAction) {
                      use: false, fire: false, run: false, avatar: false };
 
   addEventListener('keydown', (e) => {
+    const active = document.activeElement;
+    const isTyping = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable);
+    if (isTyping) {
+      if (e.code === 'Escape') onAction('chatClose');
+      return;
+    }
+
+    if (e.code === 'Enter' || e.code === 'KeyY') {
+      e.preventDefault();
+      // Clear held keys so car doesn't roll forward while typing
+      for (const k of Object.keys(keys)) keys[k] = false;
+      onAction('chat');
+      return;
+    }
+
     keys[e.code] = true;
     if (blocked.includes(e.code)) e.preventDefault();
     if (e.repeat) return;
@@ -132,7 +147,13 @@ export function createInput(onAction) {
     if (e.code === 'KeyP') onAction('photo');  // photo mode: free camera + the plan's acceptance presets
     if (e.code === 'KeyT') onAction('time');   // advance day-night clock by 3 hours
   });
-  addEventListener('keyup', (e) => { keys[e.code] = false; });
+  addEventListener('keyup', (e) => {
+    const active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) {
+      return;
+    }
+    keys[e.code] = false;
+  });
 
   return {
     keys,
