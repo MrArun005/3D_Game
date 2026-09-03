@@ -10,7 +10,7 @@ import { statSync } from 'node:fs';
 
 const [file, ...rest] = process.argv.slice(2);
 const opt = (k, d) => { const i = rest.indexOf(k); return i >= 0 ? +rest[i + 1] : d; };
-const TRIS = opt('--tris', 0), TEX = opt('--tex', 1024);
+const TRIS = opt("--tris", 0), TEX = opt("--tex", 1024), KEEP = rest.includes("--keep-nodes");   // --keep-nodes: callers hide parts by node name
 
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
 const doc = await io.read(file);
@@ -20,7 +20,7 @@ const before = { bytes: statSync(file).size, tris: tris() };
 
 const skinned = doc.getRoot().listSkins().length > 0;
 const steps = [dedup(), prune(), resample()];
-if (!skinned) steps.push(flatten(), join());   // static props: fewer draws too
+if (!skinned && !KEEP) steps.push(flatten(), join());   // static props: fewer draws too
 steps.push(weld());
 if (TRIS && before.tris > TRIS) steps.push(simplify({ simplifier: MeshoptSimplifier, ratio: TRIS / before.tris, error: 0.001, lockBorder: true }));
 steps.push(
