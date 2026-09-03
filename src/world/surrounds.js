@@ -52,7 +52,7 @@ export function buildSurrounds(scene, bounds, day = true) {
      backdrop, a graded one reads as terrain. */
   const half = { x: bounds.w / 2 + APRON, z: bounds.h / 2 + APRON };
   const outer = { x: half.x + RANGE, z: half.z + RANGE };
-  const N = 210;
+  const N = 120;
   const pos = [], idx = [], col = [], ramps = [];
   const c = new THREE.Color();
   const rock = day ? [0x4a5340, 0x5d6450, 0x6f7361, 0x83836f, 0x9a9583] : [0x1c2430, 0x232c3a, 0x2a3442, 0x323a46, 0x39414d];
@@ -127,7 +127,7 @@ export function buildSurrounds(scene, bounds, day = true) {
     const vh = H / 3.1;                       // keep the diamonds square
     fuv.push(0, 0, L / 3.1, 0, L / 3.1, vh, 0, vh);
     fidx.push(base, base + 1, base + 2, base, base + 2, base + 3);
-    for (let t = 0; t < L; t += 3.1) posts.push([ax + ux * t, az + uz * t]);
+    for (let t = 0; t < L; t += 6.2) posts.push([ax + ux * t, az + uz * t]);
   }
   const fg = new THREE.BufferGeometry();
   fg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(fpos), 3));

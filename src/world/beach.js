@@ -17,7 +17,7 @@ import { FigureFleet, FOOT_DROP } from './figure.js';
 
 const DRY = 58;                    // metres of dry sand behind the waterline
 const WET = 34;                    // and submerged toe in front of it
-const CROWD = 240;
+const CROWD = 160;
 
 const WATER_TOP = -2.54;           // a hair above water.js's WATER_Y of -2.6
 

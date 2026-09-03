@@ -45,7 +45,7 @@ function area(pts) {
 }
 
 function flatten(shape, y) {
-  const g = new THREE.ShapeGeometry(shape, 12);
+  const g = new THREE.ShapeGeometry(shape, 6);
   g.rotateX(-Math.PI / 2);         // shape XY -> world XZ, facing up
   g.translate(0, y, 0);
   return g;
@@ -133,8 +133,8 @@ export function buildWater(scene, district, day = true) {
          second, fixed-height rail at DECK_Y doubled it over the water and
          stopped dead at the abutments. The deck soffit and piers stay: they
          are what you see from the water, and nothing else draws them. */
-      // piers every ~34m, stopping short of the abutments
-      for (let t = 16; t < L - 14; t += 34) {
+      // piers every ~40m, stopping short of the abutments
+      for (let t = 16; t < L - 14; t += 40) {
         const px = ax + Math.cos(yaw) * t, pz = az + Math.sin(yaw) * t;
         piers.push(M(px, WATER_Y - 4, pz, yaw, 3.4, DECK_Y - DECK_T - (WATER_Y - 4), br.width * 0.55));
       }

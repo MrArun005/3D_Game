@@ -90,9 +90,10 @@ const resolution = autoResolution(renderer);
 setAnisotropy(renderer.capabilities?.getMaxAnisotropy?.() ?? 16);
 
 const scene = createScene(DAY);
+window.scene = scene;
 const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.5, 14000);
 const { sun, hemi } = createLights(scene, DAY);
-const { dome } = createSky(scene, renderer, DAY);
+const { dome, stars } = createSky(scene, renderer, DAY);
 
 setBootProgress(60, 'Initializing TSL post-processing pipeline…');
 const isLite = typeof location !== 'undefined' && new URLSearchParams(location.search).has('lite');
@@ -182,6 +183,7 @@ let hornCooldown = 0;
 let warming = false;
 let roadblock = null, metro = null, landmarks = null;
 let billboards = null, streetLife = null, airspace = null;
+let photo = null;
 let radio = null;                           // generative car radio (game/radio.js), built once audio exists
 const person = buildHuman();
 scene.add(person.root);
@@ -440,8 +442,12 @@ function carjackSequence(best) {
     damageModel.setPaint(best.mesh.material.color.getHex());
     best.live = false; best.mesh.visible = false;
     // you drive what you took: the victim's body goes on over the hull
-    const style = Object.keys(assets.geo.stunt).find((k) => assets.geo.stunt[k].body === best.mesh.geometry);
+    /* Geometry matching only worked for single-mesh kits; a Sketchfab group
+       kit has no .geometry on its root, so those cars handed you the loft.
+       Traffic now records its style, and the geometry match is the fallback. */
+    const style = best.style ?? Object.keys(assets.geo.stunt).find((k) => assets.geo.stunt[k].body === best.mesh.geometry);
     if (style && KENNEY_CARS[style]) garage?.wear(KENNEY_CARS[style]);
+    else console.warn('carjack: no body for style', style);
     hero.visible = true;
     /* The wanted system only cares if somebody SAW it. A carjack in front of a
        pavement full of people is a crime; the same carjack on an empty street
@@ -599,6 +605,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   city.cells.clear();
   bootMsg.textContent = 'building the streets…';
   world = new DistrictWorld(scene, assets, district, { day: DAY, catalogue });
+  window._world = world;
   world.camera = camera;                  // chunk-level frustum culling for the render bundles
   if (!DAY) {
     const n = +(new URLSearchParams(location.search).get('lights') ?? (isLite ? 4 : 6));
@@ -813,7 +820,9 @@ hud.useClock(clock);
 const stats = new Stats();
 window.stats = stats;
 window.renderer = renderer;
-const photo = new Photo(camera, stats);
+window.scene = scene;
+photo = new Photo(camera, stats);
+window.photo = photo;
 
 const audio = createAudio();
 radio = new Radio(audio, hud);
@@ -864,6 +873,25 @@ async function stopFilm({ download = true } = {}) {
   return blob;
 }
 
+function applyPerk(persona) {
+  window._activePersona = persona;
+  if (!persona) return;
+  if (persona.id === 'leo') {
+    car.steerBoost = 1.35;
+    car.ramForce = 1.0;
+    car.cashMult = 1.0;
+  } else if (persona.id === 'marcus') {
+    car.steerBoost = 1.0;
+    car.ramForce = 1.0;
+    car.cashMult = 1.2;
+  } else if (persona.id === 'jax') {
+    car.steerBoost = 1.0;
+    car.ramForce = 1.6;
+    car.cashMult = 1.0;
+  }
+}
+applyPerk(NAMED_CHARACTERS[0]);
+
 const input = createInput((action) => {
   if (action === 'camera') chase.cycle();
   if (action === 'lights') car.headlights = !car.headlights;
@@ -879,6 +907,7 @@ const input = createInput((action) => {
     window._charIdx = ((window._charIdx || 0) + 1) % NAMED_CHARACTERS.length;
     const persona = NAMED_CHARACTERS[window._charIdx];
     onFoot.character.swap(persona.index);
+    applyPerk(persona);
     hud.flash(`${persona.name} (${persona.role}) · ${persona.perk}`);
   }
   if (action === 'mute') { muted = !muted; audio.mute(muted); }
@@ -1140,11 +1169,13 @@ function frameBody() {
       chase.update(car, dt);
     }
   }
-  clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets });
+  clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: car, dome, stars });
   if (weather) weather.update(camera, car, dt);
   lightPool?.update(dt, car.x, car.z, traffic);
   grade.setDrops(DAY ? 0 : chase.mode >= 2 ? 1.2 : 0.68);
-  world.update(car.x, car.z);
+  const streamX = photo?.on ? camera.position.x : car.x;
+  const streamZ = photo?.on ? camera.position.z : car.z;
+  world.update(streamX, streamZ);
   resolution(dt);
   /* One render: the pipeline owns the frame (scene MRT pass, GTAO, bloom,
      tone map, grade — core/grade.js). renderer.info accumulates across a

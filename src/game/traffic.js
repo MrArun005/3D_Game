@@ -215,7 +215,7 @@ export class Traffic {
     this.scene.add(mesh);
 
     return {
-      mesh, brakeMat, spec, live: false,
+      mesh, brakeMat, spec, style, live: false,   // style: what body this is, so a carjack can dress the hero in it
       path: [], gates: [], s: 0, pathLen: 0,
       speed: 0, cruise: 11 + rand() * 7,
       node: [0, 0], dir: DIRS[0], lane: 0.5,
@@ -567,6 +567,10 @@ export class Traffic {
       const accel = limit > car.speed ? 4.5 : 9.0;
       car.speed += Math.max(-accel, Math.min(accel, limit - car.speed)) * dt * 2.2;
       car.stopped = car.speed < 0.4;
+      if (car.laneCooldown > 0) {
+        car.laneCooldown -= dt;
+        if (car.laneCooldown <= 0) car.changingLane = false;
+      }
       if (car.panic > 0) {
         car.panic -= dt;
         const flash = Math.sin(t * 18) > 0;
@@ -777,6 +781,7 @@ export class Traffic {
     // Multilane lane-change overtaking when leader is slow
     if (car.edge && (car.edge.lanes || 1) > 1 && leaderSpeed < car.cruise * 0.60 && !car.changingLane) {
       car.changingLane = true;
+      car.laneCooldown = 5.0; // resets changingLane so traffic can overtake repeatedly
       car.lane = car.lane <= 0.5 ? 1.5 : 0.5;
     }
 

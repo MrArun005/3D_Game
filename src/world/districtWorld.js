@@ -583,49 +583,27 @@ export class DistrictWorld {
         out.plant.hut.push(mat4(px, KERB_H + baseH - SINK + bodyH + 0.6, pz, angle, 1, 1, 1));
       }
     } else if (arch === TOWER && shaft > 36) {
-      if (chunkDist2 <= 2) {
-        // 4-stage neo-futurist stepped setback tower (3x3 foreground ring)
-        const a = shaft * 0.36, b = shaft * 0.28, c = shaft * 0.22;
-        const k1 = 0.84 + rand() * 0.05, k2 = 0.68 + rand() * 0.06, k3 = 0.50 + rand() * 0.06;
-        stage(y0, a, 1);
-        stage(y0 + a - SINK, b, k1);
-        stage(y0 + a + b - SINK * 2, c, k2);
-        stage(y0 + a + b + c - SINK * 3, shaft - a - b - c + SINK * 3, k3);
-        cap(y0 + a - SINK, 0.5 + SINK, 1, 0.12);
-        cap(y0 + a + b - SINK * 2, 0.5 + SINK, k1, 0.12);
-        cap(y0 + a + b + c - SINK * 3, 0.5 + SINK, k2, 0.12);
-        cap(KERB_H + h - SINK, 0.8 + SINK, k3, 0.12);
-        topK = k3;
-      } else if (chunkDist2 <= 8) {
-        // 2-stage setback in next ring
-        const a = shaft * 0.55;
-        const k1 = 0.76 + rand() * 0.08;
-        stage(y0, a, 1);
-        stage(y0 + a - SINK, shaft - a + SINK, k1);
-        cap(y0 + a - SINK, 0.5 + SINK, 1, 0.12);
-        cap(KERB_H + h - SINK, 0.7 + SINK, k1, 0.12);
-        topK = k1;
-      } else {
-        // Single box beyond (background)
-        stage(y0, shaft, 1);
-        cap(KERB_H + h - SINK, 0.7 + SINK, 1, 0.1);
-      }
+      // Elegant 3-stage neo-futurist stepped setback tower (consistent silhouette at all distances)
+      const a = shaft * 0.40, b = shaft * 0.32;
+      const k1 = 0.82 + rand() * 0.06, k2 = 0.62 + rand() * 0.06;
+      stage(y0, a, 1);
+      stage(y0 + a - SINK, b, k1);
+      stage(y0 + a + b - SINK * 2, shaft - a - b + SINK * 2, k2);
+      cap(y0 + a - SINK, 0.5 + SINK, 1, 0.12);
+      cap(y0 + a + b - SINK * 2, 0.5 + SINK, k1, 0.12);
+      cap(KERB_H + h - SINK, 0.7 + SINK, k2, 0.12);
+      topK = k2;
     } else if (arch === TOWER || (arch === MID && shaft > 22)) {
-      if (chunkDist2 <= 8) {
-        const split = shaft * (0.52 + rand() * 0.12);
-        const k = 0.76 + rand() * 0.08;
-        const shiftX = (rand() - 0.5) * w * 0.12;
-        stage(y0, split, 1);
-        stageAt(y0 + split - SINK, shaft - split + SINK, w * k, d * k, shiftX, 0);
-        cap(y0 + split - SINK, 0.6 + SINK, 1, 0.12);
-        topK = k;
-      } else {
-        stage(y0, shaft, 1);
-        cap(KERB_H + h - SINK, 0.7 + SINK, 1, 0.1);
-      }
-    } else if (shaft > 14 && chunkDist2 <= 8) {
+      const split = shaft * (0.55 + rand() * 0.10);
+      const k = 0.78 + rand() * 0.06;
+      const shiftX = (rand() - 0.5) * w * 0.10;
+      stage(y0, split, 1);
+      stageAt(y0 + split - SINK, shaft - split + SINK, w * k, d * k, shiftX, 0);
+      cap(y0 + split - SINK, 0.6 + SINK, 1, 0.12);
+      topK = k;
+    } else if (shaft > 14) {
       const split = shaft * 0.65;
-      const k = 0.82 + rand() * 0.08;
+      const k = 0.84 + rand() * 0.06;
       stage(y0, split, 1);
       stage(y0 + split - SINK, shaft - split + SINK, k);
       cap(y0 + split - SINK, 0.5 + SINK, 1, 0.12);
@@ -637,31 +615,23 @@ export class DistrictWorld {
     }
 
     if (arch === TOWER) {
-      if (chunkDist2 <= 2) {
-        // Multi-tier ziggurat illuminated crown in near ring
-        const ch1 = 2.0 + rand() * 1.5;
-        const ch2 = 1.6 + rand() * 1.2;
-        out.crowns.push(mat4(wx, KERB_H + h + 0.6, wz, angle,
-          w * topK * 0.65, ch1, d * topK * 0.65));
-        out.crowns.push(mat4(wx, KERB_H + h + 0.6 + ch1, wz, angle,
-          w * topK * 0.42, ch2, d * topK * 0.42));
+      // Illuminated crown with spire for tall towers
+      const ch1 = 2.0 + rand() * 1.5;
+      out.crowns.push(mat4(wx, KERB_H + h + 0.6, wz, angle,
+        w * topK * 0.60, ch1, d * topK * 0.60));
 
-        if (rand() < 0.75) {
-          const spireH = 14 + rand() * 16;
-          out.masts.push(mat4(wx, KERB_H + h + ch1 + ch2 + spireH / 2, wz, 0,
-            0.22, spireH, 0.22));
-        }
-      } else if (chunkDist2 <= 8) {
-        out.crowns.push(mat4(wx, KERB_H + h + 0.6, wz, angle,
-          w * topK * 0.55, 1.8, d * topK * 0.55));
+      if (shaft > 45 && rand() < 0.65) {
+        const spireH = 12 + rand() * 14;
+        out.masts.push(mat4(wx, KERB_H + h + ch1 + spireH / 2, wz, 0,
+          0.22, spireH, 0.22));
       }
-    } else if (w > 7 && rand() < 0.8 && chunkDist2 <= 4) {
-      // Roof clutter only within 2 rings
-      for (let i = 0, n = 2 + Math.floor(rand() * 2); i < n; i++) {
+    } else if (w > 12 && rand() < 0.4) {
+      // Roof clutter on commercial mid-rises
+      for (let i = 0, n = 1 + Math.floor(rand() * 2); i < n; i++) {
         const r = rand();
         out.plant[r < 0.5 ? 'ac' : r < 0.8 ? 'tank' : 'hut'].push(
-          mat4(wx + (rand() - 0.5) * w * 0.55, KERB_H + h + 0.8,
-               wz + (rand() - 0.5) * d * 0.55, rand() * 6.28, 1, 1, 1));
+          mat4(wx + (rand() - 0.5) * w * 0.5, KERB_H + h + 0.8,
+               wz + (rand() - 0.5) * d * 0.5, rand() * 6.28, 1, 1, 1));
       }
     }
   }

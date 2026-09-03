@@ -10,11 +10,14 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
  * steel. A three-car subway train (Kenney Train Kit, CC0) runs each line end
  * to end at 15 m/s, pauses 6 s at stations and turns back at the ends.
  */
-const DECK_Y = 12.5, PIER_EVERY = 18, STATION_EVERY = 350, SPEED = 15, DWELL = 6;
+/* DECK_Y was 12.5: lower reads closer to the street and bridge decks are 7.6, so it clears.
+   DWELL was 6 s: Arun wants trains always moving and always in view, so short stops,
+   six trains a line, and one waiting at the spawn platform on boot. */
+const DECK_Y = 10.5, PIER_EVERY = 18, STATION_EVERY = 350, SPEED = 15, DWELL = 3;
 /* Trains per line. With one train on a 3 km line a spot on the viaduct saw a
    train every four minutes, which reads as an empty flyover; four spaced
    evenly bring that under a minute. Each is two carriages. */
-const TRAINS = 4, CARS = 2;
+const TRAINS = 6, CARS = 2;
 const TRAIN = '/models/vendor/kenney/train/';
 
 export class Metro {
@@ -22,14 +25,25 @@ export class Metro {
     this.scene = scene; this.district = district;
     this.lines = [];
     this.stationXZ = [];   // every platform, for the spawn and the map
-    const roads = (district.data?.roads || []).filter((r) => r.class === 'arterial' && r.points.length >= 3);
-    const withLen = roads.map((r) => ({ r, len: r.points.slice(1).reduce((a, p, i) => a + Math.hypot(p[0] - r.points[i][0], p[1] - r.points[i][1]), 0) }))
+    /* Lines: the two longest arterials, plus every road that carries one of
+       the ten bridges (Arun, 2026-09-03: "metros on every flyover"). A road
+       carries a bridge when the span's midpoint and both ends lie on it. */
+    const polyLen = (pts) => pts.slice(1).reduce((a, p, i) => a + Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]), 0);
+    const segD = (p, a, b) => { const dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz || 1; const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / L2)); return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dz); };
+    const polyD = (p, pts) => Math.min(...pts.slice(1).map((q, i) => segD(p, pts[i], q)));
+    const carries = (r, br) => { const a = br.points[0], b = br.points.at(-1), mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; return polyD(mid, r.points) < 8 && polyD(a, r.points) < 12 && polyD(b, r.points) < 12; };
+    const all = (district.data?.roads || []).filter((r) => r.points.length >= 2 && r.class !== 'ramp' && r.class !== 'freeway');
+    const bridged = new Set(all.filter((r) => (district.data?.bridges || []).some((br) => carries(r, br))));
+    const roads = all.filter((r) => (r.class === 'arterial' && r.points.length >= 3) || bridged.has(r));
+    const withLen = roads.map((r) => ({ r, len: polyLen(r.points), bridged: bridged.has(r) }))
       .sort((a, b) => b.len - a.len);
     const concrete = new THREE.MeshStandardMaterial({ color: 0x9a978f, roughness: 0.85 });
     const steel = new THREE.MeshStandardMaterial({ color: 0x3a3d44, roughness: 0.45, metalness: 0.6 });
-    for (const { r, len } of withLen) {
+    let plain = 0;
+    for (const { r, len, bridged: onBridge } of withLen) {
       if (len < 150) continue;
-      if (this.lines.length >= 4) break;
+      if (!onBridge && plain >= 2) continue;   // two long arterials, then only bridge-carrying roads
+      if (!onBridge) plain++;
       this.lines.push(this.#build(r, len, concrete, steel));
     }
     this.#loadTrains();
@@ -71,7 +85,7 @@ export class Metro {
       stations.push(s);
       this.stationXZ.push({ x: p.x, z: p.z });
     }
-    const mk = (parts, mat) => { const g = mergeGeometries(parts, false); const m = new THREE.Mesh(g, mat); m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; this.scene.add(m); return m; };
+    const mk = (parts, mat) => { const g = mergeGeometries(parts, false); g.computeBoundingSphere(); const m = new THREE.Mesh(g, mat); m.castShadow = true; m.receiveShadow = true; m.frustumCulled = true; this.scene.add(m); return m; };
     mk(conc, concrete); mk(stl, steel);
     const trains = [];
     for (let i = 0; i < TRAINS; i++) trains.push({ s: 40 + (len - 80) * (i + 0.5) / TRAINS, dir: i % 2 ? -1 : 1, dwell: 0, cars: [] });
@@ -87,7 +101,7 @@ export class Metro {
 
   async #loadTrains() {
     const loader = new GLTFLoader();
-    const gltf = await new Promise((res, rej) => loader.load('/models/metro/train_ride.glb', res, undefined, rej)).catch(() => null);
+    const gltf = await new Promise((res, rej) => loader.load('/models/metro/train_ride.glb?v=4', res, undefined, rej)).catch(() => null);
     let template = null;
     if (gltf) {
       const STATION_PARTS = [
@@ -98,18 +112,10 @@ export class Metro {
         const name = (o.name || '').toLowerCase();
         if (STATION_PARTS.some((p) => name.includes(p))) {   // 'back platform' etc. are station pieces even when their material is the train's
           o.visible = false;
-        } else if (o.isMesh) {
-          o.castShadow = false;
-          o.receiveShadow = true;
-          o.frustumCulled = false;
-          if (o.material) {
-            o.material.envMapIntensity = 1.0;
-            /* 2.4 here turned every carriage into a white slab under the night
-               bloom -- the 'glow blocks in the sky'. Window light, not a lamp. */
-            if (o.material.emissive || o.material.emissiveMap) o.material.emissiveIntensity = 0.5;
-          }
         }
       });
+      gltf.scene.updateMatrixWorld(true);
+
       const box = new THREE.Box3();
       gltf.scene.traverse((o) => {
         if (o.isMesh && o.visible) box.expandByObject(o);
@@ -117,10 +123,40 @@ export class Metro {
       const size = box.getSize(new THREE.Vector3());
       const center = box.getCenter(new THREE.Vector3());
       const len = Math.max(size.x, size.z);
-      const s = len > 0 ? 18 / len : 1;   // 18 m carriages: at 14 the train read as a toy from the street
+      const s = len > 0 ? 22 / len : 1;   // 22 m carriages (Arun: bigger); 14 read as a toy, 18 still small beside the towers
+
+      const offsetMatrix = new THREE.Matrix4().makeTranslation(-center.x, -box.min.y, -center.z);
+      const byMaterial = new Map();
+      gltf.scene.traverse((o) => {
+        if (!o.isMesh || !o.visible || !o.material) return;
+        let list = byMaterial.get(o.material);
+        if (!list) byMaterial.set(o.material, (list = []));
+        const worldM = o.matrixWorld.clone().premultiply(offsetMatrix);
+        const g = o.geometry.clone().applyMatrix4(worldM);
+        const keep = new THREE.BufferGeometry();
+        for (const k of ['position', 'normal', 'uv']) {
+          if (g.attributes[k]) keep.setAttribute(k, g.attributes[k]);
+        }
+        if (g.index) keep.setIndex(g.index);
+        list.push(keep.index ? keep.toNonIndexed() : keep);
+      });
+
       template = new THREE.Group();
-      gltf.scene.position.set(-center.x, -box.min.y, -center.z);
-      template.add(gltf.scene);
+      for (const [mat, geos] of byMaterial) {
+        const merged = mergeGeometries(geos, false);
+        for (const g of geos) g.dispose();
+        if (!merged) continue;
+        merged.computeBoundingSphere();
+        if (mat) {
+          mat.envMapIntensity = 1.0;
+          if (mat.emissive || mat.emissiveMap) mat.emissiveIntensity = 0.5;
+        }
+        const m = new THREE.Mesh(merged, mat);
+        m.castShadow = false;
+        m.receiveShadow = true;
+        m.frustumCulled = true;
+        template.add(m);
+      }
       template.scale.setScalar(s);
     }
 
@@ -135,8 +171,14 @@ export class Metro {
 
   /** Nearest platform to a point, or null before any line was built. */
   nearestStation(x, z) {
-    let best = null, bd = Infinity;
-    for (const st of this.stationXZ) { const d = Math.hypot(st.x - x, st.z - z); if (d < bd) { bd = d; best = st; } }
+    let best = null, bd = Infinity, line = null, s = 0;
+    for (const l of this.lines) for (let i = 0; i < l.stations.length; i++) {
+      const p = this.#at(l.pts, l.cum, l.stations[i]);
+      const d = Math.hypot(p.x - x, p.z - z);
+      if (d < bd) { bd = d; best = { x: p.x, z: p.z }; line = l; s = l.stations[i]; }
+    }
+    // park that line's nearest train at the platform, so the first frame has a train in it
+    if (line) { const tr = line.trains.reduce((a, t) => Math.abs(t.s - s) < Math.abs(a.s - s) ? t : a); tr.s = s; tr.dwell = DWELL * 2; }
     return best;
   }
 
@@ -150,7 +192,7 @@ export class Metro {
         for (const st of stations) if ((before - st) * (l.s - st) <= 0 && before !== l.s) { l.dwell = DWELL; l.s = st; }
       }
       l.cars.forEach((car, i) => {
-        const s = l.s - l.dir * i * 18.8;
+        const s = l.s - l.dir * i * 22.8;
         const p = this.#at(pts, cum, s), q = this.#at(pts, cum, s + l.dir * 2);
         car.position.set(p.x, DECK_Y + 0.65, p.z);
         car.rotation.y = Math.atan2(-(q.z - p.z), q.x - p.x) + Math.PI / 2;

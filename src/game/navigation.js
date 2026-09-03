@@ -135,7 +135,7 @@ export class Navigation {
     if (shouldRecalc) {
       const startNode = this.findNearestNode(car.x, car.z);
       const endNode = this.findNearestNode(target.x, target.z || target.y);
-      if (startNode && endNode) {
+      if (startNode !== null && endNode !== null) {
         const pts = this.findRoute(startNode, endNode);
         if (pts.length > 0) {
           this.routePoints = pts;
@@ -173,8 +173,8 @@ export class Navigation {
 
         let dir = 'STRAIGHT';
         let arrow = '↑';
-        if (diff > 0.45) { dir = 'RIGHT'; arrow = '↱'; }
-        else if (diff < -0.45) { dir = 'LEFT'; arrow = '↰'; }
+        if (diff > 0.45) { dir = 'LEFT'; arrow = '↰'; }
+        else if (diff < -0.45) { dir = 'RIGHT'; arrow = '↱'; }
 
         this.turnInfo = { dir, arrow, dist: Math.round(distNext) };
       }

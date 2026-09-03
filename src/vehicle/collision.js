@@ -162,7 +162,7 @@ export function resolveObstacles(car, obstacles) {
               if (into > (car.hitForce || 0)) { car.hitForce = into; car.hitTag = o.tag || 'prop'; }
               if (o.car) {
                 o.car.panic = 4.0;
-                o.car.speed = Math.max(0, o.car.speed - into * 0.4);
+                o.car.speed = Math.max(0, o.car.speed - into * 0.4 * (car.ramForce || 1.0));
               }
             }
           car.vx += nx * into * 1.05;    // a parked car gives a little, a wall none

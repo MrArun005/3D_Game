@@ -132,19 +132,19 @@ function boxAt(w, h, d, x, y, z) {
   return g;
 }
 function sphereAt(r, x, y, z) {
-  const g = new THREE.SphereGeometry(r, 8, 6);
+  const g = new THREE.SphereGeometry(r, 6, 4);
   g.applyMatrix4(M4(x, y, z));
   return g;
 }
 /** A limb segment: radius `rTop` at the joint tapering to `rBot`, centred at y. */
 function cylAt(rTop, rBot, h, x, y, z) {
-  const g = new THREE.CylinderGeometry(rTop, rBot, h, 10, 1);
+  const g = new THREE.CylinderGeometry(rTop, rBot, h, 6, 1);
   g.applyMatrix4(M4(x, y, z));
   return g;
 }
 /** A head or a hand: a sphere pulled taller than it is wide. */
 function eggAt(r, x, y, z) {
-  const g = new THREE.SphereGeometry(r, 10, 8);
+  const g = new THREE.SphereGeometry(r, 6, 5);
   g.applyMatrix4(M4(x, y, z, 0, 0, 0, 1, 1.18, 1));
   return g;
 }

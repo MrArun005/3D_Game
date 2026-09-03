@@ -19,7 +19,7 @@ export class GameClock {
     this.fogColor = new THREE.Color();
   }
 
-  update(dt, { sun, hemi, scene, grade, lightPool, heroLights, weatherSystem, assets } = {}) {
+  update(dt, { sun, hemi, scene, grade, lightPool, heroLights, weatherSystem, assets, player, dome, stars } = {}) {
     // 24 minutes real time = 24 game hours => dt / 60 hours per second
     this.hour = (this.hour + (dt / 60) * this.timeScale) % 24;
 
@@ -28,9 +28,11 @@ export class GameClock {
     const sinH = Math.sin(sunAngle);
     const cosH = Math.cos(sunAngle);
 
-    // Dynamic solar arc from east to west
+    // Dynamic solar arc from east to west, centered around player location (Defect 4 fix)
+    const px = player?.x ?? 2350;
+    const pz = player?.z ?? 1350;
     const sunDist = 420;
-    this.sunPosition.set(-cosH * sunDist, Math.max(-50, sinH * sunDist), 120 * Math.cos(sunAngle * 0.5));
+    this.sunPosition.set(px - cosH * sunDist, Math.max(30, sinH * sunDist), pz + 120 * Math.cos(sunAngle * 0.5));
 
     // Determine diurnal phase weights
     const isNight = this.hour >= 20.5 || this.hour < 5.2;
@@ -77,6 +79,10 @@ export class GameClock {
 
     // Apply to scene lights if provided
     if (sun) {
+      if (sun.target) {
+        sun.target.position.set(px, 0, pz);
+        sun.target.updateMatrixWorld();
+      }
       sun.position.copy(this.sunPosition);
       sun.color.copy(this.sunColor);
       sun.intensity = sunIntensity;
@@ -91,8 +97,29 @@ export class GameClock {
         scene.fog.color.copy(this.fogColor);
         scene.fog.density = isNight ? 0.0028 : isDusk ? 0.00028 : 0.00018;
       }
-      // Task 2.4: Sky radiance & HDRI environment intensity follows the solar cycle
-      scene.environmentIntensity = isDay ? 1.15 : (isDusk || isDawn) ? 0.85 : 0.45;
+      // Phase 2 ownership: Sky radiance & HDRI environment intensity follows solar cycle
+      scene.environmentIntensity = isDay ? 1.15 : (isDusk || isDawn) ? 0.80 : 0.38;
+    }
+
+    // Phase 2 ownership: synchronize sky dome rotation & tint and stars visibility
+    if (dome) {
+      dome.rotation.y = sunAngle;
+      if (dome.material) {
+        if (isDay) dome.material.color.setRGB(1.0, 1.0, 1.0);
+        else if (isDusk) {
+          const t = (this.hour - 18.0) / 2.5;
+          dome.material.color.setRGB(1.0, Math.max(0.2, 0.95 - t * 0.65), Math.max(0.15, 0.90 - t * 0.70));
+        } else if (isDawn) {
+          const t = (this.hour - 5.2) / 2.0;
+          dome.material.color.setRGB(0.55 + t * 0.45, 0.45 + t * 0.55, 0.60 + t * 0.40);
+        } else {
+          dome.material.color.setRGB(0.12, 0.16, 0.24);
+        }
+      }
+    }
+    if (stars && stars.material) {
+      stars.material.opacity = isNight ? 0.75 : isDusk ? ((this.hour - 18.0) / 2.5) * 0.4 : 0.0;
+      stars.visible = stars.material.opacity > 0.02;
     }
 
     // Task 2.3: Staggered dusk switch-on for streetlamps, signs, windows (18.2 - 19.8)
@@ -126,9 +153,8 @@ export class GameClock {
       }
     }
 
-    // Night lighting state: headlights active at night & dusk
+    // Night lighting state: headlights default active at night & dusk if not manually toggled
     const lightsActive = this.hour >= 18.2 || this.hour < 6.4;
-    if (heroLights) heroLights.visible = lightsActive;
 
     // Tune post bloom per hour (Task 2.5): subtle during the day, radiant at dusk/night
     if (grade?.setNight) {

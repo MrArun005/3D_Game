@@ -67,7 +67,7 @@ export function stepVehicle(car, dt) {
   const speedNorm = Math.min(1, Math.max(0, speed / 33.3)); // 0 to 120 km/h (33.3 m/s)
   const limit = V.steerMax * (1.0 - 0.68 * speedNorm);
   const returning = (car.steerTarget === 0) || (Math.sign(car.steerTarget) !== Math.sign(car.steer));
-  const steerRate = (6.0 - 3.5 * speedNorm) * (returning ? 1.5 : 1.0);
+  const steerRate = (6.0 - 3.5 * speedNorm) * (returning ? 1.5 : 1.0) * (car.steerBoost || 1.0);
   car.steer += (car.steerTarget * limit - car.steer) * Math.min(1, dt * steerRate);
 
   const cy = Math.cos(car.yaw), sy = Math.sin(car.yaw);
