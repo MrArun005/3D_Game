@@ -33,6 +33,9 @@ export class ChaseCamera {
   recentre() { this.lookYaw = 0; this.lookPitch = 0; this.looking = false; }
 
   cycle() { this.mode = (this.mode + 1) % RIGS.length; }
+  /** Put the camera where it would settle, now. For spawns and respawns: the
+      follow lag is what sends it flying across the city after a 2 km jump. */
+  snap(car) { this.update(car, 60); }
 
   update(car, dt) {
     const rig = RIGS[this.mode];

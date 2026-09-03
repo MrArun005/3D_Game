@@ -169,6 +169,7 @@ if (new URLSearchParams(location.search).has('debug')) {
   window.__perf = () => ({ frames: [...stats.samples], chunk: stats.worstChunkMs });
 }
 let beach = null, water = null, crowd = null, heli = null, districtRef = null, drowning = 0;
+let districtFailed = false;   // lets the boot gate drop on the legacy grid if the district never lands
 let lightPool = null;
 let jobs = null, garage = null, story = null, phone = null;
 let vehicleVFX = null, puddles = null;
@@ -259,6 +260,7 @@ function respawnCar(nearX = car.x, nearZ = car.z, kinds = null) {
   }
   car.y = groundHeightAt(car.x, car.z) + 0.62;
   damageModel.repair();
+  chase.snap(car);
 }
 
 /**
@@ -652,6 +654,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   resetCar(car);
   car.x = n.x; car.z = n.y; car.y = 0.62;
   world.update(car.x, car.z);
+  chase.snap(car);
   {
     const rx = Math.sin(car.yaw), rz = Math.cos(car.yaw);
     person.place(car.x + rx * 7.5, car.z + rz * 7.5, car.yaw + Math.PI);
@@ -659,7 +662,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   // now the car is on its spawn node, lay the film route from where it stands
   ROUTE = buildRoute(null, car.x, car.z);
   console.info(`Halstead Bay loaded — spawn at node ${n.id} (${n.x}, ${n.y})`);
-}).catch((e) => console.warn('district not loaded, staying on the grid:', e.message));
+}).catch((e) => { districtFailed = true; console.warn('district not loaded, staying on the grid:', e.message); });
 
 // ---- the car ----
 const car = createCarState();
@@ -1051,7 +1054,12 @@ function frameBody() {
      built AND every pipeline is compiled -- including the hidden collision
      effects -- so the first thing you see is a frame that already runs at
      speed, not one that stalls on its first crash. */
-  if (boot && !warming && (world.primed ?? true)) {
+  /* Hold the boot screen until the DISTRICT has landed too. `world` starts as
+     the legacy grid (no `primed`, so the gate read true) and the district
+     arrives later: the player saw the car at the grid origin, then it jumped
+     to Kingsway when the district resolved. Wait for districtRef unless the
+     district load failed, in which case the grid is all there is. */
+  if (boot && !warming && (world.primed ?? true) && (districtRef || districtFailed)) {
     warming = true;
     setBootProgress(95, 'Warming shaders…');
     const hidden = [];

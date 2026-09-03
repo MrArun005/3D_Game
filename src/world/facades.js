@@ -12,11 +12,11 @@ const BW = 512, BH = 256;    // the street-level band
 export const BASE_H = 5.4;
 
 export const ARCH = {
-  [TOWER]:  { floors: 4, lit: 0.42, wide: 8.4, storey: 3.8 },
-  [MID]:    { floors: 4, lit: 0.38, wide: 10.2, storey: 3.6 },
-  [LOFT]:   { floors: 3, lit: 0.48, wide: 9.2, storey: 3.2 },
-  [PODIUM]: { floors: 2, lit: 0.72, wide: 12.0, storey: 4.4 },
-  [DECK]:   { floors: 3, lit: 0.55, wide: 11.0, storey: 3.5 },
+  [TOWER]:  { floors: 4, lit: 0.62, wide: 8.4, storey: 3.8 },
+  [MID]:    { floors: 4, lit: 0.58, wide: 10.2, storey: 3.6 },
+  [LOFT]:   { floors: 3, lit: 0.65, wide: 9.2, storey: 3.2 },
+  [PODIUM]: { floors: 2, lit: 0.82, wide: 12.0, storey: 4.4 },
+  [DECK]:   { floors: 3, lit: 0.68, wide: 11.0, storey: 3.5 },
 };
 
 const PALETTE = {
@@ -25,24 +25,24 @@ const PALETTE = {
   charcoal: [0x3a4048, 0x2a3038, 0x484e56],
   metal:    [0x6a727c, 0x5a626c, 0x787e86],
 };
-const OFFICE = [['#dce8f6', '#7e98b4'], ['#e8f2fc', '#8aa4bc'], ['#c8dcf0', '#6e88a4']];
-const HOME = [['#f5d7a8', '#b98f52'], ['#fbe9cd', '#c2a06a'], ['#e7bd8b', '#9c6d33']];
-const SHOP = [['#f4efe6', '#c8b8a0'], ['#e8f0f8', '#9ab4c8'], ['#fce8d4', '#c49a6a']];
+const OFFICE = [['#e8f4ff', '#8ab0d8'], ['#fff2d6', '#cca066'], ['#d8e8fc', '#7aa0cc']];
+const HOME = [['#ffdd99', '#c49040'], ['#ffe6b8', '#d4a860'], ['#ffd088', '#b07828']];
+const SHOP = [['#fffaf0', '#d8c090'], ['#eaf4ff', '#a0c4e8'], ['#ffecd4', '#d8a870']];
 
 function litGlow(e, x, y, w, h, warm, k) {
   e.save();
   e.globalCompositeOperation = 'lighter';
-  const cx = x + w / 2, cy = y + h / 2, R = Math.max(w, h) * 1.45;
-  const gr = e.createRadialGradient(cx, cy, Math.min(w, h) * 0.18, cx, cy, R);
-  gr.addColorStop(0, `rgba(210,230,255,${0.16 * k})`);
-  gr.addColorStop(0.45, `rgba(180,210,240,${0.05 * k})`);
-  gr.addColorStop(1, 'rgba(180,210,240,0)');
+  const cx = x + w / 2, cy = y + h / 2, R = Math.max(w, h) * 1.55;
+  const gr = e.createRadialGradient(cx, cy, Math.min(w, h) * 0.15, cx, cy, R);
+  gr.addColorStop(0, `rgba(255,240,210,${0.38 * k})`);
+  gr.addColorStop(0.45, `rgba(240,215,170,${0.15 * k})`);
+  gr.addColorStop(1, 'rgba(200,220,250,0)');
   e.fillStyle = gr;
   e.beginPath(); e.arc(cx, cy, R, 0, 7); e.fill();
   const lg = e.createLinearGradient(0, y, 0, y + h);
   lg.addColorStop(0, warm[0]); lg.addColorStop(1, warm[1]);
   e.fillStyle = lg;
-  e.globalAlpha = 0.50 * k;
+  e.globalAlpha = 0.88 * k;
   e.fillRect(x, y, w, h);
   e.globalAlpha = 1;
   e.restore();

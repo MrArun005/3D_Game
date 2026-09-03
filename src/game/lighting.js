@@ -17,7 +17,7 @@ import * as THREE from 'three';
  * Costs N point lights in the forward pass -- tune with ?lights=N.
  */
 export class LightPool {
-  constructor(scene, world, { count = 6, radius = 60, colour = 0xffb46a, intensity = 55, range = 26 } = {}) {
+  constructor(scene, world, { count = 10, radius = 80, colour = 0xffba75, intensity = 72, range = 30 } = {}) {
     this.scene = scene; this.world = world; this.radius = radius;
     this.lights = [];
     for (let i = 0; i < count; i++) {

@@ -124,8 +124,8 @@ export function createAssets() {
       color: 0x1a222c, roughness: 0.18, metalness: 0.55, envMapIntensity: 1.35,
     }),
     crown: new THREE.MeshStandardMaterial({
-      color: 0xc8e0f4, emissive: 0x8ec4e8, emissiveIntensity: 1.7,
-      roughness: 0.28, metalness: 0.2,
+      color: 0x90e0ef, emissive: 0x00b4d8, emissiveIntensity: 3.4,
+      roughness: 0.2, metalness: 0.35,
     }),
     // Scanned galvanised painted metal for posts and street fixtures
     pole: (() => {
@@ -143,14 +143,14 @@ export function createAssets() {
        reads the emissive MRT channel, so as a Basic material the lamp heads
        neither dimmed by day nor bloomed by night. Now they do both. */
     lampGlow: new THREE.MeshStandardMaterial({
-      color: 0x3a3226, emissive: 0xffd9a0, emissiveIntensity: 3.2, roughness: 0.4,
+      color: 0x3a3226, emissive: 0xffe2b2, emissiveIntensity: 4.8, roughness: 0.35,
     }),
     // unlit so a red lens stays red at night; brightness comes from instance colour
     signalLamp: new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
     plant: new THREE.MeshStandardMaterial({ color: 0x4b4f55, roughness: 0.78, metalness: 0.4 }),
     // additive cone under each lamp head: haze doing what a real light would
     lampCone: new THREE.MeshBasicMaterial({
-      color: 0xffc98a, transparent: true, opacity: 0.055,
+      color: 0xffd499, transparent: true, opacity: 0.12,
       blending: THREE.AdditiveBlending, depthWrite: false,
       side: THREE.DoubleSide, fog: true,
     }),
