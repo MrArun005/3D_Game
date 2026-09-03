@@ -19,7 +19,7 @@ export class GameClock {
     this.fogColor = new THREE.Color();
   }
 
-  update(dt, { sun, hemi, scene, grade, lightPool, heroLights, weatherSystem } = {}) {
+  update(dt, { sun, hemi, scene, grade, lightPool, heroLights, weatherSystem, assets } = {}) {
     // 24 minutes real time = 24 game hours => dt / 60 hours per second
     this.hour = (this.hour + (dt / 60) * this.timeScale) % 24;
 
