@@ -36,3 +36,10 @@ assets/source/vendor/quaternius/*/FBX/
 assets/source/vendor/quaternius/*/Preview.png
 .vercel
 assets/source/originals/
+
+# Poly Haven CC0 downloads (tools/polyhaven.mjs). Same rule the props above
+# earned their exemption from: they are reproducible from a public API and
+# NOTHING in src/ loads them yet, so the 214 MB stays out of history. Commit
+# them the day a loader references them -- keep the licence note either way.
+assets/source/vendor/polyhaven/
+public/models/vendor/polyhaven/*.glb
