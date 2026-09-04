@@ -52,6 +52,7 @@ import { GameClock } from './game/clock.js';
 import { Mission } from './game/mission.js';
 import { Multiplayer, roomFromUrl, createRoom } from './game/multiplayer.js';
 import { Weapon } from './game/weapon.js';
+import { ARSENAL, WEAPON_KINDS, buildWeaponMesh } from './game/weapons.js';
 import { SkidMarks } from './world/skidmarks.js';
 import { Damage } from './game/damage.js';
 import { signalState } from './world/signals.js';
@@ -324,6 +325,36 @@ function onBust() {
 }
 const onFoot = new OnFoot(scene);
 const weapon = new Weapon(scene);
+/* The gun you are actually holding.
+   NOT parented to onFoot.group: that group is the blocky stand-in body, and
+   onfoot.js hides it the moment the skinned character finishes loading, which
+   would take the weapon with it. Scene-level and placed each frame from the
+   player's own position and look direction instead, so it survives whichever
+   body is on screen. Rebuilt only when the weapon changes -- four meshes over
+   a session, not one a frame. */
+let heldGun = null;
+function refreshHeldGun() {
+  if (heldGun) { scene.remove(heldGun); heldGun = null; }
+  heldGun = buildWeaponMesh(weapon.kind);
+  heldGun.visible = false;
+  scene.add(heldGun);
+}
+function placeHeldGun() {
+  if (!heldGun) return;
+  if (!onFoot?.active) { heldGun.visible = false; return; }
+  /* onFoot.yaw is the BODY's facing (atan2 of its velocity, onfoot.js:109) and
+     camYaw is where you are looking. Using camYaw put the weapon at world +X
+     whenever you stood still, which is nowhere near the hand. */
+  const yaw = onFoot.yaw ?? 0;
+  const fx = Math.cos(yaw), fz = -Math.sin(yaw);
+  const sx = Math.cos(yaw + Math.PI / 2), sz = -Math.sin(yaw + Math.PI / 2);
+  // right hand: forward of the chest and out to the side, same convention as
+  // the officer's stance in traffic.js
+  heldGun.position.set(onFoot.x + fx * 0.26 + sx * 0.20, 1.14, onFoot.z + fz * 0.26 + sz * 0.20);
+  heldGun.rotation.set(0, yaw, 0);
+  heldGun.visible = true;
+}
+refreshHeldGun();                   // the pistol you start the game holding
 const skids = new SkidMarks(scene);
 const damageModel = new Damage(scene);
 
@@ -1054,6 +1085,11 @@ const input = createInput((action) => {
   if (action === 'radio') radio?.cycle();
   if (action === 'reset') respawnCar();
   if (action === 'time') { clock.hour = (clock.hour + 3) % 24; hud.flash(`TIME · ${clock.formattedTime}`); }
+  if (action.startsWith('weapon')) {
+    const kind = WEAPON_KINDS[+action.slice(6) - 1];
+    if (kind && weapon.switchTo(kind)) { refreshHeldGun(); hud.flash(`${ARSENAL[kind].name} · ${weapon.ammo}/${ARSENAL[kind].mag}`); }
+  }
+  if (action === 'reload' && weapon.reload()) hud.flash('RELOADING…');
   if (action === 'avatar' && onFoot.character) {
     window._charIdx = ((window._charIdx || 0) + 1) % NAMED_CHARACTERS.length;
     const persona = NAMED_CHARACTERS[window._charIdx];
@@ -1296,6 +1332,8 @@ function frameBody() {
   if (crowd && !onFoot.active && onPavementAtSpeed(car)) crowd.panic(car.x, car.z, 14);
   if (net) net.update(car, dt);
   weapon.update(dt);
+  placeHeldGun();
+  hud.setAmmo(weapon.spec.name, weapon.ammo, weapon.magSize, weapon.reloading);
   skids.update(car, car.wheelGround ? car.wheelGround[2] : 0);
   if (firing) pullTrigger();
   if (crowd) crowd.update(car, dt, (speed) => traffic.reportCrime('person', speed));

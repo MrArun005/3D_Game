@@ -397,6 +397,31 @@ export class Hud {
   }
 
   /** Player condition, shown only once you have actually been hurt. */
+  /**
+   * Ammunition, bottom-right above the tacho. Only appears once you are armed
+   * and holding something, and the magazine count goes amber at a third and
+   * red when it is empty -- you should be able to read "reload now" without
+   * reading the number.
+   */
+  setAmmo(name, ammo, mag, reloading) {
+    if (!this.ammoEl) {
+      const el = document.createElement('div');
+      el.style.cssText = 'position:fixed;right:26px;bottom:190px;z-index:40;text-align:right;'
+        + 'font:700 13px ui-monospace,Menlo,monospace;letter-spacing:.08em;color:#dbe4f2;'
+        + 'text-shadow:0 2px 8px rgba(0,0,0,.75);pointer-events:none;display:none';
+      document.body.appendChild(el);
+      this.ammoEl = el;
+    }
+    const el = this.ammoEl;
+    el.style.display = 'block';
+    const low = ammo === 0 ? '#ff5f5f' : ammo <= Math.ceil(mag / 3) ? '#ffc23c' : '#eaf1fb';
+    el.innerHTML = reloading
+      ? `<span style="opacity:.65">${name}</span><br><span style="font-size:20px;color:#ffc23c">RELOADING</span>`
+      : `<span style="opacity:.65">${name}</span><br>`
+        + `<span style="font-size:24px;color:${low}">${ammo}</span>`
+        + `<span style="opacity:.5"> / ${mag}</span>`;
+  }
+
   setHealth(v) {
     if (!this.healthEl) {
       const el = document.createElement('div');
