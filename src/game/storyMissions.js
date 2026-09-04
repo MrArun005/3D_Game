@@ -47,9 +47,22 @@ export const STORY_MISSIONS = [
     heat: 1,
     steps: [
       { text: 'LOCATE TARGET VEHICLE IN THE FLATS', target: { x: 500, z: 1851 }, radius: 28 },
-      { text: 'RAM OR ELIMINATE THE TARGET ENFORCER', target: { x: 1163, z: 1864 }, radius: 32 },
+      { text: 'ELIMINATE THE ENFORCER AND HIS TWO GUARDS', target: { x: 1163, z: 1864 }, radius: 32, needDowned: 3 },
       { text: 'DROP TO GROUND ZERO AND LAY LOW', target: { x: 2350, z: 1350 }, radius: 25, needZeroHeat: true }
     ]
+  },
+  {
+    id: 'standoff_1',
+    type: 'bounty',
+    title: 'DEPOT STAND-OFF',
+    giver: 'Sgt. Vale',
+    pay: 6500,
+    brief: 'Vale wants a rival crew gone from the Harbour Point depot. They will call it in. Hold the ground until four are down, then get clear.',
+    steps: [
+      { text: 'GET TO THE HARBOUR POINT DEPOT', target: { x: 2156, z: 2436 }, radius: 26 },
+      { text: 'HOLD THE DEPOT · FOUR DOWN', target: { x: 2156, z: 2436 }, radius: 40, needDowned: 4 },
+      { text: 'GET CLEAR · LOSE THE HEAT', target: { x: 2350, z: 1350 }, radius: 26, needZeroHeat: true },
+    ],
   },
   {
     id: 'race_1',
@@ -131,6 +144,9 @@ export class StoryManager {
     }
   }
 
+  /** main calls this when an officer goes down; only firefight steps care. */
+  onOfficerDown() { if (this.active) this.downed = (this.downed || 0) + 1; }
+
   update(car, dt) {
     if (!this.active) return;
     const step = this.active.steps[this.stepIdx];
@@ -160,6 +176,16 @@ export class StoryManager {
       if (this.mission?.setMarkerColor) this.mission.setMarkerColor(0xffc23c); // GOLD
     }
 
+    /* A firefight step: `needDowned` officers must go down (main reports them
+       through onOfficerDown) before the zone will close. The marker turns red
+       and the HUD counts you in while it is outstanding. */
+    if (step.needDowned && (this.downed || 0) < step.needDowned) {
+      if (this.mission?.setMarkerColor) this.mission.setMarkerColor(0xff3b30);
+      this._downWarn = (this._downWarn || 0) + dt;
+      if (this._downWarn > 3.0 && dist < 80) { this._downWarn = 0; this.hud?.flash(`🎯 ${this.downed || 0}/${step.needDowned} DOWN · HOLD THE ZONE`); }
+      return;
+    }
+
     if (inRange) {
       const isRace = this.active.type === 'race';
       // In races, checkpoints trigger at full cruising speed without requiring stopping!
@@ -173,6 +199,7 @@ export class StoryManager {
       }
       // Step complete!
       this.stepIdx++;
+      this.downed = 0;   // the next step's count starts clean
       if (this.audio?.cash) this.audio.cash();
       this.hud?.flash(`OBJECTIVE SECURED · STEP ${this.stepIdx}/${this.active.steps.length}`);
       this.#advanceStep(car);
