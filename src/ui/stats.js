@@ -15,8 +15,8 @@ import * as THREE from 'three';
 
 const BUDGET = {
   frameMs: 16.6,
-  draws: 1150,
-  tris: 3.2e6,
+  draws: 1400,   // docs/BUDGETS.md; 1150 / 3.2M is the Phase-0 target, not the limit
+  tris: 4.0e6,
   textureMB: 512,
   chunks: 25,
   chunkBuildMs: 3,

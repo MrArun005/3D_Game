@@ -857,7 +857,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   story = new StoryManager(mission, traffic, hud, garage, audio, navigation);
   dispatch = new DispatchService(scene, world, garage, traffic, debris, hud, audio, navigation);
   window._dispatch = dispatch;
-  window.addCash = (amount = 50000) => {
+  if (new URLSearchParams(location.search).has('debug')) window.addCash = (amount = 50000) => {
     garage.addCash(amount, 'TEST FUNDS');
   };
   phone = new Phone(story, garage, hero, traffic, dispatch, car);
