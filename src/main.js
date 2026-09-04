@@ -327,24 +327,25 @@ const damageModel = new Damage(scene);
  * a drive-by along the same sightline, which is why free look and the gun were
  * always going to be the same feature.
  */
+const _triggerDir = new THREE.Vector3();
+const _triggerTargets = [];
 function pullTrigger() {
   if (!started || !weapon.ready) return;
-  const dir = new THREE.Vector3();
-  camera.getWorldDirection(dir);
+  camera.getWorldDirection(_triggerDir);
   const ox = onFoot.active ? onFoot.x : car.x;
   const oz = onFoot.active ? onFoot.z : car.z;
   const oy = onFoot.active ? 1.35 : 1.0;
 
-  const targets = [];
+  _triggerTargets.length = 0;
   if (crowd) {
     for (const p of crowd.people) {
-      if (p.live && !p.down) targets.push({ x: p.x, z: p.z, y: 0.95, r: 0.55, kind: 'person', ref: p });
+      if (p.live && !p.down) _triggerTargets.push({ x: p.x, z: p.z, y: 0.95, r: 0.55, kind: 'person', ref: p });
     }
   }
-  for (const v of traffic.cars) if (v.live) targets.push({ x: v.x, z: v.z, y: 0.8, r: 1.25, kind: 'car', ref: v });
-  for (const v of traffic.police) if (v.live) targets.push({ x: v.x, z: v.z, y: 0.8, r: 1.35, kind: 'police', ref: v });
+  for (const v of traffic.cars) if (v.live) _triggerTargets.push({ x: v.x, z: v.z, y: 0.8, r: 1.25, kind: 'car', ref: v });
+  for (const v of traffic.police) if (v.live) _triggerTargets.push({ x: v.x, z: v.z, y: 0.8, r: 1.35, kind: 'police', ref: v });
 
-  const hit = weapon.fire(ox, oy, oz, dir.x, dir.y, dir.z, targets);
+  const hit = weapon.fire(ox, oy, oz, _triggerDir.x, _triggerDir.y, _triggerDir.z, _triggerTargets);
   crowd?.panic(ox, oz, 24);                     // gunfire scatters the street
   audio.gunshot();
   // firing at all is a crime; hitting something is a worse one
@@ -1240,7 +1241,7 @@ function frameBody() {
   const streamX = photo?.on ? camera.position.x : car.x;
   const streamZ = photo?.on ? camera.position.z : car.z;
   performance.mark('stream-start');
-  world.update(streamX, streamZ);
+  world.update(streamX, streamZ, photo?.on ? 0 : car.vx, photo?.on ? 0 : car.vz);
   performance.mark('stream-end');
   resolution(dt);
   /* One render: the pipeline owns the frame (scene MRT pass, GTAO, bloom,
@@ -1267,12 +1268,34 @@ function frameBody() {
   if (boot && !warming && (world.primed ?? true) && (districtRef || districtFailed)) {
     warming = true;
     setBootProgress(95, 'Warming shaders…');
+    const dummyGroup = new THREE.Group();
+    const testBox = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+    const compileMats = new Set();
+    if (assets?.mat) {
+      for (const m of Object.values(assets.mat)) if (m?.isMaterial) compileMats.add(m);
+    }
+    if (assets?.facades) {
+      for (const g of Object.values(assets.facades)) {
+        if (Array.isArray(g)) for (const m of g) if (m?.isMaterial) compileMats.add(m);
+      }
+    }
+    if (world?.catalogue?.materials) {
+      for (const m of world.catalogue.materials.values()) if (m?.isMaterial) compileMats.add(m);
+    }
+    if (assets?.kitBuildings) {
+      for (const kb of Object.values(assets.kitBuildings)) if (kb?.mat?.isMaterial) compileMats.add(kb.mat);
+    }
+    for (const mat of compileMats) dummyGroup.add(new THREE.Mesh(testBox, mat));
+    scene.add(dummyGroup);
+
     const hidden = [];
     scene.traverse((o) => { if ((o.isPoints || o.isMesh) && !o.visible && !o.isInstancedMesh && !o.userData?.shell) { hidden.push(o); o.visible = true; } });
     // never let the warm-up hold the game hostage: 1.5 s, then in you go regardless
     const drop = () => {
       setBootProgress(100, 'Ready!');
       for (const o of hidden) o.visible = false;
+      scene.remove(dummyGroup);
+      testBox.dispose();
       if (boot) { boot.remove(); boot = null; }
     };
     Promise.race([renderer.compileAsync(scene, camera), new Promise((r) => setTimeout(r, 1500))])

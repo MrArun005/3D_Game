@@ -6,6 +6,11 @@ import * as THREE from 'three';
  * 2. Explosive Fire Hydrants with 10m pressurized water geysers
  * 3. Swirling Wind Debris (flying newspapers & flyers)
  */
+const _hPos = new THREE.Vector3();
+const _hQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 1.3));
+const _hS = new THREE.Vector3(1, 1, 1);
+const _hMat = new THREE.Matrix4();
+
 export class StreetLife {
   constructor(scene, district) {
     this.scene = scene;
@@ -204,10 +209,6 @@ export class StreetLife {
     this.steamGeo.attributes.position.needsUpdate = true;
 
     // --- 2. Fire Hydrant Collision & Water Geyser ---
-    const _hPos = new THREE.Vector3();
-    const _hQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 1.3));
-    const _hS = new THREE.Vector3(1, 1, 1);
-    const _hMat = new THREE.Matrix4();
     let hydUpdated = false;
 
     for (const h of this.hydrants) {

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
 const FIRE_AT = Infinity;   // damage fraction at which the car catches fire; Infinity = never (ponytail: no blast)
+const _dentScratch = new THREE.Vector3();
 
 /**
  * Wear on the car.
@@ -215,7 +216,7 @@ export class Damage {
   #dent(force, at) {
     const p = this.parts;
     if (!p || this.dentCount > 26) return;       // a shell has only so much give
-    const local = p.hull.worldToLocal(new THREE.Vector3(at.x, 0.78, at.z));
+    const local = p.hull.worldToLocal(_dentScratch.set(at.x, 0.78, at.z));
     /* The contact point is on the hull's SURFACE, so a sphere centred there
        only catches the near skin -- which is what a dent is. */
     const depth = Math.min(0.15, 0.028 + (force - 1.8) * 0.012);

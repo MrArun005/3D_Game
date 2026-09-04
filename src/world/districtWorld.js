@@ -311,7 +311,7 @@ export class DistrictWorld {
    * yet built, so a chunk arriving a frame or two late is invisible; a 60 ms
    * frame is not.
    */
-  update(x, z) {
+  update(x, z, vx = 0, vz = 0) {
     const ix = Math.floor(x / CHUNK), iz = Math.floor(z / CHUNK);
     if (this.farAt && (this.lastCull === undefined
         || Math.abs(x - this.lastCull[0]) > 48 || Math.abs(z - this.lastCull[1]) > 48)) {
@@ -319,16 +319,30 @@ export class DistrictWorld {
       this.lastCull = [x, z];
     }
 
-    // what is missing, nearest first
+    // what is missing, prioritised by distance ahead of the car's velocity vector
     const want = [];
-    for (let dx = -this.radius; dx <= this.radius; dx++) {
-      for (let dz = -this.radius; dz <= this.radius; dz++) {
+    const wasPrimed = this.primed;
+    const speed = Math.hypot(vx, vz);
+    const hasVel = speed > 1.5;
+    const normVx = hasVel ? vx / speed : 0;
+    const normVz = hasVel ? vz / speed : 0;
+    // Pre-warm one ring ahead at low priority while stationary
+    const scanRadius = (wasPrimed && speed < 1.0) ? this.radius + 1 : this.radius;
+
+    for (let dx = -scanRadius; dx <= scanRadius; dx++) {
+      for (let dz = -scanRadius; dz <= scanRadius; dz++) {
         const k = ck(ix + dx, iz + dz);
         if (this.chunks.has(k) || this.pending.has(k)) continue;
-        want.push({ k, cx: ix + dx, cz: iz + dz, d: dx * dx + dz * dz });
+        const d2 = dx * dx + dz * dz;
+        // Chunks ahead in velocity vector get higher priority (lower effective d)
+        const dotAhead = hasVel ? (dx * normVx + dz * normVz) : 0;
+        const priority = (Math.abs(dx) > this.radius || Math.abs(dz) > this.radius)
+          ? d2 + 500 // pre-warm outer ring at lowest priority
+          : d2 - dotAhead * 2.2;
+        want.push({ k, cx: ix + dx, cz: iz + dz, d: d2, priority });
       }
     }
-    want.sort((a, b) => a.d - b.d);
+    want.sort((a, b) => a.priority - b.priority);
     for (const w of want) { this.queue.push(w); this.pending.add(w.k); }
 
     /* The first frame has to be complete -- streaming the world in around a
@@ -339,7 +353,6 @@ export class DistrictWorld {
        one gulp — a felt steering hitch at exactly the moment you cross a
        boundary at speed. The group only enters the scene when its generator
        finishes, so nobody ever sees half a chunk. */
-    const wasPrimed = this.primed;
     const budget = wasPrimed ? BUILD_MS : Infinity;
     const t0 = performance.now();
     while (performance.now() - t0 < budget) {
@@ -347,7 +360,8 @@ export class DistrictWorld {
         const w = this.queue.shift();
         if (!w) break;
         // it may have gone out of range while it sat in the queue
-        if (Math.abs(w.cx - ix) > this.radius || Math.abs(w.cz - iz) > this.radius) {
+        const maxR = wasPrimed ? this.radius + 1 : this.radius;
+        if (Math.abs(w.cx - ix) > maxR || Math.abs(w.cz - iz) > maxR) {
           this.pending.delete(w.k);
           continue;
         }
@@ -355,12 +369,7 @@ export class DistrictWorld {
         /* A chunk is a RENDER BUNDLE (three BundleGroup). Its contents are
            static, so the renderer records their draws once and replays the
            recording every frame -- the CPU stops re-walking, re-culling and
-           re-binding ~40 meshes per chunk. Two consequences, both handled
-           below: children inside a bundle are culled only when the bundle is
-           recorded, so every mesh in a chunk is marked frustumCulled=false
-           and the CHUNK is culled as a whole in update(); and any change to
-           what the chunk shows (ring visibility, parked LOD, castShadow)
-           has to bump group.needsUpdate so the recording is redone. */
+           re-binding ~40 meshes per chunk. */
         this.building = {
           k: w.k, cx: w.cx, cz: w.cz,
           group: USE_BUNDLES ? new THREE.BundleGroup() : new THREE.Group(),
@@ -380,6 +389,8 @@ export class DistrictWorld {
         this.chunks.set(b.k, b.group);
         this.pending.delete(b.k);
         this.building = null;
+        // Hard cap of 1 chunk build in flight/completed per frame when primed to prevent burst overruns
+        if (wasPrimed) break;
       }
     }
     // what the budget line in the stats HUD actually promises: the time THIS
@@ -1024,7 +1035,7 @@ export class DistrictWorld {
     const k = ck(ix, iz);
     let tLast = performance.now();
     const tick = function* () {
-      if (performance.now() - tLast >= 4.0) {
+      if (performance.now() - tLast >= 2.5) {
         yield;
         tLast = performance.now();
       }
@@ -1079,6 +1090,7 @@ export class DistrictWorld {
              [0, 1, 0], [[0, 0], [L, 0], [L, t / 2.4], [0, t / 2.4]]);
       };
       for (const id of segs) {
+        yield* tick();
         const s = this.district.segments[id];
         const dx = s.bx - s.ax, dz = s.bz - s.az;
         const L = Math.hypot(dx, dz) || 1;
@@ -1449,8 +1461,11 @@ export class DistrictWorld {
       group.add(m);
     };
     slabMesh(slabs.block, A.mat.walkDistrict ?? A.mat.walk);
+    yield* tick();
     slabMesh(slabs.park, A.mat.parkGround ?? A.mat.leaf);
+    yield* tick();
     slabMesh(slabs.lot, A.mat.kerb);
+    yield* tick();
     slabMesh(slabs.vacant, A.mat.kerb);
     yield;
     inst(A.geo.lamp, A.mat.pole, lamps, true);
