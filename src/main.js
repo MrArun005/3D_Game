@@ -313,10 +313,12 @@ function respawnCar(nearX = car.x, nearZ = car.z, kinds = null) {
 function onDeath() {
   /* On foot, the body falls first and the fade follows: the Death clip runs,
      input is dead, then the respawn. In a car it is the old instant fade. */
-  if (onFoot.active && !dying && onFoot.character?.ready) {
+  if (onFoot.active && wastedAnim === 0 && onFoot.character?.ready) {
     const ms = onFoot.character.die();
-    if (ms > 0) { dying = 1; controlsLockedUntil = performance.now() + ms + 300; setTimeout(() => { dying = 0; onDeath(); }, ms + 300); return; }
+    if (ms > 0) { wastedAnim = 1; controlsLockedUntil = performance.now() + ms + 300; setTimeout(() => { wastedAnim = 2; onDeath(); }, ms + 300); return; }
   }
+  if (wastedAnim === 1) return;        // the clip is still playing; the timer will call us back
+  wastedAnim = 0;                      // 2 -> 0: the animation ran, now the real WASTED path
   bustFlash = 2.8;
   jobs?.fail('WASTED · JOB LOST');
   hud.setDead(true);
@@ -369,7 +371,8 @@ const grenades = new Grenades(scene, weapon.light);   // shares the muzzle-flash
 let grenadeMode = false;
 let fistsMode = false, punchCool = 0;
 let wasReloading = false;
-let lastArsKey = '';   // slot 0: bare hands. E swings at whoever is in front of you
+let lastArsKey = '';
+let wastedAnim = 0;   // 0 idle, 1 Death clip playing, 2 clip done -> run the WASTED path once   // slot 0: bare hands. E swings at whoever is in front of you
 grenades.onBlast = (bx, by, bz) => {
   debris.breakNear(bx, bz, BLAST_R, car, 30);
   for (const c of traffic.police) {
@@ -447,6 +450,7 @@ function placeHeldGun() {
       onFoot.z + fz * (0.26 + 0.06 * ads) + sz * (0.20 - inward + sw.dx));
   }
   heldGun.rotation.set(sw.roll, yaw, -rl.tilt);
+  heldGun.visible = !fistsMode && !grenadeMode;   // the one place that decides it
   heldGun.visible = true;
 }
 refreshHeldGun();                   // the pistol you start the game holding
@@ -581,9 +585,9 @@ function pullTrigger() {
                       hit ? 9 : 1);
   if (hit && hit.kind === 'officer') { const downed = hit.ref.mesh ? traffic.officerHit?.(hit.ref, weapon.spec.damage) : hit.ref.roof ? traffic.hitMark?.(hit.ref, weapon.spec.damage) : roadblock?.hitPost?.(hit.ref, weapon.spec.damage); if (downed) { modes?.onOfficerDown(); story?.onOfficerDown?.(); hud.flash(modes?.active === 'holdout' ? 'OFFICER DOWN · +50' : 'OFFICER DOWN'); } crosshair.hit(hit.ref.down > 0); }
   if (hit && hit.kind === 'person') hit.ref.down = 0.001;
-  if (hit && hit.kind !== 'person') {
+  if (hit && (hit.kind === 'car' || hit.kind === 'police')) {   // vehicles only: boards, marksmen and posts have no .mesh
     hit.ref.speed *= 0.55;
-    hit.ref.mesh.material.color.offsetHSL(0, -0.05, -0.04);
+    hit.ref.mesh?.material?.color?.offsetHSL(0, -0.05, -0.04);
   }
 }
 const _obsBuffer = [];
@@ -1406,7 +1410,7 @@ function frameBody() {
   const now = performance.now();
   let dt = Math.min((now - lastTime) / 1000, 0.05);
   lastTime = now;
-  if (dying) dt *= 0.35;   // wasted: the fall plays at a third speed, GTA's beat
+  if (wastedAnim === 1) dt *= 0.35;   // wasted: the fall plays at a third speed, GTA's beat
 
   // ---- controls ----
   let c = null;   // this frame's input snapshot; null in film mode (the camera block below reads it)
@@ -1549,7 +1553,8 @@ function frameBody() {
     ? { x: onFoot.x, y: onFoot.y, z: onFoot.z, vx: onFoot.vx, vz: onFoot.vz,
         speed: Math.hypot(onFoot.vx, onFoot.vz), onFoot: true, crouch, firedAt: lastFiredAt }
     : currentVehicle;
-  traffic.world = world; traffic.chatter = chatter; traffic.decals = decals; traffic.crowd = crowd; traffic.heli = heli; traffic.grenadeLook = grenades;   // buildings for line of sight, the radio, the marks their misses leave, the street that scatters
+  traffic.world = world; traffic.chatter = chatter; traffic.decals = decals; traffic.crowd = crowd; traffic.heli = heli; traffic.grenadeLook = grenades;
+  if (!onFoot.active) quarry.firedAt = lastFiredAt;   // the car object is the quarry in a car; officers read this for 'quiet'   // buildings for line of sight, the radio, the marks their misses leave, the street that scatters
   traffic.update(quarry, dt, worldTime);
   if (chatter) chatter.updateWanted(traffic.wanted);
   if (world.updateSignals) world.updateSignals(worldTime);
@@ -1565,7 +1570,6 @@ function frameBody() {
   weapon.update(dt);
   grenades.update(dt, groundHeightAt);
   if (punchCool > 0) punchCool -= dt;
-  if (heldGun && fistsMode) heldGun.visible = false;
   arsenalSaveT += dt; if (arsenalSaveT > 5) { arsenalSaveT = 0; saveArsenal(); }
   /* Hospitals heal: stand within 6 m of one on foot and health climbs at 15%/s. Free, like GTA's. */
   healTick += dt;
@@ -1575,7 +1579,6 @@ function frameBody() {
       for (const p of districtRef.places) { if (p.type === 'hosp' && Math.hypot(p.x - onFoot.x, p.y - onFoot.z) < 6) { health = Math.min(1, health + 0.075); hud.setHealth(health); if (health >= 1) hud.flash('PATCHED UP'); break; } }
     }
   }
-  if (heldGun && grenadeMode) heldGun.visible = false;
   /* GTA V's rule: health creeps back to half on its own once you have not been
      hit for six seconds. Above half you need a doctor (the garage repair, or a
      respawn). It turns a lost firefight into a retreat instead of a reload. */
@@ -1583,7 +1586,7 @@ function frameBody() {
   modes?.update(dt);
   // walk over a downed officer's weapon and it is yours, magazine full
   if (onFoot.active) { const k = traffic.pickupAt?.(onFoot.x, onFoot.z); if (k === 'grenade') { grenades.count++; hud.flash(`PICKED UP GRENADE · ${grenades.count}`); } else if (k) { fistsMode = false; grenadeMode = false; weapon.addMag(k); weapon.switchTo(k); refreshHeldGun(); hud.flash(`PICKED UP ${ARSENAL[k].name} · +${ARSENAL[k].mag}`); } }
-  if (modes?.active) hud.setJob?.(modes.line());
+  if (modes?.active && !jobs?.job) hud.setJob?.(modes.line());
   const adsTarget = aiming && onFoot.active ? 1 : 0;
   ads += (adsTarget - ads) * Math.min(1, dt / ADS_BLEND_S);
   if (Math.abs(ads - adsTarget) < 0.01) ads = adsTarget;
@@ -1598,7 +1601,7 @@ function frameBody() {
     swayPhase += swayPhaseStep(onFoot.speed ?? 0, dt);
   }
   placeHeldGun();
-  if (fistsMode) hud.setAmmo('FISTS', '', '', false, armour); else if (grenadeMode) hud.setAmmo('GRENADE', grenades.count, '-', false, armour); else hud.setAmmo(weapon.spec.name, weapon.ammo, weapon.reserveNow, weapon.reloading, armour);
+  if (fistsMode) hud.setAmmo('FISTS', '', '', false, armour); else if (grenadeMode) hud.setAmmo('GRENADE', grenades.count, '-', false, armour); else hud.setAmmo(weapon.spec.name, weapon.ammo, weapon.reserveNow, weapon.reloading, armour, weapon.magSize);
   const arsKey = onFoot.active ? `${fistsMode}|${grenadeMode}|${weapon.kind}|${weapon.ammo}|${weapon.reserveNow}|${grenades.count}` : 'car';
   if (arsKey !== lastArsKey && onFoot.active) hud.setArsenal?.([
     { key: 0, name: 'FISTS', mag: '', reserve: '', current: fistsMode },

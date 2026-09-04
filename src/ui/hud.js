@@ -420,7 +420,7 @@ export class Hud {
       + `<div>${r.key}</div><div style="font-size:12px">${r.name}</div><div style="opacity:.75">${r.reserve === '' ? (r.mag === '' ? '&nbsp;' : r.mag) : `${r.mag}/${r.reserve}`}</div></div>`).join('');
   }
 
-  setAmmo(name, ammo, reserve, reloading, armour = 0) {
+  setAmmo(name, ammo, reserve, reloading, armour = 0, magSize = 12) {
     const mag = reserve;   // the second number is now the reserve, not the magazine size
     if (!this.ammoEl) {
       const el = document.createElement('div');
@@ -432,7 +432,7 @@ export class Hud {
     }
     const el = this.ammoEl;
     el.style.display = 'block';
-    const low = ammo === 0 ? '#ff5f5f' : ammo <= 4 ? '#ffc23c' : '#eaf1fb';
+    const low = ammo === 0 ? '#ff5f5f' : ammo <= Math.ceil(magSize / 3) ? '#ffc23c' : '#eaf1fb';
     const arm = armour > 0 ? `<br><span style="font-size:11px;color:#6fb1ff">ARMOUR ${Math.round(armour * 100)}%</span>` : '';
     if (ammo === '' || ammo === null) { el.innerHTML = `<span style="font-size:20px">${name}</span>` + arm; return; }
     el.innerHTML = (reloading

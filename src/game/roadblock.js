@@ -124,15 +124,17 @@ export class Roadblock {
     }
     // the riflemen: crouch, peek, three-round bursts with a line of sight, down when hit
     const lvl = Math.max(3, stars);   // `stars` is the update()'s own read of the wanted level
-    const prof = targetProfile(false, false);
+    const tgt = this.traffic.player ?? car;   // the player on foot, or the car she is in
+    const prof = targetProfile(!!tgt.onFoot, !!tgt.crouch);
+    const ty = (tgt.y ?? 0) + prof.y;
     for (const p of this.posts) {
       p.poseT += dt;
       if (p.down > 0) { p.down += dt; p.blender.apply(p.joints, 'fall', Math.min(1, p.down / 0.6), dt, 0.1); p.gun.visible = false; continue; }
       const gx = p.group.position.x, gz = p.group.position.z, gy = p.group.position.y + 1.0;
-      const gap = Math.hypot(car.x - gx, car.z - gz);
-      const face = Math.atan2(-(car.z - gz), car.x - gx);
+      const gap = Math.hypot(tgt.x - gx, tgt.z - gz);
+      const face = Math.atan2(-(tgt.z - gz), tgt.x - gx);
       const bldg = this.world?.nearbyBuildings ? this.world.nearbyBuildings(gx, gz) : [];
-      const canSee = gap < 120 && hasLineOfSight(gx, gy, gz, car.x, prof.y, car.z, bldg, this.traffic.cars, null);
+      const canSee = gap < 120 && hasLineOfSight(gx, gy, gz, tgt.x, ty, tgt.z, bldg, this.traffic.cars, null);
       p.fireT -= dt;
       if (canSee && p.fireT <= 0) {
         if (p.burst <= 0) p.burst = burstFor('rifle').shots;
@@ -140,7 +142,7 @@ export class Roadblock {
         p.fireT = p.burst > 0 ? burstFor('rifle').gap : 1.2 + this.traffic.rand() * 1.0;   // seeded: same fight, same seed
         p.pose = 'peek';
         const w = ARSENAL.rifle;
-        const landed = shotLands(gx, gy, gz, car.x, prof.y, car.z, prof.r, aimJitter(lvl, gap, Math.abs(car.fwdSpeed ?? 0)) + w.restSpread, this.traffic.rand);
+        const landed = shotLands(gx, gy, gz, tgt.x, ty, tgt.z, prof.r, aimJitter(lvl, gap, tgt.speed ?? Math.abs(car.fwdSpeed ?? 0)) + w.restSpread, this.traffic.rand);
         this.traffic.onShot?.(gap, landed, w.damage, p.group.position, 'rifle');
       } else if (p.burst <= 0 && p.fireT < 0.6) p.pose = 'crouch';
       p.blender.apply(p.joints, p.pose, p.poseT, dt, 0.15);

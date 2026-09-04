@@ -17,7 +17,8 @@ test('an officer is seven meshes (eight with a moustache), and every one carries
     assert.ok(g.attributes.color, 'colour is per-vertex, not per-material');
     tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
   });
-  assert.ok(meshes === OFFICER_PARTS || meshes === OFFICER_PARTS + 1, `seven meshes, eight with a moustache, got ${meshes}`);
+  const { variety } = buildOfficer();
+  assert.equal(meshes, OFFICER_PARTS + (variety.moustache ? 1 : 0), 'exactly seven meshes, eight only with a moustache');
   assert.ok(tris < 1500, `officer should stay under 1500 triangles, got ${tris}`);
 });
 

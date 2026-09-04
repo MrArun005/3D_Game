@@ -413,6 +413,7 @@ export class Traffic {
     car.node = e.a;
     car.lane = this.rand() < 0.65 ? 0 : 1;
     car.cruise = (CLASS_SPEED[e.class] ?? 11) * (0.85 + this.rand() * 0.3);
+    car.baseCruise = undefined; car.fleeT = 0;   // a new incarnation, a new base for the flee boost
     car.path = []; car.gates = []; car.pathLen = 0; car.s = 0;
     const line = this.#shift(this.#oriented(e, e.a), this.#laneOffset(e, car.lane));
     this.#push(car, line[0]);
@@ -693,6 +694,7 @@ export class Traffic {
     /* One building scan for the whole frame: every shooter is within ~65 m of
        the player, so the player's 9-chunk neighbourhood serves them all. Eleven
        per-shooter scans at four stars were eleven allocations a frame. */
+    this.player = player;   // the roadblock's rifles aim at whoever this is, on foot or in the car
     this._bldg = this.world?.nearbyBuildings ? this.world.nearbyBuildings(player.x, player.z) : [];
     this._deployed = 0; for (const q of this.police) if (q.deployed) this._deployed++;
     for (const v of this.cars) if (v.fleeT > 0) { v.fleeT -= dt; if (v.fleeT <= 0 && v.baseCruise) v.cruise = v.baseCruise; }
@@ -877,6 +879,10 @@ export class Traffic {
         c.deployed = true; this._deployed++; c.fireT = 0.5; c.state = 'cover'; c.stateT = 0; c.hp = 100; c.down = 0;
         // the response draws heavier guns as the stars climb; the mesh swaps geometry, not material
         c.gunKind = weaponForWanted(Math.floor(this.wanted), c.slot);
+        if (!c.gun) {   // his last one is lying in the road from the time he went down
+          c.gun = buildWeaponMesh(c.gunKind); c.gun.position.set(0, -0.58, 0); c.gun.rotation.z = -Math.PI / 2; c.joints.armR.add(c.gun);
+          c.flash = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), new THREE.MeshBasicMaterial({ color: 0xfff0c0, toneMapped: false })); c.flash.visible = false; c.gun.add(c.flash);
+        }
         c.gun.geometry = buildWeaponMesh(c.gunKind).geometry;
         c.flash.position.x = ARSENAL[c.gunKind].muzzle;
         { const cs = coverSide(c.x, c.z, c.yaw, player.x, player.z); c.coverX = cs.x; c.coverZ = cs.z; }   // the door away from you, car between
