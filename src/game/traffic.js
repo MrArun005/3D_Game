@@ -853,7 +853,11 @@ export class Traffic {
          held true for the second it needed -- nobody ever got out. */
       const stopped = (player.speed ?? 0) < 3.4;
       const close = gap < 16;
-      if (c.mode === 'free' && stopped && close) c.deployT += dt;
+      /* Officers get out when you have stopped close by -- or whenever you are
+         ON FOOT within 40 m. Before, a player who left the car and kept moving
+         never met an officer: they circled in their cruisers forever. */
+      const footContact = !!player.onFoot && gap < 40 && c.mode === 'free';
+      if ((c.mode === 'free' && stopped && close) || footContact) c.deployT += dt * (footContact ? 1.6 : 1);
       else c.deployT = Math.max(0, c.deployT - dt * 0.8);
       if (!c.deployed && c.deployT > 1.0 && this.police.filter((q) => q.deployed).length < MAX_DEPLOYED) {
         c.deployed = true; c.fireT = 0.5; c.state = 'cover'; c.stateT = 0; c.hp = 100; c.down = 0;
@@ -864,7 +868,7 @@ export class Traffic {
         { const cs = coverSide(c.x, c.z, c.yaw, player.x, player.z); c.coverX = cs.x; c.coverZ = cs.z; }   // the door away from you, car between
         this.chatter?.radioPool?.(Math.floor(this.wanted) >= 3 ? 'deployHot' : 'deploy');
       }
-      if (c.deployed && (gap > 30 || c.deployT <= 0)) {
+      if (c.deployed && (gap > (player.onFoot ? 65 : 30) || c.deployT <= 0)) {   // on foot they stay out and follow further
         c.deployed = false;
         c.officer.visible = false;
         c.holdT = 0;
