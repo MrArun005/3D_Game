@@ -103,3 +103,20 @@ test('the muzzle offset sits inside the weapon it belongs to', () => {
       `${kind}: muzzle ${ARSENAL[kind].muzzle} should not float past the barrel end ${reach.toFixed(3)}`);
   }
 });
+
+test('reserve ammunition: reloads draw from it, switching remembers each magazine, a mag can be added', async () => {
+  const { Weapon } = await import('../src/game/weapon.js');
+  const fakeScene = { add() {} };
+  const w = new Weapon(fakeScene);
+  assert.equal(w.reserveNow, ARSENAL.pistol.reserve);
+  w.ammo = 2;
+  assert.equal(w.reload(), true);
+  w.update(ARSENAL.pistol.reload + 0.01);
+  assert.equal(w.ammo, ARSENAL.pistol.mag, 'magazine refilled');
+  assert.equal(w.reserveNow, ARSENAL.pistol.reserve - (ARSENAL.pistol.mag - 2), 'reserve paid for the difference');
+  w.ammo = 5; w.switchTo('rifle'); assert.equal(w.ammo, ARSENAL.rifle.mag);
+  w.switchTo('pistol'); assert.equal(w.ammo, 5, 'the pistol still has the five rounds it had');
+  w.reserve.pistol = 0; w.ammo = 0;
+  assert.equal(w.reload(), false, 'nothing to reload from');
+  w.addMag('pistol'); assert.equal(w.ammo, ARSENAL.pistol.mag, 'an empty gun takes the mag directly');
+});

@@ -257,6 +257,7 @@ function onShot(gap, landed = null, damage = 26, from = null) {
      and `damage` is the weapon's. The old distance-only field is kept as the
      fallback for any caller that has not been given a line of sight. */
   const hit = landed === null ? Math.max(0, 1 - gap / 18) : (landed ? damage / 26 : 0);
+  if (hit > 0) lastHurtAt = performance.now();
   if (landed === false) return;                    // a miss: the shot is heard, nothing else
   if (onFoot.active && landed) {
     onFoot.character?.flinch?.();   // the body reacts before the number does
@@ -355,6 +356,7 @@ const decals = new DecalPool(scene);
 let modes = null;   // range / hold-out, built once the HUD and traffic exist
 let aiming = false, ads = 0, burst = 0, sinceShot = 9, swayPhase = 0, crouch = false;
 let lastFiredAt = -1e9;   // officers advance when you have been quiet for a while
+let lastHurtAt = -1e9;    // health regenerates to half once this is six seconds old
 const _rayHit = new THREE.Vector3();
 const _hand = new THREE.Vector3();   // the skinned hero's palm, when the rig is up
 /* The gun you are actually holding.
@@ -1060,8 +1062,8 @@ window.__buyWeapon = (kind, price) => {
   if (!ARSENAL[kind]) return false;
   if ((garage?.cash ?? 0) < price) { hud.flash('NOT ENOUGH CASH'); return false; }
   garage.addCash(-price, `BOUGHT ${ARSENAL[kind].name}`);
-  weapon.switchTo(kind); weapon.ammo = weapon.magSize; refreshHeldGun();
-  hud.flash(`${ARSENAL[kind].name} · ${weapon.ammo}/${weapon.magSize}`);
+  weapon.addMag(kind); weapon.addMag(kind); weapon.switchTo(kind); refreshHeldGun();   // two magazines with a purchase
+  hud.flash(`${ARSENAL[kind].name} · ${weapon.ammo} / ${weapon.reserveNow}`);
   return true;
 };
 
@@ -1447,9 +1449,13 @@ function frameBody() {
   if (crowd && !onFoot.active && onPavementAtSpeed(car)) crowd.panic(car.x, car.z, 14);
   if (net) net.update(car, dt);
   weapon.update(dt);
+  /* GTA V's rule: health creeps back to half on its own once you have not been
+     hit for six seconds. Above half you need a doctor (the garage repair, or a
+     respawn). It turns a lost firefight into a retreat instead of a reload. */
+  if (health < 0.5 && performance.now() - lastHurtAt > 6000) { health = Math.min(0.5, health + dt * 0.03); hud.setHealth(health); }
   modes?.update(dt);
   // walk over a downed officer's weapon and it is yours, magazine full
-  if (onFoot.active) { const k = traffic.pickupAt?.(onFoot.x, onFoot.z); if (k) { weapon.switchTo(k) || (weapon.ammo = weapon.magSize); refreshHeldGun(); hud.flash(`PICKED UP ${ARSENAL[k].name}`); } }
+  if (onFoot.active) { const k = traffic.pickupAt?.(onFoot.x, onFoot.z); if (k) { weapon.addMag(k); weapon.switchTo(k); refreshHeldGun(); hud.flash(`PICKED UP ${ARSENAL[k].name} · +${ARSENAL[k].mag}`); } }
   if (modes?.active) hud.setJob?.(modes.line());
   else if (modes?.justEnded) { modes.justEnded = false; hud.setJob?.(null); }
   const adsTarget = aiming && onFoot.active ? 1 : 0;
@@ -1465,7 +1471,7 @@ function frameBody() {
     swayPhase += swayPhaseStep(onFoot.speed ?? 0, dt);
   }
   placeHeldGun();
-  hud.setAmmo(weapon.spec.name, weapon.ammo, weapon.magSize, weapon.reloading);
+  hud.setAmmo(weapon.spec.name, weapon.ammo, weapon.reserveNow, weapon.reloading);
   skids.update(car, car.wheelGround ? car.wheelGround[2] : 0);
   if (firing) pullTrigger();
   if (crowd) crowd.update(car, dt, (speed) => traffic.reportCrime('person', speed));

@@ -32,6 +32,12 @@ export class Weapon {
        the camera, it just reports how hard it just pushed. */
     this.kind = 'pistol';
     this.ammo = ARSENAL.pistol.mag;
+    /* Reserve per weapon, kept across switches: the rifle you bought still has
+       its rounds when you come back to it. Reloading draws from here; a drop
+       or a purchase adds a magazine. Infinite ammunition made the shotgun a
+       free machine gun with a pause in it. */
+    this.reserve = Object.fromEntries(Object.entries(ARSENAL).map(([k, w]) => [k, w.reserve ?? 60]));
+    this.mags = Object.fromEntries(Object.keys(ARSENAL).map((k) => [k, ARSENAL[k].mag]));   // rounds left in each gun's magazine
     this.heat = 0;
     this.reloadT = 0;
     this.kick = 0;
@@ -110,8 +116,9 @@ export class Weapon {
   /** Swap weapon. Reloads are cancelled: you are drawing a different gun. */
   switchTo(kind) {
     if (!ARSENAL[kind] || kind === this.kind) return false;
+    this.mags[this.kind] = this.ammo;           // remember what was left in the old one
     this.kind = kind;
-    this.ammo = ARSENAL[kind].mag;
+    this.ammo = this.mags[kind] ?? ARSENAL[kind].mag;
     this.reloadT = 0;
     this.heat = 0;
     this.cool = 0.25;                 // the draw itself takes a beat
@@ -126,12 +133,15 @@ export class Weapon {
 
   reload() {
     const w = ARSENAL[this.kind];
-    if (this.reloadT > 0 || this.ammo >= w.mag) return false;
+    if (this.reloadT > 0 || this.ammo >= w.mag || this.reserve[this.kind] <= 0) return false;
     this.reloadT = w.reload;
     return true;
   }
 
   get spec() { return ARSENAL[this.kind] ?? ARSENAL.pistol; }
+  get reserveNow() { return this.reserve[this.kind] ?? 0; }
+  /** A drop or a purchase: one magazine into the reserve (or fill the gun if it is empty). */
+  addMag(kind = this.kind) { const w = ARSENAL[kind]; if (!w) return; if (kind === this.kind && this.ammo === 0) this.ammo = w.mag; else this.reserve[kind] += w.mag; }
   get reloading() { return this.reloadT > 0; }
   get magSize() { return this.spec.mag; }
 
@@ -143,7 +153,11 @@ export class Weapon {
     this.shake *= Math.max(0, 1 - dt * 9);
     if (this.reloadT > 0) {
       this.reloadT -= dt;
-      if (this.reloadT <= 0) { this.reloadT = 0; this.ammo = this.spec.mag; }
+      if (this.reloadT <= 0) {
+        this.reloadT = 0;
+        const need = this.spec.mag - this.ammo, take = Math.min(need, this.reserve[this.kind]);
+        this.reserve[this.kind] -= take; this.ammo += take;
+      }
     }
     if (this.flashFor > 0) {
       this.flashFor -= dt;

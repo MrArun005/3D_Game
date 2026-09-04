@@ -40,22 +40,22 @@ export const ARSENAL = {
     pellets: 1, auto: false, restSpread: 0.012, maxSpread: 0.075, spreadGain: 0.020, spreadDecay: 0.11,
     // muzzle offsets are the measured barrel end of each model, so the flash
     // sits on the barrel instead of floating in front of it (test caught this)
-    recoil: 0.020, shake: 0.30, muzzle: 0.20,
+    recoil: 0.020, shake: 0.30, muzzle: 0.20, reserve: 48,
   },
   smg: {
     name: 'SMG', damage: 17, cooldown: 0.075, mag: 30, reload: 2.1, range: 60,
     pellets: 1, auto: true, restSpread: 0.030, maxSpread: 0.135, spreadGain: 0.013, spreadDecay: 0.24,
-    recoil: 0.013, shake: 0.22, muzzle: 0.30,
+    recoil: 0.013, shake: 0.22, muzzle: 0.30, reserve: 90,
   },
   rifle: {
     name: 'RIFLE', damage: 34, cooldown: 0.115, mag: 30, reload: 2.6, range: 120,
     pellets: 1, auto: true, restSpread: 0.010, maxSpread: 0.090, spreadGain: 0.011, spreadDecay: 0.20,
-    recoil: 0.024, shake: 0.38, muzzle: 0.53,
+    recoil: 0.024, shake: 0.38, muzzle: 0.53, reserve: 90,
   },
   shotgun: {
     name: 'SHOTGUN', damage: 15, cooldown: 0.78, mag: 6, reload: 3.0, range: 34,
     pellets: 8, auto: false, restSpread: 0.085, maxSpread: 0.130, spreadGain: 0.010, spreadDecay: 0.30,
-    recoil: 0.055, shake: 0.85, muzzle: 0.51,
+    recoil: 0.055, shake: 0.85, muzzle: 0.51, reserve: 18,
   },
 };
 

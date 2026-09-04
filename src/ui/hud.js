@@ -404,7 +404,8 @@ export class Hud {
    * red when it is empty -- you should be able to read "reload now" without
    * reading the number.
    */
-  setAmmo(name, ammo, mag, reloading) {
+  setAmmo(name, ammo, reserve, reloading) {
+    const mag = reserve;   // the second number is now the reserve, not the magazine size
     if (!this.ammoEl) {
       const el = document.createElement('div');
       el.style.cssText = 'position:fixed;right:26px;bottom:190px;z-index:40;text-align:right;'
@@ -415,7 +416,7 @@ export class Hud {
     }
     const el = this.ammoEl;
     el.style.display = 'block';
-    const low = ammo === 0 ? '#ff5f5f' : ammo <= Math.ceil(mag / 3) ? '#ffc23c' : '#eaf1fb';
+    const low = ammo === 0 ? '#ff5f5f' : ammo <= 4 ? '#ffc23c' : '#eaf1fb';
     el.innerHTML = reloading
       ? `<span style="opacity:.65">${name}</span><br><span style="font-size:20px;color:#ffc23c">RELOADING</span>`
       : `<span style="opacity:.65">${name}</span><br>`
