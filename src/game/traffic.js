@@ -5,6 +5,8 @@ import { mulberry32 } from '../core/rng.js';
 import { personGeometry } from '../world/beach.js';
 import { PAINT_COLOURS, BODY_KEYS, BODY_TYPES } from '../vehicle/config.js';
 import { groundHeightAt } from '../world/metrics.js';
+import { buildOfficer, poseOfficer } from '../world/officer.js';
+import { buildWeaponMesh, ARSENAL } from './weapons.js';
 
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
 
@@ -121,18 +123,27 @@ export class Traffic {
     /* The officer rides in the car and gets out when the chase stops being a
        chase. Kept in the scene rather than parented to the cruiser, because
        the whole point is that they leave it. */
-    const officer = new THREE.Group();
-    const body = new THREE.Mesh(personGeometry(),
-      new THREE.MeshStandardMaterial({ color: 0x1b2740, roughness: 0.75 }));
-    const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.135, 1),
-      new THREE.MeshStandardMaterial({ color: 0xd7a878, roughness: 0.85 }));
-    head.position.y = 1.53;
-    const flash = new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 6),
+    /* A real officer: seven vertex-coloured meshes with a face, a cap, a stab
+       vest and a duty belt (world/officer.js). Geometry and material are shared
+       by every officer in the city, so this costs meshes, not memory. */
+    const built = buildOfficer();
+    const officer = built.group;
+    c.joints = built.joints;
+    c.pose = 'idle';
+    c.poseT = Math.random() * 6;
+    /* The sidearm hangs off the right arm rather than the group, so it follows
+       every pose for free -- no second animation to keep in sync. -Y is down
+       the arm, so the weapon's +X muzzle turns onto it. */
+    const gun = buildWeaponMesh('pistol');
+    gun.position.set(0, -0.58, 0);
+    gun.rotation.z = -Math.PI / 2;
+    c.joints.armR.add(gun);
+    c.gun = gun;
+    const flash = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6),
       new THREE.MeshBasicMaterial({ color: 0xfff0c0, toneMapped: false }));
-    flash.position.set(0.42, 1.12, 0.14);
+    flash.position.set(ARSENAL.pistol.muzzle, 0, 0);   // at the muzzle, in gun space
     flash.visible = false;
-    officer.add(body, head, flash);
-    officer.castShadow = true;
+    gun.add(flash);
     officer.visible = false;
     this.scene.add(officer);
     c.officer = officer;
@@ -710,10 +721,21 @@ export class Traffic {
         const sx = c.x + Math.cos(c.yaw + Math.PI / 2) * 1.9;
         const sz = c.z - Math.sin(c.yaw + Math.PI / 2) * 1.9;
         const face = Math.atan2(-(player.z - sz), player.x - sx);
-        c.officer.position.set(sx, 0, sz);
+        // stand ON the road, not at sea level -- officers deploy on bridges too
+        c.officer.position.set(sx, groundHeightAt(sx, sz), sz);
         c.officer.rotation.y = -face + Math.PI / 2;
         c.officer.visible = true;
         c.speed = 0;
+
+        /* Close and stopped is an arrest; anything else is a stand-off. The
+           pose carries the whole read at this distance -- braced and levelling
+           a sidearm, or bent over you with the cuffs out. */
+        c.poseT += dt;
+        const arresting = gap < 6.5 && (player.speed ?? 0) < 1.2;
+        const want = arresting ? 'cuff' : 'aim';
+        if (want !== c.pose) c.pose = want;
+        poseOfficer(c.joints, c.pose, c.poseT);
+        c.gun.visible = !arresting;
 
         c.fireT -= dt;
         c.flash.visible = c.fireT > -0.06 && c.fireT < 0;
