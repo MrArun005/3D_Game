@@ -5,7 +5,7 @@ import { mulberry32 } from '../core/rng.js';
 import { personGeometry } from '../world/beach.js';
 import { PAINT_COLOURS, BODY_KEYS, BODY_TYPES } from '../vehicle/config.js';
 import { groundHeightAt } from '../world/metrics.js';
-import { buildOfficer, poseOfficer, PoseBlender, lookAt } from '../world/officer.js';
+import { buildOfficer, poseOfficer, PoseBlender, lookAt, officerMaterial } from '../world/officer.js';
 import { buildWeaponMesh, ARSENAL } from './weapons.js';
 import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED, pickRooftops, coverSide, evasionDecay, searchRadius } from './policeAi.js';
 import { roofsNear } from '../world/districtWorld.js';
@@ -558,6 +558,20 @@ export class Traffic {
     this.scene.add(g);
     this.drops.push({ kind: c.gunKind, mesh: g, t: 40, x: g.position.x, z: g.position.z });
     c.gun = null;
+    if (this.rand() < 0.15) {   // some wore a vest worth having: half your armour back (main handles 'armour')
+      /* ponytail: a vertex-coloured box in the officers' material, shared geometry. A transient pickup, not city detail (rule 3's range-board exception). */
+      if (!this._vestGeo) {
+        const g = new THREE.BoxGeometry(0.44, 0.10, 0.34), n = g.attributes.position.count, col = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) { col[i * 3] = 0.10; col[i * 3 + 1] = 0.14; col[i * 3 + 2] = 0.26; }
+        g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+        this._vestGeo = g;
+      }
+      const v = new THREE.Mesh(this._vestGeo, officerMaterial());
+      v.position.set(c.officer.position.x - 0.3, groundHeightAt(c.officer.position.x, c.officer.position.z) + 0.05, c.officer.position.z + 0.5);
+      v.rotation.y = this.rand() * Math.PI;
+      this.scene.add(v);
+      this.drops.push({ kind: 'armour', mesh: v, t: 40, x: v.position.x, z: v.position.z });
+    }
     if (this.rand() < 0.2) {   // one in five carried a grenade
       const look = this.grenadeLook;   // the thrown grenade's own geometry and material, so a dropped one is the same object
       if (!look) return;
@@ -862,6 +876,7 @@ export class Traffic {
 
     const want = this.#wantedCars();
     while (this.police.length < want) this.police.push(this.#makePolice());
+    this._free = this.police.filter((q) => q.live && q.mode === 'free');   // was rebuilt per cruiser per frame
     for (let i = 0; i < this.police.length; i++) {
       const c = this.police[i];
       if (i >= want) { c.live = false; c.mesh.visible = false; continue; }
@@ -1036,8 +1051,8 @@ export class Traffic {
            cruisers converging on one spot, shunting each other off the road
            and shoving the player's car through a wall. They aim for a slot
            around you instead, and hold each other at arm's length. */
-        const live = this.police.filter((q) => q.live && q.mode === 'free');
-        const slot = live.indexOf(c);
+        const live = this._free;   // built once per frame before the loop; a cruiser that went 'free' THIS frame is not in it yet
+        const slot = Math.max(0, live.indexOf(c));
         /* Where they think you are. With a line on you it is you; once you
            have been out of sight for a few seconds it is where they last had
            you, and they sweep a ring around it that widens as the trail goes

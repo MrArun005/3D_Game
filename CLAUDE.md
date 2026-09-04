@@ -123,6 +123,14 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   been unseen for 3 s. Debug hooks under `?debug`: `__dbg()`, `__aim(v)`,
   `__police()`, `__wanted(n)`. No Playwright in this project (Arun's rule):
   verify with `node --test` and reasoning, he play-tests.
+  Later the same day: `game/tracers.js` (one LineSegments pool of moving
+  streaks for incoming fire, fed by `traffic.#fireAt`, the ONE place any
+  police round is rolled), `audio.whiz` on near misses, a single `held`
+  state in main ('fists' | 'gun' | 'grenade'), officers walk between covers,
+  and EVASION: `policeAi.evasionDecay` drains stars once nobody has had a
+  line on you for 10 s (cruisers set `traffic.hot` by LOS too), cruisers
+  sweep a `searchRadius` ring round `traffic.seenX/Z` that the minimap
+  draws. Downed officers also drop a vest (15%: +50% armour).
 - **iCloud evicts `.git` (2026-09-05)**: the repo lives in `~/Desktop`, which
   iCloud syncs; it marked `.git/index` and 85+ objects `dataless`, so git
   timed out on mmap. `rm .git/index && git reset` rebuilt it once the files
