@@ -95,7 +95,7 @@ export class Modes {
   startHoldout() {
     this.stop();
     this.active = 'holdout'; this.t = HOLDOUT_SECONDS; this.shots = 0; this.hits = 0; this.score = 0; this.downed = 0;
-    this._elapsed = 0;
+    this._elapsed = 0; this._wave = 1;
     if (this.traffic) this.traffic.wanted = Math.max(this.traffic.wanted, HOLDOUT_START_STARS);
     this.hud.flash?.('HOLD OUT · 3 minutes · they are coming');
   }
@@ -148,7 +148,10 @@ export class Modes {
     }
     if (this.active === 'holdout') {
       this._elapsed += dt;
-      if (this.traffic) this.traffic.wanted = Math.max(this.traffic.wanted, holdoutWanted(this._elapsed));
+      const want = holdoutWanted(this._elapsed);
+      if (this.traffic) this.traffic.wanted = Math.max(this.traffic.wanted, want);
+      const wave = 1 + Math.floor(this._elapsed / HOLDOUT_STEP_EVERY);
+      if (wave !== this._wave) { this._wave = wave; if (wave > 1) this.hud.flash?.(`WAVE ${wave} · ${want}★ · ${Math.ceil(this.t)} s left`); }
       this.score = holdoutScore(this._elapsed, this.downed);
     }
     if (this.t <= 0) this.stop();

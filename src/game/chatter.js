@@ -128,6 +128,8 @@ export class ChatterEngine {
       pinned: ['Taking fire, returning fire.', 'Pinned down behind the unit, engaging.', 'Suspect is armed and firing, engaging.'],
       rooftops: ['Marksmen in position on the rooftops.', 'Overwatch is up, we have the high ground.', 'Snipers set, awaiting the shot.'],
       blast: ['Explosion downtown! Suspect has explosives!', 'Detonation reported, escalate to code red.', 'That was a grenade. All units, extreme caution.'],
+      lost: ['Lost visual on the suspect.', 'No eyes on the target, widening the search.', 'Suspect has evaded, last seen heading downtown.'],
+      reload: ['Reloading! Cover me!', 'Changing mags!', 'I am out, cover!'],
     };
     const pool = POOLS[key]; if (!pool) return;
     this._poolIdx ??= {};

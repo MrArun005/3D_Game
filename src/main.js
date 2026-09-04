@@ -1537,7 +1537,8 @@ function frameBody() {
   sinceShot += dt; if (sinceShot > 0.4) burst = 0;
   const adsCfg = ADS[weapon.kind] ?? ADS.pistol;
   onFoot.ads = ads; onFoot.adsFov = adsCfg.fov; onFoot.adsBack = adsCfg.back; onFoot.adsSpeed = adsCfg.speed;
-  crosshair.show(onFoot.active && started);
+  crosshair.show(started && !flying && !photo.on);
+  if (!onFoot.active) crosshair.update(spreadToPixels(spreadFor(weapon.kind, weapon.heat) * 1.3, camera.fov ?? 60, innerHeight), weapon.reloading ? 1 - weapon.reloadT / weapon.spec.reload : -1, dt);
   if (onFoot.active) {
     const cone = spreadFor(weapon.kind, weapon.heat) * (1 - ads * (1 - adsCfg.spread));
     crosshair.update(spreadToPixels(cone, camera.fov ?? 60, innerHeight), weapon.reloading ? 1 - weapon.reloadT / weapon.spec.reload : -1, dt);

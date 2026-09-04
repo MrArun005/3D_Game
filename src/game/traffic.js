@@ -829,7 +829,7 @@ export class Traffic {
 
       if (c.mode === 'road' && gap < 70) c.mode = 'free';
       if (c.mode === 'free' && gap > 150) { c.lost += dt; } else { c.lost = 0; }
-      if (c.lost > 3) { c.live = false; c.mesh.visible = false; c.mode = 'road'; c.lost = 0; continue; }
+      if (c.lost > 3) { c.live = false; c.mesh.visible = false; c.mode = 'road'; c.lost = 0; this.chatter?.radioPool?.('lost'); continue; }
 
       /* --- out of the car ---
          A pursuit that ends with four cars idling around you is not an
@@ -884,7 +884,11 @@ export class Traffic {
         c.stateT += dt;
         const next = nextState({ state: c.state, hp: c.hp, gap, playerSpeed: player.speed ?? 0, quietFor: c.quietFor, canSee, burstLeft: c.burstLeft, t: c.stateT });
         if (next !== c.state) {
-          if (next === 'peek') { const b = burstFor(c.gunKind); c.burstLeft = b.shots; c.fireT = 0.12; }
+          if (next === 'peek') {
+            const b = burstFor(c.gunKind); c.burstLeft = b.shots; c.fireT = 0.12;
+            c.bursts = (c.bursts ?? 0) + 1;
+            if (c.bursts % 4 === 0) { c.reloading = ARSENAL[c.gunKind].reload; this.chatter?.radioPool?.('reload'); }
+          }
           if (next === 'advance') { const ang = Math.atan2(player.z - c.coverZ, player.x - c.coverX); const step = Math.min(8, Math.max(0, gap - 7)); c.coverX += Math.cos(ang) * step; c.coverZ += Math.sin(ang) * step; }
           if (next === 'down') { c.down = 0.001; this.chatter?.radioPool?.('down'); this.#dropWeapon(c); }
           else if (next === 'advance') this.chatter?.radioPool?.('advance');
@@ -923,6 +927,7 @@ export class Traffic {
            skill on top of the weapon's spread; a miss is heard, not felt. */
         c.fireT -= dt;
         if (c.flash) c.flash.visible = c.fireT > -0.06 && c.fireT < 0 && c.state === 'peek';
+        if (c.reloading > 0) { c.reloading -= dt; c.burstLeft = 0; }   // a reload is a burst that never comes; he goes back to cover
         if (c.state === 'peek' && c.burstLeft > 0 && c.fireT <= -0.06) {
           const b = burstFor(c.gunKind);
           c.fireT = b.gap;
