@@ -7,7 +7,8 @@ import { PAINT_COLOURS, BODY_KEYS, BODY_TYPES } from '../vehicle/config.js';
 import { groundHeightAt } from '../world/metrics.js';
 import { buildOfficer, poseOfficer, PoseBlender, lookAt } from '../world/officer.js';
 import { buildWeaponMesh, ARSENAL } from './weapons.js';
-import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED } from './policeAi.js';
+import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED, pickRooftops } from './policeAi.js';
+import { roofsNear } from '../world/districtWorld.js';
 
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
 
@@ -585,8 +586,60 @@ export class Traffic {
     return false;
   }
 
+  /* --- rooftop marksmen (four stars and up) ---
+     Two rifles on the two tallest roofs 45-130 m out, crossing fire. They are
+     not in cars and never come down: they appear when the level is reached,
+     fire aimed bursts with a real line of sight from height (their own roof's
+     box is excluded from the test, or it would block them), and leave when the
+     stars fall. Cost: 2 officers = 16 meshes, and they are seeded like the rest. */
+  #rooftops(player, dt) {
+    const stars = Math.floor(this.wanted);
+    this.marks ??= [];
+    if (stars < 4) {
+      for (const m of this.marks) { this.scene.remove(m.group); }
+      this.marks.length = 0;
+      return;
+    }
+    if (!this.marks.length && this.world?.district) {
+      const roofs = roofsNear(this.world.district, player.x, player.z, 140, 24);
+      const picks = pickRooftops(roofs, player.x, player.z);
+      for (let i = 0; i < picks.length; i++) {
+        const r = picks[i];
+        const built = buildOfficer(90 + i);
+        built.group.position.set(r.x, r.h + 0.5, r.z);
+        const gun = buildWeaponMesh('rifle'); gun.position.set(0, -0.58, 0); gun.rotation.z = -Math.PI / 2;
+        built.joints.armR.add(gun);
+        this.scene.add(built.group);
+        this.marks.push({ group: built.group, joints: built.joints, blender: new PoseBlender(), roof: r, fireT: 1.5 + i, burstLeft: 0, poseT: 0 });
+        this.chatter?.radio?.('Marksmen in position on the rooftops.');
+      }
+    }
+    const prof = targetProfile(!!player.onFoot, !!player.crouch);
+    const ty = (player.y ?? 0) + prof.y;
+    for (const m of this.marks) {
+      const gx = m.group.position.x, gz = m.group.position.z, gy = m.group.position.y + 1.3;
+      const face = Math.atan2(-(player.z - gz), player.x - gx);
+      m.group.rotation.y = -face + Math.PI / 2;
+      m.poseT += dt;
+      m.blender.apply(m.joints, 'aim', m.poseT, dt, 0.3);
+      const gap = Math.hypot(player.x - gx, player.z - gz);
+      const bldg = this.world?.nearbyBuildings ? this.world.nearbyBuildings(player.x, player.z).filter((b) => Math.hypot(b.x - m.roof.x, b.z - m.roof.z) > 1) : [];
+      const canSee = hasLineOfSight(gx, gy, gz, player.x, ty, player.z, bldg, this.cars, null);
+      m.fireT -= dt;
+      if (canSee && m.fireT <= 0) {
+        if (m.burstLeft <= 0) m.burstLeft = burstFor('rifle').shots;
+        m.burstLeft--;
+        m.fireT = m.burstLeft > 0 ? burstFor('rifle').gap : 1.4 + this.rand() * 1.2;
+        const w = ARSENAL.rifle;
+        const landed = shotLands(gx, gy, gz, player.x, ty, player.z, prof.r, aimJitter(stars, gap, player.speed ?? 0) * 0.8 + w.restSpread, this.rand);
+        if (this.onShot) this.onShot(gap, landed, w.damage);
+      }
+    }
+  }
+
   update(player, dt, time) {
     this.#tickDrops(dt);
+    this.#rooftops(player, dt);
     this.time = time !== undefined ? time : this.time + dt;
     const t = this.time;
     this.player = player;

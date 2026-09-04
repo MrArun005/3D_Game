@@ -114,3 +114,19 @@ export function nextState(s) {
 
 /** The maximum number of officers out of their cars at once. Everything past this stays in the cruiser. */
 export const MAX_DEPLOYED = 6;
+
+/**
+ * Rooftops for marksmen at four stars: the tallest roofs between `near` and
+ * `far` metres of the player, at least `minH` high so the angle is real, the
+ * two best spread apart so they cross fire. Pure; tested.
+ */
+export function pickRooftops(roofs, px, pz, { near = 45, far = 130, minH = 18, count = 2 } = {}) {
+  const ok = roofs.filter((r) => { const d = Math.hypot(r.x - px, r.z - pz); return d >= near && d <= far && r.h >= minH; })
+    .sort((a, b) => b.h - a.h);
+  const out = [];
+  for (const r of ok) {
+    if (out.length >= count) break;
+    if (out.every((o) => Math.hypot(o.x - r.x, o.z - r.z) > 40)) out.push(r);
+  }
+  return out;
+}
