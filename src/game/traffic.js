@@ -860,7 +860,7 @@ export class Traffic {
          constantly nudging you, so an instant "are you stopped?" test never
          held true for the second it needed -- nobody ever got out. */
       const stopped = (player.speed ?? 0) < 3.4;
-      const close = gap < 16;
+      const close = gap < 24;   // GTA's cops step out from further than a car length
       /* Officers get out when you have stopped close by -- or whenever you are
          ON FOOT within 40 m. Before, a player who left the car and kept moving
          never met an officer: they circled in their cruisers forever. */

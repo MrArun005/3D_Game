@@ -381,6 +381,12 @@ grenades.onBlast = (bx, by, bz) => {
   if (dp < HURT_R) onShot(dp, true, 26 * 3.5 * blastFalloff(dp, HURT_R), { x: bx, z: bz });
   if (onFoot.active) onFoot.camPitch = Math.min(0.9, onFoot.camPitch + 0.08 * blastFalloff(dp, 14)); else chase.shake += 0.8 * blastFalloff(dp, 20);
   crowd?.panic(bx, bz, 34);
+  const dc = Math.hypot(car.x - bx, car.z - bz);
+  if (dc < 9) damageModel?.hit?.(4 + 14 * blastFalloff(dc, 9), { x: bx, z: bz });   // your own car takes the blast, dents included
+  for (const v of traffic.cars) {   // drivers near a blast floor it
+    if (!v.live || Math.hypot(v.x - bx, v.z - bz) > 30) continue;
+    v.baseCruise ??= v.cruise; v.cruise = Math.max(v.cruise, v.baseCruise * 1.7); v.fleeT = 10;
+  }
   traffic.reportCrime('traffic', 6);
   chatter?.radioPool?.('blast');
   audio.thud?.(40); audio.gunshot();
