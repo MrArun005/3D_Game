@@ -600,6 +600,11 @@ export class Traffic {
       this.marks.length = 0;
       return;
     }
+    // you have moved on: marksmen 220 m behind you are scenery, so re-place them
+    if (this.marks.length && Math.min(...this.marks.map((m) => Math.hypot(m.group.position.x - player.x, m.group.position.z - player.z))) > 220) {
+      for (const m of this.marks) this.scene.remove(m.group);
+      this.marks.length = 0;
+    }
     if (!this.marks.length && this.world?.district) {
       const roofs = roofsNear(this.world.district, player.x, player.z, 140, 24);
       const picks = pickRooftops(roofs, player.x, player.z);
