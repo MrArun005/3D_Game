@@ -76,6 +76,35 @@ export class Weapon {
     tracer.visible = false;
     scene.add(tracer);
     this.tracer = tracer;
+
+    /* Body hits: a second, smaller pool in dark red with NORMAL blending -- an
+       additive red on a dark street reads as orange sparks, which is the wrong
+       message. Same shape as the sparks so update() ticks both with one loop. */
+    const BLOOD = 18;
+    const bloodGeo = new THREE.BufferGeometry();
+    this.bloodPos = new Float32Array(BLOOD * 3);
+    this.bloodVel = new Float32Array(BLOOD * 3);
+    this.bloodLife = new Float32Array(BLOOD);
+    for (let i = 0; i < BLOOD; i++) this.bloodPos[i * 3 + 1] = -100;
+    bloodGeo.setAttribute('position', new THREE.BufferAttribute(this.bloodPos, 3));
+    this.bloodGeo = bloodGeo;
+    const blood = new THREE.Points(bloodGeo, new THREE.PointsMaterial({ color: 0x6e0f14, size: 0.11, transparent: true, opacity: 0.85, depthWrite: false }));
+    blood.frustumCulled = false;
+    scene.add(blood);
+    this.blood = blood;
+  }
+
+  /** A puff at a body hit, thrown along the shot with a little spread and a drop. */
+  bloodAt(x, y, z, dx, dz) {
+    const n = this.bloodLife.length;
+    for (let i = 0; i < n; i++) {
+      this.bloodPos[i * 3] = x; this.bloodPos[i * 3 + 1] = y; this.bloodPos[i * 3 + 2] = z;
+      this.bloodVel[i * 3] = dx * (1.5 + Math.random() * 2.5) + (Math.random() - 0.5) * 1.8;
+      this.bloodVel[i * 3 + 1] = 0.6 + Math.random() * 1.6;
+      this.bloodVel[i * 3 + 2] = dz * (1.5 + Math.random() * 2.5) + (Math.random() - 0.5) * 1.8;
+      this.bloodLife[i] = 0.28 + Math.random() * 0.22;
+    }
+    this.bloodGeo.attributes.position.needsUpdate = true;
   }
 
   /** Swap weapon. Reloads are cancelled: you are drawing a different gun. */
@@ -138,6 +167,18 @@ export class Weapon {
       }
     }
     this.sparkGeo.attributes.position.needsUpdate = true;
+    // blood ticks the same way, falls faster, and parks underground when spent
+    const bp = this.bloodPos;
+    for (let i = 0; i < this.bloodLife.length; i++) {
+      if (this.bloodLife[i] > 0) {
+        this.bloodLife[i] -= dt;
+        bp[i * 3] += this.bloodVel[i * 3] * dt;
+        bp[i * 3 + 1] += this.bloodVel[i * 3 + 1] * dt;
+        bp[i * 3 + 2] += this.bloodVel[i * 3 + 2] * dt;
+        this.bloodVel[i * 3 + 1] -= 9.8 * dt * 0.8;
+      } else bp[i * 3 + 1] = -100;
+    }
+    this.bloodGeo.attributes.position.needsUpdate = true;
   }
 
   get ready() { return this.cool <= 0 && this.reloadT <= 0 && this.ammo > 0; }

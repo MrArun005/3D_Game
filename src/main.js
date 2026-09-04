@@ -457,6 +457,11 @@ function pullTrigger() {
   if (onFoot.active) { onFoot.camPitch = Math.min(0.9, onFoot.camPitch + rc.pitch * (1 - ads * 0.4)); onFoot.camYaw -= rc.yaw * (1 - ads * 0.4); }
   else chase.shake += weapon.spec.shake * 0.02;
   modes?.onShot(hit, hit ? oy + dy * ((hit.x - ox) * dx + (hit.z - oz) * dz) : 0);
+  if (hit && (hit.kind === 'person' || hit.kind === 'officer')) {
+    // where the round met the body, along the ray
+    const along = (hit.x - ox) * dx + ((hit.y ?? 0.9) - oy) * dy + (hit.z - oz) * dz;
+    weapon.bloodAt(ox + dx * along, oy + dy * along, oz + dz * along, dx, dz);
+  }
   if (hit) crosshair.hit(hit.kind === 'person');
   else {
     let t = wall;
