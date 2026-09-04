@@ -345,7 +345,7 @@ function onBust() {
      gone, armour off; you walk out with the pistol and one magazine. Cash
      stays -- the fine is the confiscation. */
   for (const k of WEAPON_KINDS) { weapon.reserve[k] = 0; if (k !== 'pistol') weapon.mags[k] = 0; }
-  weapon.mags.pistol = ARSENAL.pistol.mag; weapon.switchTo('pistol'); fistsMode = false; grenadeMode = false;
+  weapon.mags.pistol = ARSENAL.pistol.mag; weapon.switchTo('pistol'); held = 'gun';
   grenades.count = 0; armour = 0; refreshHeldGun(); saveArsenal();
   hud.flash('BUSTED · WEAPONS CONFISCATED');
   jobs?.fail('BUSTED · JOB LOST');
@@ -378,8 +378,9 @@ const decals = new DecalPool(scene);
    back in your hand. The blast goes through the same debris system as the car
    and the tank, so a bin flies the same way whoever broke it. */
 const grenades = new Grenades(scene, weapon.light);   // shares the muzzle-flash light
-let grenadeMode = false;
-let fistsMode = false, punchCool = 0;
+/* What is in your hands: 'fists' | 'gun' | 'grenade'. One value, so the
+   three cannot disagree the way two booleans could after a pickup or a buy. */
+let held = 'gun', punchCool = 0;
 let wasReloading = false;
 let lastArsKey = '';
 let wastedAnim = 0;   // 0 idle, 1 Death clip playing, 2 clip done -> run the WASTED path once   // slot 0: bare hands. E swings at whoever is in front of you
@@ -460,7 +461,7 @@ function placeHeldGun() {
       onFoot.z + fz * (0.26 + 0.06 * ads) + sz * (0.20 - inward + sw.dx));
   }
   heldGun.rotation.set(sw.roll, yaw, -rl.tilt);
-  heldGun.visible = !fistsMode && !grenadeMode;   // the one place that decides it
+  heldGun.visible = held === 'gun';   // the one place that decides it
   heldGun.visible = true;
 }
 refreshHeldGun();                   // the pistol you start the game holding
@@ -476,7 +477,7 @@ const _triggerDir = new THREE.Vector3();
 const _triggerTargets = [];
 function pullTrigger() {
   if (!started) return;
-  if (fistsMode && onFoot.active) {
+  if (held === 'fists' && onFoot.active) {
     /* A swing: anyone within 1.7 m and 60 degrees of your facing takes 18. A
        pedestrian goes down, an officer staggers or drops, a car gets a dent
        and a very cross driver (a crime, quietly). */
@@ -497,7 +498,7 @@ function pullTrigger() {
     weapon.bloodAt?.(best.x, 1.2, best.z, fx, fz);
     return;
   }
-  if (grenadeMode) {
+  if (held === 'grenade') {
     if (!grenades.ready) { hud.flash(grenades.count ? 'ARM IN THE AIR' : 'NO GRENADES'); return; }
     camera.getWorldDirection(_triggerDir);
     const gx = onFoot.active ? onFoot.x : car.x, gz = onFoot.active ? onFoot.z : car.z, gy = (onFoot.active ? (onFoot.y || 0) + 1.5 : 1.2);
@@ -1183,7 +1184,7 @@ window.__buyWeapon = (kind, price) => {
   if (!ARSENAL[kind]) return false;
   if ((garage?.cash ?? 0) < price) { hud.flash('NOT ENOUGH CASH'); return false; }
   garage.addCash(-price, `BOUGHT ${ARSENAL[kind].name}`);
-  fistsMode = false; grenadeMode = false;
+  held = 'gun';
   weapon.addMag(kind); weapon.addMag(kind); weapon.switchTo(kind); refreshHeldGun();   // two magazines with a purchase
   hud.flash(`${ARSENAL[kind].name} · ${weapon.ammo} / ${weapon.reserveNow}`);
   return true;
@@ -1321,10 +1322,10 @@ const input = createInput((action) => {
   if (action === 'radio') radio?.cycle();
   if (action === 'reset') respawnCar();
   if (action === 'time') { clock.hour = (clock.hour + 3) % 24; hud.flash(`TIME · ${clock.formattedTime}`); }
-  if (action === 'weapon0') { fistsMode = true; grenadeMode = false; hud.flash('FISTS'); if (heldGun) heldGun.visible = false; }
-  else if (action === 'weapon5') { fistsMode = false; grenadeMode = true; hud.flash(`GRENADES · ${grenades.count}`); if (heldGun) heldGun.visible = false; }
+  if (action === 'weapon0') { held = 'fists'; hud.flash('FISTS'); if (heldGun) heldGun.visible = false; }
+  else if (action === 'weapon5') { held = 'grenade'; hud.flash(`GRENADES · ${grenades.count}`); if (heldGun) heldGun.visible = false; }
   else if (action.startsWith('weapon')) {
-    grenadeMode = false; fistsMode = false;
+    held = 'gun';
     const kind = WEAPON_KINDS[+action.slice(6) - 1];
     if (kind && weapon.switchTo(kind)) { refreshHeldGun(); audio.click?.(); hud.flash(`${ARSENAL[kind].name} · ${weapon.ammo}/${ARSENAL[kind].mag}`); }
   }
@@ -1595,7 +1596,7 @@ function frameBody() {
   if (health < 0.5 && performance.now() - lastHurtAt > 6000) { health = Math.min(0.5, health + dt * 0.03); hud.setHealth(health); }
   modes?.update(dt);
   // walk over a downed officer's weapon and it is yours, magazine full
-  if (onFoot.active) { const k = traffic.pickupAt?.(onFoot.x, onFoot.z); if (k === 'grenade') { grenades.count++; hud.flash(`PICKED UP GRENADE · ${grenades.count}`); } else if (k) { fistsMode = false; grenadeMode = false; weapon.addMag(k); weapon.switchTo(k); refreshHeldGun(); hud.flash(`PICKED UP ${ARSENAL[k].name} · +${ARSENAL[k].mag}`); } }
+  if (onFoot.active) { const k = traffic.pickupAt?.(onFoot.x, onFoot.z); if (k === 'grenade') { grenades.count++; hud.flash(`PICKED UP GRENADE · ${grenades.count}`); } else if (k) { held = 'gun'; weapon.addMag(k); weapon.switchTo(k); refreshHeldGun(); hud.flash(`PICKED UP ${ARSENAL[k].name} · +${ARSENAL[k].mag}`); } }
   if (modes?.active && !jobs?.job) hud.setJob?.(modes.line());
   const adsTarget = aiming && onFoot.active ? 1 : 0;
   ads += (adsTarget - ads) * Math.min(1, dt / ADS_BLEND_S);
@@ -1611,12 +1612,12 @@ function frameBody() {
     swayPhase += swayPhaseStep(onFoot.speed ?? 0, dt);
   }
   placeHeldGun();
-  if (fistsMode) hud.setAmmo('FISTS', '', '', false, armour); else if (grenadeMode) hud.setAmmo('GRENADE', grenades.count, '-', false, armour); else hud.setAmmo(weapon.spec.name, weapon.ammo, weapon.reserveNow, weapon.reloading, armour, weapon.magSize);
-  const arsKey = onFoot.active ? `${fistsMode}|${grenadeMode}|${weapon.kind}|${weapon.ammo}|${weapon.reserveNow}|${grenades.count}` : 'car';
+  if (held === 'fists') hud.setAmmo('FISTS', '', '', false, armour); else if (held === 'grenade') hud.setAmmo('GRENADE', grenades.count, '-', false, armour); else hud.setAmmo(weapon.spec.name, weapon.ammo, weapon.reserveNow, weapon.reloading, armour, weapon.magSize);
+  const arsKey = onFoot.active ? `${held}|${weapon.kind}|${weapon.ammo}|${weapon.reserveNow}|${grenades.count}` : 'car';
   if (arsKey !== lastArsKey && onFoot.active) hud.setArsenal?.([
-    { key: 0, name: 'FISTS', mag: '', reserve: '', current: fistsMode },
-    ...WEAPON_KINDS.map((k, i) => ({ key: i + 1, name: ARSENAL[k].name, mag: k === weapon.kind ? weapon.ammo : weapon.mags[k], reserve: weapon.reserve[k], current: !fistsMode && !grenadeMode && k === weapon.kind })),
-    { key: 5, name: 'NADE', mag: grenades.count, reserve: '', current: grenadeMode },
+    { key: 0, name: 'FISTS', mag: '', reserve: '', current: held === 'fists' },
+    ...WEAPON_KINDS.map((k, i) => ({ key: i + 1, name: ARSENAL[k].name, mag: k === weapon.kind ? weapon.ammo : weapon.mags[k], reserve: weapon.reserve[k], current: held === 'gun' && k === weapon.kind })),
+    { key: 5, name: 'NADE', mag: grenades.count, reserve: '', current: held === 'grenade' },
   ]);
   else if (arsKey !== lastArsKey && hud.arsEl) { hud.arsEl.innerHTML = ''; hud._arsKey = ''; }
   lastArsKey = arsKey;
