@@ -29,6 +29,7 @@ function startLoop(ctx, buffer, dest, rate = 1) {
 }
 
 export function createAudio() {
+  let sirenNode = null;
   let ctx = null;
   let master, engineBus;
   let layers = [];
@@ -344,6 +345,28 @@ export function createAudio() {
       if (car.gear !== undefined && car.gear !== lastGear) { lastGear = car.gear; shiftClick(); }
       if ((car.impact || 0) > 2.4 && car.impact > lastImpact + 0.5) thud(car.impact);
       lastImpact = car.impact || 0;
+    },
+    /* One siren for the fleet: a two-tone wail (a square through a lowpass,
+       sweeping 620-880 Hz on a 1.3 s cycle) that lives as long as the context
+       does and is silent at gain 0. `far` 0..1 is distance (1 = inaudible),
+       `pan` -1..1. Nearest cruiser only -- five sirens are one siren louder. */
+    siren(pan = 0, far = 1) {
+      if (!ready || !ctx || ctx.state !== 'running') return;
+      const now = ctx.currentTime;
+      if (!sirenNode) {
+        const o = ctx.createOscillator(); o.type = 'square';
+        const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1900;
+        const g = ctx.createGain(); g.gain.value = 0;
+        const p = ctx.createStereoPanner();
+        o.connect(lp); lp.connect(g); g.connect(p); p.connect(master); o.start(now);
+        sirenNode = { o, g, p, phase: now };
+      }
+      const s = sirenNode;
+      // schedule the sweep a cycle ahead of where we are, once per cycle
+      while (s.phase < now + 1.3) { s.o.frequency.setValueAtTime(620, s.phase); s.o.frequency.linearRampToValueAtTime(880, s.phase + 0.65); s.o.frequency.linearRampToValueAtTime(620, s.phase + 1.3); s.phase += 1.3; }
+      const k = Math.max(0, 1 - far);
+      s.g.gain.setTargetAtTime(0.09 * k * k, now, 0.08);
+      s.p.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)), now, 0.1);
     },
     /** 0..1 -- how much rain there is to hear. */
     setRain(amount) {

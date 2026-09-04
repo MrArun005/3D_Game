@@ -1424,7 +1424,13 @@ function frame() {
       // a stuck loading screen used to be the only symptom: say what broke, then let the game in
       if (bootMsg) bootMsg.textContent = 'frame error: ' + String(e && e.message || e).slice(0, 120);
       setTimeout(() => { if (boot) { boot.remove(); boot = null; } }, 2500);
+      try { hud?.flash?.('FRAME ERROR · ' + String(e && e.message || e).slice(0, 60)); } catch { /* the HUD may be what broke */ }
     }
+    /* The render sits at the END of frameBody, so a throw anywhere before it
+       used to mean no render at all: a black screen every frame while the
+       counters kept counting. Draw the last good state anyway; the game is
+       hurt, not gone. Six of today's bugs presented as 'the screen is black'. */
+    try { grade.render(renderer, performance.now() / 1000); } catch { /* the renderer itself is what broke */ }
   }
 }
 
@@ -1792,6 +1798,14 @@ function frameBody() {
     if (bustFlash <= 0) hud.setDead(false);
   }
   audio.update(currentVehicle);
+  /* The nearest live cruiser's siren: louder as it closes, panned to its
+     side, gone when the stars are. traffic._nearest is this frame's distance. */
+  if (audio.siren) {
+    let sx = 0, sz = 0, sd = Infinity;
+    if (traffic.wanted > 0) for (const c of traffic.police) { if (!c.live) continue; const d = Math.hypot(c.x - car.x, c.z - car.z); if (d < sd) { sd = d; sx = c.x; sz = c.z; } }
+    if (sd < 260) { const look = onFoot.active ? onFoot.camYaw : car.yaw; const b = Math.atan2(-(sz - car.z), sx - car.x) - look; audio.siren(-Math.sin(b), Math.min(1, sd / 260)); }
+    else audio.siren(0, 1);
+  }
   audio.setRain(DAY ? 0 : 1);
   /* Halstead Bay is a harbour city and the car's ground plane is y=0
      everywhere, so without this you simply drive out to sea. Sink, then put
