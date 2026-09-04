@@ -617,6 +617,23 @@ export class Traffic {
     return false;
   }
 
+  /* One aimed police round at the player, whoever fires it: the target's
+     profile (crouched is smaller), the shooter's skill at this star level on
+     top of the weapon's own spread, the roll, and the report to main. The
+     door officers, the rooftop rifles and the door gunner all fire through
+     here, so a change to how the police shoot is one change. */
+  #fireAt(ox, oy, oz, player, kind, stars, jitterMul = 1, dmgMul = 1) {
+    const prof = targetProfile(!!player.onFoot, !!player.crouch);
+    const ty = (player.y ?? 0) + prof.y;
+    const gap = Math.hypot(player.x - ox, player.z - oz);
+    const w = ARSENAL[kind];
+    const landed = shotLands(ox, oy, oz, player.x, ty, player.z, prof.r, aimJitter(stars, gap, player.speed ?? 0) * jitterMul + w.restSpread, this.rand);
+    this._from ??= { x: 0, y: 0, z: 0 };
+    this._from.x = ox; this._from.y = oy; this._from.z = oz;
+    this.onShot?.(gap, landed, w.damage * dmgMul, this._from, kind);
+    return landed;
+  }
+
   /* --- rooftop marksmen (four stars and up) ---
      Two rifles on the two tallest roofs 45-130 m out, crossing fire. They are
      not in cars and never come down: they appear when the level is reached,
@@ -651,15 +668,13 @@ export class Traffic {
         this.chatter?.radioPool?.('rooftops');
       }
     }
-    const prof = targetProfile(!!player.onFoot, !!player.crouch);
-    const ty = (player.y ?? 0) + prof.y;
+    const ty = (player.y ?? 0) + targetProfile(!!player.onFoot, !!player.crouch).y;
     for (const m of this.marks) {
       const gx = m.group.position.x, gz = m.group.position.z, gy = m.group.position.y + 1.3;
       const face = Math.atan2(-(player.z - gz), player.x - gx);
       m.group.rotation.y = -face + Math.PI / 2;
       m.poseT += dt;
       m.blender.apply(m.joints, 'aim', m.poseT, dt, 0.3);
-      const gap = Math.hypot(player.x - gx, player.z - gz);
       const bldg = (this._bldg || []).filter((b) => Math.hypot(b.x - m.roof.x, b.z - m.roof.z) > 1);   // his own roof cannot block him
       const canSee = hasLineOfSight(gx, gy, gz, player.x, ty, player.z, bldg, this.cars, null);
       m.fireT -= dt;
@@ -667,9 +682,7 @@ export class Traffic {
         if (m.burstLeft <= 0) m.burstLeft = burstFor('rifle').shots;
         m.burstLeft--;
         m.fireT = m.burstLeft > 0 ? burstFor('rifle').gap : 1.4 + this.rand() * 1.2;
-        const w = ARSENAL.rifle;
-        const landed = shotLands(gx, gy, gz, player.x, ty, player.z, prof.r, aimJitter(stars, gap, player.speed ?? 0) * 0.8 + w.restSpread, this.rand);
-        if (this.onShot) this.onShot(gap, landed, w.damage, m.group.position, 'rifle');
+        this.#fireAt(gx, gy, gz, player, 'rifle', stars, 0.8);   // a braced rifle from height: steadier than the street
       }
     }
   }
@@ -684,17 +697,12 @@ export class Traffic {
     if (!h || Math.floor(this.wanted) < 5 || h.landed) { this._gunT = 1.5; return; }
     this._gunT = (this._gunT ?? 1.5) - dt;
     if (this._gunT > 0) return;
-    const prof = targetProfile(!!player.onFoot, !!player.crouch);
-    const ty = (player.y ?? 0) + prof.y;
-    const gap = Math.hypot(player.x - h.pos.x, player.z - h.pos.z);
-    const bldg = this._bldg || [];
-    const canSee = hasLineOfSight(h.pos.x, h.pos.y - 1, h.pos.z, player.x, ty, player.z, bldg, [], null);
+    const ty = (player.y ?? 0) + targetProfile(!!player.onFoot, !!player.crouch).y;
+    const canSee = hasLineOfSight(h.pos.x, h.pos.y - 1, h.pos.z, player.x, ty, player.z, this._bldg || [], [], null);
     this._gunBurst = (this._gunBurst ?? 0) > 0 ? this._gunBurst - 1 : burstFor('smg').shots - 1;
     this._gunT = this._gunBurst > 0 ? burstFor('smg').gap : 2.5 + this.rand() * 1.5;
     if (!canSee) return;
-    const w = ARSENAL.smg;
-    const landed = shotLands(h.pos.x, h.pos.y - 1, h.pos.z, player.x, ty, player.z, prof.r, aimJitter(5, gap, player.speed ?? 0) * 1.3 + w.restSpread, this.rand);
-    if (this.onShot) this.onShot(gap, landed, w.damage, h.pos, 'smg');
+    this.#fireAt(h.pos.x, h.pos.y - 1, h.pos.z, player, 'smg', 5, 1.3);   // a moving platform: wide
     this.crowd?.panic?.(player.x, player.z, 18);
   }
 
@@ -919,8 +927,7 @@ export class Traffic {
           if (c.down > 12) { c.deployed = false; c.officer.visible = false; c.live = false; c.mesh.visible = false; c.mode = 'road'; }
           continue;
         }
-        const prof = targetProfile(!!player.onFoot, !!player.crouch);
-        const ty = (player.y ?? 0) + prof.y;
+        const ty = (player.y ?? 0) + targetProfile(!!player.onFoot, !!player.crouch).y;
         const gunY = c.officer.position.y + (c.state === 'cover' || c.state === 'peek' ? 0.9 : 1.3);
         const bldg = this._bldg;
         // parked cars are cover too: their collision solids join the moving traffic in the line-of-sight test
@@ -982,10 +989,8 @@ export class Traffic {
           c.fireT = b.gap;
           c.burstLeft--;
           if (c.burstLeft === 0) c.fireT = b.pause;
-          const w = ARSENAL[c.gunKind];
-          const jit = aimJitter(Math.floor(this.wanted), gap, player.speed ?? 0) + w.restSpread;
-          const landed = canSee && shotLands(c.officer.position.x, gunY, c.officer.position.z, player.x, ty, player.z, prof.r, jit, this.rand);
-          if (this.onShot) this.onShot(gap, landed, w.damage * (c.gunKind === 'shotgun' ? 3 : 1), c.officer.position, c.gunKind);
+          // a shotgun at street range is the whole spread of pellets, three pistol rounds' worth
+          const landed = canSee && this.#fireAt(c.officer.position.x, gunY, c.officer.position.z, player, c.gunKind, Math.floor(this.wanted), 1, c.gunKind === 'shotgun' ? 3 : 1);
           this.crowd?.panic?.(c.officer.position.x, c.officer.position.z, 20);
           if (!landed && this.decals && player.onFoot) {
             // the round went somewhere: a mark in the road a stride from you says how close
