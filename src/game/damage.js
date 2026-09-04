@@ -192,7 +192,7 @@ export class Damage {
     p.hull.geometry.attributes.position.array.set(p.pristine);
     p.hull.geometry.attributes.position.needsUpdate = true;
     if (p.glass) { p.glass.material.opacity = p.glassOpacity; p.glass.material.roughness = p.glassRough; }
-    for (const w of p.wheels || []) w.flat = 0;
+    for (const w of p.wheels || []) { w.flat = 0; w.shot = 0; w.tyre?.scale.set(1, 1, 1); }
     this.value = 0; this.dead = false; this.critical = false; this.fuse = 0; this.dentCount = 0;
   }
 
@@ -257,8 +257,8 @@ export class Damage {
       p.glass.material.color.setHex(0x2a3a4c);
     }
     for (const w of p.wheels) {
-      w.flat = 0;
-      w.spin.scale.set(1, 1, 1);
+      w.flat = 0; w.shot = 0;
+      w.spin.scale.set(1, 1, 1); w.tyre?.scale.set(1, 1, 1);
     }
   }
 
@@ -377,10 +377,14 @@ export class Damage {
     /* Tyres let go one at a time, and always in the same order for a given
        car, so a wreck looks consistent rather than flickering between states
        as the damage number wobbles. */
+    /* `w.shot` is a puncture from outside -- the spike strip, a police
+       round -- and holds the tyre flat whatever the damage number says. This
+       loop runs every frame, so writing `w.flat = 1` from elsewhere lasted one
+       frame: the strip never worked. Repair clears it. */
     for (let i = 0; i < p.wheels.length; i++) {
       const w = p.wheels[i];
       const threshold = 0.62 + i * 0.09;
-      const flat = d >= threshold ? Math.min(1, (d - threshold) / 0.12) : 0;
+      const flat = Math.max(w.shot || 0, d >= threshold ? Math.min(1, (d - threshold) / 0.12) : 0);
       if (flat === w.flat) continue;
       w.flat = flat;
       /* Only the RUBBER deflates. Squashing the whole `spin` group shrank the

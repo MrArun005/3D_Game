@@ -118,7 +118,7 @@ export class Roadblock {
     const along = rx * b.ux + rz * b.uz, across = Math.abs(rx * (-b.uz) + rz * b.ux);
     if (!b.spiked && Math.abs(along) < 1.2 && across < b.half * 0.86 && Math.abs(car.fwdSpeed) > 3) {
       b.spiked = true;
-      for (const w of this.hero.userData.wheels || []) w.flat = 1;
+      for (const w of this.hero.userData.wheels || []) w.shot = 1;   // Damage.#wear applies it and holds it
       this.traffic.reportCrime('police', 4);
       this.traffic.hud?.flash?.('SPIKED · TYRES GONE');
     }

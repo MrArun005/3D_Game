@@ -285,6 +285,11 @@ function onShot(gap, landed = null, damage = 26, from = null, kind = 'pistol') {
   car.impact = Math.max(car.impact || 0, 1.6 + hit * 2.2);
   car.yawRate += (Math.random() - 0.5) * hit * 0.9;
   damageModel.hit(2 + hit * 5);
+  // from three stars they shoot for the tyres: one landed round in eight takes one out, and it stays out until the garage
+  if (traffic.wanted >= 3 && Math.random() < 0.125) {
+    const ws = (hero.userData.wheels || []).filter((w) => !w.shot);
+    if (ws.length) { ws[Math.floor(Math.random() * ws.length)].shot = 1; hud.flash('TYRE SHOT OUT'); audio.thud?.(10); }
+  }
 }
 
 /**
