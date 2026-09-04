@@ -10,7 +10,7 @@ import { TankVehicle } from './tank.js';
  * - RHINO DROP ($12,000): Heavy cargo drop delivering a 55t Rhino tank.
  */
 export class DispatchService {
-  constructor(scene, world, garage, traffic, debris, hud, audio) {
+  constructor(scene, world, garage, traffic, debris, hud, audio, navigation = null) {
     this.scene = scene;
     this.world = world;
     this.garage = garage;
@@ -18,6 +18,7 @@ export class DispatchService {
     this.debris = debris;
     this.hud = hud;
     this.audio = audio;
+    this.navigation = navigation;
 
     this.dispatchedVehicles = [];
     this.blips = []; // for minimap / radar
@@ -32,7 +33,11 @@ export class DispatchService {
       this.hud?.flash?.('INSUFFICIENT FUNDS — $2,500 REQUIRED FOR HELI LIFT');
       return null;
     }
-    this.garage.cash -= cost;
+    if (this.garage.spendCash) {
+      this.garage.spendCash(cost);
+    } else {
+      this.garage.cash -= cost;
+    }
 
     const pad = this.#findHeliPad(playerPos.x, playerPos.z);
     const heli = new HelicopterVehicle(this.scene, this.world, {
@@ -45,8 +50,14 @@ export class DispatchService {
 
     this.dispatchedVehicles.push(heli);
     const locationText = pad.isRoof ? 'ROOFTOP HELIPAD' : 'STREET CLEARING';
-    this.hud?.flash?.(`🚁 PEGASUS: HELICOPTER DELIVERED TO ${locationText}`);
+    this.hud?.flash?.(`🚁 PEGASUS: HELICOPTER DELIVERED TO ${locationText} · PRESS F TO ENTER`);
     this.audio?.horn?.(0, 0);
+
+    // Auto-map GPS route directly to the delivered helicopter
+    if (this.navigation) {
+      this.navigation.setWaypoint(pad.x, pad.z);
+      this.navigation.lastTarget = null;
+    }
 
     return heli;
   }
@@ -65,7 +76,11 @@ export class DispatchService {
     }
 
     if (canAfford) {
-      this.garage.cash -= cost;
+      if (this.garage.spendCash) {
+        this.garage.spendCash(cost);
+      } else {
+        this.garage.cash -= cost;
+      }
     }
 
     // Find clear street tarmac ahead of player
@@ -78,8 +93,14 @@ export class DispatchService {
     });
 
     this.dispatchedVehicles.push(tank);
-    this.hud?.flash?.('🛡️ WARSTOCK: 55T RHINO TANK DROPPED IN YOUR SECTOR');
+    this.hud?.flash?.('🛡️ WARSTOCK: 55T RHINO TANK DROPPED IN YOUR SECTOR · PRESS F TO ENTER');
     this.audio?.horn?.(0, 0);
+
+    // Auto-map GPS route directly to the delivered tank
+    if (this.navigation) {
+      this.navigation.setWaypoint(dropSite.x, dropSite.z);
+      this.navigation.lastTarget = null;
+    }
 
     return tank;
   }

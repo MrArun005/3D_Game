@@ -47,3 +47,37 @@ test('DispatchService dispatches Rhino tank when conditions met', () => {
   assert.equal(mockGarage.cash, 3000, 'Cash should be deducted by $12,000');
   assert.equal(dispatch.dispatchedVehicles.length, 1);
 });
+
+test('DispatchService works with real Garage instance and sets navigation waypoint', () => {
+  const scene = new THREE.Group();
+  const mockJobs = {
+    cash: 50000,
+    persist: () => {},
+  };
+  const mockHud = { flash: () => {} };
+  const mockAudio = { horn: () => {} };
+  let waypoint = null;
+  const mockNav = {
+    setWaypoint: (x, z) => { waypoint = { x, z }; },
+    lastTarget: 'old',
+  };
+
+  const realGarage = {
+    jobs: mockJobs,
+    get cash() { return this.jobs?.cash ?? 0; },
+    set cash(val) { if (this.jobs) { this.jobs.cash = val; this.jobs.persist(); } },
+    spendCash(amt) {
+      if (this.jobs.cash < amt) return false;
+      this.jobs.cash -= amt;
+      this.jobs.persist();
+      return true;
+    }
+  };
+
+  const dispatch = new DispatchService(scene, null, realGarage, null, null, mockHud, mockAudio, mockNav);
+  const heli = dispatch.dispatchHelicopter({ x: 20, z: 30 });
+  assert.ok(heli);
+  assert.equal(realGarage.cash, 47500, 'Real garage cash should deduct $2,500 without TypeError');
+  assert.notEqual(waypoint, null, 'Waypoint should be auto-mapped to helipad');
+  assert.equal(mockNav.lastTarget, null, 'lastTarget should be reset for instant route calculation');
+});

@@ -621,6 +621,23 @@ function useVehicle() {
     setTimeout(() => { onFoot.enter(); hero.visible = true; }, 600);
   } else {
     if (Math.abs(car.fwdSpeed) > 4) return;          // not at speed
+    // Check if parked right next to a dispatched helicopter or tank
+    if (dispatch?.dispatchedVehicles?.length) {
+      for (const v of dispatch.dispatchedVehicles) {
+        const reach = v.type === 'helicopter' ? 8.5 : 6.5;
+        const d = Math.hypot(v.x - car.x, v.z - car.z);
+        if (d < reach) {
+          activeVehicle = v;
+          v.enter(hero);
+          if (v.type === 'helicopter') {
+            hud.flash('AIRBORNE — W/S tilt & speed, A/D rudder, SPACE climb, SHIFT descend');
+          } else if (v.type === 'tank') {
+            hud.flash('HEAVY ARMOR — W/S drive, A/D pivot steer, MOUSE AIM cannon');
+          }
+          return;
+        }
+      }
+    }
     driverDoor(1.4);                       // step out; it swings shut behind you
     onFoot.exit(car);
     car.throttle = 0; car.brake = 1; car.hand = 1;
@@ -647,7 +664,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   hud.useNavigation(navigation);
   for (const g of city.cells.values()) scene.remove(g);
   city.cells.clear();
-  bootMsg.textContent = 'building the streets…';
+  setBootProgress(70, 'Building the streets…');
   world = new DistrictWorld(scene, assets, district, { day: DAY, catalogue });
   window._world = world;
   world.camera = camera;                  // chunk-level frustum culling for the render bundles
@@ -694,12 +711,12 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   landmarks = new Landmarks(scene, district);   // gun shop, supermarket, street set on their lots (world/landmarks.js)
   garage.restore();
   story = new StoryManager(mission, traffic, hud, garage, audio, navigation);
-  dispatch = new DispatchService(scene, world, garage, traffic, debris, hud, audio);
+  dispatch = new DispatchService(scene, world, garage, traffic, debris, hud, audio, navigation);
   window._dispatch = dispatch;
   window.addCash = (amount = 50000) => {
     garage.addCash(amount, 'TEST FUNDS');
   };
-  phone = new Phone(story, garage, hero, traffic, dispatch);
+  phone = new Phone(story, garage, hero, traffic, dispatch, car);
   vehicleVFX = new VehicleVFX(scene, hero);
   window.vehicleVFX = vehicleVFX;
   puddles = new PuddleSystem(scene, district);
@@ -938,6 +955,7 @@ const start = () => {
 };
 hud.overlay.addEventListener('click', start);
 canvas.addEventListener('click', start);
+if (boot) boot.addEventListener('click', start);
 addEventListener('keydown', start, { once: true });
 
 // ---- cinematic capture ----

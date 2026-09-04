@@ -47,6 +47,13 @@ export class Garage {
     return this.jobs?.cash ?? 0;
   }
 
+  set cash(val) {
+    if (this.jobs) {
+      this.jobs.cash = val;
+      this.jobs.persist();
+    }
+  }
+
   addCash(amount, reason = '') {
     if (this.jobs) {
       this.jobs.cash += amount;

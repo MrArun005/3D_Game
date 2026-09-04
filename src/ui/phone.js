@@ -1,12 +1,13 @@
 import { STORY_MISSIONS } from '../game/storyMissions.js';
 
 export class Phone {
-  constructor(storyManager, garage, hero, traffic, dispatchService = null) {
+  constructor(storyManager, garage, hero, traffic, dispatchService = null, car = null) {
     this.story = storyManager;
     this.garage = garage;
     this.hero = hero;
     this.traffic = traffic;
     this.dispatch = dispatchService;
+    this.car = car;
 
     this.open = false;
     this.tab = 'missions'; // 'missions' | 'garage' | 'contacts'
@@ -244,7 +245,8 @@ export class Phone {
           +$50K CASH
         </button>
       `;
-      fundCard.querySelector('#claim-funds-btn').onclick = () => {
+      fundCard.querySelector('#claim-funds-btn').onclick = (e) => {
+        e.stopPropagation();
         this.garage.addCash(50000, 'TESTER GRANT');
         this.#render();
       };
@@ -262,12 +264,12 @@ export class Phone {
           CALL HELI
         </button>
       `;
-      heliCard.querySelector('#dispatch-heli-btn').onclick = () => {
+      heliCard.querySelector('#dispatch-heli-btn').onclick = (e) => {
+        e.stopPropagation();
         if (this.dispatch) {
-          const car = this.hero.userData?.car || { x: 0, z: 0 };
-          this.dispatch.dispatchHelicopter(car);
+          const pos = this.car || (this.hero ? { x: this.hero.position.x, z: this.hero.position.z, yaw: this.hero.rotation.y } : { x: 0, z: 0 });
+          this.dispatch.dispatchHelicopter(pos);
           this.toggle(false);
-          this.#render();
         }
       };
       this.content.appendChild(heliCard);
@@ -284,12 +286,12 @@ export class Phone {
           DROP TANK
         </button>
       `;
-      tankCard.querySelector('#dispatch-tank-btn').onclick = () => {
+      tankCard.querySelector('#dispatch-tank-btn').onclick = (e) => {
+        e.stopPropagation();
         if (this.dispatch) {
-          const car = this.hero.userData?.car || { x: 0, z: 0 };
-          this.dispatch.dispatchTank(car, this.traffic?.wanted || 0);
+          const pos = this.car || (this.hero ? { x: this.hero.position.x, z: this.hero.position.z, yaw: this.hero.rotation.y } : { x: 0, z: 0 });
+          this.dispatch.dispatchTank(pos, this.traffic?.wanted || 0);
           this.toggle(false);
-          this.#render();
         }
       };
       this.content.appendChild(tankCard);
@@ -306,7 +308,8 @@ export class Phone {
           WIPE HEAT
         </button>
       `;
-      sprayCard.querySelector('#spray-btn').onclick = () => {
+      sprayCard.querySelector('#spray-btn').onclick = (e) => {
+        e.stopPropagation();
         this.garage.payAndSpray(this.hero);
         this.#render();
       };
@@ -317,6 +320,11 @@ export class Phone {
   toggle(force) {
     this.open = force !== undefined ? force : !this.open;
     this.el.style.bottom = this.open ? '28px' : '-640px';
-    if (this.open) this.#render();
+    if (this.open) {
+      if (typeof document !== 'undefined' && document.pointerLockElement) {
+        document.exitPointerLock();
+      }
+      this.#render();
+    }
   }
 }
