@@ -147,3 +147,14 @@ export function absorb(armour, hit) {
   const soak = Math.min(armour, hit * 0.6);
   return { toHealth: hit - soak, toArmour: soak };
 }
+
+/**
+ * Two rifle posts behind a roadblock: on the far side of the cruisers from the
+ * approaching car (further along the road direction u), one each side of the
+ * centreline, facing back down the road. Pure; tested.
+ */
+export function roadblockPosts(qx, qz, ux, uz, half, back = 2.6) {
+  const nx = -uz, nz = ux;
+  const yaw = Math.atan2(uz, -ux);           // facing -u: toward the car
+  return [-1, 1].map((side) => ({ x: qx + ux * back + nx * half * 0.30 * side, z: qz + uz * back + nz * half * 0.30 * side, yaw }));
+}

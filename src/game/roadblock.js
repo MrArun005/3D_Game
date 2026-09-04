@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { buildOfficer, PoseBlender, lookAt } from '../world/officer.js';
+import { buildWeaponMesh, ARSENAL } from './weapons.js';
+import { roadblockPosts, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile } from './policeAi.js';
 
 /**
  * Roadblocks. At three stars and above the police stop chasing you and start
@@ -28,6 +31,30 @@ export class Roadblock {
     });
     this.strip = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 1), new THREE.MeshStandardMaterial({ color: 0x1a1a1c, emissive: 0xff7a1a, emissiveIntensity: 1.6, roughness: 0.7 }));
     this.strip.visible = false; scene.add(this.strip);
+    /* Two riflemen behind the cruisers. Built once, hidden until a block is
+       raised; they crouch behind the cars, peek to fire three-round bursts
+       with a line of sight, and can be shot back at (main hands them in as
+       targets). Seeds 70/71 so they are the same two faces every time. */
+    this.posts = [0, 1].map((i) => {
+      const b = buildOfficer(70 + i);
+      const gun = buildWeaponMesh('rifle'); gun.position.set(0, -0.58, 0); gun.rotation.z = -Math.PI / 2; b.joints.armR.add(gun);
+      b.group.visible = false; scene.add(b.group);
+      return { group: b.group, joints: b.joints, blender: new PoseBlender(), gun, hp: 100, down: 0, fireT: 1 + i, burst: 0, poseT: 0, pose: 'crouch' };
+    });
+  }
+
+  /** The riflemen as weapon targets while a block is up. */
+  targets(out) {
+    if (!this.block) return;
+    for (const p of this.posts) if (p.down <= 0) out.push({ x: p.group.position.x, z: p.group.position.z, y: p.group.position.y + 0.8, r: 0.36, kind: 'officer', ref: p });
+  }
+
+  /** A player round hit a rifleman; two rifle rounds put him down. Returns true when he drops. */
+  hitPost(p, damage = 26) {
+    if (!p || p.down > 0) return false;
+    p.hp -= damage;
+    if (p.hp <= 0) { p.down = 0.001; this.traffic.chatter?.radioPool?.('down'); return true; }
+    return false;
   }
 
   #segmentAhead(car) {
@@ -61,12 +88,18 @@ export class Roadblock {
     const list = this.world.parkedByChunk.get(key);
     if (list) list.push(...solids);
     this.block = { qx, qz, ux, uz, half, y, t: 0, key, solids, spiked: false };
+    roadblockPosts(qx, qz, ux, uz, half).forEach((pt, i) => {
+      const p = this.posts[i];
+      p.group.position.set(pt.x, y, pt.z); p.group.rotation.y = -pt.yaw + Math.PI / 2;
+      p.group.visible = true; p.hp = 100; p.down = 0; p.fireT = 1 + i; p.burst = 0; p.pose = 'crouch'; p.gun.visible = true;
+    });
     this.traffic.hud?.flash?.('ROADBLOCK AHEAD');
   }
 
   #lower() {
     const b = this.block; if (!b) return;
     for (const g of this.cars) g.visible = false; this.strip.visible = false;
+    for (const p of this.posts) p.group.visible = false;
     const list = this.world.parkedByChunk.get(b.key);
     if (list) for (const s of b.solids) { const i = list.indexOf(s); if (i >= 0) list.splice(i, 1); }
     this.block = null; this.cooldown = COOLDOWN;
@@ -87,6 +120,30 @@ export class Roadblock {
       for (const w of this.hero.userData.wheels || []) w.flat = 1;
       this.traffic.reportCrime('police', 4);
       this.traffic.hud?.flash?.('SPIKED · TYRES GONE');
+    }
+    // the riflemen: crouch, peek, three-round bursts with a line of sight, down when hit
+    const lvl = Math.max(3, stars);   // `stars` is the update()'s own read of the wanted level
+    const prof = targetProfile(false, false);
+    for (const p of this.posts) {
+      p.poseT += dt;
+      if (p.down > 0) { p.down += dt; p.blender.apply(p.joints, 'fall', Math.min(1, p.down / 0.6), dt, 0.1); p.gun.visible = false; continue; }
+      const gx = p.group.position.x, gz = p.group.position.z, gy = p.group.position.y + 1.0;
+      const gap = Math.hypot(car.x - gx, car.z - gz);
+      const face = Math.atan2(-(car.z - gz), car.x - gx);
+      const bldg = this.world?.nearbyBuildings ? this.world.nearbyBuildings(gx, gz) : [];
+      const canSee = gap < 120 && hasLineOfSight(gx, gy, gz, car.x, prof.y, car.z, bldg, this.traffic.cars, null);
+      p.fireT -= dt;
+      if (canSee && p.fireT <= 0) {
+        if (p.burst <= 0) p.burst = burstFor('rifle').shots;
+        p.burst--;
+        p.fireT = p.burst > 0 ? burstFor('rifle').gap : 1.2 + Math.random() * 1.0;
+        p.pose = 'peek';
+        const w = ARSENAL.rifle;
+        const landed = shotLands(gx, gy, gz, car.x, prof.y, car.z, prof.r, aimJitter(lvl, gap, Math.abs(car.fwdSpeed ?? 0)) + w.restSpread, Math.random);
+        this.traffic.onShot?.(gap, landed, w.damage, p.group.position);
+      } else if (p.burst <= 0 && p.fireT < 0.6) p.pose = 'crouch';
+      p.blender.apply(p.joints, p.pose, p.poseT, dt, 0.15);
+      lookAt(p.joints, face - (-p.group.rotation.y + Math.PI / 2));
     }
     const past = along > 60 || Math.hypot(rx, rz) > 250;
     if (b.t > LIFE || (past && b.t > 6) || stars === 0) this.#lower();

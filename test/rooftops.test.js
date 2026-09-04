@@ -22,3 +22,14 @@ test('no roofs in range means no marksmen, not a crash', () => {
   assert.deepEqual(pickRooftops([{ x: 5, z: 5, h: 80 }], 0, 0), []);
   assert.deepEqual(pickRooftops([], 0, 0), []);
 });
+
+test('roadblock riflemen stand behind the cruisers, spread across the road, facing the car', async () => {
+  const { roadblockPosts } = await import('../src/game/policeAi.js');
+  // road runs +x, car approaches from -x; cruisers at x=100
+  const posts = roadblockPosts(100, 0, 1, 0, 8);
+  assert.equal(posts.length, 2);
+  for (const p of posts) { assert.ok(p.x > 100, 'behind the cruisers, further along the road'); assert.ok(Math.abs(p.z) > 1, 'off the centreline'); }
+  assert.ok(posts[0].z * posts[1].z < 0, 'one each side');
+  const facing = [Math.cos(posts[0].yaw), -Math.sin(posts[0].yaw)];
+  assert.ok(facing[0] < -0.9, 'facing back down the road toward the car');
+});
