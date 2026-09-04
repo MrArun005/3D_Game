@@ -311,7 +311,7 @@ export class TankVehicle extends Vehicle {
   #detonateShell(x, y, z) {
     // Blast shockwave pushing away vehicles and smashing objects
     if (this.debris?.breakNear) {
-      this.debris.breakNear(x, z, 7.5);
+      this.debris.breakNear(x, z, 7.5, this, 35);
     }
 
     if (this.traffic?.cars) {
@@ -322,8 +322,8 @@ export class TankVehicle extends Vehicle {
         const dist = Math.hypot(dx, dz);
         if (dist < blastRadius && dist > 0.1) {
           const force = (1.0 - dist / blastRadius) * 45.0;
-          car.vx += (dx / dist) * force;
-          car.vz += (dz / dist) * force;
+          car.vx = (car.vx || 0) + (dx / dist) * force;
+          car.vz = (car.vz || 0) + (dz / dist) * force;
           car.health = Math.max(0, (car.health || 100) - 80);
           if (car.health <= 0 && car.explode) car.explode();
         }
@@ -334,7 +334,7 @@ export class TankVehicle extends Vehicle {
   #applyCrushPhysics(dt) {
     // 1. Smash breakable props directly in front
     if (this.debris?.breakNear && this.speed > 1.5) {
-      this.debris.breakNear(this.x, this.z, 3.8);
+      this.debris.breakNear(this.x, this.z, 3.8, this, Math.max(12, this.speed));
     }
 
     // 2. Crush traffic vehicles under 55-ton tracks
@@ -347,8 +347,8 @@ export class TankVehicle extends Vehicle {
           // Push car violently and squash it
           const pushAngle = Math.atan2(dz, dx);
           const pushForce = Math.max(12, this.speed * 2.5);
-          car.vx += Math.cos(pushAngle) * pushForce;
-          car.vz += Math.sin(pushAngle) * pushForce;
+          car.vx = (car.vx || 0) + Math.cos(pushAngle) * pushForce;
+          car.vz = (car.vz || 0) + Math.sin(pushAngle) * pushForce;
           if (car.mesh) {
             car.mesh.scale.y = Math.max(0.35, (car.mesh.scale.y || 1) - 0.15);
           }

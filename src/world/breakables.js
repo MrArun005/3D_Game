@@ -267,21 +267,21 @@ export class Debris {
     }
     // the car feels it: a bin is a tap, a lamp post is a proper hit
     if (entry.cls === 'heavy') {
-      if (typeof car.vx === 'number' && typeof car.vz === 'number') {
+      if (car && typeof car.vx === 'number' && typeof car.vz === 'number') {
         car.vx *= 0.82; car.vz *= 0.82;
       }
-      if (typeof car.speed === 'number') car.speed *= 0.82;
-      if (typeof car.yawRate === 'number') car.yawRate += (Math.random() - 0.5) * speed * 0.02;
-      if (speed * 0.5 > (car.hitForce || 0)) {
+      if (car && typeof car.speed === 'number') car.speed *= 0.82;
+      if (car && typeof car.yawRate === 'number') car.yawRate += (Math.random() - 0.5) * speed * 0.02;
+      if (car && speed * 0.5 > (car.hitForce || 0)) {
         car.hitForce = speed * 0.5;
         car.hitTag = 'prop';
         car.hitAt = { x: entry.x, z: entry.z };
       }
     } else {
-      if (typeof car.vx === 'number' && typeof car.vz === 'number') {
+      if (car && typeof car.vx === 'number' && typeof car.vz === 'number') {
         car.vx *= 0.996; car.vz *= 0.996;
       }
-      if (typeof car.speed === 'number') car.speed *= 0.996;
+      if (car && typeof car.speed === 'number') car.speed *= 0.996;
     }
     this.#spawnDebris(entry, car, speed);
     if (entry.effect === 'water') this.#fountain(entry);
@@ -321,7 +321,7 @@ export class Debris {
     const kick = entry.cls === 'heavy' ? 1.4 : 2.6;
     const body = {
       mesh: outer, halfH,
-      vel: new THREE.Vector3(car.vx * 0.75, Math.min(6, speed * 0.35) + kick, car.vz * 0.75),
+      vel: new THREE.Vector3((car?.vx || 0) * 0.75, Math.min(6, speed * 0.35) + kick, (car?.vz || 0) * 0.75),
       ang: new THREE.Vector3((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 5,
                              (Math.random() - 0.5) * 8),
       bounces: 0, asleep: false,

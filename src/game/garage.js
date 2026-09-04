@@ -43,6 +43,26 @@ export class Garage {
     this.nosActive = false;
   }
 
+  get ownedCars() {
+    return Array.from(this.owned);
+  }
+
+  async buyCar(carId, hero = null, cost = 0) {
+    if (this.owned.has(carId)) {
+      await this.#fit(carId);
+      this.hud?.flash?.(`${carId.toUpperCase()} DELIVERED & FITTED`);
+      return true;
+    }
+    if (!this.spendCash(cost)) {
+      this.hud?.flash?.(`NEED $${cost.toLocaleString()} TO BUY`);
+      return false;
+    }
+    this.owned.add(carId);
+    await this.#fit(carId);
+    this.hud?.flash?.(`BOUGHT & DELIVERED ${carId.toUpperCase()} -$${cost.toLocaleString()}`);
+    return true;
+  }
+
   get cash() {
     return this.jobs?.cash ?? 0;
   }

@@ -313,6 +313,7 @@ export class DistrictWorld {
    */
   update(x, z, vx = 0, vz = 0) {
     const ix = Math.floor(x / CHUNK), iz = Math.floor(z / CHUNK);
+    const speed = Math.hypot(vx, vz);
     if (this.farAt && (this.lastCull === undefined
         || Math.abs(x - this.lastCull[0]) > 48 || Math.abs(z - this.lastCull[1]) > 48)) {
       this.#cullFar(x, z);
@@ -326,7 +327,6 @@ export class DistrictWorld {
       this._lastScanIx = ix;
       this._lastScanIz = iz;
       const want = [];
-      const speed = Math.hypot(vx, vz);
       const hasVel = speed > 1.5;
       const normVx = hasVel ? vx / speed : 0;
       const normVz = hasVel ? vz / speed : 0;
@@ -409,7 +409,8 @@ export class DistrictWorld {
        per-chunk registries and owned geometry in the group. */
     if (this.building) {
       const b = this.building;
-      if (Math.abs(b.cx - ix) > this.radius || Math.abs(b.cz - iz) > this.radius) {
+      const maxAbandonR = (wasPrimed && speed < 1.0) ? this.radius + 1 : this.radius;
+      if (Math.abs(b.cx - ix) > maxAbandonR || Math.abs(b.cz - iz) > maxAbandonR) {
         b.group.traverse((o) => {
           if (o.userData?.batched) this.catalogue.releaseBatched(o.userData.batched);
           if (!o.isMesh) return;
@@ -489,9 +490,10 @@ export class DistrictWorld {
         for (const m of g.children) m.castShadow = m.userData.shell ? d <= 1 : cast;
       }
     }
+    const maxReleaseR = (this.primed && speed < 1.0) ? this.radius + 1 : this.radius;
     for (const [k, g] of [...this.chunks]) {
       const [a, b] = k.split(',').map(Number);
-      if (Math.abs(a - ix) > this.radius || Math.abs(b - iz) > this.radius) {
+      if (Math.abs(a - ix) > maxReleaseR || Math.abs(b - iz) > maxReleaseR) {
         this.scene.remove(g);
         /* Only geometry this chunk built. The old sweep disposed shared
            assets.geo.* buffers that 24 other live chunks were still drawing

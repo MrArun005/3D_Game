@@ -553,6 +553,8 @@ function useVehicle() {
     const prev = activeVehicle;
     prev.exit();
     activeVehicle = carVehicle;
+    window._activeVehicle = activeVehicle;
+    car.type = 'car';
     hero.visible = false;
     const exitOffset = prev.type === 'helicopter' ? 2.6 : 3.2;
     const cy = Math.cos(prev.yaw || 0), sy = Math.sin(prev.yaw || 0);
@@ -574,6 +576,8 @@ function useVehicle() {
           onFoot.enter();
           v.enter(hero);
           activeVehicle = v;
+          window._activeVehicle = activeVehicle;
+          car.type = v.type;
           hero.visible = false;
           car.throttle = 0; car.brake = 1; car.hand = 1; car.vx = 0; car.vz = 0;
           if (v.type === 'helicopter') {
@@ -599,6 +603,8 @@ function useVehicle() {
       dispatch?.dispatchedVehicles.push(playerHeli);
       playerHeli.enter(hero);
       activeVehicle = playerHeli;
+      window._activeVehicle = activeVehicle;
+      car.type = 'helicopter';
       hero.visible = false;
       car.throttle = 0; car.brake = 1; car.hand = 1; car.vx = 0; car.vz = 0;
       hud.flash('AIRBORNE — W/SPACE climb, S/SHIFT descend, A/D turn, F exit');
@@ -644,6 +650,8 @@ function useVehicle() {
         const d = Math.hypot(v.x - car.x, v.z - car.z);
         if (d < reach) {
           activeVehicle = v;
+          window._activeVehicle = activeVehicle;
+          car.type = v.type;
           v.enter(hero);
           hero.visible = false;
           car.throttle = 0; car.brake = 1; car.hand = 1; car.vx = 0; car.vz = 0;
@@ -774,6 +782,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
 
 // ---- the car ----
 const car = createCarState();
+car.type = 'car';
 /* Headlights are automatic: on at night, off at noon. H still overrides —
    the toggle in the input handler flips whatever this set. In daylight the
    two real spotlights were burning cost while being visually invisible. */

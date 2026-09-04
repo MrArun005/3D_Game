@@ -167,7 +167,9 @@ export class Stats {
       this.snapshot.bundledTris = b.tris;
     }
 
-    // Statistical percentiles
+    if (!this.on) return;
+
+    // Statistical percentiles (computed only when F3 overlay is visible)
     const sorted = [...this.samples].sort((a, b) => a.ms - b.ms);
     const n = sorted.length;
     const median = sorted[n >> 1]?.ms || 0;
@@ -176,8 +178,6 @@ export class Stats {
     const worstSample = sorted[n - 1];
     const worst = worstSample?.ms || 0;
     this.worstCause = worstSample?.cause || 'normal';
-
-    if (!this.on) return;
 
     const live = world && world.chunks ? world.chunks.size : 0;
     const texMB = this.snapshot.textures * 0.35; // rough: most are 1024^2 RGBA

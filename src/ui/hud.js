@@ -44,8 +44,14 @@ export class Hud {
 
   update(car, traffic, mission, net, heli) {
     this.heli = heli;
+    const activeV = (typeof window !== 'undefined') ? window._activeVehicle : null;
+    const vehicleType = car.type || activeV?.type || 'car';
+    const altAboveGround = car.altitudeAboveGround !== undefined ? car.altitudeAboveGround : (activeV?.altitudeAboveGround ?? 0);
+    const isLanded = car.landed !== undefined ? car.landed : (activeV?.landed ?? false);
+    const reloadTimer = car.reloadTime !== undefined ? car.reloadTime : (activeV?.reloadTime ?? 0);
+
     if (this.flightBanner) {
-      this.flightBanner.style.display = car.type === 'helicopter' ? 'flex' : 'none';
+      this.flightBanner.style.display = vehicleType === 'helicopter' ? 'flex' : 'none';
     }
     this.#drawWanted(traffic);
     this.#drawMission(mission);
@@ -57,12 +63,12 @@ export class Hud {
       this.kph.innerHTML = `${kphVal}<small>KM/H</small>`;
     }
     let gearStr = '';
-    if (car.type === 'helicopter') {
-      const alt = Math.round(car.altitudeAboveGround || 0);
-      gearStr = `ALT <b>${alt}m</b> · ${car.landed ? 'LANDED' : 'AIRBORNE'}`;
-    } else if (car.type === 'tank') {
-      const ready = car.reloadTime <= 0;
-      gearStr = `CANNON <b>${ready ? 'READY' : car.reloadTime.toFixed(1) + 's'}</b>`;
+    if (vehicleType === 'helicopter') {
+      const alt = Math.round(altAboveGround || 0);
+      gearStr = `ALT <b>${alt}m</b> · ${isLanded ? 'LANDED' : 'AIRBORNE'}`;
+    } else if (vehicleType === 'tank') {
+      const ready = reloadTimer <= 0;
+      gearStr = `CANNON <b>${ready ? 'READY' : reloadTimer.toFixed(1) + 's'}</b>`;
     } else {
       const name = car.gear === 0 ? 'R' : car.gear === 1 ? 'N' : String((car.gear || 2) - 1);
       gearStr = `GEAR <b>${name}</b>${car.holdGear ? ' · HOLD' : ''}`;
@@ -656,7 +662,10 @@ export class Hud {
     g.translate(C, C);
 
     const a0 = Math.PI * 0.75, a1 = Math.PI * 2.25;
-    const rpm = car.rpm ?? (car.rotorRpm !== undefined ? car.rotorRpm * 4500 : (car.speed ? car.speed * 120 : 0));
+    const activeV = (typeof window !== 'undefined') ? window._activeVehicle : null;
+    const vType = car.type || activeV?.type || 'car';
+    const rotorRpm = car.rotorRpm !== undefined ? car.rotorRpm : (activeV?.rotorRpm ?? 0);
+    const rpm = car.rpm ?? (vType === 'helicopter' ? rotorRpm * 4500 : (car.speed ? car.speed * 120 : 0));
     const p = Math.max(0, Math.min(1, rpm / V.redline));
 
     if (!this._dialGrad) {

@@ -215,7 +215,7 @@ export class Phone {
       ];
       cars.forEach((c) => {
         const cCard = document.createElement('div');
-        const owned = this.garage.ownedCars.includes(c.id);
+        const owned = this.garage.ownedCars ? this.garage.ownedCars.includes(c.id) : (this.garage.owned ? this.garage.owned.has(c.id) : false);
         cCard.style.cssText = 'background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 10px; display:flex; justify-content:space-between; align-items:center;';
         cCard.innerHTML = `
           <div>
@@ -267,7 +267,7 @@ export class Phone {
       heliCard.querySelector('#dispatch-heli-btn').onclick = (e) => {
         e.stopPropagation();
         if (this.dispatch) {
-          const pos = this.car || (this.hero ? { x: this.hero.position.x, z: this.hero.position.z, yaw: this.hero.rotation.y } : { x: 0, z: 0 });
+          const pos = this.#getPlayerPos();
           this.dispatch.dispatchHelicopter(pos);
           this.toggle(false);
         }
@@ -289,7 +289,7 @@ export class Phone {
       tankCard.querySelector('#dispatch-tank-btn').onclick = (e) => {
         e.stopPropagation();
         if (this.dispatch) {
-          const pos = this.car || (this.hero ? { x: this.hero.position.x, z: this.hero.position.z, yaw: this.hero.rotation.y } : { x: 0, z: 0 });
+          const pos = this.#getPlayerPos();
           this.dispatch.dispatchTank(pos, this.traffic?.wanted || 0);
           this.toggle(false);
         }
@@ -315,6 +315,20 @@ export class Phone {
       };
       this.content.appendChild(sprayCard);
     }
+  }
+
+  #getPlayerPos() {
+    const src = (window._activeVehicle && Number.isFinite(window._activeVehicle.x))
+      ? window._activeVehicle
+      : (this.car && Number.isFinite(this.car.x))
+        ? this.car
+        : (this.hero?.position ? { x: this.hero.position.x, y: this.hero.position.y, z: this.hero.position.z, yaw: this.hero.rotation?.y || 0 } : null);
+    return {
+      x: src?.x ?? 0,
+      y: src?.y ?? 0,
+      z: src?.z ?? 0,
+      yaw: src?.yaw ?? 0,
+    };
   }
 
   toggle(force) {
