@@ -7,6 +7,7 @@ import { PAINT_COLOURS, BODY_KEYS, BODY_TYPES } from '../vehicle/config.js';
 import { groundHeightAt } from '../world/metrics.js';
 import { buildOfficer, poseOfficer } from '../world/officer.js';
 import { buildWeaponMesh, ARSENAL } from './weapons.js';
+import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED } from './policeAi.js';
 
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
 
@@ -151,6 +152,8 @@ export class Traffic {
     c.deployT = 0;
     c.holdT = 0;
     c.fireT = 0;
+    // firefight state (policeAi.js): hp, cover state, weapon, burst bookkeeping
+    c.hp = 100; c.down = 0; c.state = 'cover'; c.stateT = 0; c.gunKind = 'pistol'; c.burstLeft = 0; c.quietFor = 0; c.coverX = 0; c.coverZ = 0; c.slot = this.police.length;
     c.deployed = false;
     return c;
   }
@@ -539,6 +542,15 @@ export class Traffic {
     return out;
   }
 
+  /** A player round hit a deployed officer. Two rifle rounds or four pistol rounds put him down. */
+  officerHit(c, damage = 26) {
+    if (!c?.deployed || c.down > 0) return false;
+    c.hp -= damage;
+    c.quietFor = 0;
+    if (c.hp <= 0) { c.state = 'down'; c.down = 0.001; this.chatter?.radio?.('Officer down! Officer down!'); return true; }
+    return false;
+  }
+
   update(player, dt, time) {
     this.time = time !== undefined ? time : this.time + dt;
     const t = this.time;
@@ -709,7 +721,15 @@ export class Traffic {
       const close = gap < 16;
       if (c.mode === 'free' && stopped && close) c.deployT += dt;
       else c.deployT = Math.max(0, c.deployT - dt * 0.8);
-      if (!c.deployed && c.deployT > 1.0) { c.deployed = true; c.fireT = 0.5; }
+      if (!c.deployed && c.deployT > 1.0 && this.police.filter((q) => q.deployed).length < MAX_DEPLOYED) {
+        c.deployed = true; c.fireT = 0.5; c.state = 'cover'; c.stateT = 0; c.hp = 100; c.down = 0;
+        // the response draws heavier guns as the stars climb; the mesh swaps geometry, not material
+        c.gunKind = weaponForWanted(Math.floor(this.wanted), c.slot);
+        c.gun.geometry = buildWeaponMesh(c.gunKind).geometry;
+        c.flash.position.x = ARSENAL[c.gunKind].muzzle;
+        c.coverX = c.x + Math.cos(c.yaw + Math.PI / 2) * 1.9; c.coverZ = c.z - Math.sin(c.yaw + Math.PI / 2) * 1.9;
+        this.chatter?.radio?.(Math.floor(this.wanted) >= 3 ? 'Shots fired, officers on foot, requesting backup.' : 'Unit on scene, suspect stopped. Stepping out.');
+      }
       if (c.deployed && (gap > 30 || c.deployT <= 0)) {
         c.deployed = false;
         c.officer.visible = false;
@@ -717,9 +737,32 @@ export class Traffic {
       }
 
       if (c.deployed) {
-        // stand at the driver's door, facing you
-        const sx = c.x + Math.cos(c.yaw + Math.PI / 2) * 1.9;
-        const sz = c.z - Math.sin(c.yaw + Math.PI / 2) * 1.9;
+        /* --- the firefight (policeAi.js) ---
+           Cover behind the door, peek out to fire an aimed burst that needs a
+           real line of sight, back into cover, advance to the next cover when
+           you go quiet, cuff you when you stop, go down when hit. */
+        if (c.down > 0) {
+          c.down += dt;
+          poseOfficer(c.joints, 'fall', Math.min(1, c.down / 0.6));
+          c.gun.visible = false; c.flash.visible = false;
+          if (c.down > 12) { c.deployed = false; c.officer.visible = false; c.live = false; c.mesh.visible = false; c.mode = 'road'; }
+          continue;
+        }
+        const prof = targetProfile(!!player.onFoot, !!player.crouch);
+        const ty = (player.y ?? 0) + prof.y;
+        const gunY = c.officer.position.y + (c.state === 'cover' || c.state === 'peek' ? 0.9 : 1.3);
+        const bldg = this.world?.nearbyBuildings ? this.world.nearbyBuildings(c.officer.position.x, c.officer.position.z) : [];
+        const canSee = c.state === 'cover' ? hasLineOfSight(c.coverX, gunY, c.coverZ, player.x, ty, player.z, bldg, this.cars, null) : hasLineOfSight(c.officer.position.x, gunY, c.officer.position.z, player.x, ty, player.z, bldg, this.cars, null);
+        c.quietFor = (player.firedAt !== undefined && performance.now() - player.firedAt < 1500) ? 0 : c.quietFor + dt;
+        c.stateT += dt;
+        const next = nextState({ state: c.state, hp: c.hp, gap, playerSpeed: player.speed ?? 0, quietFor: c.quietFor, canSee, burstLeft: c.burstLeft, t: c.stateT });
+        if (next !== c.state) {
+          if (next === 'peek') { const b = burstFor(c.gunKind); c.burstLeft = b.shots; c.fireT = 0.12; }
+          if (next === 'advance') { const ang = Math.atan2(player.z - c.coverZ, player.x - c.coverX); const step = Math.min(8, Math.max(0, gap - 7)); c.coverX += Math.cos(ang) * step; c.coverZ += Math.sin(ang) * step; }
+          if (next === 'down') { c.down = 0.001; this.chatter?.radio?.('Officer down! Officer down!'); }
+          c.state = next; c.stateT = 0;
+        }
+        const sx = c.coverX, sz = c.coverZ;
         const face = Math.atan2(-(player.z - sz), player.x - sx);
         // stand ON the road, not at sea level -- officers deploy on bridges too
         c.officer.position.set(sx, groundHeightAt(sx, sz), sz);
@@ -731,17 +774,26 @@ export class Traffic {
            pose carries the whole read at this distance -- braced and levelling
            a sidearm, or bent over you with the cuffs out. */
         c.poseT += dt;
-        const arresting = gap < 6.5 && (player.speed ?? 0) < 1.2;
-        const want = arresting ? 'cuff' : 'aim';
+        const arresting = c.state === 'arrest';
+        const want = arresting ? 'cuff' : c.state === 'peek' ? 'peek' : c.state === 'advance' ? 'walk' : 'crouch';
         if (want !== c.pose) c.pose = want;
-        poseOfficer(c.joints, c.pose, c.poseT);
+        poseOfficer(c.joints, c.pose, c.state === 'advance' ? c.poseT * 6 : c.poseT);
         c.gun.visible = !arresting;
 
+        /* Fire only from 'peek', only with a line, one aimed shot per weapon
+           cycle inside the burst. Each shot is a real ray with the officer's
+           skill on top of the weapon's spread; a miss is heard, not felt. */
         c.fireT -= dt;
-        c.flash.visible = c.fireT > -0.06 && c.fireT < 0;
-        if (c.fireT <= -0.06) {
-          c.fireT = 0.75 + this.rand() * 0.8;
-          if (this.onShot) this.onShot(gap);
+        c.flash.visible = c.fireT > -0.06 && c.fireT < 0 && c.state === 'peek';
+        if (c.state === 'peek' && c.burstLeft > 0 && c.fireT <= -0.06) {
+          const b = burstFor(c.gunKind);
+          c.fireT = b.gap;
+          c.burstLeft--;
+          if (c.burstLeft === 0) c.fireT = b.pause;
+          const w = ARSENAL[c.gunKind];
+          const jit = aimJitter(Math.floor(this.wanted), gap, player.speed ?? 0) + w.restSpread;
+          const landed = canSee && shotLands(c.officer.position.x, gunY, c.officer.position.z, player.x, ty, player.z, prof.r, jit, this.rand);
+          if (this.onShot) this.onShot(gap, landed, w.damage * (c.gunKind === 'shotgun' ? 3 : 1));
         }
         c.holdT += dt;
         continue;

@@ -117,6 +117,15 @@ export class ChatterEngine {
   /**
    * Monitor wanted level changes and trigger voice dispatch.
    */
+  /** One dispatch line from the firefight AI, with the squelch, at most one a second. */
+  radio(line) {
+    const now = performance.now();
+    if (now - (this._lastRadio || 0) < 1000) return;
+    this._lastRadio = now;
+    this.#playSquelch();
+    this.chat?.post?.('DISPATCH', line);
+  }
+
   updateWanted(wantedLevel) {
     const lvl = Math.floor(Math.max(0, Math.min(5, wantedLevel || 0)));
     const now = performance.now();

@@ -179,8 +179,10 @@ const debris = new Debris(scene);
 if (new URLSearchParams(location.search).has('debug')) {
   window.__car = () => car;
   // shooting-layer state the harness cannot otherwise see or set (pointer lock is refused headless)
-  window.__dbg = () => ({ started, aiming, ads, crouch, burst, heat: weapon.heat, ready: weapon.ready, kind: weapon.kind, ammo: weapon.ammo });
+  window.__dbg = () => ({ started, aiming, ads, crouch, burst, heat: weapon.heat, ready: weapon.ready, kind: weapon.kind, ammo: weapon.ammo, health });
   window.__aim = (v) => { aiming = !!v; };
+  window.__police = () => traffic.police.filter((c) => c.live).map((c) => ({ deployed: !!c.deployed, state: c.state, gun: c.gunKind, hp: c.hp, down: +c.down.toFixed(1), pose: c.pose, d: Math.round(Math.hypot(c.x - (onFoot.active ? onFoot.x : car.x), c.z - (onFoot.active ? onFoot.z : car.z))) }));
+  window.__wanted = (n) => { traffic.wanted = n; };
   window.__breakNear = (x, z, r = 3) => debris.breakNear(x, z, r, car, 12);
   // frame-time distribution + worst chunk-build slice, for the perf harness
   window.__perf = () => ({ frames: [...stats.samples], chunk: stats.worstChunkMs });
@@ -246,9 +248,13 @@ let dying = 0;
 
 /* Being shot at, and being nicked. Damage is deliberately cosmetic for now --
    a shot rocks the car and marks it; there is no health bar to lose. */
-function onShot(gap) {
+function onShot(gap, landed = null, damage = 26) {
   audio.gunshot();
-  const hit = Math.max(0, 1 - gap / 18);
+  /* Aimed fire (game/policeAi.js): `landed` says whether THIS shot connected,
+     and `damage` is the weapon's. The old distance-only field is kept as the
+     fallback for any caller that has not been given a line of sight. */
+  const hit = landed === null ? Math.max(0, 1 - gap / 18) : (landed ? damage / 26 : 0);
+  if (landed === false) return;                    // a miss: the shot is heard, nothing else
   if (onFoot.active) {
     // on foot there is no bodywork to absorb it
     health = Math.max(0, health - hit * 0.16);
@@ -337,6 +343,7 @@ const weapon = new Weapon(scene);
 const crosshair = new Crosshair();
 const decals = new DecalPool(scene);
 let aiming = false, ads = 0, burst = 0, sinceShot = 9, swayPhase = 0, crouch = false;
+let lastFiredAt = -1e9;   // officers advance when you have been quiet for a while
 const _rayHit = new THREE.Vector3();
 /* The gun you are actually holding.
    NOT parented to onFoot.group: that group is the blocky stand-in body, and
@@ -397,7 +404,15 @@ function pullTrigger() {
     }
   }
   for (const v of traffic.cars) if (v.live) _triggerTargets.push({ x: v.x, z: v.z, y: 0.8, r: 1.25, kind: 'car', ref: v });
-  for (const v of traffic.police) if (v.live) _triggerTargets.push({ x: v.x, z: v.z, y: 0.8, r: 1.35, kind: 'police', ref: v });
+  for (const v of traffic.police) {
+    if (!v.live) continue;
+    _triggerTargets.push({ x: v.x, z: v.z, y: 0.8, r: 1.35, kind: 'police', ref: v });
+    // an officer out of the car is his own target: chest height, crouched is lower and smaller
+    if (v.deployed && v.officer?.visible && !v.down) {
+      const crouched = v.pose === 'crouch';
+      _triggerTargets.push({ x: v.officer.position.x, z: v.officer.position.z, y: v.officer.position.y + (crouched ? 0.75 : 1.15), r: crouched ? 0.34 : 0.42, kind: 'officer', ref: v });
+    }
+  }
 
   /* A tower stops a bullet. Find the first building face along the sightline
      and drop every target beyond it, then let the weapon pick among the rest.
@@ -420,6 +435,7 @@ function pullTrigger() {
   // recoil: a learnable path, indexed by shots in this burst; gentler on the sights
   const rc = recoilFor(weapon.kind, burst++);
   sinceShot = 0;
+  lastFiredAt = performance.now();
   if (onFoot.active) { onFoot.camPitch = Math.min(0.9, onFoot.camPitch + rc.pitch * (1 - ads * 0.4)); onFoot.camYaw -= rc.yaw * (1 - ads * 0.4); }
   else chase.shake += weapon.spec.shake * 0.02;
   if (hit) crosshair.hit(hit.kind === 'person');
@@ -435,8 +451,9 @@ function pullTrigger() {
   crowd?.panic(ox, oz, 24);                     // gunfire scatters the street
   audio.gunshot();
   // firing at all is a crime; hitting something is a worse one
-  traffic.reportCrime(hit ? (hit.kind === 'person' ? 'person' : hit.kind === 'police' ? 'police' : 'traffic') : 'traffic',
+  traffic.reportCrime(hit ? (hit.kind === 'person' ? 'person' : (hit.kind === 'police' || hit.kind === 'officer') ? 'police' : 'traffic') : 'traffic',
                       hit ? 9 : 1);
+  if (hit && hit.kind === 'officer') { traffic.officerHit?.(hit.ref, weapon.spec.damage); crosshair.hit(hit.ref.down); }
   if (hit && hit.kind === 'person') hit.ref.down = 0.001;
   if (hit && hit.kind !== 'person') {
     hit.ref.speed *= 0.55;
@@ -1379,8 +1396,9 @@ function frameBody() {
   const currentVehicle = (activeVehicle && activeVehicle !== carVehicle) ? activeVehicle : car;
   const quarry = onFoot.active
     ? { x: onFoot.x, y: onFoot.y, z: onFoot.z, vx: onFoot.vx, vz: onFoot.vz,
-        speed: Math.hypot(onFoot.vx, onFoot.vz) }
+        speed: Math.hypot(onFoot.vx, onFoot.vz), onFoot: true, crouch, firedAt: lastFiredAt }
     : currentVehicle;
+  traffic.world = world; traffic.chatter = chatter;   // buildings for line of sight, the radio for the AI
   traffic.update(quarry, dt, worldTime);
   if (chatter) chatter.updateWanted(traffic.wanted);
   if (world.updateSignals) world.updateSignals(worldTime);

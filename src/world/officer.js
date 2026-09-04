@@ -221,6 +221,20 @@ export function poseOfficer(j, pose, phase = 0) {
     return;
   }
 
+  if (pose === 'crouch' || pose === 'peek') {
+    /* Behind the cruiser door: knees bent, body dropped ~0.42 m, weapon arm
+       up. 'peek' is the same crouch leaning out to the right to fire; the AI
+       flips between them so the officer is exposed only while shooting. */
+    const lean = pose === 'peek' ? 0.26 : 0;
+    legL.rotation.z = 1.15; legR.rotation.z = 1.05;
+    torso.position.y = HIP - 0.42;
+    torso.rotation.set(0, -0.10 - lean * 0.6, -0.18);
+    armR.rotation.set(0, 0, -Math.PI / 2 + 0.10);
+    armL.rotation.set(-0.5, 0, -Math.PI / 2 + 0.34);
+    head.rotation.set(0, -lean * 0.5, -0.06); cap.rotation.copy(head.rotation);
+    return;
+  }
+
   if (pose === 'cuff') {
     armR.rotation.set(0, 0, -1.15);
     armL.rotation.set(0, 0, -0.85);
