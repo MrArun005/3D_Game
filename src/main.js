@@ -677,14 +677,16 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   heli.nearbyBuildings = (x, z) => (world.nearbyBuildings ? world.nearbyBuildings(x, z) : []);
   heli.onArrive = () => hud.flash('AIR SUPPORT INBOUND');
   mission = new Mission(scene, district);
-  jobs = new Jobs(mission, traffic, hud, district);
+  mission.useHud(hud);
+  mission.useAudio(audio);
+  jobs = new Jobs(mission, traffic, hud, district, audio);
   garage = new Garage(jobs, assets, hero, damageModel, hud);
   traffic.hud = hud;
   roadblock = new Roadblock(scene, assets, district, world, traffic, hero);
   metro = new Metro(scene, district, assets);   // two elevated lines and their trains (world/metro.js)
   landmarks = new Landmarks(scene, district);   // gun shop, supermarket, street set on their lots (world/landmarks.js)
   garage.restore();
-  story = new StoryManager(mission, traffic, hud, garage);
+  story = new StoryManager(mission, traffic, hud, garage, audio);
   dispatch = new DispatchService(scene, world, garage, traffic, debris, hud, audio);
   window._dispatch = dispatch;
   phone = new Phone(story, garage, hero, traffic, dispatch);
@@ -699,7 +701,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   /* The other half of the race handshake: say when YOU finish. Set here
      rather than on join, because the room can be joined before the district
      has loaded and there would be no mission to hang it on. */
-  mission.onFinish = (t) => { if (net) net.race({ k: 'stop', t }); };
+  mission.addListener('finish', (t) => { if (net) net.race({ k: 'stop', t }); });
   traffic.onShot = onShot;
   traffic.onBust = onBust;
   window.district = district;
@@ -1103,7 +1105,6 @@ function frameBody() {
   if (billboards) billboards.update(worldTime);
   if (streetLife) streetLife.update(dt, car);
   if (airspace) airspace.update(dt, worldTime);
-  if (story) story.update(car, dt);
   if (!started && (c.throttle > 0.08 || c.brake > 0.25 || Math.abs(c.steer) > 0.3)) start();
   if (activeVehicle && activeVehicle.type === 'helicopter') {
     activeVehicle.update(c, dt, { keys: input.keys });
@@ -1227,8 +1228,10 @@ function frameBody() {
   if (chatter) chatter.updateWanted(traffic.wanted);
   if (world.updateSignals) world.updateSignals(worldTime);
   if (heli && !flying) { heli.update(quarry, traffic, dt); traffic.eyesOn = heli.eyesOn; }
-  if (mission) mission.update(onFoot.active ? quarry : car, dt);
-  jobs?.update(car, dt);
+  const playerTarget = onFoot.active ? quarry : car;
+  if (mission) mission.update(playerTarget, dt);
+  if (jobs) jobs.update(playerTarget, dt);
+  if (story) story.update(playerTarget, dt);
   if (crowd && !onFoot.active && onPavementAtSpeed(car)) crowd.panic(car.x, car.z, 14);
   if (net) net.update(car, dt);
   weapon.update(dt);

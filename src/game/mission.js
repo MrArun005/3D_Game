@@ -49,6 +49,8 @@ export class Mission {
     scene.add(g);
     this.marker = g;
     this.ring = ring;
+    this.beam = beam;
+    this.finishListeners = [];
 
     // the next one along, dimmer, so you know which way the course runs
     const next = g.clone();
@@ -62,6 +64,23 @@ export class Mission {
     scene.add(next);
     this.nextMarker = next;
   }
+
+  useHud(hud) { this.hud = hud; }
+  useAudio(audio) { this.audio = audio; }
+
+  addListener(type, fn) {
+    if (type === 'finish' && typeof fn === 'function') {
+      this.finishListeners.push(fn);
+    }
+  }
+
+  setMarkerColor(hex) {
+    if (this._color === hex) return;
+    this._color = hex;
+    this.ring.material.color.setHex(hex);
+    this.beam.material.color.setHex(hex);
+  }
+
 
   /** Lay a course out from wherever the car is standing. */
   start(car, seed) {
@@ -132,6 +151,7 @@ export class Mission {
   #say(text) { this.message = text; this.messageFor = 3.4; }
 
   #place() {
+    this.setMarkerColor(0xffc23c);
     const p = this.points[this.index];
     if (!p) return;
     this.marker.position.set(p.x, 0, p.y);
@@ -161,9 +181,17 @@ export class Mission {
       const record = !this.isJob && (!this.best || t < this.best);
       if (record) { this.best = t; try { localStorage.setItem('hb.best', String(t)); } catch { /* private mode */ } }
       this.stop(this.isJob ? '' : `${record ? 'NEW BEST' : 'FINISHED'} · ${t.toFixed(1)}s`);
-      /* Tell the room. Without this a race had no finish condition at all:
-         both players ran the course and nothing ever ended for the loser. */
+      if (!this.isJob) {
+        if (this.hud?.showVictoryBanner) {
+          this.hud.showVictoryBanner('CHECKPOINT RUN', record ? `NEW COURSE RECORD · ${t.toFixed(1)}s` : `FINISHED · ${t.toFixed(1)}s`, record ? 500 : 250);
+        }
+        if (this.audio?.victoryFanfare) this.audio.victoryFanfare();
+      }
+      /* Tell the room and registered listeners */
       if (this.onFinish) this.onFinish(t);
+      if (this.finishListeners) {
+        for (const fn of this.finishListeners) fn(t);
+      }
       return;
     }
     this.#say(`CHECKPOINT ${this.index}/${this.points.length}`);

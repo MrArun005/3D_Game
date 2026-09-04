@@ -449,6 +449,75 @@ export class Hud {
     this.bustEl.style.opacity = t > 0 ? String(Math.min(1, t / 1.2)) : '0';
   }
 
+  /** GTA-style celebration banner for mission / job / challenge completions. */
+  showVictoryBanner(title, subtitle, cash = 0) {
+    if (!this.victoryEl) {
+      const el = document.createElement('div');
+      el.id = 'victory-banner';
+      el.style.cssText = 'position:fixed;top:20%;left:50%;transform:translate(-50%,-20%) scale(0.85);opacity:0;'
+        + 'z-index:120;display:flex;flex-direction:column;align-items:center;justify-content:center;'
+        + 'padding:22px 48px;min-width:340px;background:linear-gradient(135deg,rgba(14,18,28,0.96) 0%,rgba(24,32,48,0.94) 100%);'
+        + 'border:2px solid #f1c40f;border-radius:20px;box-shadow:0 0 50px rgba(241,196,15,0.45),inset 0 0 20px rgba(241,196,15,0.15);'
+        + 'backdrop-filter:blur(14px);pointer-events:none;transition:all .4s cubic-bezier(0.18,0.9,0.3,1.25);'
+        + 'text-align:center;user-select:none;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
+      document.body.appendChild(el);
+      this.victoryEl = el;
+    }
+    const el = this.victoryEl;
+    el.innerHTML = `
+      <div style="font-size:12px;font-weight:800;letter-spacing:6px;color:#f39c12;margin-bottom:6px;text-transform:uppercase;">
+        ★ CHALLENGE COMPLETED ★
+      </div>
+      <div style="font-size:28px;font-weight:900;letter-spacing:1px;color:#ffffff;text-shadow:0 2px 14px rgba(0,0,0,0.9);margin-bottom:4px;">
+        ${title}
+      </div>
+      <div style="font-size:13px;font-weight:600;color:#bdc3c7;letter-spacing:1px;margin-bottom:${cash ? '10px' : '0'};">
+        ${subtitle}
+      </div>
+      ${cash ? `
+        <div style="font-size:32px;font-weight:900;color:#2ecc71;text-shadow:0 0 20px rgba(46,204,113,0.5);letter-spacing:2px;">
+          +$${Number(cash).toLocaleString()}
+        </div>
+      ` : ''}
+    `;
+
+    this.#burstConfetti();
+
+    clearTimeout(this._vicTimer);
+    requestAnimationFrame(() => {
+      el.style.opacity = '1';
+      el.style.transform = 'translate(-50%,-20%) scale(1)';
+    });
+
+    this._vicTimer = setTimeout(() => {
+      el.style.opacity = '0';
+      el.style.transform = 'translate(-50%,-20%) scale(0.85)';
+    }, 4500);
+  }
+
+  #burstConfetti() {
+    for (let i = 0; i < 35; i++) {
+      const p = document.createElement('div');
+      const size = 5 + Math.random() * 5;
+      const colors = ['#f1c40f', '#2ecc71', '#e74c3c', '#3498db', '#ffffff', '#e67e22'];
+      const col = colors[(Math.random() * colors.length) | 0];
+      p.style.cssText = `position:fixed;left:50%;top:26%;width:${size}px;height:${size * (Math.random() > 0.5 ? 1 : 2.2)}px;`
+        + `background:${col};border-radius:2px;pointer-events:none;z-index:121;opacity:1;`
+        + `transform:translate(-50%,-50%);transition:transform 1.8s cubic-bezier(0.2,0.8,0.4,1),opacity 1.8s ease-out`;
+      document.body.appendChild(p);
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 70 + Math.random() * 240;
+      const dx = Math.cos(angle) * dist;
+      const dy = Math.sin(angle) * dist + 70;
+      requestAnimationFrame(() => {
+        p.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) rotate(${Math.random() * 720}deg)`;
+        p.style.opacity = '0';
+      });
+      setTimeout(() => p.remove(), 1900);
+    }
+  }
+
+
   /** The run: checkpoint count, clock, best, and any transient message. */
   #drawMission(mission) {
     if (!this.missionEl) {

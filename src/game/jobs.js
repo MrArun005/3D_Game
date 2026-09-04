@@ -21,13 +21,25 @@ const TIER = { KINGSWAY: 3, 'HARBOUR POINT': 2, STEELGATE: 2, 'OLD QUARTER': 2, 
   NORTHLINE: 1, ASHMOOR: 1, 'MARROW HILL': 1, 'THE FLATS': 1, 'GREENFELL PARK': 1 };
 
 export class Jobs {
-  constructor(mission, traffic, hud, district) {
-    this.mission = mission; this.traffic = traffic; this.hud = hud; this.district = district;
-    this.cash = Number(localStorage.getItem('hb.cash') || 0);
-    this.done = Number(localStorage.getItem('hb.jobs') || 0);
+  constructor(mission, traffic, hud, district, audio = null) {
+    this.mission = mission; this.traffic = traffic; this.hud = hud; this.district = district; this.audio = audio;
+    let savedCash = 0, savedDone = 0;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        savedCash = Number(localStorage.getItem('hb.cash') || 0);
+        savedDone = Number(localStorage.getItem('hb.jobs') || 0);
+      }
+    } catch { /* private mode */ }
+    this.cash = savedCash;
+    this.done = savedDone;
     this.job = null;
     this.nodes = district.graph.nodes.filter((n) => n.kind === 'cross' || n.kind === 'tee');
-    mission.onFinish = (t) => this.#finish(t);
+    if (mission.addListener) {
+      mission.addListener('finish', (t) => this.#finish(t));
+    } else {
+      const prev = mission.onFinish;
+      mission.onFinish = (t) => { if (prev) prev(t); this.#finish(t); };
+    }
     this.#show();
   }
 
@@ -63,7 +75,7 @@ export class Jobs {
     const pay = Math.round((60 + dist * 0.45) * (0.8 + tier * 0.35));
     const limit = kind === 'courier' ? dist / 12 + 20 : Infinity;          // 12 m/s average is honest city pace
     this.job = { kind, pay, limit, tier, a, b, pickedUp: false, t: 0 };
-    this.mission.route([a, b], kind === 'fare' ? 'PICK UP THE FARE' : kind === 'getaway' ? 'LOSE THE HEAT · REACH THE DROP' : 'COLLECT THE PACKAGE');
+    this.mission.route([a, b], kind === 'fare' ? 'PICK UP THE FARE · COME TO A STOP AT MARKER' : kind === 'getaway' ? 'LOSE THE HEAT · REACH THE DROP' : 'COLLECT THE PACKAGE');
     if (kind === 'getaway') this.traffic.reportCrime('police', 6);
     this.hud.flash(`${kind.toUpperCase()} · $${pay}${limit < Infinity ? ` · ${Math.round(limit)}s` : ''}`);
     this.#show();
@@ -72,11 +84,40 @@ export class Jobs {
   update(car, dt) {
     const j = this.job; if (!j) return;
     j.t += dt;
+    const spd = Math.abs(car.fwdSpeed ?? car.speed ?? 0);
+
+    // Guidance prompt on approach to pickup
+    if (!j.pickedUp && this.mission.index === 0 && j.a) {
+      const distA = Math.hypot(car.x - j.a.x, car.z - (j.a.y ?? j.a.z));
+      if (distA < 16 && spd > 5.5) {
+        this.hud.flash(j.kind === 'fare' ? '🛑 COME TO A STOP TO BOARD FARE' : '🛑 COME TO A STOP TO LOAD PACKAGE');
+      }
+    }
+
     // fares and packages want a real stop at the first marker, not a fly-through
     if (!j.pickedUp && this.mission.index === 1) {
       j.pickedUp = true;
-      this.hud.flash(j.kind === 'fare' ? 'PASSENGER ABOARD · DROP THEM OFF' : 'PACKAGE ABOARD · DELIVER IT');
+      if (this.audio?.cash) this.audio.cash();
+      this.hud.flash(j.kind === 'fare' ? 'PASSENGER ABOARD · DELIVER TO DESTINATION' : 'PACKAGE ABOARD · DELIVER TO DESTINATION');
     }
+
+    // Guidance on approach to dropoff
+    if (j.b && (j.pickedUp || j.kind === 'getaway')) {
+      const distB = Math.hypot(car.x - j.b.x, car.z - (j.b.y ?? j.b.z));
+      const stars = this.traffic.wanted | 0;
+      if (distB < 35) {
+        if (j.kind === 'getaway' && stars > 0) {
+          if (this.mission?.setMarkerColor) this.mission.setMarkerColor(0xff3b30);
+          this.hud.flash(`🚨 SAFE DROP LOCKED (${stars}★ HEAT)! EVADE COPS OR CALL PAY 'N' SPRAY [PHONE M]`);
+        } else {
+          if (this.mission?.setMarkerColor) this.mission.setMarkerColor(0x2ecc71);
+          if (distB < 14 && spd > 5.5) {
+            this.hud.flash('🛑 COME TO A STOP INSIDE ZONE TO FINISH CONTRACT');
+          }
+        }
+      }
+    }
+
     if (j.limit < Infinity && j.t > j.limit * 1.6) this.fail('TOO LATE · JOB LOST');
     this.#show();
   }
@@ -85,15 +126,30 @@ export class Jobs {
     const j = this.job; if (!j) return;
     const stars = this.traffic.wanted | 0;
     let pay = j.pay;
-    if (j.kind === 'getaway' && stars > 0) { this.hud.flash('STILL HOT · LOSE THE POLICE FIRST'); this.mission.route([j.b], 'LOSE THE HEAT'); return; }
+    if (j.kind === 'getaway' && stars > 0) {
+      this.hud.flash(`🚨 STILL HOT (${stars}★)! EVADE COPS OR CALL PAY 'N' SPRAY [PHONE M]`);
+      if (this.mission?.setMarkerColor) this.mission.setMarkerColor(0xff3b30);
+      this.mission.route([j.b], 'LOSE THE HEAT');
+      return;
+    }
     if (j.limit < Infinity && j.t > j.limit) pay = Math.round(pay * Math.max(0.3, 1 - (j.t - j.limit) / j.limit));
     pay = Math.round(pay * Math.max(0.2, 1 - stars * 0.2));
     if (stars === 0 && j.t < (j.limit === Infinity ? 1e9 : j.limit)) pay += 40;   // clean bonus
     this.cash += pay; this.done++;
     try { localStorage.setItem('hb.cash', String(this.cash)); localStorage.setItem('hb.jobs', String(this.done)); } catch { /* private mode */ }
-    this.hud.flash(`PAID $${pay}${stars ? ` · ${stars}★ COST YOU` : ' · CLEAN'}`);
+
+    if (this.hud?.showVictoryBanner) {
+      const sub = `${j.kind.toUpperCase()} CONTRACT · ${stars ? `${stars}★ HEAT PENALTY` : 'CLEAN RUN BONUS'}`;
+      this.hud.showVictoryBanner('CONTRACT COMPLETE', sub, pay);
+    } else {
+      this.hud.flash(`PAID $${pay}${stars ? ` · ${stars}★ COST YOU` : ' · CLEAN'}`);
+    }
+    if (this.audio?.victoryFanfare) {
+      this.audio.victoryFanfare();
+    }
     this.job = null; this.#show();
   }
+
 
   persist() { try { localStorage.setItem('hb.cash', String(this.cash)); } catch { /* private mode */ } this.#show(); }
 

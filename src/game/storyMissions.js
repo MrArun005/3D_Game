@@ -68,11 +68,12 @@ export const STORY_MISSIONS = [
 ];
 
 export class StoryManager {
-  constructor(mission, traffic, hud, garage) {
+  constructor(mission, traffic, hud, garage, audio = null) {
     this.mission = mission;
     this.traffic = traffic;
     this.hud = hud;
     this.garage = garage;
+    this.audio = audio;
 
     this.active = null;
     this.stepIdx = 0;
@@ -96,7 +97,14 @@ export class StoryManager {
       // Completed!
       const reward = this.active.payout;
       this.garage.addCash(reward, 'MISSION PASSED');
-      this.hud.flash(`MISSION COMPLETE! +$${reward.toLocaleString()}`);
+      if (this.hud?.showVictoryBanner) {
+        this.hud.showVictoryBanner(this.active.title, this.active.subtitle, reward);
+      } else if (this.hud?.flash) {
+        this.hud.flash(`MISSION COMPLETE! +$${reward.toLocaleString()}`);
+      }
+      if (this.audio?.victoryFanfare) {
+        this.audio.victoryFanfare();
+      }
       if (this.mission) this.mission.stop(`PASSED · +$${reward}`);
       this.active = null;
       this.stepIdx = 0;
@@ -119,15 +127,44 @@ export class StoryManager {
     const step = this.active.steps[this.stepIdx];
     if (!step) return;
 
-    // Check distance to target
+    // Check distance to target and speed
     const dist = Math.hypot(car.x - step.target.x, car.z - step.target.z);
-    if (dist < (step.radius || 20)) {
-      if (step.needZeroHeat && this.traffic?.wanted > 0) {
-        if (Math.random() < 0.05) this.hud.flash('COPS ARE STILL ON YOU · LOSE THE HEAT!');
+    const speed = Math.abs(car.fwdSpeed ?? car.speed ?? 0);
+    const radius = step.radius || 24;
+    const inRange = dist < radius;
+
+    // Visual marker & guidance for zero-heat requirements
+    if (step.needZeroHeat) {
+      const wanted = this.traffic?.wanted || 0;
+      if (wanted > 0) {
+        if (this.mission?.setMarkerColor) this.mission.setMarkerColor(0xff3b30); // RED
+        this._heatWarn = (this._heatWarn || 0) + dt;
+        if (this._heatWarn > 2.0 && (inRange || dist < 65)) {
+          this._heatWarn = 0;
+          this.hud?.flash(`🚨 DROP LOCKED (${Math.ceil(wanted)}★ HEAT)! EVADE COPS OR CALL PAY 'N' SPRAY [PHONE M]`);
+        }
+        return;
+      } else {
+        if (this.mission?.setMarkerColor) this.mission.setMarkerColor(0x2ecc71); // GREEN
+      }
+    } else {
+      if (this.mission?.setMarkerColor) this.mission.setMarkerColor(0xffc23c); // GOLD
+    }
+
+    if (inRange) {
+      // If player is flying through at high speed, prompt them to come to a stop
+      if (speed > 6.5) {
+        this._stopWarn = (this._stopWarn || 0) + dt;
+        if (this._stopWarn > 1.2) {
+          this._stopWarn = 0;
+          this.hud?.flash('🛑 COME TO A STOP IN ZONE TO SECURE OBJECTIVE');
+        }
         return;
       }
       // Step complete!
       this.stepIdx++;
+      if (this.audio?.cash) this.audio.cash();
+      this.hud?.flash(`OBJECTIVE SECURED · STEP ${this.stepIdx}/${this.active.steps.length}`);
       this.#advanceStep(car);
     }
   }

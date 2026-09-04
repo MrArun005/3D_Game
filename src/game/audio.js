@@ -246,6 +246,47 @@ export function createAudio() {
       }
       g.connect(p); p.connect(master);
     },
+    cash() {
+      if (!ready || !ctx || ctx.state !== 'running') return;
+      const now = ctx.currentTime;
+      for (const [freq, delay] of [[2200, 0], [2940, 0.07]]) {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + delay);
+        g.gain.setValueAtTime(0.001, now + delay);
+        g.gain.exponentialRampToValueAtTime(0.22, now + delay + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + delay + 0.42);
+        osc.connect(g); g.connect(master);
+        osc.start(now + delay); osc.stop(now + delay + 0.45);
+      }
+    },
+    victoryFanfare() {
+      if (!ready || !ctx || ctx.state !== 'running') return;
+      const now = ctx.currentTime;
+      const chord = [
+        { f: 523.25, t: 0.00, dur: 0.25 },
+        { f: 659.25, t: 0.10, dur: 0.25 },
+        { f: 783.99, t: 0.20, dur: 0.32 },
+        { f: 1046.50, t: 0.32, dur: 0.85 },
+      ];
+      for (const n of chord) {
+        const osc = ctx.createOscillator();
+        const lp = ctx.createBiquadFilter();
+        const g = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(n.f, now + n.t);
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(2800, now + n.t);
+        g.gain.setValueAtTime(0.001, now + n.t);
+        g.gain.exponentialRampToValueAtTime(0.22, now + n.t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + n.t + n.dur);
+        osc.connect(lp); lp.connect(g); g.connect(master);
+        osc.start(now + n.t); osc.stop(now + n.t + n.dur + 0.02);
+      }
+      setTimeout(() => this.cash(), 340);
+      rumble(0.6, 240);
+    },
     update(car) {
       if (!ready || !ctx || ctx.state !== 'running') return;
       const now = ctx.currentTime;
