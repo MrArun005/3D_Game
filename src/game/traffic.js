@@ -952,12 +952,20 @@ export class Traffic {
             c.bursts = (c.bursts ?? 0) + 1;
             if (c.bursts % 4 === 0) { c.reloading = ARSENAL[c.gunKind].reload; this.chatter?.radioPool?.('reload'); }
           }
-          if (next === 'advance') { const ang = Math.atan2(player.z - c.coverZ, player.x - c.coverX); const step = Math.min(8, Math.max(0, gap - 7)); c.coverX += Math.cos(ang) * step; c.coverZ += Math.sin(ang) * step; }
+          if (next === 'advance') {
+            // the next cover is up to 8 m closer; he WALKS there over the advance second (below), he does not appear there
+            const ang = Math.atan2(player.z - c.coverZ, player.x - c.coverX); const step = Math.min(8, Math.max(0, gap - 7));
+            c.fromX = c.coverX; c.fromZ = c.coverZ; c.toX = c.coverX + Math.cos(ang) * step; c.toZ = c.coverZ + Math.sin(ang) * step;
+          }
           if (next === 'down') { c.down = 0.001; this.chatter?.radioPool?.('down'); this.#dropWeapon(c); }
           else if (next === 'advance') this.chatter?.radioPool?.('advance');
           else if (next === 'arrest') this.chatter?.radioPool?.('arrest');
           else if (next === 'peek' && c.state === 'cover' && c.stateT > 3) this.chatter?.radioPool?.('pinned');
           c.state = next; c.stateT = 0;
+        }
+        if (c.state === 'advance' && c.toX !== undefined) {
+          const k = Math.min(1, c.stateT);   // nextState ends the advance at t >= 1, so this is the whole walk
+          c.coverX = c.fromX + (c.toX - c.fromX) * k; c.coverZ = c.fromZ + (c.toZ - c.fromZ) * k;
         }
         const sx = c.coverX, sz = c.coverZ;
         const face = Math.atan2(-(player.z - sz), player.x - sx);
