@@ -22,15 +22,41 @@ const BUDGET = {
   chunkBuildMs: 4,
 };
 
+const PERF = typeof location !== 'undefined' && new URLSearchParams(location.search).has('perf');
+
 export class Stats {
   constructor() {
     this.on = false;
-    this.samples = [];
+    this.samples = [];          // rolling 600 frames
+    this.spikeLog = [];         // recorded spikes
+    this.frameIndex = 0;
+    this.currentFrameChunkMs = 0;
+    this.currentFrameChunkSlices = 0;
+    this.lastPrograms = 0;
+    this.worstCause = 'normal';
+
     this.chunkMs = 0;
     this.worstChunkMs = 0;
     this.chunkTotals = [];      // whole-chunk build cost, last ten, for photo.line()
     this.el = null;
     this.snapshot = { draws: 0, tris: 0, bundledDraws: 0, bundledTris: 0 };
+
+    if (typeof window !== 'undefined') {
+      window.dumpSpikes = () => {
+        if (!this.spikeLog.length) {
+          console.log('[perf] No frame spikes recorded.');
+          return;
+        }
+        console.table(this.spikeLog.map((s) => ({
+          Frame: s.frame,
+          'Time (ms)': s.ms.toFixed(1),
+          Cause: s.cause,
+          'Chunk ms': s.chunkMs.toFixed(1),
+          'Compiles': s.compiles,
+        })));
+      };
+    }
+
     addEventListener('keydown', (e) => {
       if (e.code === 'F3') { this.on = !this.on; this.#ensure().style.display = this.on ? 'block' : 'none'; }
     });
@@ -50,7 +76,6 @@ export class Stats {
   }
 
   /** Called by the world when it builds a chunk, in milliseconds. */
-  /** Whole cost of one chunk, summed over its slices. */
   reportChunkTotal(ms) {
     this.chunkTotals.push(ms);
     if (this.chunkTotals.length > 10) this.chunkTotals.shift();
@@ -58,6 +83,8 @@ export class Stats {
 
   reportChunkBuild(ms) {
     this.chunkMs = ms;
+    this.currentFrameChunkMs += ms;
+    this.currentFrameChunkSlices++;
     this.worstChunkMs = Math.max(this.worstChunkMs * 0.995, ms);
   }
 
@@ -80,20 +107,80 @@ export class Stats {
     this.snapshot.textures = renderer.info.memory.textures;
   }
 
-  update(dt, world, renderer) {
-    this.samples.push(dt * 1000);
-    if (this.samples.length > 180) this.samples.shift();
-    // every 10th frame, overlay or not: photo.line() reads these too
-    if (world?.bundleStats && (this.samples.length % 10) === 0) {
-      const b = world.bundleStats(); this.snapshot.bundledDraws = b.draws; this.snapshot.bundledTris = b.tris;
+  update(dt, world, renderer, framePhases = null) {
+    this.frameIndex++;
+    const frameMs = dt * 1000;
+    const currentPrograms = this.snapshot.programs;
+    const compiles = this.lastPrograms > 0 && currentPrograms > this.lastPrograms
+      ? currentPrograms - this.lastPrograms
+      : 0;
+    this.lastPrograms = currentPrograms;
+
+    const chunkMs = this.currentFrameChunkMs;
+    const chunkSlices = this.currentFrameChunkSlices;
+    this.currentFrameChunkMs = 0;
+    this.currentFrameChunkSlices = 0;
+
+    // Diagnose spike cause
+    const reasons = [];
+    if (chunkMs > 3.0 || chunkSlices > 0) {
+      reasons.push(`chunk build (${chunkSlices} slice${chunkSlices > 1 ? 's' : ''}, ${chunkMs.toFixed(1)}ms)`);
     }
+    if (compiles > 0) {
+      reasons.push(`${compiles} pipeline compile${compiles > 1 ? 's' : ''}`);
+    }
+    if (framePhases) {
+      if (framePhases.physics > 6.0) reasons.push(`physics (${framePhases.physics.toFixed(1)}ms)`);
+      if (framePhases.render > 16.0) reasons.push(`render pass (${framePhases.render.toFixed(1)}ms)`);
+    }
+    if (frameMs > 28.0 && reasons.length === 0) {
+      reasons.push('GC / script execution');
+    }
+    const cause = reasons.length ? reasons.join(' + ') : 'normal';
+
+    const entry = {
+      frame: this.frameIndex,
+      ms: frameMs,
+      chunkMs,
+      chunkSlices,
+      compiles,
+      cause,
+    };
+
+    // Rolling 600-frame window
+    this.samples.push(entry);
+    if (this.samples.length > 600) this.samples.shift();
+
+    // Log spike if ?perf active or significant hitch
+    if (frameMs > 33.3 || (frameMs > 24.0 && (chunkMs > 2.0 || compiles > 0))) {
+      this.spikeLog.push(entry);
+      if (this.spikeLog.length > 100) this.spikeLog.shift();
+      if (PERF) {
+        console.warn(`[perf] frame ${this.frameIndex}: ${frameMs.toFixed(1)} ms — ${cause}`);
+      }
+    }
+
+    // Every 10th frame, overlay or not: photo.line() reads these too
+    if (world?.bundleStats && (this.frameIndex % 10) === 0) {
+      const b = world.bundleStats();
+      this.snapshot.bundledDraws = b.draws;
+      this.snapshot.bundledTris = b.tris;
+    }
+
+    // Statistical percentiles
+    const sorted = [...this.samples].sort((a, b) => a.ms - b.ms);
+    const n = sorted.length;
+    const median = sorted[n >> 1]?.ms || 0;
+    const p95 = sorted[Math.min(n - 1, Math.floor(n * 0.95))]?.ms || 0;
+    const p99 = sorted[Math.min(n - 1, Math.floor(n * 0.99))]?.ms || 0;
+    const worstSample = sorted[n - 1];
+    const worst = worstSample?.ms || 0;
+    this.worstCause = worstSample?.cause || 'normal';
+
     if (!this.on) return;
 
-    const s = [...this.samples].sort((a, b) => a - b);
-    const median = s[s.length >> 1] || 0;
-    const worst = s[Math.max(0, Math.floor(s.length * 0.99) - 1)] || 0;
     const live = world && world.chunks ? world.chunks.size : 0;
-    const texMB = this.snapshot.textures * 0.35;   // rough: most are 1024^2 RGBA
+    const texMB = this.snapshot.textures * 0.35; // rough: most are 1024^2 RGBA
 
     const row = (label, value, budget, unit = '', fmt = (v) => v.toFixed(0)) => {
       const over = budget !== null && value > budget;
@@ -103,7 +190,10 @@ export class Stats {
 
     let out = '';
     out += row('frame med', median, BUDGET.frameMs, ' ms', (v) => v.toFixed(1));
-    out += row('frame 1% low', worst, 20, ' ms', (v) => v.toFixed(1));
+    out += row('frame 95th', p95, 20, ' ms', (v) => v.toFixed(1));
+    out += row('frame 99th', p99, 24, ' ms', (v) => v.toFixed(1));
+    out += row('frame worst', worst, 33.3, ' ms', (v) => v.toFixed(1));
+    out += `  worst cause: ${this.worstCause}\n`;
     // counted draws + what the chunk bundles replay: the number the budget is about
     out += row('draw calls', this.snapshot.draws + this.snapshot.bundledDraws, BUDGET.draws);
     out += row('triangles', (this.snapshot.tris + this.snapshot.bundledTris) / 1e6, BUDGET.tris / 1e6, ' M', (v) => v.toFixed(2));

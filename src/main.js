@@ -1047,6 +1047,7 @@ function frame() {
 }
 
 function frameBody() {
+  performance.mark('frame-start');
   const now = performance.now();
   const dt = Math.min((now - lastTime) / 1000, 0.05);
   lastTime = now;
@@ -1106,6 +1107,8 @@ function frameBody() {
   debris.update(car, dt, traffic.police?.length ? [...traffic.cars, ...traffic.police] : traffic.cars);
 
   // fixed-step physics keeps the tyre model stable; clamp accumulator to prevent death spirals on dt spikes
+  performance.mark('physics-start');
+  const tPhys0 = performance.now();
   if (dt > 0.05) physicsAccumulator = Math.min(physicsAccumulator, STEP * 4);
   physicsAccumulator += dt;
   let guard = 0;
@@ -1113,6 +1116,8 @@ function frameBody() {
     stepVehicle(car, STEP);
     physicsAccumulator -= STEP;
   }
+  const physMs = performance.now() - tPhys0;
+  performance.mark('physics-end');
 
   // ---- pose ----
   // group carries x/y/z and yaw; the body carries the sprung motion; the wheels ride the road
@@ -1206,14 +1211,6 @@ function frameBody() {
   if (beach) beach.update(dt);
   if (water) water.update(dt);
 
-  /* The shadow frustum follows the car -- but the daylight rig is a high sun
-     and the night rig is a low raking one, and this line was silently putting
-     the noon sun 46m off the deck every frame. */
-  // the same direction the sky dome paints its disc from (DAY_SUN), so shadows point away from the drawn sun
-  if (DAY) sun.position.set(car.x + DAY_SUN.x, DAY_SUN.y, car.z + DAY_SUN.z);
-  else sun.position.set(car.x - 90, 46, car.z + 62);
-  sun.target.position.set(car.x, 0, car.z);
-  sun.target.updateMatrixWorld();
   dome.position.set(car.x, 0, car.z);
 
   if (film) {
@@ -1242,14 +1239,21 @@ function frameBody() {
   grade.setDrops(DAY ? 0 : chase.mode >= 2 ? 1.2 : 0.68);
   const streamX = photo?.on ? camera.position.x : car.x;
   const streamZ = photo?.on ? camera.position.z : car.z;
+  performance.mark('stream-start');
   world.update(streamX, streamZ);
+  performance.mark('stream-end');
   resolution(dt);
   /* One render: the pipeline owns the frame (scene MRT pass, GTAO, bloom,
      tone map, grade — core/grade.js). renderer.info accumulates across a
      frame's internal passes and resets once per rAF by the renderer's own
      animation pump, so sampling after the pipeline reads the whole frame —
      scene + shadow passes + ~15 fullscreen post quads. */
+  performance.mark('render-start');
+  const tRender0 = performance.now();
   grade.render(renderer, now / 1000);
+  const renderMs = performance.now() - tRender0;
+  performance.mark('render-end');
+  performance.mark('frame-end');
   // the first real frame is on screen: drop the boot overlay
   /* The loading screen comes down only once the first ring of chunks is
      built AND every pipeline is compiled -- including the hidden collision
@@ -1279,7 +1283,7 @@ function frameBody() {
      load and is never reset, so the banner's old "907 DRAWS" was a lifetime
      pass counter that happened to look plausible. `drawCalls` is the real
      per-frame number and matches the F3 overlay. */
-  stats.update(dt, world, renderer);
+  stats.update(dt, world, renderer, { physics: physMs, render: renderMs });
   // counted + replayed-from-bundles: renderer.info alone under-reports by ~75% since the chunks became render bundles
   const draws = renderer.info.render.drawCalls + (stats.snapshot.bundledDraws || 0);
   const tris = renderer.info.render.triangles + (stats.snapshot.bundledTris || 0);

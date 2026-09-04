@@ -8,7 +8,8 @@ Measured at preset `kingsway-corner` (driver camera at spawn, pos: `[2350, 3, 13
 | :--- | :---: | :---: | :---: | :--- |
 | **Baseline (Pre-Phase 0)** | **8,329** | 0 (OFF) | **10.70 M** | Render bundles disabled; 32 un-culled skinned humans; monolithic setback stages everywhere |
 | **Unbundled Bloat Identified** | **7,075** | 737 | **8.27 M** | 32 metro carriages cloned raw `train_ride.glb` (~60 un-culled meshes each, drawing 4 shadow cascades = ~7,680 unbundled draws). Crowd limb segments had 10 radial / 8 rings. |
-| **Phase 0 Remediated (Live Measured)** | **537 direct** (1,287 settled total) | 743 bundled | **1.34 M direct** (3.10 M settled) | **VERIFIED UNDER BUDGET** (Budget: ≤ 1,400 draws, ≤ 4.0M tris). Real live Chrome headless capture via `window.photo.line()`. |
+| **Pre-Roadmap Measured State** | **1,404** (661 direct) | 743 bundled | **3.95 M** (1.34 M direct) | At ceiling (Budget: ≤ 1,400 draws, ≤ 4.0M tris). 28.7 ms med, 50.0 ms 1% low. |
+| **Phase A3 Headroom Target** | **≤ 1,150** (≤ 400 direct) | ~750 bundled | **≤ 3.20 M** | Metro LOD (swap >150m, cull >400m), KTX2 textures, unbundled audit. Creates 250-draw headroom for tank & heli. |
 
 ---
 

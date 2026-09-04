@@ -3,6 +3,40 @@
  * Provides live polyline node sequence, waypoint tracking,
  * and next-turn arrow directions within 60m.
  */
+class MinHeap {
+  constructor() { this.data = []; }
+  push(item) {
+    this.data.push(item);
+    let i = this.data.length - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (this.data[p].d <= this.data[i].d) break;
+      const tmp = this.data[p]; this.data[p] = this.data[i]; this.data[i] = tmp;
+      i = p;
+    }
+  }
+  pop() {
+    if (this.data.length === 0) return null;
+    const top = this.data[0];
+    const bottom = this.data.pop();
+    if (this.data.length > 0) {
+      this.data[0] = bottom;
+      let i = 0;
+      const len = this.data.length;
+      while (true) {
+        let left = (i << 1) + 1, right = left + 1, best = i;
+        if (left < len && this.data[left].d < this.data[best].d) best = left;
+        if (right < len && this.data[right].d < this.data[best].d) best = right;
+        if (best === i) break;
+        const tmp = this.data[i]; this.data[i] = this.data[best]; this.data[best] = tmp;
+        i = best;
+      }
+    }
+    return top;
+  }
+  get size() { return this.data.length; }
+}
+
 export class Navigation {
   constructor(district) {
     this.district = district;
@@ -53,16 +87,20 @@ export class Navigation {
   }
 
   findRoute(fromId, toId) {
-    if (fromId === toId || !this.nodes.has(fromId) || !this.nodes.has(toId)) return [];
+    if (fromId === null || toId === null || !this.nodes.has(fromId) || !this.nodes.has(toId)) return [];
+    if (fromId === toId) {
+      const n = this.nodes.get(fromId);
+      return n ? [[n.x, n.y]] : [];
+    }
     const dist = new Map();
     const prev = new Map();
     const visited = new Set();
-    const queue = [{ id: fromId, d: 0 }];
+    const heap = new MinHeap();
     dist.set(fromId, 0);
+    heap.push({ id: fromId, d: 0 });
 
-    while (queue.length > 0) {
-      queue.sort((a, b) => a.d - b.d);
-      const { id: u, d: du } = queue.shift();
+    while (heap.size > 0) {
+      const { id: u, d: du } = heap.pop();
       if (visited.has(u)) continue;
       visited.add(u);
       if (u === toId) break;
@@ -74,7 +112,7 @@ export class Navigation {
         if (!dist.has(edge.to) || alt < dist.get(edge.to)) {
           dist.set(edge.to, alt);
           prev.set(edge.to, { from: u, edge });
-          queue.push({ id: edge.to, d: alt });
+          heap.push({ id: edge.to, d: alt });
         }
       }
     }
@@ -135,13 +173,19 @@ export class Navigation {
     if (shouldRecalc) {
       const startNode = this.findNearestNode(car.x, car.z);
       const endNode = this.findNearestNode(target.x, target.z || target.y);
+      this.lastTarget = targetKey;
+      this.lastCalcTime = now;
+
       if (startNode !== null && endNode !== null) {
         const pts = this.findRoute(startNode, endNode);
-        if (pts.length > 0) {
-          this.routePoints = pts;
-          this.lastTarget = targetKey;
-          this.lastCalcTime = now;
+        this.routePoints = pts;
+        if (pts.length === 0) {
+          // Unreachable waypoint back-off: don't thrash recalculation
+          this.lastCalcTime = now + 2500;
         }
+      } else {
+        this.routePoints = [];
+        this.lastCalcTime = now + 2500;
       }
     }
 
@@ -162,19 +206,17 @@ export class Navigation {
       const distNext = Math.hypot(car.x - pNext[0], car.z - pNext[1]);
       if (distNext < 60 && this.routePoints.length >= 3) {
         const pAfter = this.routePoints[1];
-        // Relative heading angle
+        // Relative turn angle via 2D cross product and dot product
         const dx1 = pNext[0] - car.x, dz1 = pNext[1] - car.z;
         const dx2 = pAfter[0] - pNext[0], dz2 = pAfter[1] - pNext[1];
-        const a1 = Math.atan2(dx1, dz1);
-        const a2 = Math.atan2(dx2, dz2);
-        let diff = (a2 - a1);
-        while (diff > Math.PI) diff -= Math.PI * 2;
-        while (diff < -Math.PI) diff += Math.PI * 2;
+        const cross = dx1 * dz2 - dz1 * dx2;
+        const dot = dx1 * dx2 + dz1 * dz2;
+        const turnAngle = Math.atan2(cross, dot);
 
         let dir = 'STRAIGHT';
         let arrow = '↑';
-        if (diff > 0.45) { dir = 'LEFT'; arrow = '↰'; }
-        else if (diff < -0.45) { dir = 'RIGHT'; arrow = '↱'; }
+        if (turnAngle > 0.45) { dir = 'RIGHT'; arrow = '↱'; }
+        else if (turnAngle < -0.45) { dir = 'LEFT'; arrow = '↰'; }
 
         this.turnInfo = { dir, arrow, dist: Math.round(distNext) };
       }

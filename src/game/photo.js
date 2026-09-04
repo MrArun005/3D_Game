@@ -126,9 +126,13 @@ export class Photo {
   /** The stats line: one string a human can paste into a commit message. */
   line() {
     const s = this.stats;
-    const arr = [...s.samples].sort((a, b) => a - b);
+    const raw = [...s.samples];
+    const arr = raw.map((x) => (typeof x === 'number' ? x : x.ms)).sort((a, b) => a - b);
     const med = arr[arr.length >> 1] || 0;
+    const p95 = arr[Math.max(0, Math.floor(arr.length * 0.95) - 1)] || 0;
     const low = arr[Math.max(0, Math.floor(arr.length * 0.99) - 1)] || 0;
+    const worst = arr[arr.length - 1] || 0;
+    const worstCause = s.worstCause ? ` (${s.worstCause})` : '';
     const p = this.camera.position;
     const chunk = s.chunkTotals.length
       ? `chunk ${Math.max(...s.chunkTotals).toFixed(1)}ms worst total, ${s.worstChunkMs.toFixed(1)}ms worst slice (last ${s.chunkTotals.length})`
@@ -136,7 +140,7 @@ export class Photo {
     const draws = s.snapshot.draws + (s.snapshot.bundledDraws || 0), tris = s.snapshot.tris + (s.snapshot.bundledTris || 0);
     return `${this.preset || 'free'} @ ${p.x.toFixed(0)},${p.y.toFixed(1)},${p.z.toFixed(0)}`
       + ` · ${draws} draws (${s.snapshot.bundledDraws || 0} bundled) · ${(tris / 1e6).toFixed(2)}M tris`
-      + ` · frame ${med.toFixed(1)}ms med, ${low.toFixed(1)}ms 1% low · ${chunk}`;
+      + ` · frame ${med.toFixed(1)}ms med, ${p95.toFixed(1)}ms 95%, ${low.toFixed(1)}ms 1% low, ${worst.toFixed(1)}ms worst${worstCause} · ${chunk}`;
   }
 
   shot() {

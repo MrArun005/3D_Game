@@ -569,7 +569,13 @@ export class Traffic {
       car.stopped = car.speed < 0.4;
       if (car.laneCooldown > 0) {
         car.laneCooldown -= dt;
-        if (car.laneCooldown <= 0) car.changingLane = false;
+        if (car.laneCooldown <= 0) {
+          car.changingLane = false;
+          if (car.lane !== 0 && !car.hunt) {
+            car.lane = 0;
+            car.laneCooldown = 4.0;
+          }
+        }
       }
       if (car.panic > 0) {
         car.panic -= dt;
@@ -779,10 +785,12 @@ export class Traffic {
     if (nearest === Infinity) return Infinity;
 
     // Multilane lane-change overtaking when leader is slow
-    if (car.edge && (car.edge.lanes || 1) > 1 && leaderSpeed < car.cruise * 0.60 && !car.changingLane) {
+    const edgeObj = typeof car.edge === 'number' ? this.E[car.edge] : car.edge;
+    const lanes = Math.max(1, edgeObj?.lanes || 1);
+    if (edgeObj && lanes > 1 && leaderSpeed < car.cruise * 0.60 && !car.changingLane) {
       car.changingLane = true;
-      car.laneCooldown = 5.0; // resets changingLane so traffic can overtake repeatedly
-      car.lane = car.lane <= 0.5 ? 1.5 : 0.5;
+      car.laneCooldown = 6.0; // resets changingLane so traffic can overtake repeatedly
+      car.lane = car.lane === 0 ? 1 : 0;
     }
 
     const gap = nearest - (car.spec.L * 0.5 + minGap);
