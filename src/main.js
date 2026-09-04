@@ -34,6 +34,10 @@ import { buildBeach } from './world/beach.js';
 import { useDistrict } from './world/metrics.js';
 import { buildCar } from './vehicle/model.js';
 import { createCarState, resetCar, stepVehicle } from './vehicle/dynamics.js';
+import { Vehicle, CarVehicle } from './game/vehicle.js';
+import { HelicopterVehicle } from './game/flight.js';
+import { TankVehicle } from './game/tank.js';
+import { DispatchService } from './game/dispatch.js';
 import { groundHeightAt } from './world/metrics.js';
 import { CG_X, WHEEL_R } from './vehicle/config.js';
 import { ChaseCamera } from './game/camera.js';
@@ -179,7 +183,8 @@ let beach = null, water = null, crowd = null, heli = null, districtRef = null, d
 let districtFailed = false;
 let spawnSnap = false;        // the frame loop snaps the chase camera on its next update (chase is declared later; see the top-level awaits)   // lets the boot gate drop on the legacy grid if the district never lands
 let lightPool = null;
-let jobs = null, garage = null, story = null, phone = null;
+let jobs = null, garage = null, story = null, phone = null, dispatch = null;
+let activeVehicle = null;
 let chat = null, chatter = null, commands = null;
 let vehicleVFX = null, puddles = null;
 let people = null;
@@ -532,27 +537,51 @@ function driverDoor(hold = 0.9) {
 
 function useVehicle() {
   if (!started) { started = true; hud.dismiss(); }
-  if (flying) {                      // step out, wherever you happen to be
-    flying.landed = flying.pos.y < 2.5;
-    const h = flying;
-    flying = null;
-    h.group.visible = true;
-    onFoot.exit({ x: h.pos.x, z: h.pos.z, yaw: h.heading || 0 });
+  if (activeVehicle && activeVehicle !== carVehicle) {
+    // Step out of helicopter or tank
+    const prev = activeVehicle;
+    prev.exit();
+    activeVehicle = carVehicle;
+    onFoot.exit({ x: prev.x, z: prev.z, yaw: prev.yaw || 0 });
     return;
   }
   if (onFoot.active) {
-    // a landed helicopter beats any car within reach
+    // 1. Check nearby dispatched vehicles (heli, tank)
+    if (dispatch?.dispatchedVehicles?.length) {
+      for (const v of dispatch.dispatchedVehicles) {
+        const reach = v.type === 'helicopter' ? 7.5 : 5.5;
+        const d = Math.hypot(v.x - onFoot.x, v.z - onFoot.z);
+        if (d < reach) {
+          onFoot.enter();
+          v.enter(hero);
+          activeVehicle = v;
+          if (v.type === 'helicopter') {
+            hud.flash('AIRBORNE — W/S tilt & speed, A/D rudder, SPACE climb, SHIFT descend');
+          } else if (v.type === 'tank') {
+            hud.flash('HEAVY ARMOR — W/S drive, A/D pivot steer, MOUSE AIM cannon');
+          }
+          return;
+        }
+      }
+    }
+    // 2. Check landed police air support helicopter
     if (heli && heli.landed && Math.hypot(heli.pos.x - onFoot.x, heli.pos.z - onFoot.z) < 9) {
       onFoot.enter();
       heli.board();
-      heli.group.visible = true;
-      heli.heading = heli.group.rotation.y;
-      heli.vel.set(0, 0, 0);
-      flying = heli;
-      hud.flash('AIRBORNE — SPACE up, SHIFT down');
+      const playerHeli = new HelicopterVehicle(scene, world, {
+        x: heli.pos.x,
+        y: heli.pos.y,
+        z: heli.pos.z,
+        yaw: heli.group.rotation.y,
+        running: true,
+      });
+      dispatch?.dispatchedVehicles.push(playerHeli);
+      playerHeli.enter(hero);
+      activeVehicle = playerHeli;
+      hud.flash('AIRBORNE — W/S tilt & speed, A/D rudder, SPACE climb, SHIFT descend');
       return;
     }
-    // nearest vehicle within reach: your own car, or somebody else's
+    // 3. Nearest vehicle within reach: your own car, or somebody else's
     const reach = 4.2;
     let best = null, bestD = reach;
     const dOwn = Math.hypot(car.x - onFoot.x, car.z - onFoot.z);
@@ -656,7 +685,9 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   landmarks = new Landmarks(scene, district);   // gun shop, supermarket, street set on their lots (world/landmarks.js)
   garage.restore();
   story = new StoryManager(mission, traffic, hud, garage);
-  phone = new Phone(story, garage, hero, traffic);
+  dispatch = new DispatchService(scene, world, garage, traffic, debris, hud, audio);
+  window._dispatch = dispatch;
+  phone = new Phone(story, garage, hero, traffic, dispatch);
   vehicleVFX = new VehicleVFX(scene, hero);
   window.vehicleVFX = vehicleVFX;
   puddles = new PuddleSystem(scene, district);
@@ -705,6 +736,9 @@ scene.add(hero);
 // the hero's visible body is the kit's sports sedan over the lofted physics hull
 await loadHeroSkin(assets, hero).catch((e) => console.warn('hero skin:', e.message));
 damageModel.attach(hero);
+const carVehicle = new CarVehicle(car, stepVehicle, hero);
+activeVehicle = carVehicle;
+window._activeVehicle = activeVehicle;
 
 // --- Modern High-Performance Headlight System ---
 const NOSE_X = CG_X;
@@ -1071,8 +1105,15 @@ function frameBody() {
   if (airspace) airspace.update(dt, worldTime);
   if (story) story.update(car, dt);
   if (!started && (c.throttle > 0.08 || c.brake > 0.25 || Math.abs(c.steer) > 0.3)) start();
-  if (flying) {
-    flightUpdate(c, dt);
+  if (activeVehicle && activeVehicle.type === 'helicopter') {
+    activeVehicle.update(c, dt, { keys: input.keys });
+    car.x = activeVehicle.x; car.z = activeVehicle.z;
+    car.vx = activeVehicle.vx; car.vz = activeVehicle.vz;
+    car.throttle = 0; car.brake = 1; car.steerTarget = 0;
+  } else if (activeVehicle && activeVehicle.type === 'tank') {
+    activeVehicle.update(c, dt, { firing, chase });
+    car.x = activeVehicle.x; car.z = activeVehicle.z;
+    car.vx = activeVehicle.vx; car.vz = activeVehicle.vz;
     car.throttle = 0; car.brake = 1; car.steerTarget = 0;
   } else if (onFoot.active) {
     onFoot.update(c, dt, camera, walkSolid);
@@ -1101,6 +1142,9 @@ function frameBody() {
   car.steerTarget = c.steer;
   }
   }
+
+  dispatch?.update(dt, activeVehicle, chase);
+  flying = activeVehicle?.type === 'helicopter' ? activeVehicle : null;
 
   /* Breakables go BEFORE the physics step: a lamp post the car is about to
      fell must lose its collision solid before the tyre model resolves against
@@ -1220,18 +1264,19 @@ function frameBody() {
   } else if (photo.on) {
     photo.update(dt);          // the chase camera is frozen while photo mode owns the view
   } else {
-    if (!onFoot.active && !flying) {
+    if (!onFoot.active) {
+      const targetVehicle = activeVehicle || car;
       // ease the free look back behind the car once you are driving again
-      if (chase.looking && Math.abs(car.fwdSpeed) > 6) {
+      if (chase.looking && Math.abs(targetVehicle.fwdSpeed || 0) > 6) {
         const d = 1 - Math.pow(0.35, dt);
         chase.lookYaw -= chase.lookYaw * d;
         chase.lookPitch -= chase.lookPitch * d;
         if (Math.abs(chase.lookYaw) < 0.01 && Math.abs(chase.lookPitch) < 0.01) chase.recentre();
       }
       chase.setLookBack(!!c?.lookBack);
-      if ((car.impact || 0) > 6.0) rumble(Math.min(1.0, car.impact / 18.0), 120);
-      if (spawnSnap) { spawnSnap = false; chase.snap(car); }
-      chase.update(car, dt);
+      if ((targetVehicle.impact || 0) > 6.0) rumble(Math.min(1.0, targetVehicle.impact / 18.0), 120);
+      if (spawnSnap) { spawnSnap = false; chase.snap(targetVehicle); }
+      targetVehicle.camera ? targetVehicle.camera(chase, dt) : chase.update(targetVehicle, dt);
     }
   }
   clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: car, dome, stars });

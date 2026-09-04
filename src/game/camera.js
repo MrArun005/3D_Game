@@ -45,15 +45,16 @@ export class ChaseCamera {
   snap(car) { this.update(car, 60); }
 
   update(car, dt) {
-    const rig = RIGS[this.mode];
+    const rig = car.customRig ?? RIGS[this.mode];
     const cy = Math.cos(car.yaw), sy = Math.sin(car.yaw);
     const rx = sy, rz = cy;
-    const speedK = Math.min(1, car.speed / 42);
+    const speedK = Math.min(1, (car.speed || 0) / 42);
     let back = rig.back * (1 + speedK * 0.18);
+    const targetY = car.y ?? 0;
 
     // Don't let a chase camera reverse into a building. Walk it in until the
-    // point it wants to occupy is over tarmac or pavement.
-    if (rig.back > 0) {
+    // point it wants to occupy is over tarmac or pavement. Only apply near ground (< 5m).
+    if (rig.back > 0 && targetY < 5) {
       for (let i = 0; i < 6; i++) {
         const tx = car.x - cy * back, tz = car.z + sy * back;
         if (roadDepth(tx, tz) < WALK_W - 0.5) break;
@@ -78,7 +79,7 @@ export class ChaseCamera {
     const oz = Math.sin(ly) * (-cy) + Math.cos(ly) * (sy);
     const tx = car.x + ox * back * flat;
     const tz = car.z + oz * back * flat;
-    const ty = rig.up + car.heave + lift * back * 1.15;
+    const ty = targetY + rig.up + (car.heave || 0) + lift * back * 1.15;
     const k = 1 - Math.pow(0.0016, dt * (rig.lag / 3.4));
     this.pos.x += (tx - this.pos.x) * k;
     this.pos.y += (ty - this.pos.y) * k;
@@ -96,16 +97,16 @@ export class ChaseCamera {
     /* Look-ahead has to be earned by speed. A fixed 2.4m of swing at a
        standstill turns the whole screen when the car itself cannot move,
        which reads as the camera steering instead of the car. */
-    const look = car.steer * speedK * 6.0;
+    const look = (car.steer || 0) * speedK * 6.0;
     // when free-looking or looking behind, aim through the car rather than down the road
     const aimD = (this.looking || this.lookBehind) ? 2.0 : rig.aim;
     this.aim.set(
       car.x - ox * aimD * flat + rx * look,
-      0.95 + car.heave - lift * aimD * 0.4,
+      targetY + 0.95 + (car.heave || 0) - lift * aimD * 0.4,
       car.z - oz * aimD * flat + rz * look,
     );
     this.camera.lookAt(this.aim);
-    if (rig.tilt) this.camera.rotation.z += car.roll * 0.35 - car.yawRate * 0.018;
+    if (rig.tilt) this.camera.rotation.z += (car.roll || 0) * 0.35 - (car.yawRate || 0) * 0.018;
 
     const nosBoost = car.nosActive ? 11 : 0;
     // FOV 62 at rest to 74 at ~150 km/h (speedK reaches 1.0)

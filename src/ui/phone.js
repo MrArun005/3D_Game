@@ -1,11 +1,12 @@
 import { STORY_MISSIONS } from '../game/storyMissions.js';
 
 export class Phone {
-  constructor(storyManager, garage, hero, traffic) {
+  constructor(storyManager, garage, hero, traffic, dispatchService = null) {
     this.story = storyManager;
     this.garage = garage;
     this.hero = hero;
     this.traffic = traffic;
+    this.dispatch = dispatchService;
 
     this.open = false;
     this.tab = 'missions'; // 'missions' | 'garage' | 'contacts'
@@ -231,6 +232,50 @@ export class Phone {
         this.content.appendChild(cCard);
       });
     } else if (this.tab === 'contacts') {
+      // Pegasus Helicopter Dispatch
+      const heliCard = document.createElement('div');
+      heliCard.style.cssText = 'background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 12px; display:flex; justify-content:space-between; align-items:center;';
+      heliCard.innerHTML = `
+        <div>
+          <div style="font-weight:800; font-size:13px; color:#3498db;">PEGASUS HELI DISPATCH</div>
+          <div style="font-size:11px; color:#aaa;">$2,500 · Direct delivery to nearest rooftop/clearing</div>
+        </div>
+        <button id="dispatch-heli-btn" style="padding:8px 14px; border-radius:8px; border:none; background:#2980b9; color:#fff; font-weight:800; font-size:11px; cursor:pointer;">
+          CALL HELI
+        </button>
+      `;
+      heliCard.querySelector('#dispatch-heli-btn').onclick = () => {
+        if (this.dispatch) {
+          const car = this.hero.userData?.car || { x: 0, z: 0 };
+          this.dispatch.dispatchHelicopter(car);
+          this.toggle(false);
+          this.#render();
+        }
+      };
+      this.content.appendChild(heliCard);
+
+      // Warstock Rhino Tank Drop
+      const tankCard = document.createElement('div');
+      tankCard.style.cssText = 'background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 12px; display:flex; justify-content:space-between; align-items:center;';
+      tankCard.innerHTML = `
+        <div>
+          <div style="font-weight:800; font-size:13px; color:#27ae60;">WARSTOCK RHINO TANK</div>
+          <div style="font-size:11px; color:#aaa;">$12,000 / 3★ · 55T armor & 120mm smoothbore cannon</div>
+        </div>
+        <button id="dispatch-tank-btn" style="padding:8px 14px; border-radius:8px; border:none; background:#27ae60; color:#fff; font-weight:800; font-size:11px; cursor:pointer;">
+          DROP TANK
+        </button>
+      `;
+      tankCard.querySelector('#dispatch-tank-btn').onclick = () => {
+        if (this.dispatch) {
+          const car = this.hero.userData?.car || { x: 0, z: 0 };
+          this.dispatch.dispatchTank(car, this.traffic?.wanted || 0);
+          this.toggle(false);
+          this.#render();
+        }
+      };
+      this.content.appendChild(tankCard);
+
       // Pay'n'Spray / Heat Clear
       const sprayCard = document.createElement('div');
       sprayCard.style.cssText = 'background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 12px; display:flex; justify-content:space-between; align-items:center;';
