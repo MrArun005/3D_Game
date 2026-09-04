@@ -568,6 +568,14 @@ export class Traffic {
     }
   }
 
+  /** One entry point for 'a player round hit an officer-shaped thing': door officer or rooftop marksman. Posts belong to the roadblock. */
+  hitAny(ref, damage = 26) {
+    if (!ref) return false;
+    if (ref.mesh) return this.officerHit(ref, damage);
+    if (ref.roof) return this.hitMark(ref, damage);
+    return false;
+  }
+
   /** Rooftop marksmen as weapon targets. */
   markTargets(out) {
     for (const m of this.marks ?? []) if (!m.down) out.push({ x: m.group.position.x, z: m.group.position.z, y: m.group.position.y + 1.15, r: 0.42, kind: 'officer', ref: m });

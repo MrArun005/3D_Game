@@ -593,7 +593,7 @@ function pullTrigger() {
   // firing at all is a crime; hitting something is a worse one
   if (hit?.kind !== 'target' && modes?.active !== 'range') traffic.reportCrime(hit ? (hit.kind === 'person' ? 'person' : (hit.kind === 'police' || hit.kind === 'officer') ? 'police' : 'traffic') : 'traffic',
                       hit ? 9 : 1);
-  if (hit && hit.kind === 'officer') { const downed = hit.ref.mesh ? traffic.officerHit?.(hit.ref, weapon.spec.damage) : hit.ref.roof ? traffic.hitMark?.(hit.ref, weapon.spec.damage) : roadblock?.hitPost?.(hit.ref, weapon.spec.damage); if (downed) { modes?.onOfficerDown(); story?.onOfficerDown?.(); hud.flash(modes?.active === 'holdout' ? 'OFFICER DOWN · +50' : 'OFFICER DOWN'); } crosshair.hit(hit.ref.down > 0); }
+  if (hit && hit.kind === 'officer') { const downed = traffic.hitAny?.(hit.ref, weapon.spec.damage) || roadblock?.hitPost?.(hit.ref, weapon.spec.damage); if (downed) { modes?.onOfficerDown(); story?.onOfficerDown?.(); hud.flash(modes?.active === 'holdout' ? 'OFFICER DOWN · +50' : 'OFFICER DOWN'); } crosshair.hit(hit.ref.down > 0); }
   if (hit && hit.kind === 'person') hit.ref.down = 0.001;
   if (hit && (hit.kind === 'car' || hit.kind === 'police')) {   // vehicles only: boards, marksmen and posts have no .mesh
     hit.ref.speed *= 0.55;

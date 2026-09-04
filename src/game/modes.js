@@ -51,6 +51,9 @@ export function rank(score, mode) {
   return score >= bands[3] ? 'S' : score >= bands[2] ? 'A' : score >= bands[1] ? 'B' : score >= bands[0] ? 'C' : 'D';
 }
 
+/* CLAUDE.md rule 3 says detail inside 30 m comes from the catalogue. The board
+   is the exception on purpose: a transient training prop, not city detail, six
+   of them for sixty seconds, and a catalogue asset would be a download. */
 let BOARD = null;
 function boardGeo() {
   if (BOARD) return BOARD;
