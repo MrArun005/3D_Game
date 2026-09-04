@@ -7,7 +7,7 @@ import { PAINT_COLOURS, BODY_KEYS, BODY_TYPES } from '../vehicle/config.js';
 import { groundHeightAt } from '../world/metrics.js';
 import { buildOfficer, poseOfficer, PoseBlender, lookAt } from '../world/officer.js';
 import { buildWeaponMesh, ARSENAL } from './weapons.js';
-import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED, pickRooftops, coverSide, evasionDecay } from './policeAi.js';
+import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED, pickRooftops, coverSide, evasionDecay, searchRadius } from './policeAi.js';
 import { roofsNear } from '../world/districtWorld.js';
 
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
@@ -1038,11 +1038,23 @@ export class Traffic {
            around you instead, and hold each other at arm's length. */
         const live = this.police.filter((q) => q.live && q.mode === 'free');
         const slot = live.indexOf(c);
-        const bearing = Math.atan2(-dz, dx);
+        /* Where they think you are. With a line on you it is you; once you
+           have been out of sight for a few seconds it is where they last had
+           you, and they sweep a ring around it that widens as the trail goes
+           cold (the same searchRadius the minimap draws). They only find you
+           again by SEEING you -- a cruiser's line of sight sets `hot`. */
+        const cold = this.coldFor > 3 && this.seenX !== undefined;
+        let hx = player.x, hz = player.z;
+        if (cold) {
+          const ring = searchRadius(this.coldFor) * 0.6, a = t * 0.25 + slot * 2.1;
+          hx = this.seenX + Math.cos(a) * ring; hz = this.seenZ + Math.sin(a) * ring;
+        }
+        const hdx = hx - c.x, hdz = hz - c.z, hgap = Math.hypot(hdx, hdz);
+        const bearing = Math.atan2(-hdz, hdx);
         const spread = live.length > 1 ? ((slot / live.length) - 0.5) * 2.2 : 0;
-        const standoff = Math.max(3.4, Math.min(11, gap * 0.55));
-        const aimX = player.x - Math.cos(bearing + spread) * standoff;
-        const aimZ = player.z + Math.sin(bearing + spread) * standoff;
+        const standoff = cold ? 0 : Math.max(3.4, Math.min(11, hgap * 0.55));
+        const aimX = hx - Math.cos(bearing + spread) * standoff;
+        const aimZ = hz + Math.sin(bearing + spread) * standoff;
 
         const want = Math.atan2(-(aimZ - c.z), aimX - c.x);
         let d = ((want - c.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
@@ -1050,7 +1062,7 @@ export class Traffic {
         const reach = Math.hypot(aimX - c.x, aimZ - c.z);
         // stop shoving once you are cornered: a pursuit that keeps ramming a
         // stationary car can never resolve into an arrest
-        const target = gap < 7 ? 0 : reach < 8 ? reach * 1.1 : c.cruise;
+        const target = (!cold && gap < 7) ? 0 : reach < 8 ? reach * 1.1 : (cold ? c.cruise * 0.55 : c.cruise);   // a search is driven slowly
         c.speed += Math.max(-14 * dt, Math.min(9 * dt, target - c.speed));
         c.x += Math.cos(c.yaw) * c.speed * dt;
         c.z -= Math.sin(c.yaw) * c.speed * dt;
