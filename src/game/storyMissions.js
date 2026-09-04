@@ -107,6 +107,15 @@ export class StoryManager {
   }
 
   #advanceStep(car) {
+    this.downed = 0;
+    /* A firefight step brings the fight to you: the crew 'calls it in', so the
+       wanted level jumps and cruisers arrive to deploy where you stand. Without
+       this a stand-off at zero stars was an empty yard. */
+    const next = this.active?.steps?.[this.stepIdx];
+    if (next?.needDowned && this.traffic) {
+      this.traffic.wanted = Math.max(this.traffic.wanted, 2.6);
+      this.hud?.flash?.('THEY ARE CALLING IT IN · HOLD THE GROUND');
+    }
     if (!this.active) return;
     if (this.stepIdx >= this.active.steps.length) {
       // Completed!
