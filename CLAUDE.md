@@ -113,8 +113,11 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   LOS through buildings+vehicles, cover/peek/advance/arrest/down), officers
   in `world/officer.js` (7 vertex-coloured meshes with a geometric face,
   seeded variety, PoseBlender, lookAt), `game/modes.js` (range, hold-out;
-  phone SERVICES cards). Keys: 1-4 weapon, X reload, RMB aim, C crouch on
-  foot, Q lean. Debug hooks under `?debug`: `__dbg()`, `__aim(v)`,
+  phone SERVICES cards). Keys: 0/` fists, 1-4 weapon, 5 grenades, X reload, RMB aim, C
+  crouch on foot, Q lean, E fire/throw/punch. Downed officers drop their
+  weapon (one in five a grenade); phone SERVICES sells guns, armour and
+  grenades; `storyMissions` steps take `needDowned: N`. Ammo, grenades and
+  armour persist in localStorage `hb.arsenal`. Debug hooks under `?debug`: `__dbg()`, `__aim(v)`,
   `__police()`, `__wanted(n)`. No Playwright in this project (Arun's rule):
   verify with `node --test` and reasoning, he play-tests.
 - **iCloud evicts `.git` (2026-09-05)**: the repo lives in `~/Desktop`, which

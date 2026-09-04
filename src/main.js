@@ -393,6 +393,7 @@ let healTick = 0;
 /* The arsenal survives a reload of the page like cash and the garage do. */
 try { const d = JSON.parse(localStorage.getItem('hb.arsenal') || 'null'); if (d) { weapon.restore(d); grenades.count = d.grenades ?? grenades.count; armour = d.armour ?? 0; } } catch { /* private mode */ }
 let arsenalSaveT = 0;
+addEventListener('pagehide', () => saveArsenal());
 function saveArsenal() { try { localStorage.setItem('hb.arsenal', JSON.stringify({ ...weapon.serialize(), grenades: grenades.count, armour })); } catch { /* private mode */ } }
 let armour = 0;           // body armour 0..1, bought at Ammu-Nation, soaks 60% of a hit until gone
 const _rayHit = new THREE.Vector3();
@@ -1379,8 +1380,9 @@ function frame() {
 function frameBody() {
   performance.mark('frame-start');
   const now = performance.now();
-  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  let dt = Math.min((now - lastTime) / 1000, 0.05);
   lastTime = now;
+  if (dying) dt *= 0.35;   // wasted: the fall plays at a third speed, GTA's beat
 
   // ---- controls ----
   let c = null;   // this frame's input snapshot; null in film mode (the camera block below reads it)
