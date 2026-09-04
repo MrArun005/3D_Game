@@ -623,7 +623,8 @@ export class Traffic {
       return;
     }
     // you have moved on: marksmen 220 m behind you are scenery, so re-place them
-    if (this.marks.length && Math.min(...this.marks.map((m) => Math.hypot(m.group.position.x - player.x, m.group.position.z - player.z))) > 220) {
+    let nearest = Infinity; for (const m of this.marks) { const d = Math.hypot(m.group.position.x - player.x, m.group.position.z - player.z); if (d < nearest) nearest = d; }
+    if (this.marks.length && nearest > 220) {
       for (const m of this.marks) this.scene.remove(m.group);
       this.marks.length = 0;
     }
@@ -650,7 +651,7 @@ export class Traffic {
       m.poseT += dt;
       m.blender.apply(m.joints, 'aim', m.poseT, dt, 0.3);
       const gap = Math.hypot(player.x - gx, player.z - gz);
-      const bldg = this.world?.nearbyBuildings ? this.world.nearbyBuildings(player.x, player.z).filter((b) => Math.hypot(b.x - m.roof.x, b.z - m.roof.z) > 1) : [];
+      const bldg = (this._bldg || []).filter((b) => Math.hypot(b.x - m.roof.x, b.z - m.roof.z) > 1);   // his own roof cannot block him
       const canSee = hasLineOfSight(gx, gy, gz, player.x, ty, player.z, bldg, this.cars, null);
       m.fireT -= dt;
       if (canSee && m.fireT <= 0) {
@@ -677,7 +678,7 @@ export class Traffic {
     const prof = targetProfile(!!player.onFoot, !!player.crouch);
     const ty = (player.y ?? 0) + prof.y;
     const gap = Math.hypot(player.x - h.pos.x, player.z - h.pos.z);
-    const bldg = this.world?.nearbyBuildings ? this.world.nearbyBuildings(player.x, player.z) : [];
+    const bldg = this._bldg || [];
     const canSee = hasLineOfSight(h.pos.x, h.pos.y - 1, h.pos.z, player.x, ty, player.z, bldg, [], null);
     this._gunBurst = (this._gunBurst ?? 0) > 0 ? this._gunBurst - 1 : burstFor('smg').shots - 1;
     this._gunT = this._gunBurst > 0 ? burstFor('smg').gap : 2.5 + this.rand() * 1.5;
@@ -689,6 +690,11 @@ export class Traffic {
   }
 
   update(player, dt, time) {
+    /* One building scan for the whole frame: every shooter is within ~65 m of
+       the player, so the player's 9-chunk neighbourhood serves them all. Eleven
+       per-shooter scans at four stars were eleven allocations a frame. */
+    this._bldg = this.world?.nearbyBuildings ? this.world.nearbyBuildings(player.x, player.z) : [];
+    this._deployed = 0; for (const q of this.police) if (q.deployed) this._deployed++;
     for (const v of this.cars) if (v.fleeT > 0) { v.fleeT -= dt; if (v.fleeT <= 0 && v.baseCruise) v.cruise = v.baseCruise; }
     this.#tickDrops(dt);
     this.#rooftops(player, dt);
@@ -867,8 +873,8 @@ export class Traffic {
       const footContact = !!player.onFoot && gap < 40 && c.mode === 'free';
       if ((c.mode === 'free' && stopped && close) || footContact) c.deployT += dt * (footContact ? 1.6 : 1);
       else c.deployT = Math.max(0, c.deployT - dt * 0.8);
-      if (!c.deployed && c.deployT > 1.0 && this.police.filter((q) => q.deployed).length < MAX_DEPLOYED) {
-        c.deployed = true; c.fireT = 0.5; c.state = 'cover'; c.stateT = 0; c.hp = 100; c.down = 0;
+      if (!c.deployed && c.deployT > 1.0 && this._deployed < MAX_DEPLOYED) {
+        c.deployed = true; this._deployed++; c.fireT = 0.5; c.state = 'cover'; c.stateT = 0; c.hp = 100; c.down = 0;
         // the response draws heavier guns as the stars climb; the mesh swaps geometry, not material
         c.gunKind = weaponForWanted(Math.floor(this.wanted), c.slot);
         c.gun.geometry = buildWeaponMesh(c.gunKind).geometry;
@@ -902,7 +908,7 @@ export class Traffic {
         const prof = targetProfile(!!player.onFoot, !!player.crouch);
         const ty = (player.y ?? 0) + prof.y;
         const gunY = c.officer.position.y + (c.state === 'cover' || c.state === 'peek' ? 0.9 : 1.3);
-        const bldg = this.world?.nearbyBuildings ? this.world.nearbyBuildings(c.officer.position.x, c.officer.position.z) : [];
+        const bldg = this._bldg;
         // parked cars are cover too: their collision solids join the moving traffic in the line-of-sight test
         const parked = this.world?.nearbyParked ? this.world.nearbyParked(player.x, player.z) : null;
         if (parked !== this._losParkedSrc) { this._losParkedSrc = parked; this._losBlockers = [...this.cars, ...((parked || []).filter((s) => s.tag === 'parked').map((s) => ({ x: s.x, z: s.z, r: (s.radius ?? 1) + 0.3, y: 0.8 })))]; }

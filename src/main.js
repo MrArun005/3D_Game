@@ -365,10 +365,11 @@ const decals = new DecalPool(scene);
 /* Slot 5. In grenade mode E throws instead of firing; any digit 1-4 puts a gun
    back in your hand. The blast goes through the same debris system as the car
    and the tank, so a bin flies the same way whoever broke it. */
-const grenades = new Grenades(scene);
+const grenades = new Grenades(scene, weapon.light);   // shares the muzzle-flash light
 let grenadeMode = false;
 let fistsMode = false, punchCool = 0;
-let wasReloading = false;   // slot 0: bare hands. E swings at whoever is in front of you
+let wasReloading = false;
+let lastArsKey = '';   // slot 0: bare hands. E swings at whoever is in front of you
 grenades.onBlast = (bx, by, bz) => {
   debris.breakNear(bx, bz, BLAST_R, car, 30);
   for (const c of traffic.police) {
@@ -403,7 +404,8 @@ let armour = 0;           // body armour 0..1, bought at Ammu-Nation, soaks 60% 
 try { const d = JSON.parse(localStorage.getItem('hb.arsenal') || 'null'); if (d) { weapon.restore(d); grenades.count = d.grenades ?? grenades.count; armour = d.armour ?? 0; } } catch { /* private mode */ }
 let arsenalSaveT = 0;
 addEventListener('pagehide', () => saveArsenal());
-function saveArsenal() { try { localStorage.setItem('hb.arsenal', JSON.stringify({ ...weapon.serialize(), grenades: grenades.count, armour })); } catch { /* private mode */ } }
+let lastArsenalJson = '';
+function saveArsenal() { try { const j = JSON.stringify({ ...weapon.serialize(), grenades: grenades.count, armour }); if (j !== lastArsenalJson) { lastArsenalJson = j; localStorage.setItem('hb.arsenal', j); } } catch { /* private mode */ } }
 const _rayHit = new THREE.Vector3();
 const _hand = new THREE.Vector3();   // the skinned hero's palm, when the rig is up
 /* The gun you are actually holding.
@@ -1597,12 +1599,14 @@ function frameBody() {
   }
   placeHeldGun();
   if (fistsMode) hud.setAmmo('FISTS', '', '', false, armour); else if (grenadeMode) hud.setAmmo('GRENADE', grenades.count, '-', false, armour); else hud.setAmmo(weapon.spec.name, weapon.ammo, weapon.reserveNow, weapon.reloading, armour);
-  if (onFoot.active) hud.setArsenal?.([
+  const arsKey = onFoot.active ? `${fistsMode}|${grenadeMode}|${weapon.kind}|${weapon.ammo}|${weapon.reserveNow}|${grenades.count}` : 'car';
+  if (arsKey !== lastArsKey && onFoot.active) hud.setArsenal?.([
     { key: 0, name: 'FISTS', mag: '', reserve: '', current: fistsMode },
     ...WEAPON_KINDS.map((k, i) => ({ key: i + 1, name: ARSENAL[k].name, mag: k === weapon.kind ? weapon.ammo : weapon.mags[k], reserve: weapon.reserve[k], current: !fistsMode && !grenadeMode && k === weapon.kind })),
     { key: 5, name: 'NADE', mag: grenades.count, reserve: '', current: grenadeMode },
   ]);
-  else if (hud.arsEl) hud.arsEl.innerHTML = '', hud._arsKey = '';
+  else if (arsKey !== lastArsKey && hud.arsEl) { hud.arsEl.innerHTML = ''; hud._arsKey = ''; }
+  lastArsKey = arsKey;
   skids.update(car, car.wheelGround ? car.wheelGround[2] : 0);
   if (firing) pullTrigger();
   if (crowd) crowd.update(car, dt, (speed) => traffic.reportCrime('person', speed));

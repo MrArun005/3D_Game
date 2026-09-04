@@ -507,4 +507,7 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   them explicitly; do not silently overwrite.
 - Cite `file:line` for claims about behaviour.
 - Run `npm test` after touching `dynamics.js`, `signals.js`, `district.js` or `input.js`.
-- Screenshot-verify visual changes. Do not claim a visual result you have not seen.
+- Screenshot-verify visual changes when a browser is allowed. Do not claim a
+  visual result you have not seen. Since 2026-09-05 Arun has ruled out
+  Playwright for this project: state what is unverified visually and hand him
+  a play-test checklist instead; tests and static checks carry the rest.

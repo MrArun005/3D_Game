@@ -49,14 +49,17 @@ export function blastFalloff(d, r) {
 }
 
 export class Grenades {
-  constructor(scene) {
+  constructor(scene, flashLight = null) {
     this.scene = scene;
     this.count = START_COUNT;
     this.live = [];
     this.geo = new THREE.SphereGeometry(0.075, 10, 7);
     this.mat = new THREE.MeshStandardMaterial({ color: 0x2f3a2a, roughness: 0.55, metalness: 0.3 });
-    this.flash = new THREE.PointLight(0xffb060, 0, 22, 2);
-    scene.add(this.flash);
+    /* The blast flash borrows the muzzle-flash light rather than adding a
+       seventh point light to every lit fragment for a 0.18 s effect. */
+    this.flash = flashLight;
+    this.ownsFlash = !flashLight;
+    if (!flashLight) { this.flash = new THREE.PointLight(0xffb060, 0, 22, 2); scene.add(this.flash); }
     this.flashT = 0;
     this.onBlast = null;   // (x, y, z) => void, wired by main
   }
@@ -85,12 +88,12 @@ export class Grenades {
         this.scene.remove(b.mesh);
         this.live.splice(i, 1);
         this.flash.position.set(b.x, b.y + 0.6, b.z);
-        this.flash.intensity = 60; this.flashT = 0.18;
+        this.flash.intensity = 60; this.flash.distance = 22; this.flashT = 0.18;
         this.onBlast?.(b.x, b.y, b.z);
       }
     }
-    if (this.flashT > 0) { this.flashT -= dt; this.flash.intensity = Math.max(0, 60 * (this.flashT / 0.18)); }
+    if (this.flashT > 0) { this.flashT -= dt; this.flash.intensity = Math.max(0, 60 * (this.flashT / 0.18)); if (this.flashT <= 0) this.flash.distance = 16; }
   }
 
-  dispose() { for (const b of this.live) this.scene.remove(b.mesh); this.live.length = 0; this.geo.dispose(); this.mat.dispose(); this.scene.remove(this.flash); }
+  dispose() { for (const b of this.live) this.scene.remove(b.mesh); this.live.length = 0; this.geo.dispose(); this.mat.dispose(); if (this.ownsFlash) this.scene.remove(this.flash); }
 }

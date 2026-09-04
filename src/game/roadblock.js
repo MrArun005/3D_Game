@@ -31,7 +31,8 @@ export class Roadblock {
     });
     this.strip = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 1), new THREE.MeshStandardMaterial({ color: 0x1a1a1c, emissive: 0xff7a1a, emissiveIntensity: 1.6, roughness: 0.7 }));
     this.strip.visible = false; scene.add(this.strip);
-    /* Two riflemen behind the cruisers. Built once, hidden until a block is
+    /* Two riflemen behind the cruisers. Cost while a block is up: 2 x 7-8
+       meshes + 2 rifles = ~18 draws, torso/legs casting only. Built once, hidden until a block is
        raised; they crouch behind the cars, peek to fire three-round bursts
        with a line of sight, and can be shot back at (main hands them in as
        targets). Seeds 70/71 so they are the same two faces every time. */
@@ -136,10 +137,10 @@ export class Roadblock {
       if (canSee && p.fireT <= 0) {
         if (p.burst <= 0) p.burst = burstFor('rifle').shots;
         p.burst--;
-        p.fireT = p.burst > 0 ? burstFor('rifle').gap : 1.2 + Math.random() * 1.0;
+        p.fireT = p.burst > 0 ? burstFor('rifle').gap : 1.2 + this.traffic.rand() * 1.0;   // seeded: same fight, same seed
         p.pose = 'peek';
         const w = ARSENAL.rifle;
-        const landed = shotLands(gx, gy, gz, car.x, prof.y, car.z, prof.r, aimJitter(lvl, gap, Math.abs(car.fwdSpeed ?? 0)) + w.restSpread, Math.random);
+        const landed = shotLands(gx, gy, gz, car.x, prof.y, car.z, prof.r, aimJitter(lvl, gap, Math.abs(car.fwdSpeed ?? 0)) + w.restSpread, this.traffic.rand);
         this.traffic.onShot?.(gap, landed, w.damage, p.group.position, 'rifle');
       } else if (p.burst <= 0 && p.fireT < 0.6) p.pose = 'crouch';
       p.blender.apply(p.joints, p.pose, p.poseT, dt, 0.15);

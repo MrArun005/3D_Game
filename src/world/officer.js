@@ -149,7 +149,7 @@ export function officerMaterial() { return shared().mat; }
 /** Free the shared geometry. Only for teardown -- it is shared by every officer. */
 export function disposeOfficers() {
   if (!SHARED) return;
-  for (const k of ['head', 'cap', 'torso', 'arm', 'leg']) SHARED[k].dispose();
+  for (const k of ['head', 'cap', 'torso', 'arm', 'leg', 'moustache']) SHARED[k].dispose();
   SHARED.mat.dispose();
   SHARED = null;
 }
