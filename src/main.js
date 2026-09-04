@@ -337,6 +337,7 @@ function onBust() {
   hero.visible = true;
 }
 const onFoot = new OnFoot(scene);
+window.onFoot = onFoot;   // the phone's range card reads where you stand
 const weapon = new Weapon(scene);
 /* The feel layer (game/shooting.js). aiming is the right mouse button held;
    ads blends 0..1 over ADS_BLEND_S so the sights come UP rather than snap.
@@ -1427,6 +1428,7 @@ function frameBody() {
   weapon.update(dt);
   modes?.update(dt);
   if (modes?.active) hud.setJob?.(modes.line());
+  else if (modes?.justEnded) { modes.justEnded = false; hud.setJob?.(null); }
   const adsTarget = aiming && onFoot.active ? 1 : 0;
   ads += (adsTarget - ads) * Math.min(1, dt / ADS_BLEND_S);
   if (Math.abs(ads - adsTarget) < 0.01) ads = adsTarget;

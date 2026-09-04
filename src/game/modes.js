@@ -103,7 +103,7 @@ export class Modes {
   stop() {
     for (const b of this.boards) this.scene.remove(b);
     this.boards.length = 0;
-    if (this.active) this.hud.flash?.(`${this.active.toUpperCase()} OVER · score ${this.score} · rank ${rank(this.score, this.active)}`);
+    if (this.active) { this.hud.flash?.(`${this.active.toUpperCase()} OVER · score ${this.score} · rank ${rank(this.score, this.active)}`); this.justEnded = true; }
     this.active = null;
   }
 

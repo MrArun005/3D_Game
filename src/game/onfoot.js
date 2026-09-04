@@ -39,7 +39,7 @@ export class OnFoot {
        sights coming up over ADS_BLEND_S), crouch is a toggle. Both only change
        the camera and the feet; the gun reads them separately. */
     this.ads = 0; this.adsFov = 42; this.adsBack = 2.2; this.adsSpeed = 0.5;
-    this.crouch = false; this.speed = 0;
+    this.crouch = false; this.speed = 0; this.lean = 0;
 
     const body = new THREE.Mesh(
       personGeometry(),
@@ -193,12 +193,16 @@ export class OnFoot {
 
     // Camera: over the shoulder, smoothly tracking position and elevation
     if (camera) {
+      // Q leans you out to the right: camera and aim origin slide half a metre,
+      // which is what lets you fire round a corner without stepping into the road
+      this.lean += (((c.lookBack ? 1 : 0) - this.lean)) * Math.min(1, dt * 10);
       const hipBack = c.hold ? 5.2 : 4.6;
       const back = hipBack + (this.adsBack - hipBack) * this.ads;   // over the shoulder when aiming
       const up = (2.15 - (this.crouch ? 0.45 : 0)) - 0.35 * this.ads;
       const flat = Math.cos(this.camPitch);
-      const tx = this.x - Math.cos(this.camYaw) * back * flat;
-      const tz = this.z + Math.sin(this.camYaw) * back * flat;
+      const lx = Math.sin(this.camYaw) * 0.55 * this.lean, lz = Math.cos(this.camYaw) * 0.55 * this.lean;   // right of the look
+      const tx = this.x - Math.cos(this.camYaw) * back * flat + lx;
+      const tz = this.z + Math.sin(this.camYaw) * back * flat + lz;
       const ty = this.y + up + Math.sin(this.camPitch) * back;
       const k = 1 - Math.pow(0.002, dt);
       this.camPos.x += (tx - this.camPos.x) * k;
