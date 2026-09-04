@@ -1195,7 +1195,7 @@ function frameBody() {
   /* Traffic reacts: a car you cut within 6 m of at speed blows its horn,
      panned to where it is, no more than once a second and a half. */
   roadblock?.update(dt, car);
-  metro?.update(dt);
+  metro?.update(dt, camera?.position || car);
   hornCooldown -= dt;
   if (hornCooldown <= 0 && Math.abs(car.fwdSpeed) > 7) {
     for (const t of traffic.cars) {

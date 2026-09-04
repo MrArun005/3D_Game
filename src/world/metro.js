@@ -160,13 +160,55 @@ export class Metro {
       template.scale.setScalar(s);
     }
 
+    const lodTemplate = this.#createBoxLod();
+
     for (const line of this.lines) for (const tr of line.trains) {
       for (let i = 0; i < CARS; i++) {
-        const car = template ? template.clone(true) : new THREE.Mesh(new THREE.BoxGeometry(14, 3.8, 3.2), new THREE.MeshStandardMaterial({ color: 0xd8dde4 }));
-        this.scene.add(car);
-        tr.cars.push(car);
+        const carGroup = new THREE.Group();
+        const high = template ? template.clone(true) : lodTemplate.clone(true);
+        const lod = lodTemplate.clone(true);
+        lod.visible = false;
+        carGroup.add(high);
+        carGroup.add(lod);
+        carGroup.userData = { high, lod };
+        this.scene.add(carGroup);
+        tr.cars.push(carGroup);
       }
     }
+  }
+
+  #createBoxLod() {
+    const lodGroup = new THREE.Group();
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xd0d5dd, roughness: 0.35, metalness: 0.7 });
+    const windowMat = new THREE.MeshStandardMaterial({ color: 0x111822, roughness: 0.2, metalness: 0.8 });
+    const underMat = new THREE.MeshStandardMaterial({ color: 0x22262c, roughness: 0.8, metalness: 0.5 });
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x889098, roughness: 0.7 });
+
+    // Subway car body: width X=3.1, height Y=3.2, length Z=21.8
+    const body = new THREE.Mesh(new THREE.BoxGeometry(3.1, 3.2, 21.8), bodyMat);
+    body.position.y = 2.0;
+    body.receiveShadow = true;
+    lodGroup.add(body);
+
+    // Windows band: slightly wider X=3.16 to avoid z-fighting, height Y=1.0, length Z=20.5
+    const win = new THREE.Mesh(new THREE.BoxGeometry(3.16, 1.0, 20.5), windowMat);
+    win.position.y = 2.4;
+    lodGroup.add(win);
+
+    // Undercarriage: X=2.6, Y=0.7, Z=19.0
+    const under = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.7, 19.0), underMat);
+    under.position.y = 0.4;
+    lodGroup.add(under);
+
+    // Roof AC pods
+    const ac1 = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.35, 4.0), roofMat);
+    ac1.position.set(0, 3.75, 4.5);
+    const ac2 = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.35, 4.0), roofMat);
+    ac2.position.set(0, 3.75, -4.5);
+    lodGroup.add(ac1);
+    lodGroup.add(ac2);
+
+    return lodGroup;
   }
 
   /** Nearest platform to a point, or null before any line was built. */
@@ -182,7 +224,7 @@ export class Metro {
     return best;
   }
 
-  update(dt) {
+  update(dt, camPos = null) {
     for (const line of this.lines) for (const l of line.trains) {
       const { pts, cum, len, stations } = line;
       if (l.dwell > 0) { l.dwell -= dt; } else {
@@ -196,6 +238,21 @@ export class Metro {
         const p = this.#at(pts, cum, s), q = this.#at(pts, cum, s + l.dir * 2);
         car.position.set(p.x, DECK_Y + 0.65, p.z);
         car.rotation.y = Math.atan2(-(q.z - p.z), q.x - p.x) + Math.PI / 2;
+
+        if (camPos) {
+          const dx = p.x - camPos.x, dz = p.z - camPos.z;
+          const dist2 = dx * dx + dz * dz;
+          if (dist2 > 400 * 400) {
+            car.visible = false;
+          } else {
+            car.visible = true;
+            const useLod = dist2 > 150 * 150;
+            if (car.userData?.high && car.userData?.lod) {
+              car.userData.high.visible = !useLod;
+              car.userData.lod.visible = useLod;
+            }
+          }
+        }
       });
     }
   }

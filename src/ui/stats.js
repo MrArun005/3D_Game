@@ -15,11 +15,11 @@ import * as THREE from 'three';
 
 const BUDGET = {
   frameMs: 16.6,
-  draws: 1400,
-  tris: 4.0e6,
+  draws: 1150,
+  tris: 3.2e6,
   textureMB: 512,
   chunks: 25,
-  chunkBuildMs: 4,
+  chunkBuildMs: 3,
 };
 
 const PERF = typeof location !== 'undefined' && new URLSearchParams(location.search).has('perf');
