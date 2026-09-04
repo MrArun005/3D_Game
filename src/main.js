@@ -498,7 +498,7 @@ function pullTrigger() {
   modes?.targets(_triggerTargets);
   roadblock?.targets?.(_triggerTargets);
   // a pad gets GTA's soft lock; a mouse does not need it and would resent it
-  if (padConnected) aimAssist(_triggerDir, ox, oy, oz, _triggerTargets, ads > 0.5 ? 0.05 : 0.08, 0.55);
+  if (padConnected()) aimAssist(_triggerDir, ox, oy, oz, _triggerTargets, ads > 0.5 ? 0.05 : 0.08, 0.55);   // padConnected is a function (input.js)
   weapon.spreadMul = (1 - ads * (1 - (ADS[weapon.kind]?.spread ?? 0.4))) * (onFoot.active ? movementSpread(onFoot.speed ?? 0, crouch) : 1.3);   // sights, feet and crouch shape THIS shot's cone; heat is untouched
   const hit = weapon.fire(ox, oy, oz, dx, dy, dz, _triggerTargets);
   if (hit === null && !weapon.ready && weapon.ammo === 0) return;   // dry: reload started, no shot
