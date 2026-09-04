@@ -1542,6 +1542,7 @@ function frameBody() {
   for (const w of hero.userData.wheels) {
     if (w.front) w.steer.rotation.y = car.steer;
     const idx = (w.front ? 0 : 2) + (w.side > 0 ? 1 : 0);
+    if (car.flat) car.flat[idx] = w.flat || 0;   // the physics reads it: less grip, more drag on that corner
     w.steer.position.y = (car.wheelGround ? car.wheelGround[idx] : 0)
       + WHEEL_R * (1 - (w.flat || 0) * 0.3);
     w.spin.rotation.z += car.wheelW[idx] * dt;

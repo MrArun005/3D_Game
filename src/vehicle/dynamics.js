@@ -34,6 +34,7 @@ export function createCarState() {
     vx: 0, vz: 0, yawRate: 0,
     rpm: V.idle, gear: 2, gearTimer: 0, holdGear: false,
     wheelW: [0, 0, 0, 0],            // FL FR RL RR
+    flat: [0, 0, 0, 0],              // 0..1 per wheel, written by main from the model; a flat has ~55% of the grip
     steer: 0, steerTarget: 0,
     throttle: 0, brake: 0, hand: 0,
     pitch: 0, roll: 0, heave: 0,
@@ -90,7 +91,8 @@ export function stepVehicle(car, dt) {
     const pz = car.z + fwd.z * offsets[i][0] + rgt.z * offsets[i][1];
     contactX.push(px); contactZ.push(pz);
     const sf = surfaceAt(px, pz);
-    grip.push(sf.grip); drags.push(sf.drag);
+    const flat = car.flat ? car.flat[i] : 0;
+    grip.push(sf.grip * (1 - 0.45 * flat)); drags.push(sf.drag + 6 * flat);   // a burst tyre slides, and drags like a pavement corner (tarmac drag is 0, so this is additive)
     if (sf.kerb) { kerbCount++; offSum += sf.off; }
   }
   car.offRoad = offSum / 4;
