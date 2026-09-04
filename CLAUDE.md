@@ -117,7 +117,10 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   crouch on foot, Q lean, E fire/throw/punch. Downed officers drop their
   weapon (one in five a grenade); phone SERVICES sells guns, armour and
   grenades; `storyMissions` steps take `needDowned: N`. Ammo, grenades and
-  armour persist in localStorage `hb.arsenal`. Debug hooks under `?debug`: `__dbg()`, `__aim(v)`,
+  armour persist in localStorage `hb.arsenal`. Parked cars block lines of
+  sight both ways; gunshots carry distance and a per-weapon voice; stars
+  pulse red when an officer has a line on you and grey out once you have
+  been unseen for 3 s. Debug hooks under `?debug`: `__dbg()`, `__aim(v)`,
   `__police()`, `__wanted(n)`. No Playwright in this project (Arun's rule):
   verify with `node --test` and reasoning, he play-tests.
 - **iCloud evicts `.git` (2026-09-05)**: the repo lives in `~/Desktop`, which

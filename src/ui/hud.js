@@ -417,7 +417,7 @@ export class Hud {
     this._arsKey = key;
     this.arsEl.innerHTML = rows.map((r) => `<div style="min-width:52px;padding:5px 7px;border-radius:6px;text-align:center;font:700 10px ui-monospace,Menlo,monospace;letter-spacing:.05em;`
       + `background:${r.current ? 'rgba(234,241,251,.92)' : 'rgba(9,12,18,.72)'};color:${r.current ? '#0b0e14' : '#c8d2e2'};border:1px solid rgba(120,140,170,.35)">`
-      + `<div>${r.key}</div><div style="font-size:12px">${r.name}</div><div style="opacity:.75">${r.mag}/${r.reserve}</div></div>`).join('');
+      + `<div>${r.key}</div><div style="font-size:12px">${r.name}</div><div style="opacity:.75">${r.reserve === '' ? (r.mag === '' ? '&nbsp;' : r.mag) : `${r.mag}/${r.reserve}`}</div></div>`).join('');
   }
 
   setAmmo(name, ammo, reserve, reloading, armour = 0) {
@@ -690,8 +690,13 @@ export class Hud {
       this.wantedEl = el;
     }
     // when an officer has a line on you the stars pulse; no line, they sit still
-    if (traffic?.hot) { this.wantedEl.style.filter = 'drop-shadow(0 0 7px rgba(255,74,74,.95))'; this.wantedEl.style.opacity = String(0.7 + 0.3 * Math.abs(Math.sin(performance.now() / 160))); }
-    else { this.wantedEl.style.filter = ''; this.wantedEl.style.opacity = '1';
+    if (traffic?.hot) { this.wantedEl.style.filter = 'drop-shadow(0 0 7px rgba(255,74,74,.95))'; this.wantedEl.style.opacity = '1'; this._coldFor = 0; }
+    else {
+      // nobody has a line on you: after three seconds the stars go grey -- you are evading, keep it up
+      this._coldFor = (this._coldFor ?? 0) + 1 / 60;
+      const evading = this._coldFor > 3 && (traffic?.wanted ?? 0) > 0;
+      this.wantedEl.style.filter = evading ? 'grayscale(1)' : '';
+      this.wantedEl.style.opacity = evading ? '0.55' : '1';
     }
     const n = Math.ceil(w - 0.001);
     if (n === this.lastWanted) return;

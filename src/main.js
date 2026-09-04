@@ -1596,7 +1596,11 @@ function frameBody() {
   }
   placeHeldGun();
   if (fistsMode) hud.setAmmo('FISTS', '', '', false, armour); else if (grenadeMode) hud.setAmmo('GRENADE', grenades.count, '-', false, armour); else hud.setAmmo(weapon.spec.name, weapon.ammo, weapon.reserveNow, weapon.reloading, armour);
-  if (onFoot.active) hud.setArsenal?.(WEAPON_KINDS.map((k, i) => ({ key: i + 1, name: ARSENAL[k].name, mag: k === weapon.kind ? weapon.ammo : weapon.mags[k], reserve: weapon.reserve[k], current: k === weapon.kind })));
+  if (onFoot.active) hud.setArsenal?.([
+    { key: 0, name: 'FISTS', mag: '', reserve: '', current: fistsMode },
+    ...WEAPON_KINDS.map((k, i) => ({ key: i + 1, name: ARSENAL[k].name, mag: k === weapon.kind ? weapon.ammo : weapon.mags[k], reserve: weapon.reserve[k], current: !fistsMode && !grenadeMode && k === weapon.kind })),
+    { key: 5, name: 'NADE', mag: grenades.count, reserve: '', current: grenadeMode },
+  ]);
   else if (hud.arsEl) hud.arsEl.innerHTML = '', hud._arsKey = '';
   skids.update(car, car.wheelGround ? car.wheelGround[2] : 0);
   if (firing) pullTrigger();
