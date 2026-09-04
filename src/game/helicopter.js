@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { M4, mergeGeos } from '../core/geometry.js';
+import { hasLineOfSight } from './policeAi.js';
 
 /**
  * Police air support.
@@ -175,23 +176,14 @@ export class Helicopter {
   get eyesOn() { return this.live && this.sight > 0; }
 
   /** Sample the line down to the car for anything tall in the way. */
+  /* The same line-of-sight rule the officers use (policeAi.hasLineOfSight):
+     an exact slab test against the buildings around the car, one lookup
+     instead of up to 23 sampled ones with their own rotate-into-box maths that
+     had drifted from the officers' (opposite angle sign). The searchlight and
+     the door gunner now agree on what 'seen' means. */
   #lineOfSight(car) {
     if (!this.nearbyBuildings) return true;
-    const dx = car.x - this.pos.x, dy = -this.pos.y, dz = car.z - this.pos.z;
-    const len = Math.hypot(dx, dy, dz) || 1;
-    const steps = Math.min(24, Math.max(6, Math.round(len / 7)));
-    for (let i = 1; i < steps; i++) {
-      const t = i / steps;
-      const px = this.pos.x + dx * t, py = this.pos.y + dy * t, pz = this.pos.z + dz * t;
-      for (const b of this.nearbyBuildings(px, pz)) {
-        if (py > (b.height ?? 40)) continue;         // over the roof: still visible
-        const ca = Math.cos(b.angle), sa = Math.sin(b.angle);
-        const rx = px - b.x, rz = pz - b.z;
-        const lx = rx * ca + rz * sa, lz = -rx * sa + rz * ca;
-        if (Math.abs(lx) < b.hw && Math.abs(lz) < b.hd) return false;
-      }
-    }
-    return true;
+    return hasLineOfSight(this.pos.x, this.pos.y, this.pos.z, car.x, (car.y ?? 0) + 0.9, car.z, this.nearbyBuildings(car.x, car.z), [], null);
   }
 
   update(car, traffic, dt) {
