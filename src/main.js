@@ -311,6 +311,12 @@ function respawnCar(nearX = car.x, nearZ = car.z, kinds = null) {
  * a fireball takes you to a hospital.
  */
 function onDeath() {
+  /* On foot, the body falls first and the fade follows: the Death clip runs,
+     input is dead, then the respawn. In a car it is the old instant fade. */
+  if (onFoot.active && !dying && onFoot.character?.ready) {
+    const ms = onFoot.character.die();
+    if (ms > 0) { dying = 1; controlsLockedUntil = performance.now() + ms + 300; setTimeout(() => { dying = 0; onDeath(); }, ms + 300); return; }
+  }
   bustFlash = 2.8;
   jobs?.fail('WASTED · JOB LOST');
   hud.setDead(true);
@@ -512,6 +518,10 @@ function pullTrigger() {
     }
   }
   crowd?.panic(ox, oz, 24);                     // gunfire scatters the street
+  for (const v of traffic.cars) {              // and drivers put their foot down
+    if (!v.live || Math.hypot(v.x - ox, v.z - oz) > 45) continue;
+    v.baseCruise ??= v.cruise; v.cruise = Math.max(v.cruise, v.baseCruise * 1.6); v.fleeT = 8;
+  }
   audio.gunshot();
   // firing at all is a crime; hitting something is a worse one
   if (hit?.kind !== 'target' && modes?.active !== 'range') traffic.reportCrime(hit ? (hit.kind === 'person' ? 'person' : (hit.kind === 'police' || hit.kind === 'officer') ? 'police' : 'traffic') : 'traffic',

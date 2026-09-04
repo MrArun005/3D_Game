@@ -668,6 +668,7 @@ export class Traffic {
   }
 
   update(player, dt, time) {
+    for (const v of this.cars) if (v.fleeT > 0) { v.fleeT -= dt; if (v.fleeT <= 0 && v.baseCruise) v.cruise = v.baseCruise; }
     this.#tickDrops(dt);
     this.#rooftops(player, dt);
     this.#airGunner(player, dt);

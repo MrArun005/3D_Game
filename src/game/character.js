@@ -348,11 +348,23 @@ export class Character {
    * keeps update() from stomping it for the clip's length.
    */
   flinch() {
-    const a = this.actions.hit;
-    if (!a || !this.ready) return false;
-    this.play('hit', 0.08);
-    this.busyUntil = performance.now() + Math.min(900, (a.getClip().duration * 1000) | 0);
+    /* The only 'hit' clip on the rig is 'Death' (CLIPS.hit maps to it), so
+       playing it on every landed round made her die four times a firefight.
+       A flinch is now a 0.25 s pause in locomotion; the camera kick and the
+       health bar carry the message. The clip is kept for die(). */
+    if (!this.ready) return false;
+    this.busyUntil = performance.now() + 250;
     return true;
+  }
+
+  /** Wasted: the Death clip, held on its last frame. Returns its length in ms so the caller can wait. */
+  die() {
+    const a = this.actions.hit;
+    if (!a || !this.ready) return 0;
+    this.play('hit', 0.1);
+    const ms = Math.min(2200, (a.getClip().duration * 1000) | 0);
+    this.busyUntil = performance.now() + ms + 400;
+    return ms;
   }
 
   update(dt, x, y, z, yaw, speed, isGrounded = true) {
