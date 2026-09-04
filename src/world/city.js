@@ -10,6 +10,7 @@ import {
 import { KINDS, ARCH, TOWER, MID, LOFT, DECK, PODIUM } from './facades.js';
 import { signalHeads, signalState, LAMP_COLOURS } from './signals.js';
 import { PAINT_COLOURS, BODY_KEYS, BODY_TYPES } from '../vehicle/config.js';
+const _sigColor = new THREE.Color();   // scratch for updateSignals (allocation guard test)
 
 /**
  * Instanced draw with culling disabled.
@@ -155,7 +156,7 @@ function addInstanced(parent, geometry, material, matrices, shadow = false,
   matrices.forEach((m, i) => mesh.setMatrixAt(i, m));
   mesh.instanceMatrix.needsUpdate = true;
   if (colours) {
-    const c = new THREE.Color();
+    const c = _sigColor;   // module scratch; a Color per signal per frame was a GC tick
     colours.forEach((hex, i) => mesh.setColorAt(i, c.setHex(hex)));
     mesh.instanceColor.needsUpdate = true;
   }
@@ -224,7 +225,7 @@ export class City {
 
   /** Recolour every visible signal lens for the current phase. */
   updateSignals(t) {
-    const c = new THREE.Color();
+    const c = _sigColor;   // module scratch (allocation guard)
     for (const group of this.cells.values()) {
       const sig = group.userData.signals;
       if (!sig) continue;

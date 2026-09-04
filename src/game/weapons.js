@@ -146,6 +146,9 @@ function cache() {
   for (const k of WEAPON_KINDS) { GEO[k] = BUILDERS[k](); GEO[k].computeBoundingSphere(); }
 }
 
+/** The one material every weapon draws with, for the boot pipeline warm-up. */
+export function weaponMaterial() { cache(); return MAT; }
+
 /** One mesh, one draw, geometry shared with every other holder of this weapon. */
 export function buildWeaponMesh(kind = 'pistol') {
   cache();

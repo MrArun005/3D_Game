@@ -28,6 +28,7 @@ const CALLED_AT = 3;               // stars
 
 export class Helicopter {
   constructor(scene, day = true) {
+    this._car = new THREE.Vector3();   // per-frame scratch; never allocate inside update()
     this.day = day;
     this.live = false;
     this.landing = false;
@@ -194,7 +195,7 @@ export class Helicopter {
   }
 
   update(car, traffic, dt) {
-    this._car = this._car ?? new THREE.Vector3();
+    // scratch vector hoisted out of the frame path (allocation guard test)
     this._car.set(car.x, 0, car.z);
     const want = traffic.wanted >= CALLED_AT;
 

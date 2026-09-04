@@ -141,6 +141,9 @@ function shared() {
   return SHARED;
 }
 
+/** The one material every officer draws with, for the boot pipeline warm-up. */
+export function officerMaterial() { return shared().mat; }
+
 /** Free the shared geometry. Only for teardown -- it is shared by every officer. */
 export function disposeOfficers() {
   if (!SHARED) return;

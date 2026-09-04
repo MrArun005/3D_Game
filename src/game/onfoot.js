@@ -35,6 +35,11 @@ export class OnFoot {
     this.camYaw = 0;
     this.camPitch = 0.08;
     this.camPos = new THREE.Vector3();
+    /* Set by main.js each frame from the shooting layer. ads is 0..1 (the
+       sights coming up over ADS_BLEND_S), crouch is a toggle. Both only change
+       the camera and the feet; the gun reads them separately. */
+    this.ads = 0; this.adsFov = 42; this.adsBack = 2.2; this.adsSpeed = 0.5;
+    this.crouch = false; this.speed = 0;
 
     const body = new THREE.Mesh(
       personGeometry(),
@@ -123,7 +128,9 @@ export class OnFoot {
     let wantX = 0, wantZ = 0;
     if (inputMag > 0.05) {
       const invMag = 1 / inputMag;
-      const speedTarget = (c.hold ? RUN : WALK) * Math.min(1, inputMag);
+      // sights up or crouched: slower feet, so aiming is a decision
+      const gait = (1 - this.ads * (1 - this.adsSpeed)) * (this.crouch ? 0.55 : 1);
+      const speedTarget = (c.hold ? RUN : WALK) * Math.min(1, inputMag) * gait;
       wantX = (camFwdX * fwd + camRightX * strafe) * invMag * speedTarget;
       wantZ = (camFwdZ * fwd + camRightZ * strafe) * invMag * speedTarget;
     }
@@ -167,6 +174,7 @@ export class OnFoot {
     }
 
     const speed = Math.hypot(this.vx, this.vz);
+    this.speed = speed;                       // read by the weapon sway in main.js
     if (speed > 0.2) {
       const targetYaw = Math.atan2(-this.vz, this.vx);
       let diff = targetYaw - this.yaw;
@@ -185,8 +193,9 @@ export class OnFoot {
 
     // Camera: over the shoulder, smoothly tracking position and elevation
     if (camera) {
-      const back = c.hold ? 5.2 : 4.6;
-      const up = 2.15;
+      const hipBack = c.hold ? 5.2 : 4.6;
+      const back = hipBack + (this.adsBack - hipBack) * this.ads;   // over the shoulder when aiming
+      const up = (2.15 - (this.crouch ? 0.45 : 0)) - 0.35 * this.ads;
       const flat = Math.cos(this.camPitch);
       const tx = this.x - Math.cos(this.camYaw) * back * flat;
       const tz = this.z + Math.sin(this.camYaw) * back * flat;
@@ -201,9 +210,10 @@ export class OnFoot {
         this.y + 1.35 - Math.sin(this.camPitch) * 3,
         this.z - Math.sin(this.camYaw) * 6 * flat,
       );
-      const targetFov = c.hold && speed > 4.8 ? 66 : 60;
+      const hipFov = c.hold && speed > 4.8 ? 66 : 60;
+      const targetFov = hipFov + (this.adsFov - hipFov) * this.ads;
       if (camera.fov !== undefined && Math.abs(camera.fov - targetFov) > 0.05) {
-        camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 8);
+        camera.fov += (targetFov - camera.fov) * Math.min(1, dt * (this.ads > 0 ? 14 : 8));
         camera.updateProjectionMatrix();
       }
     }

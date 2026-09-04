@@ -52,7 +52,9 @@ import { GameClock } from './game/clock.js';
 import { Mission } from './game/mission.js';
 import { Multiplayer, roomFromUrl, createRoom } from './game/multiplayer.js';
 import { Weapon } from './game/weapon.js';
-import { ARSENAL, WEAPON_KINDS, buildWeaponMesh } from './game/weapons.js';
+import { ARSENAL, WEAPON_KINDS, buildWeaponMesh, weaponMaterial } from './game/weapons.js';
+import { officerMaterial } from './world/officer.js';
+import { Crosshair, DecalPool, ADS, ADS_BLEND_S, spreadToPixels, spreadFor, recoilFor, firstBuildingHit, swayFor, swayPhaseStep, reloadPose } from './game/shooting.js';
 import { SkidMarks } from './world/skidmarks.js';
 import { Damage } from './game/damage.js';
 import { signalState } from './world/signals.js';
@@ -176,6 +178,9 @@ const debris = new Debris(scene);
    not a save-game: nothing in the game reads it back. */
 if (new URLSearchParams(location.search).has('debug')) {
   window.__car = () => car;
+  // shooting-layer state the harness cannot otherwise see or set (pointer lock is refused headless)
+  window.__dbg = () => ({ started, aiming, ads, crouch, burst, heat: weapon.heat, ready: weapon.ready, kind: weapon.kind, ammo: weapon.ammo });
+  window.__aim = (v) => { aiming = !!v; };
   window.__breakNear = (x, z, r = 3) => debris.breakNear(x, z, r, car, 12);
   // frame-time distribution + worst chunk-build slice, for the perf harness
   window.__perf = () => ({ frames: [...stats.samples], chunk: stats.worstChunkMs });
@@ -325,6 +330,14 @@ function onBust() {
 }
 const onFoot = new OnFoot(scene);
 const weapon = new Weapon(scene);
+/* The feel layer (game/shooting.js). aiming is the right mouse button held;
+   ads blends 0..1 over ADS_BLEND_S so the sights come UP rather than snap.
+   burst counts shots since you last let go, which is what indexes the recoil
+   pattern; it resets after 0.4 s of not firing. */
+const crosshair = new Crosshair();
+const decals = new DecalPool(scene);
+let aiming = false, ads = 0, burst = 0, sinceShot = 9, swayPhase = 0, crouch = false;
+const _rayHit = new THREE.Vector3();
 /* The gun you are actually holding.
    NOT parented to onFoot.group: that group is the blocky stand-in body, and
    onfoot.js hides it the moment the skinned character finishes loading, which
@@ -350,8 +363,13 @@ function placeHeldGun() {
   const sx = Math.cos(yaw + Math.PI / 2), sz = -Math.sin(yaw + Math.PI / 2);
   // right hand: forward of the chest and out to the side, same convention as
   // the officer's stance in traffic.js
-  heldGun.position.set(onFoot.x + fx * 0.26 + sx * 0.20, (onFoot.y || 0) + 1.14, onFoot.z + fz * 0.26 + sz * 0.20);
-  heldGun.rotation.set(0, yaw, 0);
+  const sw = swayFor(onFoot.speed ?? 0, swayPhase, ads > 0.5);
+  const rl = weapon.reloading ? reloadPose(1 - weapon.reloadT / weapon.spec.reload) : { dy: 0, tilt: 0 };
+  const lift = 0.22 * ads, inward = 0.12 * ads, drop = crouch ? 0.30 : 0;   // sights to the eye line, down when crouched
+  heldGun.position.set(
+    onFoot.x + fx * (0.26 + 0.06 * ads) + sx * (0.20 - inward + sw.dx), (onFoot.y || 0) + 1.14 + lift + sw.dy + rl.dy - drop,
+    onFoot.z + fz * (0.26 + 0.06 * ads) + sz * (0.20 - inward + sw.dx));
+  heldGun.rotation.set(sw.roll, yaw, -rl.tilt);
   heldGun.visible = true;
 }
 refreshHeldGun();                   // the pistol you start the game holding
@@ -381,7 +399,39 @@ function pullTrigger() {
   for (const v of traffic.cars) if (v.live) _triggerTargets.push({ x: v.x, z: v.z, y: 0.8, r: 1.25, kind: 'car', ref: v });
   for (const v of traffic.police) if (v.live) _triggerTargets.push({ x: v.x, z: v.z, y: 0.8, r: 1.35, kind: 'police', ref: v });
 
-  const hit = weapon.fire(ox, oy, oz, _triggerDir.x, _triggerDir.y, _triggerDir.z, _triggerTargets);
+  /* A tower stops a bullet. Find the first building face along the sightline
+     and drop every target beyond it, then let the weapon pick among the rest.
+     The miss lands a decal on that face, or on the ground if the shot dips. */
+  const dx = _triggerDir.x, dy = _triggerDir.y, dz = _triggerDir.z;
+  const wall = districtRef && world.nearbyBuildings
+    ? firstBuildingHit(ox, oy, oz, dx, dy, dz, world.nearbyBuildings(ox, oz), weapon.spec.range)
+    : Infinity;
+  if (wall < Infinity) {
+    for (let i = _triggerTargets.length - 1; i >= 0; i--) {
+      const t = _triggerTargets[i];
+      const along = (t.x - ox) * dx + ((t.y ?? 0.9) - oy) * dy + (t.z - oz) * dz;
+      if (along > wall) _triggerTargets.splice(i, 1);
+    }
+  }
+  const spreadMul = 1 - ads * (1 - (ADS[weapon.kind]?.spread ?? 0.4));
+  weapon.heat *= spreadMul;                     // sights up: the cone you actually fire through
+  const hit = weapon.fire(ox, oy, oz, dx, dy, dz, _triggerTargets);
+  if (hit === null && !weapon.ready && weapon.ammo === 0) return;   // dry: reload started, no shot
+  // recoil: a learnable path, indexed by shots in this burst; gentler on the sights
+  const rc = recoilFor(weapon.kind, burst++);
+  sinceShot = 0;
+  if (onFoot.active) { onFoot.camPitch = Math.min(0.9, onFoot.camPitch + rc.pitch * (1 - ads * 0.4)); onFoot.camYaw -= rc.yaw * (1 - ads * 0.4); }
+  else chase.shake += weapon.spec.shake * 0.02;
+  if (hit) crosshair.hit(hit.kind === 'person');
+  else {
+    let t = wall;
+    if (t === Infinity && dy < -1e-4) t = Math.min(weapon.spec.range, (oy - groundHeightAt(ox, oz)) / -dy);
+    if (t < Infinity) {
+      _rayHit.set(ox + dx * t, oy + dy * t, oz + dz * t);
+      const onGround = wall === Infinity;
+      decals.stamp(_rayHit.x, _rayHit.y, _rayHit.z, onGround ? 0 : -dx, onGround ? 1 : 0, onGround ? 0 : -dz, weapon.kind === 'shotgun' ? 1.8 : 1);
+    }
+  }
   crowd?.panic(ox, oz, 24);                     // gunfire scatters the street
   audio.gunshot();
   // firing at all is a crime; hitting something is a worse one
@@ -1083,7 +1133,7 @@ function applyPerk(persona) {
 applyPerk(NAMED_CHARACTERS[0]);
 
 const input = createInput((action) => {
-  if (action === 'camera') chase.cycle();
+  if (action === 'camera') { if (onFoot.active) { crouch = !crouch; onFoot.crouch = crouch; hud.flash(crouch ? 'CROUCH' : 'STAND'); } else chase.cycle(); }
   if (action === 'lights') car.headlights = !car.headlights;
   if (action === 'photo') photo.toggle();
   if (action === 'phone') phone?.toggle();
@@ -1135,7 +1185,9 @@ addEventListener('mousedown', (e) => {
   if (document.pointerLockElement !== canvas || e.button !== 0) return;
   firing = true;
 });
-addEventListener('mouseup', () => { firing = false; });
+addEventListener('mouseup', (e) => { if (e.button === 0) firing = false; if (e.button === 2) aiming = false; });
+addEventListener('mousedown', (e) => { if (document.pointerLockElement === canvas && e.button === 2) aiming = true; });
+addEventListener('contextmenu', (e) => { if (document.pointerLockElement === canvas) e.preventDefault(); });
 
 addEventListener('mousemove', (e) => {
   if (document.pointerLockElement !== canvas) return;
@@ -1340,6 +1392,18 @@ function frameBody() {
   if (crowd && !onFoot.active && onPavementAtSpeed(car)) crowd.panic(car.x, car.z, 14);
   if (net) net.update(car, dt);
   weapon.update(dt);
+  const adsTarget = aiming && onFoot.active ? 1 : 0;
+  ads += (adsTarget - ads) * Math.min(1, dt / ADS_BLEND_S);
+  if (Math.abs(ads - adsTarget) < 0.01) ads = adsTarget;
+  sinceShot += dt; if (sinceShot > 0.4) burst = 0;
+  const adsCfg = ADS[weapon.kind] ?? ADS.pistol;
+  onFoot.ads = ads; onFoot.adsFov = adsCfg.fov; onFoot.adsBack = adsCfg.back; onFoot.adsSpeed = adsCfg.speed;
+  crosshair.show(onFoot.active && started);
+  if (onFoot.active) {
+    const cone = spreadFor(weapon.kind, weapon.heat) * (1 - ads * (1 - adsCfg.spread));
+    crosshair.update(spreadToPixels(cone, camera.fov ?? 60, innerHeight), weapon.reloading ? 1 - weapon.reloadT / weapon.spec.reload : -1, dt);
+    swayPhase += swayPhaseStep(onFoot.speed ?? 0, dt);
+  }
   placeHeldGun();
   hud.setAmmo(weapon.spec.name, weapon.ammo, weapon.magSize, weapon.reloading);
   skids.update(car, car.wheelGround ? car.wheelGround[2] : 0);
@@ -1442,6 +1506,14 @@ function frameBody() {
     if (assets?.kitBuildings) {
       for (const kb of Object.values(assets.kitBuildings)) if (kb?.mat?.isMaterial) compileMats.add(kb.mat);
     }
+    /* The shooting layer's materials too. A firefight is exactly when materials
+       first meet the lights -- officer, weapon, muzzle flash, tracer, sparks --
+       and each first meeting is a 30-80 ms pipeline compile. Meet them here. */
+    compileMats.add(officerMaterial());
+    compileMats.add(weaponMaterial());
+    if (weapon?.flash?.material) compileMats.add(weapon.flash.material);
+    if (weapon?.tracer?.material) compileMats.add(weapon.tracer.material);
+    if (weapon?.sparks?.material) compileMats.add(weapon.sparks.material);
     for (const mat of compileMats) dummyGroup.add(new THREE.Mesh(testBox, mat));
     scene.add(dummyGroup);
 
