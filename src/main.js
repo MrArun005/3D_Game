@@ -251,8 +251,8 @@ let dying = 0;
 
 /* Being shot at, and being nicked. Damage is deliberately cosmetic for now --
    a shot rocks the car and marks it; there is no health bar to lose. */
-function onShot(gap, landed = null, damage = 26, from = null) {
-  audio.gunshot(Math.max(0.12, 1 - gap / 70));   // quieter and duller with distance
+function onShot(gap, landed = null, damage = 26, from = null, kind = 'pistol') {
+  audio.gunshot(Math.max(0.12, 1 - gap / 70), kind);   // quieter and duller with distance, in the weapon's voice
   // a landed round tells you which way it came from, as a wedge on the screen edge
   if (landed && from) { const px = onFoot.active ? onFoot.x : car.x, pz = onFoot.active ? onFoot.z : car.z; const look = onFoot.active ? onFoot.camYaw : car.yaw; hud.hitFrom?.(Math.atan2(-(from.z - pz), from.x - px) - look); }
   /* Aimed fire (game/policeAi.js): `landed` says whether THIS shot connected,
@@ -367,7 +367,8 @@ const decals = new DecalPool(scene);
    and the tank, so a bin flies the same way whoever broke it. */
 const grenades = new Grenades(scene);
 let grenadeMode = false;
-let fistsMode = false, punchCool = 0;   // slot 0: bare hands. E swings at whoever is in front of you
+let fistsMode = false, punchCool = 0;
+let wasReloading = false;   // slot 0: bare hands. E swings at whoever is in front of you
 grenades.onBlast = (bx, by, bz) => {
   debris.breakNear(bx, bz, BLAST_R, car, 30);
   for (const c of traffic.police) {
@@ -553,7 +554,7 @@ function pullTrigger() {
     if (!v.live || Math.hypot(v.x - ox, v.z - oz) > 45) continue;
     v.baseCruise ??= v.cruise; v.cruise = Math.max(v.cruise, v.baseCruise * 1.6); v.fleeT = 8;
   }
-  audio.gunshot();
+  audio.gunshot(1, weapon.kind);
   // firing at all is a crime; hitting something is a worse one
   if (hit?.kind !== 'target' && modes?.active !== 'range') traffic.reportCrime(hit ? (hit.kind === 'person' ? 'person' : (hit.kind === 'police' || hit.kind === 'officer') ? 'police' : 'traffic') : 'traffic',
                       hit ? 9 : 1);
@@ -1288,9 +1289,9 @@ const input = createInput((action) => {
   else if (action.startsWith('weapon')) {
     grenadeMode = false; fistsMode = false;
     const kind = WEAPON_KINDS[+action.slice(6) - 1];
-    if (kind && weapon.switchTo(kind)) { refreshHeldGun(); hud.flash(`${ARSENAL[kind].name} · ${weapon.ammo}/${ARSENAL[kind].mag}`); }
+    if (kind && weapon.switchTo(kind)) { refreshHeldGun(); audio.click?.(); hud.flash(`${ARSENAL[kind].name} · ${weapon.ammo}/${ARSENAL[kind].mag}`); }
   }
-  if (action === 'reload' && weapon.reload()) hud.flash('RELOADING…');
+  if (action === 'reload' && weapon.reload()) { hud.flash('RELOADING…'); audio.reload?.(weapon.spec.reload); }
   if (action === 'avatar' && onFoot.character) {
     window._charIdx = ((window._charIdx || 0) + 1) % NAMED_CHARACTERS.length;
     const persona = NAMED_CHARACTERS[window._charIdx];
@@ -1536,6 +1537,8 @@ function frameBody() {
   if (story) story.update(playerTarget, dt);
   if (crowd && !onFoot.active && onPavementAtSpeed(car)) crowd.panic(car.x, car.z, 14);
   if (net) net.update(car, dt);
+  if (weapon.reloading && !wasReloading) audio.reload?.(weapon.spec.reload);   // catches the automatic reload on an empty magazine
+  wasReloading = weapon.reloading;
   weapon.update(dt);
   grenades.update(dt, groundHeightAt);
   if (punchCool > 0) punchCool -= dt;

@@ -659,7 +659,7 @@ export class Traffic {
         m.fireT = m.burstLeft > 0 ? burstFor('rifle').gap : 1.4 + this.rand() * 1.2;
         const w = ARSENAL.rifle;
         const landed = shotLands(gx, gy, gz, player.x, ty, player.z, prof.r, aimJitter(stars, gap, player.speed ?? 0) * 0.8 + w.restSpread, this.rand);
-        if (this.onShot) this.onShot(gap, landed, w.damage, m.group.position);
+        if (this.onShot) this.onShot(gap, landed, w.damage, m.group.position, 'rifle');
       }
     }
   }
@@ -684,7 +684,7 @@ export class Traffic {
     if (!canSee) return;
     const w = ARSENAL.smg;
     const landed = shotLands(h.pos.x, h.pos.y - 1, h.pos.z, player.x, ty, player.z, prof.r, aimJitter(5, gap, player.speed ?? 0) * 1.3 + w.restSpread, this.rand);
-    if (this.onShot) this.onShot(gap, landed, w.damage, h.pos);
+    if (this.onShot) this.onShot(gap, landed, w.damage, h.pos, 'smg');
     this.crowd?.panic?.(player.x, player.z, 18);
   }
 
@@ -961,7 +961,7 @@ export class Traffic {
           const w = ARSENAL[c.gunKind];
           const jit = aimJitter(Math.floor(this.wanted), gap, player.speed ?? 0) + w.restSpread;
           const landed = canSee && shotLands(c.officer.position.x, gunY, c.officer.position.z, player.x, ty, player.z, prof.r, jit, this.rand);
-          if (this.onShot) this.onShot(gap, landed, w.damage * (c.gunKind === 'shotgun' ? 3 : 1), c.officer.position);
+          if (this.onShot) this.onShot(gap, landed, w.damage * (c.gunKind === 'shotgun' ? 3 : 1), c.officer.position, c.gunKind);
           this.crowd?.panic?.(c.officer.position.x, c.officer.position.z, 20);
           if (!landed && this.decals && player.onFoot) {
             // the round went somewhere: a mark in the road a stride from you says how close

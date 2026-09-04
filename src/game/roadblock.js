@@ -140,7 +140,7 @@ export class Roadblock {
         p.pose = 'peek';
         const w = ARSENAL.rifle;
         const landed = shotLands(gx, gy, gz, car.x, prof.y, car.z, prof.r, aimJitter(lvl, gap, Math.abs(car.fwdSpeed ?? 0)) + w.restSpread, Math.random);
-        this.traffic.onShot?.(gap, landed, w.damage, p.group.position);
+        this.traffic.onShot?.(gap, landed, w.damage, p.group.position, 'rifle');
       } else if (p.burst <= 0 && p.fireT < 0.6) p.pose = 'crouch';
       p.blender.apply(p.joints, p.pose, p.poseT, dt, 0.15);
       lookAt(p.joints, face - (-p.group.rotation.y + Math.PI / 2));

@@ -190,12 +190,21 @@ export function createAudio() {
    * shots also lose their crack -- the highpass drops and a lowpass comes in --
    * which is how a street tells you where the shooting is without a map.
    */
-  function gunshot(gain = 1) {
+  /* Per-weapon voice: body pitch start/end, body length, noise length. A
+     shotgun is a low, long boom; an SMG a short snap; a rifle a hard crack. */
+  const VOICE = {
+    pistol:  { f0: 180, f1: 60, body: 0.08, noise: 0.16 },
+    smg:     { f0: 210, f1: 80, body: 0.05, noise: 0.10 },
+    rifle:   { f0: 240, f1: 70, body: 0.10, noise: 0.18 },
+    shotgun: { f0: 120, f1: 40, body: 0.16, noise: 0.26 },
+  };
+  function gunshot(gain = 1, kind = 'pistol') {
     if (!ctx) return;
+    const v = VOICE[kind] ?? VOICE.pistol;
     const k = Math.max(0.05, Math.min(1, gain));
     const t = ctx.currentTime;
     const n = ctx.createBufferSource();
-    n.buffer = makeNoise(ctx, 0.16);
+    n.buffer = makeNoise(ctx, v.noise);
     const hp = ctx.createBiquadFilter();
     hp.type = 'highpass'; hp.frequency.value = 600 + 800 * k;
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1200 + 14000 * k;
@@ -203,14 +212,14 @@ export function createAudio() {
     g.gain.setValueAtTime(0.30 * k, t);
     g.gain.exponentialRampToValueAtTime(0.0008, t + 0.09);
     n.connect(hp); hp.connect(lp); lp.connect(g); g.connect(master);
-    n.start(t); n.stop(t + 0.18);
+    n.start(t); n.stop(t + v.noise + 0.02);
     const body = ctx.createOscillator();
     body.type = 'square';
-    body.frequency.setValueAtTime(180, t);
-    body.frequency.exponentialRampToValueAtTime(60, t + 0.06);
+    body.frequency.setValueAtTime(v.f0, t);
+    body.frequency.exponentialRampToValueAtTime(v.f1, t + v.body * 0.75);
     const bg2 = ctx.createGain();
     bg2.gain.setValueAtTime(0.16 * (0.5 + 0.5 * k), t);   // the low body carries further than the crack
-    bg2.gain.exponentialRampToValueAtTime(0.0008, t + 0.08);
+    bg2.gain.exponentialRampToValueAtTime(0.0008, t + v.body);
     body.connect(bg2); bg2.connect(master);
     body.start(t); body.stop(t + 0.1);
   }
@@ -329,7 +338,15 @@ export function createAudio() {
         ctx.currentTime, 0.5);
     },
     gunshot,
-    thud,   // impact thud, magnitude in m/s-ish; punches and blasts borrow it
+    thud,
+    /** Magazine out, magazine in: two short clicks 0.45 s apart, scaled to the weapon's reload. */
+    reload(seconds = 1.5) {
+      if (!ctx) return;
+      const click = (at, f) => { const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = f; const g = ctx.createGain(); g.gain.setValueAtTime(0.09, at); g.gain.exponentialRampToValueAtTime(0.0008, at + 0.04); o.connect(g); g.connect(master); o.start(at); o.stop(at + 0.05); };
+      const t = ctx.currentTime; click(t + 0.05, 900); click(t + Math.max(0.3, seconds * 0.6), 1300);
+    },
+    /** A weapon coming up: one dry click. */
+    click() { if (!ctx) return; const t = ctx.currentTime; const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = 700; const g = ctx.createGain(); g.gain.setValueAtTime(0.07, t); g.gain.exponentialRampToValueAtTime(0.0008, t + 0.05); o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.06); },   // impact thud, magnitude in m/s-ish; punches and blasts borrow it
     mute(on) {
       if (!master) return;
       master.gain.setTargetAtTime(on ? 0 : 0.24, ctx.currentTime, 0.08);
