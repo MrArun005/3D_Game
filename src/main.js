@@ -367,6 +367,7 @@ const decals = new DecalPool(scene);
    and the tank, so a bin flies the same way whoever broke it. */
 const grenades = new Grenades(scene);
 let grenadeMode = false;
+let fistsMode = false, punchCool = 0;   // slot 0: bare hands. E swings at whoever is in front of you
 grenades.onBlast = (bx, by, bz) => {
   debris.breakNear(bx, bz, BLAST_R, car, 30);
   for (const c of traffic.police) {
@@ -450,6 +451,27 @@ const _triggerDir = new THREE.Vector3();
 const _triggerTargets = [];
 function pullTrigger() {
   if (!started) return;
+  if (fistsMode && onFoot.active) {
+    /* A swing: anyone within 1.7 m and 60 degrees of your facing takes 18. A
+       pedestrian goes down, an officer staggers or drops, a car gets a dent
+       and a very cross driver (a crime, quietly). */
+    if (punchCool > 0) return;
+    punchCool = 0.45;
+    onFoot.character?.punch?.();
+    const fx = Math.cos(onFoot.camYaw), fz = -Math.sin(onFoot.camYaw);
+    let best = null, bd = 1.7;
+    const consider = (x, z, kind, ref) => { const dx = x - onFoot.x, dz = z - onFoot.z, d = Math.hypot(dx, dz); if (d < bd && (dx * fx + dz * fz) / (d || 1) > 0.5) { bd = d; best = { kind, ref, x, z }; } };
+    if (crowd) for (const p of crowd.people) if (p.live && !p.down) consider(p.x, p.z, 'person', p);
+    for (const v of traffic.police) if (v.live && v.deployed && !v.down) consider(v.officer.position.x, v.officer.position.z, 'officer', v);
+    for (const v of traffic.cars) if (v.live) consider(v.x, v.z, 'car', v);
+    if (!best) return;
+    audio.gunshot?.();   // the only thud we have; a real punch sound is a follow-up
+    if (best.kind === 'person') { best.ref.down = 0.001; crowd?.panic(onFoot.x, onFoot.z, 14); traffic.reportCrime('person', 3); }
+    else if (best.kind === 'officer') { if (traffic.officerHit?.(best.ref, 18)) hud.flash('OFFICER DOWN'); traffic.reportCrime('police', 4); }
+    else { traffic.reportCrime('traffic', 1); }
+    weapon.bloodAt?.(best.x, 1.2, best.z, fx, fz);
+    return;
+  }
   if (grenadeMode) {
     if (!grenades.ready) { hud.flash(grenades.count ? 'ARM IN THE AIR' : 'NO GRENADES'); return; }
     camera.getWorldDirection(_triggerDir);
@@ -1260,9 +1282,10 @@ const input = createInput((action) => {
   if (action === 'radio') radio?.cycle();
   if (action === 'reset') respawnCar();
   if (action === 'time') { clock.hour = (clock.hour + 3) % 24; hud.flash(`TIME · ${clock.formattedTime}`); }
-  if (action === 'weapon5') { grenadeMode = true; hud.flash(`GRENADES · ${grenades.count}`); if (heldGun) heldGun.visible = false; }
+  if (action === 'weapon0') { fistsMode = true; grenadeMode = false; hud.flash('FISTS'); if (heldGun) heldGun.visible = false; }
+  else if (action === 'weapon5') { fistsMode = false; grenadeMode = true; hud.flash(`GRENADES · ${grenades.count}`); if (heldGun) heldGun.visible = false; }
   else if (action.startsWith('weapon')) {
-    grenadeMode = false;
+    grenadeMode = false; fistsMode = false;
     const kind = WEAPON_KINDS[+action.slice(6) - 1];
     if (kind && weapon.switchTo(kind)) { refreshHeldGun(); hud.flash(`${ARSENAL[kind].name} · ${weapon.ammo}/${ARSENAL[kind].mag}`); }
   }
@@ -1513,6 +1536,8 @@ function frameBody() {
   if (net) net.update(car, dt);
   weapon.update(dt);
   grenades.update(dt, groundHeightAt);
+  if (punchCool > 0) punchCool -= dt;
+  if (heldGun && fistsMode) heldGun.visible = false;
   arsenalSaveT += dt; if (arsenalSaveT > 5) { arsenalSaveT = 0; saveArsenal(); }
   /* Hospitals heal: stand within 6 m of one on foot and health climbs at 15%/s. Free, like GTA's. */
   healTick += dt;
@@ -1546,7 +1571,7 @@ function frameBody() {
     swayPhase += swayPhaseStep(onFoot.speed ?? 0, dt);
   }
   placeHeldGun();
-  if (grenadeMode) hud.setAmmo('GRENADE', grenades.count, '-', false, armour); else hud.setAmmo(weapon.spec.name, weapon.ammo, weapon.reserveNow, weapon.reloading, armour);
+  if (fistsMode) hud.setAmmo('FISTS', '', '', false, armour); else if (grenadeMode) hud.setAmmo('GRENADE', grenades.count, '-', false, armour); else hud.setAmmo(weapon.spec.name, weapon.ammo, weapon.reserveNow, weapon.reloading, armour);
   if (onFoot.active) hud.setArsenal?.(WEAPON_KINDS.map((k, i) => ({ key: i + 1, name: ARSENAL[k].name, mag: k === weapon.kind ? weapon.ammo : weapon.mags[k], reserve: weapon.reserve[k], current: k === weapon.kind })));
   else if (hud.arsEl) hud.arsEl.innerHTML = '', hud._arsKey = '';
   skids.update(car, car.wheelGround ? car.wheelGround[2] : 0);

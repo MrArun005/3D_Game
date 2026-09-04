@@ -357,6 +357,14 @@ export class Character {
     return true;
   }
 
+  /** A punch: the Punch clip if the rig has one, else a 0.4 s pause. Returns the swing time in ms. */
+  punch() {
+    if (!this.ready) return 0;
+    const a = this.actions.punch;
+    if (a) { this.play('punch', 0.06); const ms = Math.min(700, (a.getClip().duration * 1000) | 0); this.busyUntil = performance.now() + ms; return ms; }
+    this.busyUntil = performance.now() + 400; return 400;
+  }
+
   /** Wasted: the Death clip, held on its last frame. Returns its length in ms so the caller can wait. */
   die() {
     const a = this.actions.hit;

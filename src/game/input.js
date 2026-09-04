@@ -153,6 +153,7 @@ export function createInput(onAction) {
     if (e.code === 'Digit3') onAction('weapon3');
     if (e.code === 'Digit4') onAction('weapon4');
     if (e.code === 'Digit5') onAction('weapon5');   // grenades
+    if (e.code === 'Digit0' || e.code === 'Backquote') onAction('weapon0');   // fists
     if (e.code === 'KeyX') onAction('reload');
   });
   addEventListener('keyup', (e) => {
