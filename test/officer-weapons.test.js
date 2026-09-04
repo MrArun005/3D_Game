@@ -6,7 +6,7 @@ import {
   ARSENAL, WEAPON_KINDS, buildWeaponMesh, spreadFor, heatAfterShot, heatAfterRest,
 } from '../src/game/weapons.js';
 
-test('an officer is seven meshes, and every one carries UVs and vertex colours', () => {
+test('an officer is seven meshes (eight with a moustache), and every one carries UVs and vertex colours', () => {
   const { group } = buildOfficer();
   let meshes = 0, tris = 0;
   group.traverse((o) => {
@@ -17,7 +17,7 @@ test('an officer is seven meshes, and every one carries UVs and vertex colours',
     assert.ok(g.attributes.color, 'colour is per-vertex, not per-material');
     tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
   });
-  assert.equal(meshes, OFFICER_PARTS);
+  assert.ok(meshes === OFFICER_PARTS || meshes === OFFICER_PARTS + 1, `seven meshes, eight with a moustache, got ${meshes}`);
   assert.ok(tris < 1500, `officer should stay under 1500 triangles, got ${tris}`);
 });
 

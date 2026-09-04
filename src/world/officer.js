@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mulberry32 } from '../core/rng.js';
 
 /**
  * A police officer with a face and a body, built entirely from primitives.
@@ -136,6 +137,7 @@ function shared() {
   SHARED = {
     mat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.06 }),
     head: headGeo(), cap: capGeo(), torso: torsoGeo(), arm: armGeo(), leg: legGeo(),
+    moustache: box(0.012, 0.012, 0.05, 0x2a1d16),
   };
   for (const k of ['head', 'cap', 'torso', 'arm', 'leg']) SHARED[k].computeBoundingSphere();
   return SHARED;
@@ -156,9 +158,23 @@ export function disposeOfficers() {
  * One officer. Returns the group to add to the scene plus the joints to pose.
  * Seven meshes; geometry and material shared with every other officer.
  */
-export function buildOfficer() {
+export function buildOfficer(seed = 1) {
   const s = shared();
   const group = new THREE.Group();
+  /* Seeded variety, so officer #3 is the same person every load (CLAUDE.md:
+     seeded randomness only). Height and build are a scale on the group; the
+     cap is hidden for one in five; one in four grows a moustache, which is a
+     tiny eighth mesh. Skin tone is NOT varied: colour is baked per vertex into
+     geometry shared by every officer, and a per-officer material would cost a
+     pipeline variant each -- a trade not worth six faces. */
+  const rnd = mulberry32(0x9e3779b1 ^ (seed * 2654435761 >>> 0));
+  const variety = {
+    height: 0.94 + rnd() * 0.12,
+    build: 0.92 + rnd() * 0.16,
+    cap: rnd() > 0.2,
+    moustache: rnd() < 0.25,
+  };
+  group.scale.set(variety.build, variety.height, variety.build);
   const mk = (geo, x, y, z) => {
     const m = new THREE.Mesh(geo, s.mat);
     m.position.set(x, y, z);
@@ -174,9 +190,15 @@ export function buildOfficer() {
   const armR = mk(s.arm, 0, SHOULDER, 0.20);
   const legL = mk(s.leg, 0, HIP, -0.09);
   const legR = mk(s.leg, 0, HIP, 0.09);
+  cap.visible = variety.cap;
+  if (variety.moustache) {
+    const m = new THREE.Mesh(s.moustache, s.mat);
+    m.position.set(0.086, 0.078, 0);   // under the nose, in head space
+    head.add(m);
+  }
   const joints = { head, cap, torso, armL, armR, legL, legR };
   poseOfficer(joints, 'idle', 0);
-  return { group, joints };
+  return { group, joints, variety };
 }
 
 /**
@@ -266,3 +288,41 @@ export function poseOfficer(j, pose, phase = 0) {
 
 export const OFFICER_HEIGHT = NECK + 0.24;
 export const OFFICER_PARTS = 7;
+
+/* ------------------------------------------------------------ pose blending
+   poseOfficer() snaps the joints to a pose. Raise-to-aim and drop-to-cover
+   should be motions: the blender remembers where each joint was and eases it
+   toward the new pose over `blendS` seconds. Scratch is per-blender and
+   reused, so blending allocates nothing per frame. */
+const JOINTS = ['head', 'cap', 'torso', 'armL', 'armR', 'legL', 'legR'];
+export class PoseBlender {
+  constructor() {
+    this.prev = {};   // joint -> [rx, ry, rz, py]
+    for (const j of JOINTS) this.prev[j] = [0, 0, 0, HIP];
+    this.warm = false;
+  }
+  /** Pose the joints toward `pose`, easing from the last applied state. */
+  apply(joints, pose, phase, dt, blendS = 0.22) {
+    poseOfficer(joints, pose, phase);              // target
+    const k = this.warm ? Math.min(1, dt / Math.max(1e-3, blendS)) : 1;
+    for (const j of JOINTS) {
+      const o = joints[j], p = this.prev[j];
+      const tx = o.rotation.x, ty = o.rotation.y, tz = o.rotation.z, tp = o.position.y;
+      o.rotation.set(p[0] + (tx - p[0]) * k, p[1] + (ty - p[1]) * k, p[2] + (tz - p[2]) * k);
+      if (j === 'torso') o.position.y = p[3] + (tp - p[3]) * k;
+      p[0] = o.rotation.x; p[1] = o.rotation.y; p[2] = o.rotation.z; p[3] = o.position.y;
+    }
+    this.warm = true;
+  }
+}
+
+/**
+ * Turn the head (and cap) toward a target: `yawLocal` is the target bearing in
+ * the officer's own frame, radians, 0 = straight ahead. Clamped so the neck
+ * cannot do more than a real one. Applied AFTER posing, so it rides on top.
+ */
+export function lookAt(joints, yawLocal, max = 0.8) {
+  const y = Math.max(-max, Math.min(max, yawLocal));
+  joints.head.rotation.y += y;
+  joints.cap.rotation.y += y;
+}

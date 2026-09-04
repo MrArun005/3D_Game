@@ -5,7 +5,7 @@ import { mulberry32 } from '../core/rng.js';
 import { personGeometry } from '../world/beach.js';
 import { PAINT_COLOURS, BODY_KEYS, BODY_TYPES } from '../vehicle/config.js';
 import { groundHeightAt } from '../world/metrics.js';
-import { buildOfficer, poseOfficer } from '../world/officer.js';
+import { buildOfficer, poseOfficer, PoseBlender, lookAt } from '../world/officer.js';
 import { buildWeaponMesh, ARSENAL } from './weapons.js';
 import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED } from './policeAi.js';
 
@@ -127,9 +127,10 @@ export class Traffic {
     /* A real officer: seven vertex-coloured meshes with a face, a cap, a stab
        vest and a duty belt (world/officer.js). Geometry and material are shared
        by every officer in the city, so this costs meshes, not memory. */
-    const built = buildOfficer();
+    const built = buildOfficer(this.police.length + 1);   // seeded by unit number: the same faces every load
     const officer = built.group;
     c.joints = built.joints;
+    c.blender = new PoseBlender();
     c.pose = 'idle';
     c.poseT = Math.random() * 6;
     /* The sidearm hangs off the right arm rather than the group, so it follows
@@ -777,7 +778,9 @@ export class Traffic {
         const arresting = c.state === 'arrest';
         const want = arresting ? 'cuff' : c.state === 'peek' ? 'peek' : c.state === 'advance' ? 'walk' : 'crouch';
         if (want !== c.pose) c.pose = want;
-        poseOfficer(c.joints, c.pose, c.state === 'advance' ? c.poseT * 6 : c.poseT);
+        c.blender.apply(c.joints, c.pose, c.state === 'advance' ? c.poseT * 6 : c.poseT, dt, c.pose === 'peek' ? 0.12 : 0.22);
+        // eyes on you: the head turns toward the player within what a neck allows
+        lookAt(c.joints, Math.atan2(-(player.z - sz), player.x - sx) - face);
         c.gun.visible = !arresting;
 
         /* Fire only from 'peek', only with a line, one aimed shot per weapon
@@ -794,6 +797,12 @@ export class Traffic {
           const jit = aimJitter(Math.floor(this.wanted), gap, player.speed ?? 0) + w.restSpread;
           const landed = canSee && shotLands(c.officer.position.x, gunY, c.officer.position.z, player.x, ty, player.z, prof.r, jit, this.rand);
           if (this.onShot) this.onShot(gap, landed, w.damage * (c.gunKind === 'shotgun' ? 3 : 1));
+          if (!landed && this.decals && player.onFoot) {
+            // the round went somewhere: a mark in the road a stride from you says how close
+            const a = this.rand() * Math.PI * 2, r = 0.6 + this.rand() * 1.6;
+            const mx = player.x + Math.cos(a) * r, mz = player.z + Math.sin(a) * r;
+            this.decals.stamp(mx, groundHeightAt(mx, mz), mz, 0, 1, 0, c.gunKind === 'shotgun' ? 1.6 : 1);
+          }
         }
         c.holdT += dt;
         continue;

@@ -255,6 +255,7 @@ function onShot(gap, landed = null, damage = 26) {
      fallback for any caller that has not been given a line of sight. */
   const hit = landed === null ? Math.max(0, 1 - gap / 18) : (landed ? damage / 26 : 0);
   if (landed === false) return;                    // a miss: the shot is heard, nothing else
+  if (onFoot.active && landed) onFoot.character?.flinch?.();   // the body reacts before the number does
   if (onFoot.active) {
     // on foot there is no bodywork to absorb it
     health = Math.max(0, health - hit * 0.16);
@@ -345,6 +346,7 @@ const decals = new DecalPool(scene);
 let aiming = false, ads = 0, burst = 0, sinceShot = 9, swayPhase = 0, crouch = false;
 let lastFiredAt = -1e9;   // officers advance when you have been quiet for a while
 const _rayHit = new THREE.Vector3();
+const _hand = new THREE.Vector3();   // the skinned hero's palm, when the rig is up
 /* The gun you are actually holding.
    NOT parented to onFoot.group: that group is the blocky stand-in body, and
    onfoot.js hides it the moment the skinned character finishes loading, which
@@ -373,9 +375,16 @@ function placeHeldGun() {
   const sw = swayFor(onFoot.speed ?? 0, swayPhase, ads > 0.5);
   const rl = weapon.reloading ? reloadPose(1 - weapon.reloadT / weapon.spec.reload) : { dy: 0, tilt: 0 };
   const lift = 0.22 * ads, inward = 0.12 * ads, drop = crouch ? 0.30 : 0;   // sights to the eye line, down when crouched
-  heldGun.position.set(
-    onFoot.x + fx * (0.26 + 0.06 * ads) + sx * (0.20 - inward + sw.dx), (onFoot.y || 0) + 1.14 + lift + sw.dy + rl.dy - drop,
-    onFoot.z + fz * (0.26 + 0.06 * ads) + sz * (0.20 - inward + sw.dx));
+  /* Prefer the animated hand: when the skinned hero is up, the palm bone's
+     world position is where the gun goes, so it walks, runs and jumps with the
+     arm. The offsets below are the fallback for the blocky stand-in body. */
+  if (onFoot.character?.ready && onFoot.character.handWorldPosition(_hand)) {
+    heldGun.position.set(_hand.x + fx * 0.06 + sw.dx * 0.5, _hand.y + 0.02 + lift * 0.4 + sw.dy * 0.5 + rl.dy, _hand.z + fz * 0.06);
+  } else {
+    heldGun.position.set(
+      onFoot.x + fx * (0.26 + 0.06 * ads) + sx * (0.20 - inward + sw.dx), (onFoot.y || 0) + 1.14 + lift + sw.dy + rl.dy - drop,
+      onFoot.z + fz * (0.26 + 0.06 * ads) + sz * (0.20 - inward + sw.dx));
+  }
   heldGun.rotation.set(sw.roll, yaw, -rl.tilt);
   heldGun.visible = true;
 }
@@ -1398,7 +1407,7 @@ function frameBody() {
     ? { x: onFoot.x, y: onFoot.y, z: onFoot.z, vx: onFoot.vx, vz: onFoot.vz,
         speed: Math.hypot(onFoot.vx, onFoot.vz), onFoot: true, crouch, firedAt: lastFiredAt }
     : currentVehicle;
-  traffic.world = world; traffic.chatter = chatter;   // buildings for line of sight, the radio for the AI
+  traffic.world = world; traffic.chatter = chatter; traffic.decals = decals;   // buildings for line of sight, the radio, the marks their misses leave
   traffic.update(quarry, dt, worldTime);
   if (chatter) chatter.updateWanted(traffic.wanted);
   if (world.updateSignals) world.updateSignals(worldTime);

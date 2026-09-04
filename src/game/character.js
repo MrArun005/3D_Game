@@ -319,8 +319,45 @@ export class Character {
   }
 
   /** `speed` in m/s decides the clip; the model faces +X like everything else. */
+  /** The named bone of the active skinned mesh, cached. Target rig names (PalmR, UpperArmR...). */
+  bone(name) {
+    this._bones ??= new Map();
+    if (this._bones.has(name)) return this._bones.get(name);
+    let found = null;
+    this.root.traverse((o) => { if (!found && o.isSkinnedMesh) found = o.skeleton.bones.find((b) => b.name === name) || null; });
+    this._bones.set(name, found);
+    return found;
+  }
+
+  /**
+   * World position of the right palm, written into `out`. Lets the held
+   * weapon ride the animated hand without guessing the bone's axes: the gun
+   * is placed AT the hand and oriented by the aim, which is what a third-
+   * person camera actually shows. Returns false when there is no rig yet.
+   */
+  handWorldPosition(out) {
+    const b = this.bone('PalmR') || this.bone('LowerArmR');
+    if (!b) return false;
+    b.getWorldPosition(out);
+    return true;
+  }
+
+  /**
+   * Take a hit: the 'hit' clip has been loaded since the avatar landed and
+   * never played (CLAUDE.md). One-shot, then back to locomotion; `busyUntil`
+   * keeps update() from stomping it for the clip's length.
+   */
+  flinch() {
+    const a = this.actions.hit;
+    if (!a || !this.ready) return false;
+    this.play('hit', 0.08);
+    this.busyUntil = performance.now() + Math.min(900, (a.getClip().duration * 1000) | 0);
+    return true;
+  }
+
   update(dt, x, y, z, yaw, speed, isGrounded = true) {
     if (!this.ready) return;
+    this._bones = this._bones && this._bonesRoot === this.root.children[0] ? this._bones : (this._bonesRoot = this.root.children[0], new Map());
     this.root.position.set(x, y, z);
     this.root.rotation.y = -yaw + Math.PI / 2;
     this.#updateFace(dt);
