@@ -29,9 +29,18 @@ export class Hud {
     this.#drawWanted(traffic);
     this.#drawMission(mission);
     this.net = net;
-    this.kph.innerHTML = `${Math.round(Math.abs(car.fwdSpeed) * 3.6)}<small>KM/H</small>`;
-    const name = car.gear === 0 ? 'R' : car.gear === 1 ? 'N' : String(car.gear - 1);
-    this.gear.innerHTML = `GEAR <b>${name}</b>${car.holdGear ? ' · HOLD' : ''}`;
+    const fwd = car.fwdSpeed !== undefined ? car.fwdSpeed : (car.speed || 0);
+    this.kph.innerHTML = `${Math.round(Math.abs(fwd) * 3.6)}<small>KM/H</small>`;
+    if (car.type === 'helicopter') {
+      const alt = Math.round(car.altitudeAboveGround || 0);
+      this.gear.innerHTML = `ALT <b>${alt}m</b> · ${car.landed ? 'LANDED' : 'AIRBORNE'}`;
+    } else if (car.type === 'tank') {
+      const ready = car.reloadTime <= 0;
+      this.gear.innerHTML = `CANNON <b>${ready ? 'READY' : car.reloadTime.toFixed(1) + 's'}</b>`;
+    } else {
+      const name = car.gear === 0 ? 'R' : car.gear === 1 ? 'N' : String((car.gear || 2) - 1);
+      this.gear.innerHTML = `GEAR <b>${name}</b>${car.holdGear ? ' · HOLD' : ''}`;
+    }
     this.#drawDials(car);
     this.#drawMap(car, traffic);
     this.#drawMapOverlay(car, traffic, mission);
@@ -517,7 +526,8 @@ export class Hud {
     g.strokeStyle = 'rgba(200,58,50,0.5)';
     g.beginPath(); g.arc(0, 0, R, redline, a1); g.stroke();
 
-    const p = Math.max(0, Math.min(1, car.rpm / V.redline));
+    const rpm = car.rpm ?? (car.rotorRpm !== undefined ? car.rotorRpm * 4500 : (car.speed ? car.speed * 120 : 0));
+    const p = Math.max(0, Math.min(1, rpm / V.redline));
     const grad = g.createLinearGradient(-R, 0, R, 0);
     grad.addColorStop(0, '#6f9ccc');
     grad.addColorStop(0.7, '#d8bd84');

@@ -249,8 +249,8 @@ export function createAudio() {
     update(car) {
       if (!ready || !ctx || ctx.state !== 'running') return;
       const now = ctx.currentTime;
-      const rpm = car.rpm;
-      const load = car.gear === 1 ? car.throttle * 0.35 : car.throttle;
+      const rpm = car.rpm ?? (car.rotorRpm !== undefined ? 1200 + car.rotorRpm * 4200 : (car.speed ? 1800 + car.speed * 70 : 800));
+      const load = car.gear === 1 ? (car.throttle || 0) * 0.35 : (car.throttle || 0);
       const layersNow = engineLayerGains(rpm, load);
       for (let i = 0; i < layers.length; i++) {
         const g = layersNow.bands[i];
@@ -264,15 +264,15 @@ export function createAudio() {
       turboFilter.frequency.setTargetAtTime(1600 + rpm * 0.35 + load * 900, now, 0.08);
       turboGain.gain.setTargetAtTime(load * Math.min(1, rpm / 4200) * 0.045, now, 0.1);
 
-      const speed = car.speed;
-      const tyre = Math.max(0, car.slip - 0.08) * 0.55 + (car.kerb ? 0.04 * Math.min(1, speed / 12) : 0);
+      const speed = car.speed || 0;
+      const tyre = Math.max(0, (car.slip || 0) - 0.08) * 0.55 + (car.kerb ? 0.04 * Math.min(1, speed / 12) : 0);
       tyreGain.gain.setTargetAtTime(tyre, now, 0.04);
-      tyreFilter.frequency.setTargetAtTime(700 + car.slip * 1400, now, 0.08);
+      tyreFilter.frequency.setTargetAtTime(700 + (car.slip || 0) * 1400, now, 0.08);
       windGain.gain.setTargetAtTime(Math.min(0.07, (speed / 70) ** 2 * 0.09), now, 0.12);
 
-      if (car.gear !== lastGear) { lastGear = car.gear; shiftClick(); }
-      if (car.impact > 2.4 && car.impact > lastImpact + 0.5) thud(car.impact);
-      lastImpact = car.impact;
+      if (car.gear !== undefined && car.gear !== lastGear) { lastGear = car.gear; shiftClick(); }
+      if ((car.impact || 0) > 2.4 && car.impact > lastImpact + 0.5) thud(car.impact);
+      lastImpact = car.impact || 0;
     },
     /** 0..1 -- how much rain there is to hear. */
     setRain(amount) {
