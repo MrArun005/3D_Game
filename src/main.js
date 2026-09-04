@@ -497,6 +497,7 @@ function pullTrigger() {
   }
   modes?.targets(_triggerTargets);
   roadblock?.targets?.(_triggerTargets);
+  traffic.markTargets?.(_triggerTargets);
   // a pad gets GTA's soft lock; a mouse does not need it and would resent it
   if (padConnected()) aimAssist(_triggerDir, ox, oy, oz, _triggerTargets, ads > 0.5 ? 0.05 : 0.08, 0.55);   // padConnected is a function (input.js)
   weapon.spreadMul = (1 - ads * (1 - (ADS[weapon.kind]?.spread ?? 0.4))) * (onFoot.active ? movementSpread(onFoot.speed ?? 0, crouch) : 1.3);   // sights, feet and crouch shape THIS shot's cone; heat is untouched
@@ -533,7 +534,7 @@ function pullTrigger() {
   // firing at all is a crime; hitting something is a worse one
   if (hit?.kind !== 'target' && modes?.active !== 'range') traffic.reportCrime(hit ? (hit.kind === 'person' ? 'person' : (hit.kind === 'police' || hit.kind === 'officer') ? 'police' : 'traffic') : 'traffic',
                       hit ? 9 : 1);
-  if (hit && hit.kind === 'officer') { const downed = hit.ref.mesh ? traffic.officerHit?.(hit.ref, weapon.spec.damage) : roadblock?.hitPost?.(hit.ref, weapon.spec.damage); if (downed) { modes?.onOfficerDown(); hud.flash(modes?.active === 'holdout' ? 'OFFICER DOWN · +50' : 'OFFICER DOWN'); } crosshair.hit(hit.ref.down > 0); }
+  if (hit && hit.kind === 'officer') { const downed = hit.ref.mesh ? traffic.officerHit?.(hit.ref, weapon.spec.damage) : hit.ref.roof ? traffic.hitMark?.(hit.ref, weapon.spec.damage) : roadblock?.hitPost?.(hit.ref, weapon.spec.damage); if (downed) { modes?.onOfficerDown(); hud.flash(modes?.active === 'holdout' ? 'OFFICER DOWN · +50' : 'OFFICER DOWN'); } crosshair.hit(hit.ref.down > 0); }
   if (hit && hit.kind === 'person') hit.ref.down = 0.001;
   if (hit && hit.kind !== 'person') {
     hit.ref.speed *= 0.55;

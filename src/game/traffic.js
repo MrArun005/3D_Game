@@ -559,6 +559,19 @@ export class Traffic {
     c.gun = null;
   }
 
+  /** Rooftop marksmen as weapon targets. */
+  markTargets(out) {
+    for (const m of this.marks ?? []) if (!m.down) out.push({ x: m.group.position.x, z: m.group.position.z, y: m.group.position.y + 1.15, r: 0.42, kind: 'officer', ref: m });
+  }
+
+  /** A player round hit a marksman: two rifle rounds and he is gone from the roof. */
+  hitMark(m, damage = 26) {
+    if (!m || m.down) return false;
+    m.hp = (m.hp ?? 60) - damage;
+    if (m.hp <= 0) { m.down = true; this.scene.remove(m.group); this.marks.splice(this.marks.indexOf(m), 1); this.chatter?.radioPool?.('down'); return true; }
+    return false;
+  }
+
   /** Called by main each frame: hands back a dropped weapon kind if the player stands on one. */
   pickupAt(x, z) {
     if (!this.drops) return null;
@@ -882,7 +895,7 @@ export class Traffic {
         if (canSee) this.hot = true;
         c.quietFor = (player.firedAt !== undefined && performance.now() - player.firedAt < 1500) ? 0 : c.quietFor + dt;
         c.stateT += dt;
-        const next = nextState({ state: c.state, hp: c.hp, gap, playerSpeed: player.speed ?? 0, quietFor: c.quietFor, canSee, burstLeft: c.burstLeft, t: c.stateT });
+        const next = nextState({ state: c.state, hp: c.hp, gap, playerSpeed: player.speed ?? 0, quietFor: c.quietFor, canSee, burstLeft: c.burstLeft, t: c.stateT, playerOnFoot: !!player.onFoot });
         if (next !== c.state) {
           if (next === 'peek') {
             const b = burstFor(c.gunKind); c.burstLeft = b.shots; c.fireT = 0.12;

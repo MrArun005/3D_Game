@@ -96,3 +96,11 @@ test('body armour soaks 60% of a hit until it runs out', async () => {
   const r = absorb(1, 0.2); assert.ok(Math.abs(r.toHealth - 0.08) < 1e-9 && Math.abs(r.toArmour - 0.12) < 1e-9);
   const last = absorb(0.05, 0.2); assert.ok(Math.abs(last.toArmour - 0.05) < 1e-9 && Math.abs(last.toHealth - 0.15) < 1e-9, 'the last of the armour goes first, the rest is yours');
 });
+
+test('a player on foot who opens the gap gets chased once the officer has a line', async () => {
+  const { nextState } = await import('../src/game/policeAi.js');
+  const base = { state: 'cover', hp: 100, gap: 30, playerSpeed: 5, quietFor: 0, canSee: true, burstLeft: 0, t: 1.5 };
+  assert.equal(nextState({ ...base, playerOnFoot: true }), 'advance');
+  assert.equal(nextState({ ...base, playerOnFoot: false }), 'peek', 'in a car they hold cover and shoot');
+  assert.equal(nextState({ ...base, playerOnFoot: true, canSee: false }), 'cover', 'no line, no chase');
+});

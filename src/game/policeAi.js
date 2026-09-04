@@ -107,6 +107,7 @@ export function nextState(s) {
   if (state === 'advance') return t >= 1 ? 'cover' : 'advance';
   if (state === 'cover') {
     if (quietFor > 4 && gap > 12) return 'advance';
+    if (s.playerOnFoot && gap > 25 && canSee && t > 1.2) return 'advance';   // you are running: they come after you
     return canSee && t > 0.6 ? 'peek' : 'cover';
   }
   return 'cover';
