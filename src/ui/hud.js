@@ -434,6 +434,7 @@ export class Hud {
     el.style.display = 'block';
     const low = ammo === 0 ? '#ff5f5f' : ammo <= 4 ? '#ffc23c' : '#eaf1fb';
     const arm = armour > 0 ? `<br><span style="font-size:11px;color:#6fb1ff">ARMOUR ${Math.round(armour * 100)}%</span>` : '';
+    if (ammo === '' || ammo === null) { el.innerHTML = `<span style="font-size:20px">${name}</span>` + arm; return; }
     el.innerHTML = (reloading
       ? `<span style="opacity:.65">${name}</span><br><span style="font-size:20px;color:#ffc23c">RELOADING</span>`
       : `<span style="opacity:.65">${name}</span><br>`

@@ -175,19 +175,19 @@ export function buildOfficer(seed = 1) {
     moustache: rnd() < 0.25,
   };
   group.scale.set(variety.build, variety.height, variety.build);
-  const mk = (geo, x, y, z) => {
+  const mk = (geo, x, y, z, shadow = true) => {
     const m = new THREE.Mesh(geo, s.mat);
     m.position.set(x, y, z);
-    m.castShadow = true;
+    m.castShadow = shadow;   // torso and legs only: the rest is noise in the map and a shadow draw each
     m.receiveShadow = true;
     group.add(m);
     return m;
   };
-  const head = mk(s.head, 0, NECK, 0);
-  const cap = mk(s.cap, 0, NECK, 0);
+  const head = mk(s.head, 0, NECK, 0, false);
+  const cap = mk(s.cap, 0, NECK, 0, false);
   const torso = mk(s.torso, 0, HIP, 0);
-  const armL = mk(s.arm, 0, SHOULDER, -0.20);
-  const armR = mk(s.arm, 0, SHOULDER, 0.20);
+  const armL = mk(s.arm, 0, SHOULDER, -0.20, false);
+  const armR = mk(s.arm, 0, SHOULDER, 0.20, false);
   const legL = mk(s.leg, 0, HIP, -0.09);
   const legR = mk(s.leg, 0, HIP, 0.09);
   cap.visible = variety.cap;
