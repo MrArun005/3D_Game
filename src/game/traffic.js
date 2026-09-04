@@ -557,6 +557,14 @@ export class Traffic {
     this.scene.add(g);
     this.drops.push({ kind: c.gunKind, mesh: g, t: 40, x: g.position.x, z: g.position.z });
     c.gun = null;
+    if (this.rand() < 0.2) {   // one in five carried a grenade
+      this._nadeGeo ??= new THREE.SphereGeometry(0.075, 8, 6);
+      this._nadeMat ??= new THREE.MeshStandardMaterial({ color: 0x2f3a2a, roughness: 0.55, metalness: 0.3 });
+      const n = new THREE.Mesh(this._nadeGeo, this._nadeMat);
+      n.position.set(c.officer.position.x - 0.5, groundHeightAt(c.officer.position.x, c.officer.position.z) + 0.08, c.officer.position.z - 0.2);
+      this.scene.add(n);
+      this.drops.push({ kind: 'grenade', mesh: n, t: 40, x: n.position.x, z: n.position.z });
+    }
   }
 
   /** Rooftop marksmen as weapon targets. */

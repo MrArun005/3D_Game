@@ -382,7 +382,7 @@ grenades.onBlast = (bx, by, bz) => {
   crowd?.panic(bx, bz, 34);
   traffic.reportCrime('traffic', 6);
   chatter?.radioPool?.('blast');
-  audio.gunshot();
+  audio.thud?.(40); audio.gunshot();
   weapon.bloodAt?.(bx, by + 0.3, bz, 0, 0);   // reuse the pool for a dark puff of debris
 };
 let modes = null;   // range / hold-out, built once the HUD and traffic exist
@@ -465,7 +465,7 @@ function pullTrigger() {
     for (const v of traffic.police) if (v.live && v.deployed && !v.down) consider(v.officer.position.x, v.officer.position.z, 'officer', v);
     for (const v of traffic.cars) if (v.live) consider(v.x, v.z, 'car', v);
     if (!best) return;
-    audio.gunshot?.();   // the only thud we have; a real punch sound is a follow-up
+    audio.thud?.(6);
     if (best.kind === 'person') { best.ref.down = 0.001; crowd?.panic(onFoot.x, onFoot.z, 14); traffic.reportCrime('person', 3); }
     else if (best.kind === 'officer') { if (traffic.officerHit?.(best.ref, 18)) hud.flash('OFFICER DOWN'); traffic.reportCrime('police', 4); }
     else { traffic.reportCrime('traffic', 1); }
@@ -1554,7 +1554,7 @@ function frameBody() {
   if (health < 0.5 && performance.now() - lastHurtAt > 6000) { health = Math.min(0.5, health + dt * 0.03); hud.setHealth(health); }
   modes?.update(dt);
   // walk over a downed officer's weapon and it is yours, magazine full
-  if (onFoot.active) { const k = traffic.pickupAt?.(onFoot.x, onFoot.z); if (k) { weapon.addMag(k); weapon.switchTo(k); refreshHeldGun(); hud.flash(`PICKED UP ${ARSENAL[k].name} · +${ARSENAL[k].mag}`); } }
+  if (onFoot.active) { const k = traffic.pickupAt?.(onFoot.x, onFoot.z); if (k === 'grenade') { grenades.count++; hud.flash(`PICKED UP GRENADE · ${grenades.count}`); } else if (k) { weapon.addMag(k); weapon.switchTo(k); refreshHeldGun(); hud.flash(`PICKED UP ${ARSENAL[k].name} · +${ARSENAL[k].mag}`); } }
   if (modes?.active) hud.setJob?.(modes.line());
   else if (modes?.justEnded) { modes.justEnded = false; hud.setJob?.(null); }
   const adsTarget = aiming && onFoot.active ? 1 : 0;

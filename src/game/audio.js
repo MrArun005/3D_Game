@@ -322,6 +322,7 @@ export function createAudio() {
         ctx.currentTime, 0.5);
     },
     gunshot,
+    thud,   // impact thud, magnitude in m/s-ish; punches and blasts borrow it
     mute(on) {
       if (!master) return;
       master.gain.setTargetAtTime(on ? 0 : 0.24, ctx.currentTime, 0.08);
