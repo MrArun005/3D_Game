@@ -132,3 +132,11 @@ test('aiming down sights tightens the cone for the shot without erasing accumula
   w.fire(0, 1, 0, 1, 0, 0, []);
   assert.ok(w.heat >= heatBefore, 'a shot in ADS adds heat like any other; it does not reset it');
 });
+
+test('the arsenal round-trips through serialize/restore', async () => {
+  const { Weapon } = await import('../src/game/weapon.js');
+  const a = new Weapon({ add() {} }); a.switchTo('rifle'); a.ammo = 7; a.reserve.rifle = 33; a.mags.pistol = 4;
+  const b = new Weapon({ add() {} }); assert.equal(b.restore(a.serialize()), true);
+  assert.equal(b.kind, 'rifle'); assert.equal(b.ammo, 7); assert.equal(b.reserve.rifle, 33); assert.equal(b.mags.pistol, 4);
+  assert.equal(b.restore({ kind: 'bazooka' }), false, 'garbage is refused');
+});

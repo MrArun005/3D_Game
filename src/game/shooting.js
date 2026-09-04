@@ -236,3 +236,24 @@ export function movementSpread(speed, crouch) {
   const m = speed > 4 ? 1.7 : speed > 1 ? 1.25 : 1;
   return m * (crouch ? 0.8 : 1);
 }
+
+/**
+ * Soft lock for a pad: if a target lies within `maxRad` of the aim, bend the
+ * aim toward it by `strength` (0..1). Never snaps: it eases, the way GTA's
+ * does, and only ever picks the nearest target inside the cone. Mutates and
+ * returns `dir` ({x,y,z}); no allocation. Pure; tested.
+ */
+export function aimAssist(dir, ox, oy, oz, targets, maxRad = 0.07, strength = 0.55) {
+  let best = null, bestAng = maxRad;
+  for (const t of targets) {
+    const px = t.x - ox, py = (t.y ?? 0.9) - oy, pz = t.z - oz;
+    const len = Math.hypot(px, py, pz) || 1;
+    const dot = (px * dir.x + py * dir.y + pz * dir.z) / len;
+    const ang = Math.acos(Math.max(-1, Math.min(1, dot)));
+    if (ang < bestAng) { bestAng = ang; best = { x: px / len, y: py / len, z: pz / len }; }
+  }
+  if (!best) return dir;
+  dir.x += (best.x - dir.x) * strength; dir.y += (best.y - dir.y) * strength; dir.z += (best.z - dir.z) * strength;
+  const l = Math.hypot(dir.x, dir.y, dir.z) || 1; dir.x /= l; dir.y /= l; dir.z /= l;
+  return dir;
+}

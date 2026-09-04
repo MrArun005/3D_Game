@@ -86,3 +86,13 @@ test('moving widens the cone and crouching tightens it', async () => {
   assert.equal(movementSpread(6, false), 1.7);
   assert.ok(movementSpread(0, true) < 1);
 });
+
+test('aim assist bends toward a target inside the cone and leaves a wide miss alone', async () => {
+  const { aimAssist } = await import('../src/game/shooting.js');
+  const near = [{ x: 20, y: 1, z: 0.6 }];       // ~1.7 degrees off the aim
+  const d = aimAssist({ x: 1, y: 0, z: 0 }, 0, 1, 0, near, 0.07, 0.55);
+  assert.ok(d.z > 0.01 && d.z < 0.03, `eased partway toward the target, got z=${d.z.toFixed(4)}`);
+  const far = [{ x: 20, y: 1, z: 6 }];          // ~17 degrees off
+  const e = aimAssist({ x: 1, y: 0, z: 0 }, 0, 1, 0, far, 0.07, 0.55);
+  assert.equal(e.z, 0, 'outside the cone: untouched');
+});

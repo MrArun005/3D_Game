@@ -56,7 +56,7 @@ import { ARSENAL, WEAPON_KINDS, buildWeaponMesh, weaponMaterial } from './game/w
 import { officerMaterial } from './world/officer.js';
 import { Modes } from './game/modes.js';
 import { Grenades, BLAST_R, KILL_R, HURT_R, blastFalloff } from './game/grenade.js';
-import { Crosshair, DecalPool, ADS, ADS_BLEND_S, spreadToPixels, spreadFor, recoilFor, firstBuildingHit, swayFor, swayPhaseStep, reloadPose, movementSpread } from './game/shooting.js';
+import { Crosshair, DecalPool, ADS, ADS_BLEND_S, spreadToPixels, spreadFor, recoilFor, firstBuildingHit, swayFor, swayPhaseStep, reloadPose, movementSpread, aimAssist } from './game/shooting.js';
 import { absorb } from './game/policeAi.js';
 import { SkidMarks } from './world/skidmarks.js';
 import { Damage } from './game/damage.js';
@@ -388,6 +388,11 @@ let modes = null;   // range / hold-out, built once the HUD and traffic exist
 let aiming = false, ads = 0, burst = 0, sinceShot = 9, swayPhase = 0, crouch = false;
 let lastFiredAt = -1e9;   // officers advance when you have been quiet for a while
 let lastHurtAt = -1e9;    // health regenerates to half once this is six seconds old
+let healTick = 0;
+/* The arsenal survives a reload of the page like cash and the garage do. */
+try { const d = JSON.parse(localStorage.getItem('hb.arsenal') || 'null'); if (d) { weapon.restore(d); grenades.count = d.grenades ?? grenades.count; armour = d.armour ?? 0; } } catch { /* private mode */ }
+let arsenalSaveT = 0;
+function saveArsenal() { try { localStorage.setItem('hb.arsenal', JSON.stringify({ ...weapon.serialize(), grenades: grenades.count, armour })); } catch { /* private mode */ } }
 let armour = 0;           // body armour 0..1, bought at Ammu-Nation, soaks 60% of a hit until gone
 const _rayHit = new THREE.Vector3();
 const _hand = new THREE.Vector3();   // the skinned hero's palm, when the rig is up
@@ -492,6 +497,8 @@ function pullTrigger() {
   }
   modes?.targets(_triggerTargets);
   roadblock?.targets?.(_triggerTargets);
+  // a pad gets GTA's soft lock; a mouse does not need it and would resent it
+  if (padConnected) aimAssist(_triggerDir, ox, oy, oz, _triggerTargets, ads > 0.5 ? 0.05 : 0.08, 0.55);
   weapon.spreadMul = (1 - ads * (1 - (ADS[weapon.kind]?.spread ?? 0.4))) * (onFoot.active ? movementSpread(onFoot.speed ?? 0, crouch) : 1.3);   // sights, feet and crouch shape THIS shot's cone; heat is untouched
   const hit = weapon.fire(ox, oy, oz, dx, dy, dz, _triggerTargets);
   if (hit === null && !weapon.ready && weapon.ammo === 0) return;   // dry: reload started, no shot
@@ -1505,6 +1512,15 @@ function frameBody() {
   if (net) net.update(car, dt);
   weapon.update(dt);
   grenades.update(dt, groundHeightAt);
+  arsenalSaveT += dt; if (arsenalSaveT > 5) { arsenalSaveT = 0; saveArsenal(); }
+  /* Hospitals heal: stand within 6 m of one on foot and health climbs at 15%/s. Free, like GTA's. */
+  healTick += dt;
+  if (healTick > 0.5) {
+    healTick = 0;
+    if (onFoot.active && health < 1 && districtRef?.places) {
+      for (const p of districtRef.places) { if (p.type === 'hosp' && Math.hypot(p.x - onFoot.x, p.y - onFoot.z) < 6) { health = Math.min(1, health + 0.075); hud.setHealth(health); if (health >= 1) hud.flash('PATCHED UP'); break; } }
+    }
+  }
   if (heldGun && grenadeMode) heldGun.visible = false;
   /* GTA V's rule: health creeps back to half on its own once you have not been
      hit for six seconds. Above half you need a doctor (the garage repair, or a

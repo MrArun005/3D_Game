@@ -103,7 +103,12 @@ export class Modes {
   stop() {
     for (const b of this.boards) this.scene.remove(b);
     this.boards.length = 0;
-    if (this.active) { this.hud.flash?.(`${this.active.toUpperCase()} OVER · score ${this.score} · rank ${rank(this.score, this.active)}`); this.justEnded = true; }
+    if (this.active) {
+      let best = 0;
+      try { best = +(localStorage.getItem('hb.best.' + this.active) || 0); if (this.score > best) { best = this.score; localStorage.setItem('hb.best.' + this.active, String(best)); } } catch { /* private mode */ }
+      this.hud.flash?.(`${this.active.toUpperCase()} OVER · ${this.score} pts · rank ${rank(this.score, this.active)}${best === this.score ? ' · NEW BEST' : ` · best ${best}`}`);
+      this.justEnded = true;
+    }
     this.active = null;
   }
 

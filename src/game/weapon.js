@@ -139,6 +139,15 @@ export class Weapon {
     return true;
   }
 
+  /** Everything about the arsenal worth keeping across a reload of the page. */
+  serialize() { return { kind: this.kind, ammo: this.ammo, mags: this.mags, reserve: this.reserve }; }
+  restore(d) {
+    if (!d || !ARSENAL[d.kind]) return false;
+    this.kind = d.kind; this.ammo = Math.max(0, d.ammo | 0);
+    for (const k of Object.keys(ARSENAL)) { if (d.mags?.[k] !== undefined) this.mags[k] = d.mags[k] | 0; if (d.reserve?.[k] !== undefined) this.reserve[k] = Math.max(0, d.reserve[k] | 0); }
+    return true;
+  }
+
   get spec() { return ARSENAL[this.kind] ?? ARSENAL.pistol; }
   get reserveNow() { return this.reserve[this.kind] ?? 0; }
   /** A drop or a purchase: one magazine into the reserve (or fill the gun if it is empty). */
