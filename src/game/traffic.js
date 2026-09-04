@@ -617,6 +617,7 @@ export class Traffic {
     if (!this.drops) return;
     for (let i = this.drops.length - 1; i >= 0; i--) {
       const d = this.drops[i]; d.t -= dt;
+      if (d.t < 6) d.mesh.visible = Math.floor(d.t * 5) % 2 === 0;   // the last six seconds blink, the way GTA's pickups say 'last chance'
       if (d.t <= 0) { this.scene.remove(d.mesh); this.drops.splice(i, 1); }
     }
   }
@@ -995,7 +996,10 @@ export class Traffic {
           c.coverX = c.fromX + (c.toX - c.fromX) * k; c.coverZ = c.fromZ + (c.toZ - c.fromZ) * k;
         }
         const sx = c.coverX, sz = c.coverZ;
-        const face = Math.atan2(-(player.z - sz), player.x - sx);
+        // he faces where he thinks you are: you, with a line; where he last had you, without one for a few seconds
+        const cold = this.coldFor > 3 && this.seenX !== undefined;
+        const fx = cold ? this.seenX : player.x, fz = cold ? this.seenZ : player.z;
+        const face = Math.atan2(-(fz - sz), fx - sx);
         // stand ON the road, not at sea level -- officers deploy on bridges too
         c.officer.position.set(sx, groundHeightAt(sx, sz), sz);
         c.officer.rotation.y = -face + Math.PI / 2;
@@ -1011,7 +1015,7 @@ export class Traffic {
         if (want !== c.pose) c.pose = want;
         c.blender.apply(c.joints, c.pose, c.state === 'advance' ? c.poseT * 6 : c.poseT, dt, c.pose === 'peek' ? 0.12 : 0.22);
         // eyes on you: the head turns toward the player within what a neck allows
-        lookAt(c.joints, Math.atan2(-(player.z - sz), player.x - sx) - face);
+        lookAt(c.joints, Math.atan2(-(fz - sz), fx - sx) - face);
         if (c.hitT > 0) {   // the stagger rides on top of whatever pose he is in
           c.hitT -= dt;
           const k = Math.max(0, c.hitT / 0.35);
