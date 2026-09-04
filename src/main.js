@@ -373,9 +373,10 @@ grenades.onBlast = (bx, by, bz) => {
   debris.breakNear(bx, bz, BLAST_R, car, 30);
   for (const c of traffic.police) {
     if (!c.live || !c.deployed || c.down > 0) continue;
-    const d = Math.hypot(c.officer.position.x - bx, c.officer.position.z - bz);
-    if (d < KILL_R) traffic.officerHit?.(c, 100);
+    if (Math.hypot(c.officer.position.x - bx, c.officer.position.z - bz) < KILL_R) traffic.officerHit?.(c, 100);
   }
+  for (const m of traffic.marks ?? []) if (Math.hypot(m.group.position.x - bx, m.group.position.z - bz) < KILL_R && Math.abs(m.group.position.y - by) < 6) traffic.hitMark?.(m, 100);
+  for (const p of roadblock?.posts ?? []) if (roadblock.block && p.down <= 0 && Math.hypot(p.group.position.x - bx, p.group.position.z - bz) < KILL_R) roadblock.hitPost?.(p, 100);
   const px = onFoot.active ? onFoot.x : car.x, pz = onFoot.active ? onFoot.z : car.z;
   const dp = Math.hypot(px - bx, pz - bz);
   if (dp < HURT_R) onShot(dp, true, 26 * 3.5 * blastFalloff(dp, HURT_R), { x: bx, z: bz });
@@ -397,12 +398,12 @@ let aiming = false, ads = 0, burst = 0, sinceShot = 9, swayPhase = 0, crouch = f
 let lastFiredAt = -1e9;   // officers advance when you have been quiet for a while
 let lastHurtAt = -1e9;    // health regenerates to half once this is six seconds old
 let healTick = 0;
+let armour = 0;           // body armour 0..1, bought at Ammu-Nation, soaks 60% of a hit until gone
 /* The arsenal survives a reload of the page like cash and the garage do. */
 try { const d = JSON.parse(localStorage.getItem('hb.arsenal') || 'null'); if (d) { weapon.restore(d); grenades.count = d.grenades ?? grenades.count; armour = d.armour ?? 0; } } catch { /* private mode */ }
 let arsenalSaveT = 0;
 addEventListener('pagehide', () => saveArsenal());
 function saveArsenal() { try { localStorage.setItem('hb.arsenal', JSON.stringify({ ...weapon.serialize(), grenades: grenades.count, armour })); } catch { /* private mode */ } }
-let armour = 0;           // body armour 0..1, bought at Ammu-Nation, soaks 60% of a hit until gone
 const _rayHit = new THREE.Vector3();
 const _hand = new THREE.Vector3();   // the skinned hero's palm, when the rig is up
 /* The gun you are actually holding.
@@ -1166,6 +1167,7 @@ window.__buyWeapon = (kind, price) => {
   if (!ARSENAL[kind]) return false;
   if ((garage?.cash ?? 0) < price) { hud.flash('NOT ENOUGH CASH'); return false; }
   garage.addCash(-price, `BOUGHT ${ARSENAL[kind].name}`);
+  fistsMode = false; grenadeMode = false;
   weapon.addMag(kind); weapon.addMag(kind); weapon.switchTo(kind); refreshHeldGun();   // two magazines with a purchase
   hud.flash(`${ARSENAL[kind].name} · ${weapon.ammo} / ${weapon.reserveNow}`);
   return true;
@@ -1545,7 +1547,7 @@ function frameBody() {
     ? { x: onFoot.x, y: onFoot.y, z: onFoot.z, vx: onFoot.vx, vz: onFoot.vz,
         speed: Math.hypot(onFoot.vx, onFoot.vz), onFoot: true, crouch, firedAt: lastFiredAt }
     : currentVehicle;
-  traffic.world = world; traffic.chatter = chatter; traffic.decals = decals; traffic.crowd = crowd; traffic.heli = heli;   // buildings for line of sight, the radio, the marks their misses leave, the street that scatters
+  traffic.world = world; traffic.chatter = chatter; traffic.decals = decals; traffic.crowd = crowd; traffic.heli = heli; traffic.grenadeLook = grenades;   // buildings for line of sight, the radio, the marks their misses leave, the street that scatters
   traffic.update(quarry, dt, worldTime);
   if (chatter) chatter.updateWanted(traffic.wanted);
   if (world.updateSignals) world.updateSignals(worldTime);
@@ -1578,9 +1580,8 @@ function frameBody() {
   if (health < 0.5 && performance.now() - lastHurtAt > 6000) { health = Math.min(0.5, health + dt * 0.03); hud.setHealth(health); }
   modes?.update(dt);
   // walk over a downed officer's weapon and it is yours, magazine full
-  if (onFoot.active) { const k = traffic.pickupAt?.(onFoot.x, onFoot.z); if (k === 'grenade') { grenades.count++; hud.flash(`PICKED UP GRENADE · ${grenades.count}`); } else if (k) { weapon.addMag(k); weapon.switchTo(k); refreshHeldGun(); hud.flash(`PICKED UP ${ARSENAL[k].name} · +${ARSENAL[k].mag}`); } }
+  if (onFoot.active) { const k = traffic.pickupAt?.(onFoot.x, onFoot.z); if (k === 'grenade') { grenades.count++; hud.flash(`PICKED UP GRENADE · ${grenades.count}`); } else if (k) { fistsMode = false; grenadeMode = false; weapon.addMag(k); weapon.switchTo(k); refreshHeldGun(); hud.flash(`PICKED UP ${ARSENAL[k].name} · +${ARSENAL[k].mag}`); } }
   if (modes?.active) hud.setJob?.(modes.line());
-  else if (modes?.justEnded) { modes.justEnded = false; hud.setJob?.(null); }
   const adsTarget = aiming && onFoot.active ? 1 : 0;
   ads += (adsTarget - ads) * Math.min(1, dt / ADS_BLEND_S);
   if (Math.abs(ads - adsTarget) < 0.01) ads = adsTarget;

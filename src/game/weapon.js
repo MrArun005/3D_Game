@@ -31,7 +31,6 @@ export class Weapon {
        camera recoil the frame loop reads and decays -- the gun does not own
        the camera, it just reports how hard it just pushed. */
     this.kind = 'pistol';
-    this.ammo = ARSENAL.pistol.mag;
     /* Reserve per weapon, kept across switches: the rifle you bought still has
        its rounds when you come back to it. Reloading draws from here; a drop
        or a purchase adds a magazine. Infinite ammunition made the shotgun a
@@ -117,9 +116,7 @@ export class Weapon {
   /** Swap weapon. Reloads are cancelled: you are drawing a different gun. */
   switchTo(kind) {
     if (!ARSENAL[kind] || kind === this.kind) return false;
-    this.mags[this.kind] = this.ammo;           // remember what was left in the old one
-    this.kind = kind;
-    this.ammo = this.mags[kind] ?? ARSENAL[kind].mag;
+    this.kind = kind;                           // ammo IS mags[kind] (getter), nothing to sync
     this.reloadT = 0;
     this.heat = 0;
     this.cool = 0.25;                 // the draw itself takes a beat
@@ -143,11 +140,15 @@ export class Weapon {
   serialize() { return { kind: this.kind, ammo: this.ammo, mags: this.mags, reserve: this.reserve }; }
   restore(d) {
     if (!d || !ARSENAL[d.kind]) return false;
-    this.kind = d.kind; this.ammo = Math.max(0, d.ammo | 0);
     for (const k of Object.keys(ARSENAL)) { if (d.mags?.[k] !== undefined) this.mags[k] = d.mags[k] | 0; if (d.reserve?.[k] !== undefined) this.reserve[k] = Math.max(0, d.reserve[k] | 0); }
+    this.kind = d.kind; if (d.ammo !== undefined) this.ammo = Math.max(0, d.ammo | 0);
     return true;
   }
 
+  /* The round count in the gun in your hand is the magazine record itself; a
+     cached copy had to be hand-synced on every switch and restore and drifted. */
+  get ammo() { return this.mags[this.kind] ?? 0; }
+  set ammo(v) { this.mags[this.kind] = v; }
   get spec() { return ARSENAL[this.kind] ?? ARSENAL.pistol; }
   get reserveNow() { return this.reserve[this.kind] ?? 0; }
   /** A drop or a purchase: one magazine into the reserve (or fill the gun if it is empty). */

@@ -107,8 +107,8 @@ export class Modes {
       let best = 0;
       try { best = +(localStorage.getItem('hb.best.' + this.active) || 0); if (this.score > best) { best = this.score; localStorage.setItem('hb.best.' + this.active, String(best)); } } catch { /* private mode */ }
       this.hud.flash?.(`${this.active.toUpperCase()} OVER · ${this.score} pts · rank ${rank(this.score, this.active)}${best === this.score ? ' · NEW BEST' : ` · best ${best}`}`);
-      this.justEnded = true;
     }
+    this.hud.setJob?.(null);   // the score line comes down with the mode
     this.active = null;
   }
 

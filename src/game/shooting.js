@@ -227,8 +227,6 @@ export function reloadPose(frac) {
   return { dy: -RELOAD_DROP * k, tilt: RELOAD_TILT * k };
 }
 
-/** Which arsenal entries exist, for a switch UI. */
-export const WEAPON_ORDER = Object.keys(ARSENAL);
 export { spreadFor };
 
 /** Spread multiplier from how you are moving: still 1, walking 1.25, sprinting 1.7, crouched x0.8. Pure. */
