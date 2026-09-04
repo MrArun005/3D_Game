@@ -185,24 +185,31 @@ export function createAudio() {
   }
 
   /** A shot. Short, loud, and unmistakably not a crash. */
-  function gunshot() {
+  /**
+   * gain 0..1 is distance: your own gun is 1, an officer 60 m away ~0.15. Far
+   * shots also lose their crack -- the highpass drops and a lowpass comes in --
+   * which is how a street tells you where the shooting is without a map.
+   */
+  function gunshot(gain = 1) {
     if (!ctx) return;
+    const k = Math.max(0.05, Math.min(1, gain));
     const t = ctx.currentTime;
     const n = ctx.createBufferSource();
     n.buffer = makeNoise(ctx, 0.16);
     const hp = ctx.createBiquadFilter();
-    hp.type = 'highpass'; hp.frequency.value = 1400;
+    hp.type = 'highpass'; hp.frequency.value = 600 + 800 * k;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1200 + 14000 * k;
     const g = ctx.createGain();
-    g.gain.setValueAtTime(0.30, t);
+    g.gain.setValueAtTime(0.30 * k, t);
     g.gain.exponentialRampToValueAtTime(0.0008, t + 0.09);
-    n.connect(hp); hp.connect(g); g.connect(master);
+    n.connect(hp); hp.connect(lp); lp.connect(g); g.connect(master);
     n.start(t); n.stop(t + 0.18);
     const body = ctx.createOscillator();
     body.type = 'square';
     body.frequency.setValueAtTime(180, t);
     body.frequency.exponentialRampToValueAtTime(60, t + 0.06);
     const bg2 = ctx.createGain();
-    bg2.gain.setValueAtTime(0.16, t);
+    bg2.gain.setValueAtTime(0.16 * (0.5 + 0.5 * k), t);   // the low body carries further than the crack
     bg2.gain.exponentialRampToValueAtTime(0.0008, t + 0.08);
     body.connect(bg2); bg2.connect(master);
     body.start(t); body.stop(t + 0.1);
