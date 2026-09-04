@@ -117,6 +117,24 @@ export class ChatterEngine {
   /**
    * Monitor wanted level changes and trigger voice dispatch.
    */
+  /** A line from a rotating pool for an event, so the same call is not heard twice running. */
+  radioPool(key) {
+    const POOLS = {
+      deploy: ['Unit on scene, suspect stopped. Stepping out.', 'Contact. Going on foot.', 'Suspect vehicle stationary, moving in.'],
+      deployHot: ['Shots fired, officers on foot, requesting backup.', 'Taking fire! Send everything you have.', 'Officer needs assistance, shots fired!'],
+      down: ['Officer down! Officer down!', 'Man down, we need a medic!', 'We have an officer hit, repeat, officer hit!'],
+      advance: ['Suspect has gone quiet. Moving up.', 'Closing in, cover me.', 'Advancing on the last known position.'],
+      arrest: ['On the ground! Hands where I can see them!', 'Do not move! Stay down!', 'You are done. Hands behind your back.'],
+      pinned: ['Taking fire, returning fire.', 'Pinned down behind the unit, engaging.', 'Suspect is armed and firing, engaging.'],
+      rooftops: ['Marksmen in position on the rooftops.', 'Overwatch is up, we have the high ground.', 'Snipers set, awaiting the shot.'],
+      blast: ['Explosion downtown! Suspect has explosives!', 'Detonation reported, escalate to code red.', 'That was a grenade. All units, extreme caution.'],
+    };
+    const pool = POOLS[key]; if (!pool) return;
+    this._poolIdx ??= {};
+    const i = (this._poolIdx[key] = ((this._poolIdx[key] ?? -1) + 1) % pool.length);
+    this.radio(pool[i]);
+  }
+
   /** One dispatch line from the firefight AI, with the squelch, at most one a second. */
   radio(line) {
     const now = performance.now();

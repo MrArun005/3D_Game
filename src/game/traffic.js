@@ -583,7 +583,7 @@ export class Traffic {
     c.hp -= damage;
     c.quietFor = 0;
     c.hitT = 0.35;                                     // stagger: torso snaps away from the round, then eases back
-    if (c.hp <= 0) { c.state = 'down'; c.down = 0.001; this.chatter?.radio?.('Officer down! Officer down!'); this.#dropWeapon(c); return true; }
+    if (c.hp <= 0) { c.state = 'down'; c.down = 0.001; this.chatter?.radioPool?.('down'); this.#dropWeapon(c); return true; }
     return false;
   }
 
@@ -617,7 +617,7 @@ export class Traffic {
         built.joints.armR.add(gun);
         this.scene.add(built.group);
         this.marks.push({ group: built.group, joints: built.joints, blender: new PoseBlender(), roof: r, fireT: 1.5 + i, burstLeft: 0, poseT: 0 });
-        this.chatter?.radio?.('Marksmen in position on the rooftops.');
+        this.chatter?.radioPool?.('rooftops');
       }
     }
     const prof = targetProfile(!!player.onFoot, !!player.crouch);
@@ -848,7 +848,7 @@ export class Traffic {
         c.gun.geometry = buildWeaponMesh(c.gunKind).geometry;
         c.flash.position.x = ARSENAL[c.gunKind].muzzle;
         { const cs = coverSide(c.x, c.z, c.yaw, player.x, player.z); c.coverX = cs.x; c.coverZ = cs.z; }   // the door away from you, car between
-        this.chatter?.radio?.(Math.floor(this.wanted) >= 3 ? 'Shots fired, officers on foot, requesting backup.' : 'Unit on scene, suspect stopped. Stepping out.');
+        this.chatter?.radioPool?.(Math.floor(this.wanted) >= 3 ? 'deployHot' : 'deploy');
       }
       if (c.deployed && (gap > 30 || c.deployT <= 0)) {
         c.deployed = false;
@@ -885,10 +885,10 @@ export class Traffic {
         if (next !== c.state) {
           if (next === 'peek') { const b = burstFor(c.gunKind); c.burstLeft = b.shots; c.fireT = 0.12; }
           if (next === 'advance') { const ang = Math.atan2(player.z - c.coverZ, player.x - c.coverX); const step = Math.min(8, Math.max(0, gap - 7)); c.coverX += Math.cos(ang) * step; c.coverZ += Math.sin(ang) * step; }
-          if (next === 'down') { c.down = 0.001; this.chatter?.radio?.('Officer down! Officer down!'); this.#dropWeapon(c); }
-          else if (next === 'advance') this.chatter?.radio?.('Suspect has gone quiet. Moving up.');
-          else if (next === 'arrest') this.chatter?.radio?.('On the ground! Hands where I can see them!');
-          else if (next === 'peek' && c.state === 'cover' && c.stateT > 3) this.chatter?.radio?.('Taking fire, returning fire.');
+          if (next === 'down') { c.down = 0.001; this.chatter?.radioPool?.('down'); this.#dropWeapon(c); }
+          else if (next === 'advance') this.chatter?.radioPool?.('advance');
+          else if (next === 'arrest') this.chatter?.radioPool?.('arrest');
+          else if (next === 'peek' && c.state === 'cover' && c.stateT > 3) this.chatter?.radioPool?.('pinned');
           c.state = next; c.stateT = 0;
         }
         const sx = c.coverX, sz = c.coverZ;

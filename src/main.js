@@ -55,6 +55,7 @@ import { Weapon } from './game/weapon.js';
 import { ARSENAL, WEAPON_KINDS, buildWeaponMesh, weaponMaterial } from './game/weapons.js';
 import { officerMaterial } from './world/officer.js';
 import { Modes } from './game/modes.js';
+import { Grenades, BLAST_R, KILL_R, HURT_R, blastFalloff } from './game/grenade.js';
 import { Crosshair, DecalPool, ADS, ADS_BLEND_S, spreadToPixels, spreadFor, recoilFor, firstBuildingHit, swayFor, swayPhaseStep, reloadPose, movementSpread } from './game/shooting.js';
 import { absorb } from './game/policeAi.js';
 import { SkidMarks } from './world/skidmarks.js';
@@ -355,6 +356,28 @@ const weapon = new Weapon(scene);
    pattern; it resets after 0.4 s of not firing. */
 const crosshair = new Crosshair();
 const decals = new DecalPool(scene);
+/* Slot 5. In grenade mode E throws instead of firing; any digit 1-4 puts a gun
+   back in your hand. The blast goes through the same debris system as the car
+   and the tank, so a bin flies the same way whoever broke it. */
+const grenades = new Grenades(scene);
+let grenadeMode = false;
+grenades.onBlast = (bx, by, bz) => {
+  debris.breakNear(bx, bz, BLAST_R, car, 30);
+  for (const c of traffic.police) {
+    if (!c.live || !c.deployed || c.down > 0) continue;
+    const d = Math.hypot(c.officer.position.x - bx, c.officer.position.z - bz);
+    if (d < KILL_R) traffic.officerHit?.(c, 100);
+  }
+  const px = onFoot.active ? onFoot.x : car.x, pz = onFoot.active ? onFoot.z : car.z;
+  const dp = Math.hypot(px - bx, pz - bz);
+  if (dp < HURT_R) onShot(dp, true, 26 * 3.5 * blastFalloff(dp, HURT_R), { x: bx, z: bz });
+  if (onFoot.active) onFoot.camPitch = Math.min(0.9, onFoot.camPitch + 0.08 * blastFalloff(dp, 14)); else chase.shake += 0.8 * blastFalloff(dp, 20);
+  crowd?.panic(bx, bz, 34);
+  traffic.reportCrime('traffic', 6);
+  chatter?.radioPool?.('blast');
+  audio.gunshot();
+  weapon.bloodAt?.(bx, by + 0.3, bz, 0, 0);   // reuse the pool for a dark puff of debris
+};
 let modes = null;   // range / hold-out, built once the HUD and traffic exist
 let aiming = false, ads = 0, burst = 0, sinceShot = 9, swayPhase = 0, crouch = false;
 let lastFiredAt = -1e9;   // officers advance when you have been quiet for a while
@@ -415,7 +438,16 @@ const damageModel = new Damage(scene);
 const _triggerDir = new THREE.Vector3();
 const _triggerTargets = [];
 function pullTrigger() {
-  if (!started || !weapon.ready) return;
+  if (!started) return;
+  if (grenadeMode) {
+    if (!grenades.ready) { hud.flash(grenades.count ? 'ARM IN THE AIR' : 'NO GRENADES'); return; }
+    camera.getWorldDirection(_triggerDir);
+    const gx = onFoot.active ? onFoot.x : car.x, gz = onFoot.active ? onFoot.z : car.z, gy = (onFoot.active ? (onFoot.y || 0) + 1.5 : 1.2);
+    grenades.throw(gx + _triggerDir.x * 0.6, gy, gz + _triggerDir.z * 0.6, _triggerDir.x, _triggerDir.y, _triggerDir.z);
+    if (onFoot.active) onFoot.character?.flinch?.();   // the throw clip we do not have, borrowed from the hit
+    return;
+  }
+  if (!weapon.ready) return;
   camera.getWorldDirection(_triggerDir);
   const ox = onFoot.active ? onFoot.x : car.x;
   const oz = onFoot.active ? onFoot.z : car.z;
@@ -1060,6 +1092,10 @@ chatter = new ChatterEngine(audio, chat);
 modes = new Modes(scene, hud, traffic);
 window.__modes = modes;   // phone cards call startRange / startHoldout
 /* The phone's gun counter. Cash is the garage's; the weapon is the player's. */
+window.__buyGrenades = (price = 600) => {
+  if ((garage?.cash ?? 0) < price) { hud.flash('NOT ENOUGH CASH'); return false; }
+  garage.addCash(-price, 'GRENADES x3'); grenades.count += 3; hud.flash(`GRENADES · ${grenades.count}`); return true;
+};
 window.__buyArmour = (price = 800) => {
   if ((garage?.cash ?? 0) < price) { hud.flash('NOT ENOUGH CASH'); return false; }
   garage.addCash(-price, 'BODY ARMOUR'); armour = 1; hud.flash('BODY ARMOUR · 100%'); return true;
@@ -1205,7 +1241,9 @@ const input = createInput((action) => {
   if (action === 'radio') radio?.cycle();
   if (action === 'reset') respawnCar();
   if (action === 'time') { clock.hour = (clock.hour + 3) % 24; hud.flash(`TIME · ${clock.formattedTime}`); }
-  if (action.startsWith('weapon')) {
+  if (action === 'weapon5') { grenadeMode = true; hud.flash(`GRENADES · ${grenades.count}`); if (heldGun) heldGun.visible = false; }
+  else if (action.startsWith('weapon')) {
+    grenadeMode = false;
     const kind = WEAPON_KINDS[+action.slice(6) - 1];
     if (kind && weapon.switchTo(kind)) { refreshHeldGun(); hud.flash(`${ARSENAL[kind].name} · ${weapon.ammo}/${ARSENAL[kind].mag}`); }
   }
@@ -1455,6 +1493,8 @@ function frameBody() {
   if (crowd && !onFoot.active && onPavementAtSpeed(car)) crowd.panic(car.x, car.z, 14);
   if (net) net.update(car, dt);
   weapon.update(dt);
+  grenades.update(dt, groundHeightAt);
+  if (heldGun && grenadeMode) heldGun.visible = false;
   /* GTA V's rule: health creeps back to half on its own once you have not been
      hit for six seconds. Above half you need a doctor (the garage repair, or a
      respawn). It turns a lost firefight into a retreat instead of a reload. */
@@ -1477,7 +1517,7 @@ function frameBody() {
     swayPhase += swayPhaseStep(onFoot.speed ?? 0, dt);
   }
   placeHeldGun();
-  hud.setAmmo(weapon.spec.name, weapon.ammo, weapon.reserveNow, weapon.reloading, armour);
+  if (grenadeMode) hud.setAmmo('GRENADE', grenades.count, '-', false, armour); else hud.setAmmo(weapon.spec.name, weapon.ammo, weapon.reserveNow, weapon.reloading, armour);
   if (onFoot.active) hud.setArsenal?.(WEAPON_KINDS.map((k, i) => ({ key: i + 1, name: ARSENAL[k].name, mag: k === weapon.kind ? weapon.ammo : weapon.mags[k], reserve: weapon.reserve[k], current: k === weapon.kind })));
   else if (hud.arsEl) hud.arsEl.innerHTML = '', hud._arsKey = '';
   skids.update(car, car.wheelGround ? car.wheelGround[2] : 0);
