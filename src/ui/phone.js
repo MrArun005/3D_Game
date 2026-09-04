@@ -267,6 +267,9 @@ export class Phone {
         const of = window.onFoot; const m = window.__modes; if (!m) return;
         if (of?.active) m.startRange(of.x, of.z, of.camYaw ?? 0); else m.hud.flash?.('RANGE · step out of the car first (F)');
       });
+      modeCard('AMMU-NATION · SMG', '$1,200 · 30 rounds, sprays, close work', '#8e44ad', () => window.__buyWeapon?.('smg', 1200));
+      modeCard('AMMU-NATION · RIFLE', '$3,000 · 30 rounds, tight, 120 m', '#8e44ad', () => window.__buyWeapon?.('rifle', 3000));
+      modeCard('AMMU-NATION · SHOTGUN', '$1,800 · 6 shells, eight pellets each', '#8e44ad', () => window.__buyWeapon?.('shotgun', 1800));
       modeCard('HOLD OUT', '3 minutes · wanted climbs every 40 s · officers down x50', '#c0392b', () => { window.__modes?.startHoldout(); });
 
       // Pegasus Helicopter Dispatch

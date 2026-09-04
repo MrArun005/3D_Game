@@ -78,6 +78,7 @@ export class Hud {
       this.gear.innerHTML = gearStr;
     }
     this.#drawDials(car);
+    this.#tickWedges(1 / 60);
     this.#drawMap(car, traffic);
     this.#drawMapOverlay(car, traffic, mission);
     this.#drawBigMap(car, mission);
@@ -453,6 +454,40 @@ export class Hud {
   }
   /** Cash and the current job, first line of the mission drawer (jobs.js). */
   setJob(text) { this.jobLine = text; }
+
+  /**
+   * Damage direction: a red wedge on the screen edge toward where the round
+   * came from, in the player's look frame (0 = ahead), fading over 0.7 s.
+   * Four wedges are pooled so a burst from two sides shows both.
+   */
+  hitFrom(bearing) {
+    if (!this.wedges) {
+      this.wedges = [];
+      for (let i = 0; i < 4; i++) {
+        const w = document.createElement('div');
+        w.style.cssText = 'position:fixed;left:50%;top:50%;width:0;height:0;z-index:44;pointer-events:none;opacity:0;'
+          + 'border-left:70px solid transparent;border-right:70px solid transparent;border-top:180px solid rgba(255,60,60,.55);'
+          + 'transform-origin:50% 0;margin-left:-70px;filter:blur(6px)';
+        document.body.appendChild(w);
+        this.wedges.push({ el: w, t: 0 });
+      }
+    }
+    const slot = this.wedges.reduce((a, b) => (a.t <= b.t ? a : b));
+    slot.t = 0.7;
+    // bearing: 0 ahead, +left; screen: rotate the wedge so its tip points from centre toward the source
+    const deg = -bearing * 180 / Math.PI + 180;
+    slot.el.style.transform = `rotate(${deg}deg) translateY(120px)`;
+    slot.el.style.opacity = '1';
+  }
+
+  #tickWedges(dt) {
+    if (!this.wedges) return;
+    for (const w of this.wedges) {
+      if (w.t <= 0) continue;
+      w.t -= dt;
+      w.el.style.opacity = String(Math.max(0, w.t / 0.7));
+    }
+  }
 
   /** The invite link, sitting where it can be selected and copied. */
   setRoom(url) {

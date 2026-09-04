@@ -249,8 +249,10 @@ let dying = 0;
 
 /* Being shot at, and being nicked. Damage is deliberately cosmetic for now --
    a shot rocks the car and marks it; there is no health bar to lose. */
-function onShot(gap, landed = null, damage = 26) {
+function onShot(gap, landed = null, damage = 26, from = null) {
   audio.gunshot();
+  // a landed round tells you which way it came from, as a wedge on the screen edge
+  if (landed && from) { const px = onFoot.active ? onFoot.x : car.x, pz = onFoot.active ? onFoot.z : car.z; const look = onFoot.active ? onFoot.camYaw : car.yaw; hud.hitFrom?.(Math.atan2(-(from.z - pz), from.x - px) - look); }
   /* Aimed fire (game/policeAi.js): `landed` says whether THIS shot connected,
      and `damage` is the weapon's. The old distance-only field is kept as the
      fallback for any caller that has not been given a line of sight. */
@@ -1053,6 +1055,15 @@ hud.useChat(chat);
 chatter = new ChatterEngine(audio, chat);
 modes = new Modes(scene, hud, traffic);
 window.__modes = modes;   // phone cards call startRange / startHoldout
+/* The phone's gun counter. Cash is the garage's; the weapon is the player's. */
+window.__buyWeapon = (kind, price) => {
+  if (!ARSENAL[kind]) return false;
+  if ((garage?.cash ?? 0) < price) { hud.flash('NOT ENOUGH CASH'); return false; }
+  garage.addCash(-price, `BOUGHT ${ARSENAL[kind].name}`);
+  weapon.switchTo(kind); weapon.ammo = weapon.magSize; refreshHeldGun();
+  hud.flash(`${ARSENAL[kind].name} · ${weapon.ammo}/${weapon.magSize}`);
+  return true;
+};
 
 commands = new CommandEngine({
   car,
