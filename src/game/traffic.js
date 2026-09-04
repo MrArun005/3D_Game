@@ -903,7 +903,11 @@ export class Traffic {
         const ty = (player.y ?? 0) + prof.y;
         const gunY = c.officer.position.y + (c.state === 'cover' || c.state === 'peek' ? 0.9 : 1.3);
         const bldg = this.world?.nearbyBuildings ? this.world.nearbyBuildings(c.officer.position.x, c.officer.position.z) : [];
-        const canSee = c.state === 'cover' ? hasLineOfSight(c.coverX, gunY, c.coverZ, player.x, ty, player.z, bldg, this.cars, null) : hasLineOfSight(c.officer.position.x, gunY, c.officer.position.z, player.x, ty, player.z, bldg, this.cars, null);
+        // parked cars are cover too: their collision solids join the moving traffic in the line-of-sight test
+        const parked = this.world?.nearbyParked ? this.world.nearbyParked(player.x, player.z) : null;
+        if (parked !== this._losParkedSrc) { this._losParkedSrc = parked; this._losBlockers = [...this.cars, ...((parked || []).filter((s) => s.tag === 'parked').map((s) => ({ x: s.x, z: s.z, r: (s.radius ?? 1) + 0.3, y: 0.8 })))]; }
+        const blockers = this._losBlockers || this.cars;
+        const canSee = c.state === 'cover' ? hasLineOfSight(c.coverX, gunY, c.coverZ, player.x, ty, player.z, bldg, blockers, null) : hasLineOfSight(c.officer.position.x, gunY, c.officer.position.z, player.x, ty, player.z, bldg, blockers, null);
         if (canSee) this.hot = true;
         c.quietFor = (player.firedAt !== undefined && performance.now() - player.firedAt < 1500) ? 0 : c.quietFor + dt;
         c.stateT += dt;

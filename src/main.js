@@ -512,11 +512,23 @@ function pullTrigger() {
   const wall = districtRef && world.nearbyBuildings
     ? firstBuildingHit(ox, oy, oz, dx, dy, dz, world.nearbyBuildings(ox, oz), weapon.spec.range)
     : Infinity;
-  if (wall < Infinity) {
+  // a parked car in the way is a wall too: nearest sphere along the ray
+  let carT = Infinity;
+  if (world.nearbyParked) {
+    for (const s of world.nearbyParked(ox, oz)) {
+      if (s.tag !== 'parked') continue;
+      const px = s.x - ox, py = 0.8 - oy, pz = s.z - oz, along = px * dx + py * dy + pz * dz;
+      if (along < 1 || along > carT) continue;
+      const cx = px - dx * along, cy = py - dy * along, cz = pz - dz * along;
+      if (Math.hypot(cx, cy, cz) < (s.radius ?? 1) + 0.25) carT = along;
+    }
+  }
+  const wall2 = Math.min(wall, carT);
+  if (wall2 < Infinity) {
     for (let i = _triggerTargets.length - 1; i >= 0; i--) {
       const t = _triggerTargets[i];
       const along = (t.x - ox) * dx + ((t.y ?? 0.9) - oy) * dy + (t.z - oz) * dz;
-      if (along > wall) _triggerTargets.splice(i, 1);
+      if (along > wall2) _triggerTargets.splice(i, 1);
     }
   }
   modes?.targets(_triggerTargets);
@@ -541,11 +553,11 @@ function pullTrigger() {
   }
   if (hit) crosshair.hit(hit.kind === 'person');
   else {
-    let t = wall;
+    let t = wall2;
     if (t === Infinity && dy < -1e-4) t = Math.min(weapon.spec.range, (oy - groundHeightAt(ox, oz)) / -dy);
     if (t < Infinity) {
       _rayHit.set(ox + dx * t, oy + dy * t, oz + dz * t);
-      const onGround = wall === Infinity;
+      const onGround = wall2 === Infinity;
       decals.stamp(_rayHit.x, _rayHit.y, _rayHit.z, onGround ? 0 : -dx, onGround ? 1 : 0, onGround ? 0 : -dz, weapon.kind === 'shotgun' ? 1.8 : 1);
     }
   }
@@ -1133,6 +1145,7 @@ chat = new Chat();
 hud.useChat(chat);
 chatter = new ChatterEngine(audio, chat);
 modes = new Modes(scene, hud, traffic);
+if (new URLSearchParams(location.search).has('range')) setTimeout(() => { if (onFoot.active) modes.startRange(onFoot.x, onFoot.z, onFoot.camYaw); else hud.flash('?range: press F to get out, then Range from the phone'); }, 8000);
 window.__modes = modes;   // phone cards call startRange / startHoldout
 /* The phone's gun counter. Cash is the garage's; the weapon is the player's. */
 window.__buyGrenades = (price = 600) => {
