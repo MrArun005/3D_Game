@@ -105,6 +105,23 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   `curl -sI https://halstead-bay.vercel.app/models/manifest.json`. Heavy vendor
   GLBs go through `tools/optimise-glb.mjs` first (`--keep-nodes` when code
   hides parts by node name); originals live in `assets/source/originals/`.
+- **Shooting layer (2026-09-05)**: `game/weapons.js` (ARSENAL: pistol / SMG /
+  rifle / shotgun, procedural one-draw models, heat->spread curve),
+  `game/shooting.js` (crosshair = spread cone, ADS on right mouse, 12-shot
+  recoil patterns, sway, 64-decal pool, `rayHitsBox` so buildings stop
+  bullets), `game/policeAi.js` (pure, tested: weapon by wanted, aim jitter,
+  LOS through buildings+vehicles, cover/peek/advance/arrest/down), officers
+  in `world/officer.js` (7 vertex-coloured meshes with a geometric face,
+  seeded variety, PoseBlender, lookAt), `game/modes.js` (range, hold-out;
+  phone SERVICES cards). Keys: 1-4 weapon, X reload, RMB aim, C crouch on
+  foot, Q lean. Debug hooks under `?debug`: `__dbg()`, `__aim(v)`,
+  `__police()`, `__wanted(n)`. No Playwright in this project (Arun's rule):
+  verify with `node --test` and reasoning, he play-tests.
+- **iCloud evicts `.git` (2026-09-05)**: the repo lives in `~/Desktop`, which
+  iCloud syncs; it marked `.git/index` and 85+ objects `dataless`, so git
+  timed out on mmap. `rm .git/index && git reset` rebuilt it once the files
+  re-materialised. `ls -lO .git/index | grep dataless` is the test; the real
+  fix is moving the repo out of `~/Desktop`.
 - `npm run dev` (vite, :5173), `npm run build`, `npm run preview`.
 - three r185, **WebGPURenderer** (WebGL2 backend where WebGPU is absent).
   `vite.config.js` aliases `three` -> `three/webgpu` with an exact-match

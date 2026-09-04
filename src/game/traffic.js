@@ -761,6 +761,9 @@ export class Traffic {
           if (next === 'peek') { const b = burstFor(c.gunKind); c.burstLeft = b.shots; c.fireT = 0.12; }
           if (next === 'advance') { const ang = Math.atan2(player.z - c.coverZ, player.x - c.coverX); const step = Math.min(8, Math.max(0, gap - 7)); c.coverX += Math.cos(ang) * step; c.coverZ += Math.sin(ang) * step; }
           if (next === 'down') { c.down = 0.001; this.chatter?.radio?.('Officer down! Officer down!'); }
+          else if (next === 'advance') this.chatter?.radio?.('Suspect has gone quiet. Moving up.');
+          else if (next === 'arrest') this.chatter?.radio?.('On the ground! Hands where I can see them!');
+          else if (next === 'peek' && c.state === 'cover' && c.stateT > 3) this.chatter?.radio?.('Taking fire, returning fire.');
           c.state = next; c.stateT = 0;
         }
         const sx = c.coverX, sz = c.coverZ;

@@ -256,7 +256,12 @@ function onShot(gap, landed = null, damage = 26) {
      fallback for any caller that has not been given a line of sight. */
   const hit = landed === null ? Math.max(0, 1 - gap / 18) : (landed ? damage / 26 : 0);
   if (landed === false) return;                    // a miss: the shot is heard, nothing else
-  if (onFoot.active && landed) onFoot.character?.flinch?.();   // the body reacts before the number does
+  if (onFoot.active && landed) {
+    onFoot.character?.flinch?.();   // the body reacts before the number does
+    // and so does the camera: a pitch kick scaled by the round, recovering with the usual look damping
+    onFoot.camPitch = Math.min(0.9, onFoot.camPitch + 0.035 * Math.min(2, damage / 26));
+    onFoot.camYaw += (Math.random() - 0.5) * 0.05;
+  }
   if (onFoot.active) {
     // on foot there is no bodywork to absorb it
     health = Math.max(0, health - hit * 0.16);
