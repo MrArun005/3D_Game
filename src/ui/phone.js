@@ -253,6 +253,22 @@ export class Phone {
       };
       this.content.appendChild(fundCard);
 
+      // Shooting range and hold-out (game/modes.js). window.__modes is set by main
+      // once the scene exists; the cards read the player's position from onFoot/car.
+      const modeCard = (title, sub, colour, onclick) => {
+        const card = document.createElement('div');
+        card.style.cssText = 'background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 12px; display:flex; justify-content:space-between; align-items:center;';
+        card.innerHTML = `<div><div style="font-weight:800; font-size:13px; color:${colour};">${title}</div><div style="font-size:11px; color:#aaa;">${sub}</div></div>
+          <button style="padding:8px 14px; border-radius:8px; border:none; background:${colour}; color:#fff; font-weight:800; cursor:pointer;">GO</button>`;
+        card.querySelector('button').onclick = (e) => { e.stopPropagation(); onclick(); this.toggle(); };
+        this.content.appendChild(card);
+      };
+      modeCard('SHOOTING RANGE', '60 s · six boards at 15 / 30 / 60 m · get out of the car first', '#e67e22', () => {
+        const of = window.onFoot; const m = window.__modes; if (!m) return;
+        if (of?.active) m.startRange(of.x, of.z, of.camYaw ?? 0); else m.hud.flash?.('RANGE · step out of the car first (F)');
+      });
+      modeCard('HOLD OUT', '3 minutes · wanted climbs every 40 s · officers down x50', '#c0392b', () => { window.__modes?.startHoldout(); });
+
       // Pegasus Helicopter Dispatch
       const heliCard = document.createElement('div');
       heliCard.style.cssText = 'background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 12px; display:flex; justify-content:space-between; align-items:center;';

@@ -54,6 +54,7 @@ import { Multiplayer, roomFromUrl, createRoom } from './game/multiplayer.js';
 import { Weapon } from './game/weapon.js';
 import { ARSENAL, WEAPON_KINDS, buildWeaponMesh, weaponMaterial } from './game/weapons.js';
 import { officerMaterial } from './world/officer.js';
+import { Modes } from './game/modes.js';
 import { Crosshair, DecalPool, ADS, ADS_BLEND_S, spreadToPixels, spreadFor, recoilFor, firstBuildingHit, swayFor, swayPhaseStep, reloadPose } from './game/shooting.js';
 import { SkidMarks } from './world/skidmarks.js';
 import { Damage } from './game/damage.js';
@@ -343,6 +344,7 @@ const weapon = new Weapon(scene);
    pattern; it resets after 0.4 s of not firing. */
 const crosshair = new Crosshair();
 const decals = new DecalPool(scene);
+let modes = null;   // range / hold-out, built once the HUD and traffic exist
 let aiming = false, ads = 0, burst = 0, sinceShot = 9, swayPhase = 0, crouch = false;
 let lastFiredAt = -1e9;   // officers advance when you have been quiet for a while
 const _rayHit = new THREE.Vector3();
@@ -437,6 +439,7 @@ function pullTrigger() {
       if (along > wall) _triggerTargets.splice(i, 1);
     }
   }
+  modes?.targets(_triggerTargets);
   const spreadMul = 1 - ads * (1 - (ADS[weapon.kind]?.spread ?? 0.4));
   weapon.heat *= spreadMul;                     // sights up: the cone you actually fire through
   const hit = weapon.fire(ox, oy, oz, dx, dy, dz, _triggerTargets);
@@ -447,6 +450,7 @@ function pullTrigger() {
   lastFiredAt = performance.now();
   if (onFoot.active) { onFoot.camPitch = Math.min(0.9, onFoot.camPitch + rc.pitch * (1 - ads * 0.4)); onFoot.camYaw -= rc.yaw * (1 - ads * 0.4); }
   else chase.shake += weapon.spec.shake * 0.02;
+  modes?.onShot(hit, hit ? oy + dy * ((hit.x - ox) * dx + (hit.z - oz) * dz) : 0);
   if (hit) crosshair.hit(hit.kind === 'person');
   else {
     let t = wall;
@@ -460,9 +464,9 @@ function pullTrigger() {
   crowd?.panic(ox, oz, 24);                     // gunfire scatters the street
   audio.gunshot();
   // firing at all is a crime; hitting something is a worse one
-  traffic.reportCrime(hit ? (hit.kind === 'person' ? 'person' : (hit.kind === 'police' || hit.kind === 'officer') ? 'police' : 'traffic') : 'traffic',
+  if (hit?.kind !== 'target' && modes?.active !== 'range') traffic.reportCrime(hit ? (hit.kind === 'person' ? 'person' : (hit.kind === 'police' || hit.kind === 'officer') ? 'police' : 'traffic') : 'traffic',
                       hit ? 9 : 1);
-  if (hit && hit.kind === 'officer') { traffic.officerHit?.(hit.ref, weapon.spec.damage); crosshair.hit(hit.ref.down); }
+  if (hit && hit.kind === 'officer') { if (traffic.officerHit?.(hit.ref, weapon.spec.damage)) modes?.onOfficerDown(); crosshair.hit(hit.ref.down); }
   if (hit && hit.kind === 'person') hit.ref.down = 0.001;
   if (hit && hit.kind !== 'person') {
     hit.ref.speed *= 0.55;
@@ -1036,6 +1040,8 @@ radio = new Radio(audio, hud);
 chat = new Chat();
 hud.useChat(chat);
 chatter = new ChatterEngine(audio, chat);
+modes = new Modes(scene, hud, traffic);
+window.__modes = modes;   // phone cards call startRange / startHoldout
 
 commands = new CommandEngine({
   car,
@@ -1419,6 +1425,8 @@ function frameBody() {
   if (crowd && !onFoot.active && onPavementAtSpeed(car)) crowd.panic(car.x, car.z, 14);
   if (net) net.update(car, dt);
   weapon.update(dt);
+  modes?.update(dt);
+  if (modes?.active) hud.setJob?.(modes.line());
   const adsTarget = aiming && onFoot.active ? 1 : 0;
   ads += (adsTarget - ads) * Math.min(1, dt / ADS_BLEND_S);
   if (Math.abs(ads - adsTarget) < 0.01) ads = adsTarget;
