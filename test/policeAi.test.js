@@ -104,3 +104,16 @@ test('a player on foot who opens the gap gets chased once the officer has a line
   assert.equal(nextState({ ...base, playerOnFoot: false }), 'peek', 'in a car they hold cover and shoot');
   assert.equal(nextState({ ...base, playerOnFoot: true, canSee: false }), 'cover', 'no line, no chase');
 });
+
+test('losing them: unseen for ten seconds with cruisers searching nearby drains the stars; seen, heli, or nobody there does not', async () => {
+  const { evasionDecay, searchRadius, HIDDEN_AFTER_S } = await import('../src/game/policeAi.js');
+  const base = { hot: false, eyesOn: false, coldFor: HIDDEN_AFTER_S + 1, nearest: 80, wanted: 2 };
+  assert.ok(evasionDecay(base) > 0, 'hidden and searched for: draining');
+  assert.equal(evasionDecay({ ...base, hot: true }), 0, 'a line on you stops it');
+  assert.equal(evasionDecay({ ...base, eyesOn: true }), 0, 'the helicopter does not lose you');
+  assert.equal(evasionDecay({ ...base, coldFor: 4 }), 0, 'not yet');
+  assert.equal(evasionDecay({ ...base, nearest: Infinity }), 0, 'no cruiser has arrived: nothing to evade');
+  assert.equal(evasionDecay({ ...base, wanted: 4 }), 0, 'four stars: only distance clears it');
+  assert.equal(evasionDecay({ ...base, nearest: 400, coldFor: 0, cool: 10 }), 0.55, 'the old 240 m rule still applies');
+  assert.ok(searchRadius(3) < searchRadius(20) && searchRadius(200) === 90, 'the ring grows and caps');
+});

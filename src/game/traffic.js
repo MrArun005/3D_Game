@@ -7,7 +7,7 @@ import { PAINT_COLOURS, BODY_KEYS, BODY_TYPES } from '../vehicle/config.js';
 import { groundHeightAt } from '../world/metrics.js';
 import { buildOfficer, poseOfficer, PoseBlender, lookAt } from '../world/officer.js';
 import { buildWeaponMesh, ARSENAL } from './weapons.js';
-import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED, pickRooftops, coverSide } from './policeAi.js';
+import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED, pickRooftops, coverSide, evasionDecay } from './policeAi.js';
 import { roofsNear } from '../world/districtWorld.js';
 
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
@@ -729,6 +729,21 @@ export class Traffic {
     const t = this.time;
     this.player = player;
     this.#updateWanted(player, dt, t);
+    /* Two ways to lose them (policeAi.evasionDecay): get 240 m clear of
+       every cruiser, or break line of sight and stay unseen for ten seconds
+       while they search where they last had you. `hot` is THIS frame's
+       answer: update() resets it, #updateWanted's loop sets it, then this runs. */
+    if (this.hot) { this.coldFor = 0; this.seenX = player.x; this.seenZ = player.z; }
+    else this.coldFor = (this.coldFor ?? 0) + dt;
+    if (this.wanted > 0) {
+      this.cool = ((this._nearest ?? Infinity) > 240 && !this.eyesOn) ? this.cool + dt : 0;
+      const rate = evasionDecay({ hot: this.hot, eyesOn: this.eyesOn, coldFor: this.coldFor, nearest: this._nearest ?? Infinity, wanted: this.wanted, cool: this.cool });
+      if (rate > 0) {
+        const before = this.wanted;
+        this.wanted = Math.max(0, this.wanted - dt * rate);
+        if (before > 0 && this.wanted === 0 && this.coldFor > 5) this.chatter?.radioPool?.('lost');
+      }
+    } else this.coldFor = 0;
 
     // Hoist police-active check out of per-car loop
     let policeActive = false;
@@ -832,12 +847,7 @@ export class Traffic {
         if (d < nearest) nearest = d;
       }
     }
-    if (this.wanted > 0) {
-      // air support does not lose you: breaking line of sight from the cars
-      // is not enough while something is circling overhead
-      this.cool = (nearest > 240 && !this.eyesOn) ? this.cool + dt : 0;
-      if (this.cool > 9) { this.wanted = Math.max(0, this.wanted - dt * 0.55); }
-    }
+    this._nearest = nearest;
 
     /* The arrest is the fleet's, not the first car's.
        Running the clock per-cop meant whoever arrived first ended it before
@@ -879,6 +889,8 @@ export class Traffic {
         if (c.stale > 11) { c.live = false; c.mesh.visible = false; c.best = Infinity; c.stale = 0; continue; }
       }
 
+      // a cruiser with a line on you inside 70 m has eyes on you as much as an officer on foot does
+      if (!c.deployed && gap < 70 && hasLineOfSight(c.x, 1.2, c.z, player.x, (player.y ?? 0) + 1.0, player.z, this._bldg, [], null)) this.hot = true;
       if (c.mode === 'road' && gap < 70) c.mode = 'free';
       if (c.mode === 'free' && gap > 150) { c.lost += dt; } else { c.lost = 0; }
       if (c.lost > 3) { c.live = false; c.mesh.visible = false; c.mode = 'road'; c.lost = 0; this.chatter?.radioPool?.('lost'); continue; }

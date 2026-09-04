@@ -159,3 +159,28 @@ export function roadblockPosts(qx, qz, ux, uz, half, back = 2.6) {
   const yaw = Math.atan2(uz, -ux);           // facing -u: toward the car
   return [-1, 1].map((side) => ({ x: qx + ux * back + nx * half * 0.30 * side, z: qz + uz * back + nz * half * 0.30 * side, yaw }));
 }
+
+/**
+ * Losing the police. Stars only used to bleed off 240 m from the nearest
+ * cruiser; on foot that never happened. GTA's rule is line of sight: nobody
+ * has seen you for a while, they are searching where you WERE, and the level
+ * drains. Returns the decay rate in stars per second, 0 while they have you.
+ *   hot     an officer or cruiser has a line on you this frame
+ *   eyesOn  the helicopter does (it does not lose you)
+ *   coldFor seconds since anyone had a line
+ *   nearest metres to the nearest live cruiser (Infinity: none out yet)
+ *   cool    seconds the old "clear of everyone" rule has held
+ */
+export const HIDDEN_AFTER_S = 10;
+export function evasionDecay({ hot, eyesOn, coldFor, nearest, wanted, cool = 0 }) {
+  if (hot || eyesOn) return 0;
+  if (cool > 9) return 0.55;                                     // nobody within 240 m: the old rule
+  if (nearest === Infinity || nearest > 200) return 0;           // they have not arrived; nothing to hide from yet
+  if (wanted >= 4) return 0;                                     // at four stars the air keeps eyes on you
+  return coldFor > HIDDEN_AFTER_S ? 0.35 : 0;
+}
+
+/** Search-ring radius in metres around your last seen spot: it grows as they lose confidence. */
+export function searchRadius(coldFor) {
+  return Math.min(90, 22 + Math.max(0, coldFor - 3) * 5);
+}

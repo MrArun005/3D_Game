@@ -1,4 +1,5 @@
 import { V } from '../vehicle/config.js';
+import { searchRadius } from '../game/policeAi.js';
 import { CELL } from '../world/metrics.js';
 
 export class Hud {
@@ -165,6 +166,16 @@ export class Hud {
         g.fillStyle = i === mission.index ? '#ffc23c' : 'rgba(74,163,255,0.85)';
         g.beginPath(); g.arc(p[0], p[1], i === mission.index ? 5.5 : 3.5, 0, 7); g.fill();
       });
+    }
+    // they lost you: a search ring where they last had you, growing as it goes cold (policeAi.searchRadius)
+    if (traffic?.wanted > 0 && traffic.coldFor > 3 && traffic.seenX !== undefined) {
+      const r = searchRadius(traffic.coldFor) * SC, p = toMap(traffic.seenX, traffic.seenZ);
+      g.save();
+      g.beginPath(); g.arc(p[0], p[1], r, 0, Math.PI * 2);
+      g.fillStyle = 'rgba(255,255,255,0.10)'; g.fill();
+      g.setLineDash([6, 5]); g.lineDashOffset = -(performance.now() / 60) % 11;
+      g.strokeStyle = 'rgba(255,255,255,0.75)'; g.lineWidth = 1.5; g.stroke();
+      g.restore();
     }
     if (traffic?.police) for (const c of traffic.police) {
       if (!c.live) continue;
