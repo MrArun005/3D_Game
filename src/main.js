@@ -362,9 +362,16 @@ function pullTrigger() {
     hit.ref.mesh.material.color.offsetHSL(0, -0.05, -0.04);
   }
 }
+const _obsBuffer = [];
+function getObstacles(x, z) {
+  _obsBuffer.length = 0;
+  if (world.nearbyParked) world.nearbyParked(x, z, _obsBuffer);
+  if (traffic.bodies) traffic.bodies(_obsBuffer);
+  return _obsBuffer;
+}
 const walkSolid = makeSolver(
   (x, z) => (world.nearbyBuildings ? world.nearbyBuildings(x, z) : null),
-  (x, z) => (world.nearbyParked ? world.nearbyParked(x, z) : []).concat(traffic.bodies()),
+  getObstacles,
 );
 
 /**
@@ -679,14 +686,14 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   mission = new Mission(scene, district);
   mission.useHud(hud);
   mission.useAudio(audio);
-  jobs = new Jobs(mission, traffic, hud, district, audio);
+  jobs = new Jobs(mission, traffic, hud, district, audio, navigation);
   garage = new Garage(jobs, assets, hero, damageModel, hud);
   traffic.hud = hud;
   roadblock = new Roadblock(scene, assets, district, world, traffic, hero);
   metro = new Metro(scene, district, assets);   // two elevated lines and their trains (world/metro.js)
   landmarks = new Landmarks(scene, district);   // gun shop, supermarket, street set on their lots (world/landmarks.js)
   garage.restore();
-  story = new StoryManager(mission, traffic, hud, garage, audio);
+  story = new StoryManager(mission, traffic, hud, garage, audio, navigation);
   dispatch = new DispatchService(scene, world, garage, traffic, debris, hud, audio);
   window._dispatch = dispatch;
   phone = new Phone(story, garage, hero, traffic, dispatch);
@@ -1055,8 +1062,7 @@ addEventListener('resize', () => {
 /* Pedestrians are deliberately NOT in here. Making a person a solid obstacle
    means a 1480kg car bounces off them like a bollard, which is exactly what it
    felt like -- they are knocked down by the crowd system instead. */
-car.obstacles = (x, z) => (world.nearbyParked ? world.nearbyParked(x, z) : [])
-  .concat(traffic.bodies());
+car.obstacles = getObstacles;
 car.buildings = (x, z) => (world.nearbyBuildings ? world.nearbyBuildings(x, z) : null);
 
 resetCar(car);
@@ -1150,7 +1156,7 @@ function frameBody() {
   /* Breakables go BEFORE the physics step: a lamp post the car is about to
      fell must lose its collision solid before the tyre model resolves against
      it, or the car eats a dead stop on the frame it breaks through. */
-  debris.update(car, dt, traffic.police?.length ? [...traffic.cars, ...traffic.police] : traffic.cars);
+  debris.update(car, dt, traffic.cars, traffic.police);
 
   // fixed-step physics keeps the tyre model stable; clamp accumulator to prevent death spirals on dt spikes
   performance.mark('physics-start');
@@ -1359,11 +1365,19 @@ function frameBody() {
   const draws = renderer.info.render.drawCalls + (stats.snapshot.bundledDraws || 0);
   const tris = renderer.info.render.triangles + (stats.snapshot.bundledTris || 0);
 
-  const missionTarget = (mission && mission.active && mission.points && mission.points[mission.index])
-    ? { x: mission.points[mission.index].x, z: mission.points[mission.index].y }
-    : (jobs && jobs.currentJob?.target)
-      ? { x: jobs.currentJob.target.x, z: jobs.currentJob.target.y }
-      : null;
+  const missionTarget = (story && story.active && story.active.steps[story.stepIdx]?.target)
+    ? { x: story.active.steps[story.stepIdx].target.x, z: story.active.steps[story.stepIdx].target.z }
+    : (jobs && jobs.job)
+      ? {
+          x: jobs.job.pickedUp ? jobs.job.b.x : jobs.job.a.x,
+          z: jobs.job.pickedUp ? (jobs.job.b.z !== undefined ? jobs.job.b.z : jobs.job.b.y) : (jobs.job.a.z !== undefined ? jobs.job.a.z : jobs.job.a.y),
+        }
+      : (mission && mission.active && mission.points && mission.points[mission.index])
+        ? {
+            x: mission.points[mission.index].x,
+            z: mission.points[mission.index].z !== undefined ? mission.points[mission.index].z : mission.points[mission.index].y,
+          }
+        : null;
   navigation?.update(car, missionTarget);
 
   hud.update(car, traffic, mission, net, heli);

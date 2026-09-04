@@ -137,10 +137,11 @@ export class Debris {
 
   dropChunk(key) { this.byChunk.delete(key); }
 
-  update(car, dt, extraVehicles = null) {
+  update(car, dt, extraVehicles = null, moreVehicles = null) {
     if (this.catalogue) {
       this.#collide(car, dt);
       if (extraVehicles) this.collideVehicles(extraVehicles, dt);
+      if (moreVehicles) this.collideVehicles(moreVehicles, dt);
     }
     this.#integrate(dt);
     this.#runEffects(dt);

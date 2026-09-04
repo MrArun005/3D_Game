@@ -21,7 +21,7 @@ import { ZEBRA_DEPTH } from '../game/traffic.js';
  * and a chunk can be thrown away without consulting its neighbours.
  */
 const CHUNK = 256;
-const BUILD_MS = 3;      // docs/BUDGETS.md: 3ms budget prevents micro-stutters during fast chunk streaming
+const BUILD_MS = 2.0;      // 2.0ms budget prevents micro-stutters and drops below 60fps
 const ck = (ix, iz) => `${ix},${iz}`;
 
 /* The file carries footprints, not heights — the 2D planner has no opinion on
@@ -320,30 +320,35 @@ export class DistrictWorld {
     }
 
     // what is missing, prioritised by distance ahead of the car's velocity vector
-    const want = [];
     const wasPrimed = this.primed;
-    const speed = Math.hypot(vx, vz);
-    const hasVel = speed > 1.5;
-    const normVx = hasVel ? vx / speed : 0;
-    const normVz = hasVel ? vz / speed : 0;
-    // Pre-warm one ring ahead at low priority while stationary
-    const scanRadius = (wasPrimed && speed < 1.0) ? this.radius + 1 : this.radius;
+    const sameChunk = this._lastScanIx === ix && this._lastScanIz === iz;
+    if (!sameChunk || this.queue.length === 0 || !wasPrimed) {
+      this._lastScanIx = ix;
+      this._lastScanIz = iz;
+      const want = [];
+      const speed = Math.hypot(vx, vz);
+      const hasVel = speed > 1.5;
+      const normVx = hasVel ? vx / speed : 0;
+      const normVz = hasVel ? vz / speed : 0;
+      // Pre-warm one ring ahead at low priority while stationary
+      const scanRadius = (wasPrimed && speed < 1.0) ? this.radius + 1 : this.radius;
 
-    for (let dx = -scanRadius; dx <= scanRadius; dx++) {
-      for (let dz = -scanRadius; dz <= scanRadius; dz++) {
-        const k = ck(ix + dx, iz + dz);
-        if (this.chunks.has(k) || this.pending.has(k)) continue;
-        const d2 = dx * dx + dz * dz;
-        // Chunks ahead in velocity vector get higher priority (lower effective d)
-        const dotAhead = hasVel ? (dx * normVx + dz * normVz) : 0;
-        const priority = (Math.abs(dx) > this.radius || Math.abs(dz) > this.radius)
-          ? d2 + 500 // pre-warm outer ring at lowest priority
-          : d2 - dotAhead * 2.2;
-        want.push({ k, cx: ix + dx, cz: iz + dz, d: d2, priority });
+      for (let dx = -scanRadius; dx <= scanRadius; dx++) {
+        for (let dz = -scanRadius; dz <= scanRadius; dz++) {
+          const k = ck(ix + dx, iz + dz);
+          if (this.chunks.has(k) || this.pending.has(k)) continue;
+          const d2 = dx * dx + dz * dz;
+          // Chunks ahead in velocity vector get higher priority (lower effective d)
+          const dotAhead = hasVel ? (dx * normVx + dz * normVz) : 0;
+          const priority = (Math.abs(dx) > this.radius || Math.abs(dz) > this.radius)
+            ? d2 + 500 // pre-warm outer ring at lowest priority
+            : d2 - dotAhead * 2.2;
+          want.push({ k, cx: ix + dx, cz: iz + dz, d: d2, priority });
+        }
       }
+      want.sort((a, b) => a.priority - b.priority);
+      for (const w of want) { this.queue.push(w); this.pending.add(w.k); }
     }
-    want.sort((a, b) => a.priority - b.priority);
-    for (const w of want) { this.queue.push(w); this.pending.add(w.k); }
 
     /* The first frame has to be complete -- streaming the world in around a
        stationary player at the start looks like a bug, not like streaming.
@@ -1035,7 +1040,7 @@ export class DistrictWorld {
     const k = ck(ix, iz);
     let tLast = performance.now();
     const tick = function* () {
-      if (performance.now() - tLast >= 2.5) {
+      if (performance.now() - tLast >= 1.8) {
         yield;
         tLast = performance.now();
       }
@@ -1647,14 +1652,25 @@ export class DistrictWorld {
   }
 
   /** Collision bodies for the parked cars and street furniture nearby. */
-  nearbyParked(x, z) {
+  nearbyParked(x, z, target = null) {
     const ix = Math.floor(x / CHUNK), iz = Math.floor(z / CHUNK);
-    const out = [];
+    if (!target && this._parkedCache && this._lastParkedIx === ix && this._lastParkedIz === iz) {
+      return this._parkedCache;
+    }
+    const out = target || [];
+    if (!target) out.length = 0;
     for (let dx = -1; dx <= 1; dx++) {
       for (let dz = -1; dz <= 1; dz++) {
         const list = this.parkedByChunk.get(ck(ix + dx, iz + dz));
-        if (list) for (const p of list) out.push(p);
+        if (list) {
+          for (let i = 0; i < list.length; i++) out.push(list[i]);
+        }
       }
+    }
+    if (!target) {
+      this._parkedCache = out;
+      this._lastParkedIx = ix;
+      this._lastParkedIz = iz;
     }
     return out;
   }

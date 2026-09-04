@@ -30,16 +30,25 @@ export class Hud {
     this.#drawMission(mission);
     this.net = net;
     const fwd = car.fwdSpeed !== undefined ? car.fwdSpeed : (car.speed || 0);
-    this.kph.innerHTML = `${Math.round(Math.abs(fwd) * 3.6)}<small>KM/H</small>`;
+    const kphVal = Math.round(Math.abs(fwd) * 3.6);
+    if (kphVal !== this._lastKph) {
+      this._lastKph = kphVal;
+      this.kph.innerHTML = `${kphVal}<small>KM/H</small>`;
+    }
+    let gearStr = '';
     if (car.type === 'helicopter') {
       const alt = Math.round(car.altitudeAboveGround || 0);
-      this.gear.innerHTML = `ALT <b>${alt}m</b> · ${car.landed ? 'LANDED' : 'AIRBORNE'}`;
+      gearStr = `ALT <b>${alt}m</b> · ${car.landed ? 'LANDED' : 'AIRBORNE'}`;
     } else if (car.type === 'tank') {
       const ready = car.reloadTime <= 0;
-      this.gear.innerHTML = `CANNON <b>${ready ? 'READY' : car.reloadTime.toFixed(1) + 's'}</b>`;
+      gearStr = `CANNON <b>${ready ? 'READY' : car.reloadTime.toFixed(1) + 's'}</b>`;
     } else {
       const name = car.gear === 0 ? 'R' : car.gear === 1 ? 'N' : String((car.gear || 2) - 1);
-      this.gear.innerHTML = `GEAR <b>${name}</b>${car.holdGear ? ' · HOLD' : ''}`;
+      gearStr = `GEAR <b>${name}</b>${car.holdGear ? ' · HOLD' : ''}`;
+    }
+    if (gearStr !== this._lastGearStr) {
+      this._lastGearStr = gearStr;
+      this.gear.innerHTML = gearStr;
     }
     this.#drawDials(car);
     this.#drawMap(car, traffic);
@@ -89,15 +98,13 @@ export class Hud {
     const toMap = (x, z) => { const dx = (x - car.x) * SC, dz = (z - car.z) * SC; return [C + dx * cs - dz * sn, C + dx * sn + dz * cs]; };
     const clampR = (p, r) => { const dx = p[0] - C, dz = p[1] - C, d = Math.hypot(dx, dz); return d > r ? [C + dx / d * r, C + dz / d * r] : p; };
 
-    // --- Task 1.1: GPS route line (3px neon magenta with glow) ---
+    // --- Task 1.1: GPS route line ---
     if (this.navigation?.routePoints?.length > 1) {
       g.save();
       g.strokeStyle = '#ff00aa';
-      g.lineWidth = 3;
+      g.lineWidth = 3.5;
       g.lineCap = 'round';
       g.lineJoin = 'round';
-      g.shadowColor = '#ff00aa';
-      g.shadowBlur = 5;
       g.beginPath();
       for (let i = 0; i < this.navigation.routePoints.length; i++) {
         const pt = this.navigation.routePoints[i];
@@ -125,7 +132,8 @@ export class Hud {
     if (mission?.active) {
       mission.points.forEach((pt, i) => {
         if (i < mission.index || i > mission.index + 1) return;
-        const p = clampR(toMap(pt.x, pt.y), C - 8);
+        const pz = pt.z !== undefined ? pt.z : pt.y;
+        const p = clampR(toMap(pt.x, pz), C - 8);
         g.fillStyle = i === mission.index ? '#ffc23c' : 'rgba(74,163,255,0.85)';
         g.beginPath(); g.arc(p[0], p[1], i === mission.index ? 5.5 : 3.5, 0, 7); g.fill();
       });
@@ -310,8 +318,9 @@ export class Hud {
     }
 
     if (mission?.active) mission.points.forEach((p, i) => {
+      const pz = p.z !== undefined ? p.z : p.y;
       g.fillStyle = i === mission.index ? '#ffc23c' : 'rgba(74,163,255,0.8)';
-      g.beginPath(); g.arc(X(p.x), Z(p.y), i === mission.index ? 7 : 4, 0, 7); g.fill();
+      g.beginPath(); g.arc(X(p.x), Z(pz), i === mission.index ? 7 : 4, 0, 7); g.fill();
     });
 
     // you: a heading triangle, which is what the legend has always promised
@@ -580,10 +589,11 @@ export class Hud {
     this.wantedEl.textContent = n > 0 ? '★'.repeat(n) + '☆'.repeat(5 - n) : '';
   }
 
-  #drawDials(car) {
-    const g = this.dials, W = 230, C = W / 2, R = 96;
-    g.clearRect(0, 0, W, W);
-    g.save();
+  #getDialPlate() {
+    if (this.dialPlate) return this.dialPlate;
+    const c = document.createElement('canvas');
+    c.width = 230; c.height = 230;
+    const g = c.getContext('2d'), W = 230, C = W / 2, R = 96;
     g.translate(C, C);
 
     const a0 = Math.PI * 0.75, a1 = Math.PI * 2.25;
@@ -594,15 +604,6 @@ export class Hud {
     const redline = a0 + (a1 - a0) * (V.shiftUp / V.redline);
     g.strokeStyle = 'rgba(200,58,50,0.5)';
     g.beginPath(); g.arc(0, 0, R, redline, a1); g.stroke();
-
-    const rpm = car.rpm ?? (car.rotorRpm !== undefined ? car.rotorRpm * 4500 : (car.speed ? car.speed * 120 : 0));
-    const p = Math.max(0, Math.min(1, rpm / V.redline));
-    const grad = g.createLinearGradient(-R, 0, R, 0);
-    grad.addColorStop(0, '#6f9ccc');
-    grad.addColorStop(0.7, '#d8bd84');
-    grad.addColorStop(1, '#d85f54');
-    g.strokeStyle = grad;
-    g.beginPath(); g.arc(0, 0, R, a0, a0 + (a1 - a0) * p); g.stroke();
 
     g.strokeStyle = 'rgba(180,196,216,0.55)';
     g.lineWidth = 2;
@@ -618,6 +619,34 @@ export class Hud {
       g.fillStyle = 'rgba(160,176,196,0.72)';
       g.fillText(String(i), Math.cos(a) * (R - 33), Math.sin(a) * (R - 33));
     }
+    g.fillStyle = 'rgba(150,166,186,0.62)';
+    g.font = '500 10px ui-sans-serif,sans-serif';
+    g.fillText('x1000 RPM', 0, 42);
+    this.dialPlate = c;
+    return c;
+  }
+
+  #drawDials(car) {
+    const g = this.dials, W = 230, C = W / 2, R = 96;
+    g.clearRect(0, 0, W, W);
+    g.drawImage(this.#getDialPlate(), 0, 0);
+
+    g.save();
+    g.translate(C, C);
+
+    const a0 = Math.PI * 0.75, a1 = Math.PI * 2.25;
+    const rpm = car.rpm ?? (car.rotorRpm !== undefined ? car.rotorRpm * 4500 : (car.speed ? car.speed * 120 : 0));
+    const p = Math.max(0, Math.min(1, rpm / V.redline));
+
+    if (!this._dialGrad) {
+      this._dialGrad = g.createLinearGradient(-R, 0, R, 0);
+      this._dialGrad.addColorStop(0, '#6f9ccc');
+      this._dialGrad.addColorStop(0.7, '#d8bd84');
+      this._dialGrad.addColorStop(1, '#d85f54');
+    }
+    g.lineWidth = 12;
+    g.strokeStyle = this._dialGrad;
+    g.beginPath(); g.arc(0, 0, R, a0, a0 + (a1 - a0) * p); g.stroke();
 
     const na = a0 + (a1 - a0) * p;
     g.strokeStyle = '#e0685a';
@@ -630,9 +659,6 @@ export class Hud {
 
     g.fillStyle = '#1b2028';
     g.beginPath(); g.arc(0, 0, 9, 0, 7); g.fill();
-    g.fillStyle = 'rgba(150,166,186,0.62)';
-    g.font = '500 10px ui-sans-serif,sans-serif';
-    g.fillText('x1000 RPM', 0, 42);
     g.restore();
   }
 
@@ -643,18 +669,18 @@ export class Hud {
     g.translate(C, C);
     g.rotate(car.yaw - Math.PI / 2);
     if (this.district) {
-      /* Real streets, at their real widths. The procedural grid this replaced
-         drew a perfect lattice that stopped matching the world the moment the
-         city came out of a file. */
+      /* Real streets batched into a single stroke pass */
+      const segs = this.district.segmentsNear(car.x, car.z, S / SC / 2);
       g.strokeStyle = 'rgba(150,172,200,0.34)';
       g.lineCap = 'round';
-      for (const seg of this.district.segmentsNear(car.x, car.z, S / SC / 2)) {
-        g.lineWidth = Math.max(1.2, seg.half * 2 * SC);
-        g.beginPath();
+      g.lineWidth = 2.4;
+      g.beginPath();
+      for (let i = 0; i < segs.length; i++) {
+        const seg = segs[i];
         g.moveTo((seg.ax - car.x) * SC, (seg.az - car.z) * SC);
         g.lineTo((seg.bx - car.x) * SC, (seg.bz - car.z) * SC);
-        g.stroke();
       }
+      g.stroke();
     } else {
       g.strokeStyle = 'rgba(140,162,190,0.28)';
       g.lineWidth = CELL * SC * 0.2;

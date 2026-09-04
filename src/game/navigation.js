@@ -152,8 +152,8 @@ export class Navigation {
     const now = performance.now();
     const target = missionTarget || this.waypoint;
 
-    // Check waypoint arrival
-    if (this.waypoint) {
+    // Check waypoint arrival for manual waypoints
+    if (this.waypoint && !missionTarget) {
       const distToWp = Math.hypot(car.x - this.waypoint.x, car.z - this.waypoint.z);
       if (distToWp < 15) {
         this.clearWaypoint();
@@ -167,12 +167,13 @@ export class Navigation {
       return;
     }
 
-    const targetKey = `${Math.round(target.x)}_${Math.round(target.z || target.y)}`;
+    const tz = target.z !== undefined ? target.z : target.y;
+    const targetKey = `${Math.round(target.x)}_${Math.round(tz)}`;
     const shouldRecalc = targetKey !== this.lastTarget || (now - this.lastCalcTime > 1500);
 
     if (shouldRecalc) {
       const startNode = this.findNearestNode(car.x, car.z);
-      const endNode = this.findNearestNode(target.x, target.z || target.y);
+      const endNode = this.findNearestNode(target.x, tz);
       this.lastTarget = targetKey;
       this.lastCalcTime = now;
 

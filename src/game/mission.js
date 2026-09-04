@@ -154,11 +154,13 @@ export class Mission {
     this.setMarkerColor(0xffc23c);
     const p = this.points[this.index];
     if (!p) return;
-    this.marker.position.set(p.x, 0, p.y);
+    const pz = p.z !== undefined ? p.z : p.y;
+    this.marker.position.set(p.x, 0, pz);
     this.marker.visible = true;
     const n = this.points[this.index + 1];
     if (n) {
-      this.nextMarker.position.set(n.x, 0, n.y);
+      const nz = n.z !== undefined ? n.z : n.y;
+      this.nextMarker.position.set(n.x, 0, nz);
       this.nextMarker.visible = true;
     } else this.nextMarker.visible = false;
   }
@@ -173,7 +175,9 @@ export class Mission {
     this.marker.scale.set(pulse, pulse, pulse);
 
     const p = this.points[this.index];
-    if (Math.hypot(car.x - p.x, car.z - p.y) > RING_R) return;
+    if (!p) return;
+    const pz = p.z !== undefined ? p.z : p.y;
+    if (Math.hypot(car.x - p.x, car.z - pz) > RING_R) return;
 
     this.index++;
     if (this.index >= this.points.length) {

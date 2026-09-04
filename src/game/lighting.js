@@ -39,18 +39,42 @@ export class LightPool {
   }
 
   #traffic(traffic, x, z) {
-    if (!traffic) return;
-    const live = traffic.cars.filter((c) => c.live && c.mesh.visible && c.speed > 1)
-      .sort((a, b) => Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z));
-    this.spots.forEach((sp, i) => {
-      const c = live[i];
-      if (!c || Math.hypot(c.x - x, c.z - z) > 70) { sp.intensity = 0; return; }
+    if (!traffic || !traffic.cars) return;
+    let c0 = null, c1 = null, c2 = null, c3 = null;
+    let d0 = 4900, d1 = 4900, d2 = 4900, d3 = 4900; // 70m squared
+    const cars = traffic.cars;
+    for (let i = 0; i < cars.length; i++) {
+      const c = cars[i];
+      if (!c.live || !c.mesh?.visible || c.speed <= 1) continue;
+      const dx = c.x - x, dz = c.z - z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < d0) {
+        c3 = c2; d3 = d2;
+        c2 = c1; d2 = d1;
+        c1 = c0; d1 = d0;
+        c0 = c; d0 = d2;
+      } else if (d2 < d1) {
+        c3 = c2; d3 = d2;
+        c2 = c1; d2 = d1;
+        c1 = c; d1 = d2;
+      } else if (d2 < d2) {
+        c3 = c2; d3 = d2;
+        c2 = c; d2 = d2;
+      } else if (d2 < d3) {
+        c3 = c; d3 = d2;
+      }
+    }
+    const nearest = [c0, c1, c2, c3];
+    for (let i = 0; i < 4; i++) {
+      const sp = this.spots[i];
+      const c = nearest[i];
+      if (!c) { sp.intensity = 0; continue; }
       const fx = Math.cos(c.yaw), fz = -Math.sin(c.yaw), y = c.mesh.position.y;
       sp.position.set(c.x + fx * (c.spec.L * 0.5), y + 0.8, c.z + fz * (c.spec.L * 0.5));
       sp.target.position.set(c.x + fx * 26, y - 0.4, c.z + fz * 26);
       sp.target.updateMatrixWorld();
       sp.intensity = 38;
-    });
+    }
   }
 
   #candidates(x, z) {

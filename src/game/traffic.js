@@ -502,15 +502,28 @@ export class Traffic {
     car.mesh.rotation.y = car.yaw;
   }
 
-  bodies() {
-    const out = [];
-    for (const c of this.police) {
+  bodies(target = null) {
+    const out = target || [];
+    if (!target) out.length = 0;
+    for (let i = 0; i < this.police.length; i++) {
+      const c = this.police[i];
       if (!c.live) continue;
-      out.push({ x: c.x, z: c.z, yaw: c.yaw, offsets: c.offsets, radius: c.radius, reach: c.reach, tag: 'police', car: c });
+      if (!c.body) {
+        c.body = { x: c.x, z: c.z, yaw: c.yaw, offsets: c.offsets, radius: c.radius, reach: c.reach, tag: 'police', car: c };
+      } else {
+        c.body.x = c.x; c.body.z = c.z; c.body.yaw = c.yaw;
+      }
+      out.push(c.body);
     }
-    for (const c of this.cars) {
+    for (let i = 0; i < this.cars.length; i++) {
+      const c = this.cars[i];
       if (!c.live) continue;
-      out.push({ x: c.x, z: c.z, yaw: c.yaw, offsets: c.offsets, radius: c.radius, reach: c.reach, tag: 'traffic', car: c });
+      if (!c.body) {
+        c.body = { x: c.x, z: c.z, yaw: c.yaw, offsets: c.offsets, radius: c.radius, reach: c.reach, tag: 'traffic', car: c };
+      } else {
+        c.body.x = c.x; c.body.z = c.z; c.body.yaw = c.yaw;
+      }
+      out.push(c.body);
     }
     return out;
   }
@@ -520,6 +533,14 @@ export class Traffic {
     const t = this.time;
     this.player = player;
     this.#updateWanted(player, dt, t);
+
+    // Hoist police-active check out of per-car loop
+    let policeActive = false;
+    if (this.wanted >= 1) {
+      for (let i = 0; i < this.police.length; i++) {
+        if (this.police[i].live) { policeActive = true; break; }
+      }
+    }
 
     for (const car of this.cars) {
       if (!car.live) { this.spawn(car, player, false); continue; }
@@ -558,8 +579,7 @@ export class Traffic {
       limit = Math.min(limit, this.#leaderLimit(car, player));
       /* Sirens: civilians within 70 m of a pursuit slow to a crawl and drift
          to the kerb lane, so a chase runs through parting traffic. */
-      if (!car.hunt && this.wanted >= 1 && this.police.some((p) => p.live)
-          && Math.hypot(car.x - player.x, car.z - player.z) < 70) {
+      if (!car.hunt && policeActive && Math.hypot(car.x - player.x, car.z - player.z) < 70) {
         limit = Math.min(limit, 2.5);
         car.lane = Math.max(car.lane, Math.max(1, car.edge?.lanes || 1) - 1);
       }
@@ -608,8 +628,14 @@ export class Traffic {
    */
   #updateWanted(player, dt, t) {
     // heat bleeds off once you stop hitting things and get clear
-    const nearest = this.police.reduce((d, c) => (c.live
-      ? Math.min(d, Math.hypot(c.x - player.x, c.z - player.z)) : d), Infinity);
+    let nearest = Infinity;
+    for (let i = 0; i < this.police.length; i++) {
+      const c = this.police[i];
+      if (c.live) {
+        const d = Math.hypot(c.x - player.x, c.z - player.z);
+        if (d < nearest) nearest = d;
+      }
+    }
     if (this.wanted > 0) {
       // air support does not lose you: breaking line of sight from the cars
       // is not enough while something is circling overhead

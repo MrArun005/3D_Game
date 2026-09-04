@@ -21,8 +21,9 @@ const TIER = { KINGSWAY: 3, 'HARBOUR POINT': 2, STEELGATE: 2, 'OLD QUARTER': 2, 
   NORTHLINE: 1, ASHMOOR: 1, 'MARROW HILL': 1, 'THE FLATS': 1, 'GREENFELL PARK': 1 };
 
 export class Jobs {
-  constructor(mission, traffic, hud, district, audio = null) {
+  constructor(mission, traffic, hud, district, audio = null, navigation = null) {
     this.mission = mission; this.traffic = traffic; this.hud = hud; this.district = district; this.audio = audio;
+    this.navigation = navigation;
     let savedCash = 0, savedDone = 0;
     try {
       if (typeof localStorage !== 'undefined') {
@@ -63,7 +64,13 @@ export class Jobs {
 
   /** G: take a job, or abandon the current one. */
   toggle(car) {
-    if (this.job) { this.mission.stop('JOB ABANDONED'); this.job = null; this.#show(); return; }
+    if (this.job) {
+      this.mission.stop('JOB ABANDONED');
+      this.job = null;
+      if (this.navigation) this.navigation.clearWaypoint();
+      this.#show();
+      return;
+    }
     const kind = KINDS[(Math.random() * KINDS.length) | 0];
     const rating = 1 + Math.min(3, Math.floor(this.done / 4));          // longer runs as you prove yourself
     const a = this.#pick({ x: car.x, z: car.z }, 120, 260 + 80 * rating);
@@ -76,6 +83,10 @@ export class Jobs {
     const limit = kind === 'courier' ? dist / 12 + 20 : Infinity;          // 12 m/s average is honest city pace
     this.job = { kind, pay, limit, tier, a, b, pickedUp: false, t: 0 };
     this.mission.route([a, b], kind === 'fare' ? 'PICK UP THE FARE · COME TO A STOP AT MARKER' : kind === 'getaway' ? 'LOSE THE HEAT · REACH THE DROP' : 'COLLECT THE PACKAGE');
+    if (this.navigation) {
+      this.navigation.setWaypoint(a.x, a.z !== undefined ? a.z : a.y);
+      this.navigation.lastTarget = null;
+    }
     if (kind === 'getaway') this.traffic.reportCrime('police', 6);
     this.hud.flash(`${kind.toUpperCase()} · $${pay}${limit < Infinity ? ` · ${Math.round(limit)}s` : ''}`);
     this.#show();
@@ -99,6 +110,10 @@ export class Jobs {
       j.pickedUp = true;
       if (this.audio?.cash) this.audio.cash();
       this.hud.flash(j.kind === 'fare' ? 'PASSENGER ABOARD · DELIVER TO DESTINATION' : 'PACKAGE ABOARD · DELIVER TO DESTINATION');
+      if (this.navigation && j.b) {
+        this.navigation.setWaypoint(j.b.x, j.b.z !== undefined ? j.b.z : j.b.y);
+        this.navigation.lastTarget = null;
+      }
     }
 
     // Guidance on approach to dropoff
@@ -147,6 +162,7 @@ export class Jobs {
     if (this.audio?.victoryFanfare) {
       this.audio.victoryFanfare();
     }
+    if (this.navigation) this.navigation.clearWaypoint();
     this.job = null; this.#show();
   }
 
@@ -156,6 +172,7 @@ export class Jobs {
   fail(why) {
     if (!this.job) return;
     this.mission.stop(why);
+    if (this.navigation) this.navigation.clearWaypoint();
     this.job = null; this.#show();
   }
 

@@ -68,12 +68,13 @@ export const STORY_MISSIONS = [
 ];
 
 export class StoryManager {
-  constructor(mission, traffic, hud, garage, audio = null) {
+  constructor(mission, traffic, hud, garage, audio = null, navigation = null) {
     this.mission = mission;
     this.traffic = traffic;
     this.hud = hud;
     this.garage = garage;
     this.audio = audio;
+    this.navigation = navigation;
 
     this.active = null;
     this.stepIdx = 0;
@@ -106,6 +107,7 @@ export class StoryManager {
         this.audio.victoryFanfare();
       }
       if (this.mission) this.mission.stop(`PASSED · +$${reward}`);
+      if (this.navigation) this.navigation.clearWaypoint();
       this.active = null;
       this.stepIdx = 0;
       return;
@@ -119,6 +121,11 @@ export class StoryManager {
     // Route mission marker to target
     if (this.mission && step.target) {
       this.mission.route([step.target], step.text);
+    }
+    // Auto-map navigation GPS route directly to challenge target
+    if (this.navigation && step.target) {
+      this.navigation.setWaypoint(step.target.x, step.target.z);
+      this.navigation.lastTarget = null;
     }
   }
 
@@ -172,6 +179,7 @@ export class StoryManager {
   abandon() {
     if (this.active) {
       if (this.mission) this.mission.stop('MISSION ABANDONED');
+      if (this.navigation) this.navigation.clearWaypoint();
       this.active = null;
       this.stepIdx = 0;
     }

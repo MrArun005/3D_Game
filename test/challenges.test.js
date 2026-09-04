@@ -125,3 +125,50 @@ test('Jobs dispatches contracts, handles pickup boarding, and rewards completion
   assert.notEqual(victoryBanner, null, 'Victory banner should be displayed');
   assert.equal(fanfarePlayed, true, 'Audio victory fanfare should trigger');
 });
+
+test('StoryManager and Jobs automatically auto-map GPS waypoint to challenge target upon selection', () => {
+  let waypoint = null;
+  const mockNav = {
+    setWaypoint: (x, z) => { waypoint = { x, z }; },
+    clearWaypoint: () => { waypoint = null; },
+    lastTarget: 'old',
+  };
+
+  const mockMission = {
+    route: () => {},
+    stop: () => {},
+    setMarkerColor: () => {},
+    addListener: () => {},
+  };
+
+  const mockTraffic = { wanted: 0, reportCrime: () => {} };
+  const mockHud = { flash: () => {}, showVictoryBanner: () => {}, setJob: () => {} };
+  const mockGarage = { addCash: () => {} };
+
+  const story = new StoryManager(mockMission, mockTraffic, mockHud, mockGarage, null, mockNav);
+  story.startMission('heist_1', { x: 0, z: 0 });
+
+  // Step 0 target is Harbour Point depot (380, -140)
+  assert.deepEqual(waypoint, { x: 380, z: -140 }, 'Selecting challenge must auto-map navigation to target');
+  assert.equal(mockNav.lastTarget, null, 'Should reset lastTarget to force instant route calculation');
+
+  // Advance to step 1 (120, 240)
+  story.update({ x: 380, z: -140, fwdSpeed: 1 }, 0.016);
+  assert.deepEqual(waypoint, { x: 120, z: 240 }, 'Advancing challenge step must auto-map to next objective');
+
+  // Abandon mission clears waypoint
+  story.abandon();
+  assert.equal(waypoint, null, 'Abandoning challenge must clear auto-mapped waypoint');
+
+  // Jobs auto-mapping
+  const mockDistrict = {
+    blocks: [],
+    graph: { nodes: [{ kind: 'cross', x: 200, y: 150 }, { kind: 'tee', x: 450, y: 350 }] },
+  };
+  const jobs = new Jobs(mockMission, mockTraffic, mockHud, mockDistrict, null, mockNav);
+  jobs.toggle({ x: 0, z: 0 });
+  assert.notEqual(waypoint, null, 'Taking a job contract must auto-map navigation waypoint');
+
+  jobs.toggle({ x: 0, z: 0 }); // abandon
+  assert.equal(waypoint, null, 'Abandoning job must clear GPS waypoint');
+});

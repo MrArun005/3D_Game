@@ -163,16 +163,33 @@ export class District {
 
   /** Road segments within `radius` of a point -- what the minimap draws. */
   segmentsNear(x, z, radius) {
-    const out = new Set();
+    if (this._nearCache && radius === this._nearR && Math.hypot(x - this._nearX, z - this._nearZ) < 3.0) {
+      return this._nearCache;
+    }
+    if (!this._nearSeen) this._nearSeen = new Uint8Array(this.segments.length);
+    else this._nearSeen.fill(0);
+    const list = [];
     const r = Math.ceil(radius / CELL);
     const ix = Math.floor(x / CELL), iz = Math.floor(z / CELL);
     for (let dx = -r; dx <= r; dx++) {
       for (let dz = -r; dz <= r; dz++) {
         const ids = this.grid.get(key(ix + dx, iz + dz));
-        if (ids) for (const i of ids) out.add(i);
+        if (ids) {
+          for (let k = 0; k < ids.length; k++) {
+            const id = ids[k];
+            if (!this._nearSeen[id]) {
+              this._nearSeen[id] = 1;
+              list.push(this.segments[id]);
+            }
+          }
+        }
       }
     }
-    return [...out].map((i) => this.segments[i]);
+    this._nearCache = list;
+    this._nearX = x;
+    this._nearZ = z;
+    this._nearR = radius;
+    return list;
   }
 
   /**
