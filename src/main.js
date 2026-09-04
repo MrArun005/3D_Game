@@ -1437,7 +1437,7 @@ function frameBody() {
     ? { x: onFoot.x, y: onFoot.y, z: onFoot.z, vx: onFoot.vx, vz: onFoot.vz,
         speed: Math.hypot(onFoot.vx, onFoot.vz), onFoot: true, crouch, firedAt: lastFiredAt }
     : currentVehicle;
-  traffic.world = world; traffic.chatter = chatter; traffic.decals = decals;   // buildings for line of sight, the radio, the marks their misses leave
+  traffic.world = world; traffic.chatter = chatter; traffic.decals = decals; traffic.crowd = crowd;   // buildings for line of sight, the radio, the marks their misses leave, the street that scatters
   traffic.update(quarry, dt, worldTime);
   if (chatter) chatter.updateWanted(traffic.wanted);
   if (world.updateSignals) world.updateSignals(worldTime);

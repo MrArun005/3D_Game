@@ -582,6 +582,7 @@ export class Traffic {
     if (!c?.deployed || c.down > 0) return false;
     c.hp -= damage;
     c.quietFor = 0;
+    c.hitT = 0.35;                                     // stagger: torso snaps away from the round, then eases back
     if (c.hp <= 0) { c.state = 'down'; c.down = 0.001; this.chatter?.radio?.('Officer down! Officer down!'); this.#dropWeapon(c); return true; }
     return false;
   }
@@ -881,6 +882,12 @@ export class Traffic {
         c.blender.apply(c.joints, c.pose, c.state === 'advance' ? c.poseT * 6 : c.poseT, dt, c.pose === 'peek' ? 0.12 : 0.22);
         // eyes on you: the head turns toward the player within what a neck allows
         lookAt(c.joints, Math.atan2(-(player.z - sz), player.x - sx) - face);
+        if (c.hitT > 0) {   // the stagger rides on top of whatever pose he is in
+          c.hitT -= dt;
+          const k = Math.max(0, c.hitT / 0.35);
+          c.joints.torso.rotation.z -= 0.35 * k; c.joints.torso.rotation.y += 0.25 * k;
+          c.joints.head.rotation.z -= 0.2 * k; c.joints.cap.rotation.z -= 0.2 * k;
+        }
         if (c.gun) c.gun.visible = !arresting;
 
         /* Fire only from 'peek', only with a line, one aimed shot per weapon
@@ -897,6 +904,7 @@ export class Traffic {
           const jit = aimJitter(Math.floor(this.wanted), gap, player.speed ?? 0) + w.restSpread;
           const landed = canSee && shotLands(c.officer.position.x, gunY, c.officer.position.z, player.x, ty, player.z, prof.r, jit, this.rand);
           if (this.onShot) this.onShot(gap, landed, w.damage * (c.gunKind === 'shotgun' ? 3 : 1), c.officer.position);
+          this.crowd?.panic?.(c.officer.position.x, c.officer.position.z, 20);
           if (!landed && this.decals && player.onFoot) {
             // the round went somewhere: a mark in the road a stride from you says how close
             const a = this.rand() * Math.PI * 2, r = 0.6 + this.rand() * 1.6;
