@@ -44,18 +44,18 @@ export class Hud {
   toggleMap() {
     if (!this.mapEl) {
       const el = document.createElement('canvas');
-      el.width = 1120; el.height = 800;
+      /* Backing store bigger than the drawn size: the map is scaled up by CSS
+         to fill the screen, and at 1120x800 every road came out soft. */
+      el.width = 1680; el.height = 1200;
       el.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:70;display:none;'
-        + 'background:rgba(8,11,16,.92);border:1px solid rgba(150,172,200,.35);border-radius:10px;cursor:crosshair';
+        + 'width:min(94vw,1680px);height:auto;background:#0a0d13;border:1px solid rgba(120,140,170,.28);'
+        + 'border-radius:12px;box-shadow:0 24px 80px rgba(0,0,0,.6);cursor:crosshair';
       el.addEventListener('click', (e) => {
         if (!this.district) return;
         const rect = el.getBoundingClientRect();
         const px = (e.clientX - rect.left) * (el.width / rect.width);
         const py = (e.clientY - rect.top) * (el.height / rect.height);
-        const b = this.district.bounds;
-        const sc = Math.min((el.width - 40) / b.w, (el.height - 40) / b.h);
-        const ox = (el.width - b.w * sc) / 2;
-        const oz = (el.height - b.h * sc) / 2;
+        const { sc, ox, oz } = this.#mapTransform();
         const wx = (px - ox) / sc;
         const wz = (py - oz) / sc;
         if (this.navigation) {
@@ -155,98 +155,191 @@ export class Hud {
     g.textAlign = 'start'; g.textBaseline = 'alphabetic';
   }
 
+  /** One transform for the whole map, so a click maps back to the same metres. */
+  #mapTransform() {
+    const el = this.mapEl, b = this.district.bounds;
+    const PAD_X = 26, PAD_TOP = 54, PAD_BOT = 26;      // room for the title bar
+    const sc = Math.min((el.width - PAD_X * 2) / b.w, (el.height - PAD_TOP - PAD_BOT) / b.h);
+    return { sc, ox: (el.width - b.w * sc) / 2, oz: PAD_TOP + (el.height - PAD_TOP - PAD_BOT - b.h * sc) / 2 };
+  }
+
+  /** The static half of the map: ground, blocks, roads, labels, places, legend.
+      Built once into an offscreen canvas -- it never changes, and redrawing
+      506 blocks and 2,900 road segments every frame is wasted work. */
+  #mapBaseLayer() {
+    const el = this.mapEl;
+    if (this._mapBase && this._mapBaseW === el.width) return this._mapBase;
+    const c = document.createElement('canvas');
+    c.width = el.width; c.height = el.height;
+    const g = c.getContext('2d');
+    const W = c.width, H = c.height;
+    const { sc, ox, oz } = this.#mapTransform();
+    const X = (x) => ox + x * sc, Z = (z) => oz + z * sc;
+
+    // ground
+    g.fillStyle = '#0a0d13'; g.fillRect(0, 0, W, H);
+
+    /* Land. Without filled blocks the city is a wire mesh with nothing between
+       the lines; with them the streets become the gaps and the map reads as a
+       plan. Parks are the one hue that is allowed to differ. */
+    const BLOCK = { park: '#14251b', vacant: '#101319', row: '#161b24', mid: '#181e28', tower: '#1c2331', yard: '#151920', lot: '#131720' };
+    for (const b of this.district.blocks) {
+      g.save();
+      g.translate(X(b.x), Z(b.y));
+      g.rotate(b.angle || 0);
+      g.fillStyle = BLOCK[b.type] || '#161b24';
+      g.fillRect(-b.w * sc / 2, -b.h * sc / 2, b.w * sc, b.h * sc);
+      g.restore();
+    }
+
+    /* Roads. A city map reads because its roads do NOT all look alike: the eye
+       follows the wide bright ones and treats the rest as texture. Each class is
+       one path per pass -- casing first, then fill -- so segments join instead of
+       beading at every end, and the colours are opaque so overlaps do not stack
+       into white mush. Width comes from the road's own half-width in metres. */
+    const STYLE = {
+      boundary: { w: 0.55, casing: '#0a0d13', fill: '#242b36' },
+      street:   { w: 0.85, casing: '#0c1018', fill: '#414b5a' },
+      arterial: { w: 1.00, casing: '#0c1018', fill: '#7a8798' },
+      ramp:     { w: 0.85, casing: '#141108', fill: '#8b7647' },
+      freeway:  { w: 1.05, casing: '#141108', fill: '#c9a961' },
+    };
+    const byClass = new Map();
+    for (const seg of this.district.segments) {
+      let l = byClass.get(seg.cls); if (!l) byClass.set(seg.cls, (l = []));
+      l.push(seg);
+    }
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    for (const pass of ['casing', 'fill']) {
+      for (const cls of ['boundary', 'street', 'arterial', 'ramp', 'freeway']) {
+        const list = byClass.get(cls), st = STYLE[cls];
+        if (!list || !list.length || !st) continue;
+        const half = list.reduce((a, sg) => a + sg.half, 0) / list.length;
+        const base = Math.max(1.2, half * 2 * sc * st.w);
+        g.strokeStyle = st[pass];
+        g.lineWidth = pass === 'casing' ? base + 1.8 : base;
+        g.beginPath();
+        for (const sg of list) { g.moveTo(X(sg.ax), Z(sg.az)); g.lineTo(X(sg.bx), Z(sg.bz)); }
+        g.stroke();
+      }
+    }
+
+    // places: only the two you navigate by, so the map stays quiet
+    if (this.district.places) {
+      for (const p of this.district.places) {
+        if (p.type !== 'hosp' && p.type !== 'police') continue;
+        const px = X(p.x), pz = Z(p.z ?? p.y ?? 0);
+        const hosp = p.type === 'hosp';
+        g.fillStyle = hosp ? '#2fbf6a' : '#3f7dff';
+        g.beginPath(); g.arc(px, pz, 7, 0, 7); g.fill();
+        g.fillStyle = '#eaf1fb'; g.font = '700 10px ui-monospace,Menlo,monospace';
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(hosp ? '+' : 'P', px, pz + 0.5);
+      }
+    }
+
+    // district names, letterspaced, over a soft plate so they read on any block
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (const [name, c] of Object.entries(this.districtCentres())) {
+      const px = X(c[0]), pz = Z(c[1]);
+      const label = name.split('').join(' ');
+      g.font = '600 13px ui-sans-serif,system-ui,sans-serif';
+      const wpx = g.measureText(label).width;
+      g.fillStyle = 'rgba(10,13,19,0.72)';
+      g.fillRect(px - wpx / 2 - 8, pz - 10, wpx + 16, 20);
+      g.fillStyle = 'rgba(196,210,230,0.92)';
+      g.fillText(label, px, pz);
+    }
+
+    // title bar and scale
+    g.textAlign = 'left'; g.textBaseline = 'middle';
+    g.fillStyle = '#e6edf7'; g.font = '700 15px ui-sans-serif,system-ui,sans-serif';
+    g.fillText('H A L S T E A D   B A Y', 26, 28);
+    g.fillStyle = 'rgba(150,168,192,0.75)'; g.font = '11px ui-monospace,Menlo,monospace';
+    g.fillText('click anywhere to set a GPS waypoint  ·  TAB to close', 250, 29);
+    const barM = 500, barPx = barM * sc;
+    const bx = W - 26 - barPx, by = H - 26;
+    g.strokeStyle = 'rgba(190,205,225,0.8)'; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(bx, by); g.lineTo(bx + barPx, by); g.moveTo(bx, by - 5); g.lineTo(bx, by + 5);
+    g.moveTo(bx + barPx, by - 5); g.lineTo(bx + barPx, by + 5); g.stroke();
+    g.fillStyle = 'rgba(190,205,225,0.8)'; g.textAlign = 'center';
+    g.fillText('500 m', bx + barPx / 2, by - 12);
+
+    this._mapBase = c; this._mapBaseW = el.width;
+    return c;
+  }
+
   #drawBigMap(car, mission) {
     if (!this.mapOpen || !this.district) return;
     const g = this.mapEl.getContext('2d'), W = this.mapEl.width, H = this.mapEl.height;
-    const b = this.district.bounds, sc = Math.min((W - 40) / b.w, (H - 40) / b.h), ox = (W - b.w * sc) / 2, oz = (H - b.h * sc) / 2;
+    const { sc, ox, oz } = this.#mapTransform();
+    const X = (x) => ox + x * sc, Z = (z) => oz + z * sc;
+
     g.clearRect(0, 0, W, H);
-    g.strokeStyle = 'rgba(150,172,200,0.55)'; g.lineCap = 'round';
-    for (const s of this.district.segments) {
-      g.lineWidth = Math.max(1, s.half * 2 * sc);
-      g.beginPath(); g.moveTo(ox + s.ax * sc, oz + s.az * sc); g.lineTo(ox + s.bx * sc, oz + s.bz * sc); g.stroke();
-    }
-    g.fillStyle = 'rgba(200,214,232,0.9)'; g.font = '12px ui-monospace, Menlo, monospace';
-    for (const [name, c] of Object.entries(this.districtCentres())) g.fillText(name, ox + c[0] * sc - 30, oz + c[1] * sc);
+    g.drawImage(this.#mapBaseLayer(), 0, 0);
 
-    // Route on big map
-    if (this.navigation?.routePoints?.length > 1) {
-      g.strokeStyle = '#ff00aa';
-      g.lineWidth = 4;
-      g.beginPath();
-      for (let i = 0; i < this.navigation.routePoints.length; i++) {
-        const pt = this.navigation.routePoints[i];
-        if (i === 0) g.moveTo(ox + pt[0] * sc, oz + pt[1] * sc);
-        else g.lineTo(ox + pt[0] * sc, oz + pt[1] * sc);
+    // route: a dark casing under the magenta so it reads over pale arterials too
+    const rp = this.navigation?.routePoints;
+    if (rp?.length > 1) {
+      g.lineCap = 'round'; g.lineJoin = 'round';
+      for (const [col, w] of [['rgba(6,8,12,0.85)', 7], ['#ff2d95', 3.5]]) {
+        g.strokeStyle = col; g.lineWidth = w;
+        g.beginPath();
+        for (let i = 0; i < rp.length; i++) { const p = rp[i]; i ? g.lineTo(X(p[0]), Z(p[1])) : g.moveTo(X(p[0]), Z(p[1])); }
+        g.stroke();
       }
-      g.stroke();
     }
 
-    // Waypoint on big map
     if (this.navigation?.waypoint) {
-      const wp = this.navigation.waypoint;
-      g.fillStyle = '#b026ff';
-      g.beginPath(); g.arc(ox + wp.x * sc, oz + wp.z * sc, 8, 0, 7); g.fill();
-      g.strokeStyle = '#ffffff'; g.lineWidth = 2; g.stroke();
-    }
-
-    // Places: Hospitals, Police, Landmarks
-    if (this.district?.places) {
-      for (const p of this.district.places) {
-        const px = ox + p.x * sc, pz = oz + (p.z ?? p.y ?? 0) * sc;
-        if (p.type === 'hosp') {
-          g.fillStyle = '#2fe675';
-          g.beginPath(); g.arc(px, pz, 6, 0, 7); g.fill();
-          g.fillStyle = '#ffffff'; g.font = '700 9px monospace'; g.textAlign = 'center';
-          g.fillText('+', px, pz + 3);
-        } else if (p.type === 'police') {
-          g.fillStyle = '#3f7dff';
-          g.beginPath(); g.arc(px, pz, 6, 0, 7); g.fill();
-          g.fillStyle = '#ffffff'; g.font = '700 8px monospace'; g.textAlign = 'center';
-          g.fillText('P', px, pz + 3);
-        }
-      }
+      const wp = this.navigation.waypoint, px = X(wp.x), pz = Z(wp.z);
+      g.fillStyle = '#b026ff'; g.beginPath(); g.arc(px, pz, 7, 0, 7); g.fill();
+      g.strokeStyle = '#f2e8ff'; g.lineWidth = 2; g.stroke();
+      const d = Math.round(Math.hypot(car.x - wp.x, car.z - wp.z));
+      g.fillStyle = '#f2e8ff'; g.font = '700 11px ui-monospace,Menlo,monospace';
+      g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+      g.fillText(`${d} m`, px, pz - 12);
     }
 
     if (mission?.active) mission.points.forEach((p, i) => {
       g.fillStyle = i === mission.index ? '#ffc23c' : 'rgba(74,163,255,0.8)';
-      g.beginPath(); g.arc(ox + p.x * sc, oz + p.y * sc, i === mission.index ? 7 : 4, 0, 7); g.fill();
+      g.beginPath(); g.arc(X(p.x), Z(p.y), i === mission.index ? 7 : 4, 0, 7); g.fill();
     });
 
-    // Player position & heading
-    g.fillStyle = '#ffffff'; g.beginPath(); g.arc(ox + car.x * sc, oz + car.z * sc, 5, 0, 7); g.fill();
-    g.strokeStyle = '#ffffff'; g.lineWidth = 2; g.beginPath(); g.moveTo(ox + car.x * sc, oz + car.z * sc);
-    g.lineTo(ox + (car.x + Math.cos(car.yaw) * 60) * sc, oz + (car.z - Math.sin(car.yaw) * 60) * sc); g.stroke();
+    // you: a heading triangle, which is what the legend has always promised
+    const px = X(car.x), pz = Z(car.z);
+    g.save();
+    g.translate(px, pz);
+    g.rotate(-car.yaw + Math.PI / 2);
+    g.beginPath(); g.moveTo(0, -10); g.lineTo(6.5, 8); g.lineTo(0, 4.5); g.lineTo(-6.5, 8); g.closePath();
+    g.fillStyle = '#ffffff'; g.fill();
+    g.strokeStyle = 'rgba(6,8,12,0.9)'; g.lineWidth = 1.5; g.stroke();
+    g.restore();
 
-    // --- Task 5: Map Legend ---
-    const lx = W - 230, ly = H - 165;
-    g.fillStyle = 'rgba(8,11,16,0.88)';
-    g.fillRect(lx, ly, 215, 150);
-    g.strokeStyle = 'rgba(150,172,200,0.3)';
-    g.lineWidth = 1;
-    g.strokeRect(lx, ly, 215, 150);
+    this.#drawMapLegend(g, W, H);
+  }
 
-    g.fillStyle = '#cfe0f5';
-    g.font = '700 11px ui-sans-serif,system-ui,sans-serif';
-    g.textAlign = 'left';
-    g.fillText('MAP LEGEND', lx + 12, ly + 20);
-
-    const legendItems = [
-      { color: '#ffffff', icon: '▶', text: 'You (Heading)' },
-      { color: '#b026ff', icon: '●', text: 'GPS Waypoint (Click map)' },
-      { color: '#ff00aa', icon: '―', text: 'Navigation Route' },
-      { color: '#ffc23c', icon: '●', text: 'Active Objective' },
-      { color: '#2fe675', icon: '+', text: 'Hospital (Respawn)' },
-      { color: '#3f7dff', icon: 'P', text: 'Police Station' },
+  #drawMapLegend(g, W, H) {
+    const items = [
+      ['#ffffff', 'tri', 'You'],
+      ['#b026ff', 'dot', 'GPS waypoint — click the map'],
+      ['#ff2d95', 'line', 'Route'],
+      ['#ffc23c', 'dot', 'Objective'],
+      ['#2fbf6a', 'dot', 'Hospital'],
+      ['#3f7dff', 'dot', 'Police station'],
     ];
-
-    legendItems.forEach((item, idx) => {
-      const iy = ly + 40 + idx * 17;
-      g.fillStyle = item.color;
-      g.font = '700 11px monospace';
-      g.fillText(item.icon, lx + 12, iy);
-      g.fillStyle = 'rgba(207,224,245,0.85)';
-      g.font = '10px ui-sans-serif,sans-serif';
-      g.fillText(item.text, lx + 30, iy);
+    const w = 250, h = 30 + items.length * 20, x = W - w - 26, y = H - h - 26;
+    g.fillStyle = 'rgba(9,12,18,0.9)'; g.fillRect(x, y, w, h);
+    g.strokeStyle = 'rgba(120,140,170,0.28)'; g.lineWidth = 1; g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    g.textAlign = 'left'; g.textBaseline = 'middle';
+    items.forEach(([col, kind, text], i) => {
+      const iy = y + 22 + i * 20, ix = x + 20;
+      g.fillStyle = col; g.strokeStyle = col; g.lineWidth = 3; g.lineCap = 'round';
+      if (kind === 'dot') { g.beginPath(); g.arc(ix, iy, 5, 0, 7); g.fill(); }
+      else if (kind === 'line') { g.beginPath(); g.moveTo(ix - 6, iy); g.lineTo(ix + 6, iy); g.stroke(); }
+      else { g.beginPath(); g.moveTo(ix, iy - 6); g.lineTo(ix + 4.5, iy + 5); g.lineTo(ix, iy + 2.5); g.lineTo(ix - 4.5, iy + 5); g.closePath(); g.fill(); }
+      g.fillStyle = 'rgba(200,214,234,0.9)';
+      g.font = '11px ui-sans-serif,system-ui,sans-serif';
+      g.fillText(text, x + 38, iy);
     });
   }
 
