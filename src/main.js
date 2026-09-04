@@ -57,6 +57,7 @@ import { officerMaterial } from './world/officer.js';
 import { Modes } from './game/modes.js';
 import { Grenades, BLAST_R, KILL_R, HURT_R, blastFalloff } from './game/grenade.js';
 import { Crosshair, DecalPool, ADS, ADS_BLEND_S, spreadToPixels, spreadFor, recoilFor, firstBuildingHit, swayFor, swayPhaseStep, reloadPose, movementSpread, aimAssist } from './game/shooting.js';
+import { Tracers } from './game/tracers.js';
 import { absorb } from './game/policeAi.js';
 import { SkidMarks } from './world/skidmarks.js';
 import { Damage } from './game/damage.js';
@@ -374,6 +375,7 @@ const weapon = new Weapon(scene);
    pattern; it resets after 0.4 s of not firing. */
 const crosshair = new Crosshair();
 const decals = new DecalPool(scene);
+const tracers = new Tracers(scene);        // incoming fire, one draw
 /* Slot 5. In grenade mode E throws instead of firing; any digit 1-4 puts a gun
    back in your hand. The blast goes through the same debris system as the car
    and the tank, so a bin flies the same way whoever broke it. */
@@ -1564,7 +1566,7 @@ function frameBody() {
     ? { x: onFoot.x, y: onFoot.y, z: onFoot.z, vx: onFoot.vx, vz: onFoot.vz,
         speed: Math.hypot(onFoot.vx, onFoot.vz), onFoot: true, crouch, firedAt: lastFiredAt }
     : currentVehicle;
-  traffic.world = world; traffic.chatter = chatter; traffic.decals = decals; traffic.crowd = crowd; traffic.heli = heli; traffic.grenadeLook = grenades;
+  traffic.world = world; traffic.chatter = chatter; traffic.decals = decals; traffic.tracers = tracers; traffic.crowd = crowd; traffic.heli = heli; traffic.grenadeLook = grenades;
   if (!onFoot.active) quarry.firedAt = lastFiredAt;   // the car object is the quarry in a car; officers read this for 'quiet'   // buildings for line of sight, the radio, the marks their misses leave, the street that scatters
   traffic.update(quarry, dt, worldTime);
   if (chatter) chatter.updateWanted(traffic.wanted);
@@ -1580,6 +1582,7 @@ function frameBody() {
   wasReloading = weapon.reloading;
   weapon.update(dt);
   grenades.update(dt, groundHeightAt);
+  tracers.update(dt);
   if (punchCool > 0) punchCool -= dt;
   arsenalSaveT += dt; if (arsenalSaveT > 5) { arsenalSaveT = 0; saveArsenal(); }
   /* Hospitals heal: stand within 6 m of one on foot and health climbs at 15%/s. Free, like GTA's. */
@@ -1728,6 +1731,7 @@ function frameBody() {
     compileMats.add(weaponMaterial());
     if (weapon?.flash?.material) compileMats.add(weapon.flash.material);
     if (weapon?.tracer?.material) compileMats.add(weapon.tracer.material);
+    compileMats.add(tracers.material);
     if (weapon?.sparks?.material) compileMats.add(weapon.sparks.material);
     for (const mat of compileMats) dummyGroup.add(new THREE.Mesh(testBox, mat));
     scene.add(dummyGroup);

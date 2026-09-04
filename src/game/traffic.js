@@ -631,6 +631,13 @@ export class Traffic {
     this._from ??= { x: 0, y: 0, z: 0 };
     this._from.x = ox; this._from.y = oy; this._from.z = oz;
     this.onShot?.(gap, landed, w.damage * dmgMul, this._from, kind);
+    if (this.tracers) {
+      // a hit stops at you; a miss goes past, offset the way a miss is: a stride wide, on through
+      const miss = landed ? 0 : 0.6 + this.rand() * 1.4, a = this.rand() * Math.PI * 2;
+      const ex = player.x + Math.cos(a) * miss, ey = ty + (landed ? 0 : (this.rand() - 0.5) * 0.8), ez = player.z + Math.sin(a) * miss;
+      const over = landed ? 1 : 1 + 18 / Math.max(1, gap);   // a miss carries ~18 m past you
+      this.tracers.add(ox, oy, oz, ox + (ex - ox) * over, oy + (ey - oy) * over, oz + (ez - oz) * over, 'police');
+    }
     return landed;
   }
 
