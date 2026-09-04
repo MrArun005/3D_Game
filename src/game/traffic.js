@@ -7,7 +7,7 @@ import { PAINT_COLOURS, BODY_KEYS, BODY_TYPES } from '../vehicle/config.js';
 import { groundHeightAt } from '../world/metrics.js';
 import { buildOfficer, poseOfficer, PoseBlender, lookAt } from '../world/officer.js';
 import { buildWeaponMesh, ARSENAL } from './weapons.js';
-import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED, pickRooftops } from './policeAi.js';
+import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED, pickRooftops, coverSide } from './policeAi.js';
 import { roofsNear } from '../world/districtWorld.js';
 
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
@@ -643,9 +643,35 @@ export class Traffic {
     }
   }
 
+  /* --- the door gunner (five stars) ---
+     The helicopter already holds a searchlight on you; at five stars somebody
+     leans out of it with an SMG. Bursts every 2.5 s with a line of sight from
+     altitude, wide jitter for a moving platform. No new mesh: the muzzle is
+     the aircraft's position. */
+  #airGunner(player, dt) {
+    const h = this.heli;
+    if (!h || Math.floor(this.wanted) < 5 || h.landed) { this._gunT = 1.5; return; }
+    this._gunT = (this._gunT ?? 1.5) - dt;
+    if (this._gunT > 0) return;
+    const prof = targetProfile(!!player.onFoot, !!player.crouch);
+    const ty = (player.y ?? 0) + prof.y;
+    const gap = Math.hypot(player.x - h.pos.x, player.z - h.pos.z);
+    const bldg = this.world?.nearbyBuildings ? this.world.nearbyBuildings(player.x, player.z) : [];
+    const canSee = hasLineOfSight(h.pos.x, h.pos.y - 1, h.pos.z, player.x, ty, player.z, bldg, [], null);
+    this._gunBurst = (this._gunBurst ?? 0) > 0 ? this._gunBurst - 1 : burstFor('smg').shots - 1;
+    this._gunT = this._gunBurst > 0 ? burstFor('smg').gap : 2.5 + this.rand() * 1.5;
+    if (!canSee) return;
+    const w = ARSENAL.smg;
+    const landed = shotLands(h.pos.x, h.pos.y - 1, h.pos.z, player.x, ty, player.z, prof.r, aimJitter(5, gap, player.speed ?? 0) * 1.3 + w.restSpread, this.rand);
+    if (this.onShot) this.onShot(gap, landed, w.damage, h.pos);
+    this.crowd?.panic?.(player.x, player.z, 18);
+  }
+
   update(player, dt, time) {
     this.#tickDrops(dt);
     this.#rooftops(player, dt);
+    this.#airGunner(player, dt);
+    this.hot = false;   // set true below by any officer who can see you this frame
     this.time = time !== undefined ? time : this.time + dt;
     const t = this.time;
     this.player = player;
@@ -821,7 +847,7 @@ export class Traffic {
         c.gunKind = weaponForWanted(Math.floor(this.wanted), c.slot);
         c.gun.geometry = buildWeaponMesh(c.gunKind).geometry;
         c.flash.position.x = ARSENAL[c.gunKind].muzzle;
-        c.coverX = c.x + Math.cos(c.yaw + Math.PI / 2) * 1.9; c.coverZ = c.z - Math.sin(c.yaw + Math.PI / 2) * 1.9;
+        { const cs = coverSide(c.x, c.z, c.yaw, player.x, player.z); c.coverX = cs.x; c.coverZ = cs.z; }   // the door away from you, car between
         this.chatter?.radio?.(Math.floor(this.wanted) >= 3 ? 'Shots fired, officers on foot, requesting backup.' : 'Unit on scene, suspect stopped. Stepping out.');
       }
       if (c.deployed && (gap > 30 || c.deployT <= 0)) {
@@ -852,6 +878,7 @@ export class Traffic {
         const gunY = c.officer.position.y + (c.state === 'cover' || c.state === 'peek' ? 0.9 : 1.3);
         const bldg = this.world?.nearbyBuildings ? this.world.nearbyBuildings(c.officer.position.x, c.officer.position.z) : [];
         const canSee = c.state === 'cover' ? hasLineOfSight(c.coverX, gunY, c.coverZ, player.x, ty, player.z, bldg, this.cars, null) : hasLineOfSight(c.officer.position.x, gunY, c.officer.position.z, player.x, ty, player.z, bldg, this.cars, null);
+        if (canSee) this.hot = true;
         c.quietFor = (player.firedAt !== undefined && performance.now() - player.firedAt < 1500) ? 0 : c.quietFor + dt;
         c.stateT += dt;
         const next = nextState({ state: c.state, hp: c.hp, gap, playerSpeed: player.speed ?? 0, quietFor: c.quietFor, canSee, burstLeft: c.burstLeft, t: c.stateT });

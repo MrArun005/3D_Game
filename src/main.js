@@ -55,7 +55,8 @@ import { Weapon } from './game/weapon.js';
 import { ARSENAL, WEAPON_KINDS, buildWeaponMesh, weaponMaterial } from './game/weapons.js';
 import { officerMaterial } from './world/officer.js';
 import { Modes } from './game/modes.js';
-import { Crosshair, DecalPool, ADS, ADS_BLEND_S, spreadToPixels, spreadFor, recoilFor, firstBuildingHit, swayFor, swayPhaseStep, reloadPose } from './game/shooting.js';
+import { Crosshair, DecalPool, ADS, ADS_BLEND_S, spreadToPixels, spreadFor, recoilFor, firstBuildingHit, swayFor, swayPhaseStep, reloadPose, movementSpread } from './game/shooting.js';
+import { absorb } from './game/policeAi.js';
 import { SkidMarks } from './world/skidmarks.js';
 import { Damage } from './game/damage.js';
 import { signalState } from './world/signals.js';
@@ -266,8 +267,9 @@ function onShot(gap, landed = null, damage = 26, from = null) {
     onFoot.camYaw += (Math.random() - 0.5) * 0.05;
   }
   if (onFoot.active) {
-    // on foot there is no bodywork to absorb it
-    health = Math.max(0, health - hit * 0.16);
+    // on foot there is no bodywork to absorb it -- unless you bought some
+    const a = absorb(armour, hit * 0.16); armour = Math.max(0, armour - a.toArmour);
+    health = Math.max(0, health - a.toHealth);
     hud.setHealth(health);
     grade.setDrops(0.9);
     if (health <= 0) onDeath();
@@ -357,6 +359,7 @@ let modes = null;   // range / hold-out, built once the HUD and traffic exist
 let aiming = false, ads = 0, burst = 0, sinceShot = 9, swayPhase = 0, crouch = false;
 let lastFiredAt = -1e9;   // officers advance when you have been quiet for a while
 let lastHurtAt = -1e9;    // health regenerates to half once this is six seconds old
+let armour = 0;           // body armour 0..1, bought at Ammu-Nation, soaks 60% of a hit until gone
 const _rayHit = new THREE.Vector3();
 const _hand = new THREE.Vector3();   // the skinned hero's palm, when the rig is up
 /* The gun you are actually holding.
@@ -450,7 +453,7 @@ function pullTrigger() {
     }
   }
   modes?.targets(_triggerTargets);
-  weapon.spreadMul = 1 - ads * (1 - (ADS[weapon.kind]?.spread ?? 0.4));   // sights up: a tighter cone for THIS shot; the heat you built stays
+  weapon.spreadMul = (1 - ads * (1 - (ADS[weapon.kind]?.spread ?? 0.4))) * (onFoot.active ? movementSpread(onFoot.speed ?? 0, crouch) : 1.3);   // sights, feet and crouch shape THIS shot's cone; heat is untouched
   const hit = weapon.fire(ox, oy, oz, dx, dy, dz, _triggerTargets);
   if (hit === null && !weapon.ready && weapon.ammo === 0) return;   // dry: reload started, no shot
   // recoil: a learnable path, indexed by shots in this burst; gentler on the sights
@@ -480,7 +483,7 @@ function pullTrigger() {
   // firing at all is a crime; hitting something is a worse one
   if (hit?.kind !== 'target' && modes?.active !== 'range') traffic.reportCrime(hit ? (hit.kind === 'person' ? 'person' : (hit.kind === 'police' || hit.kind === 'officer') ? 'police' : 'traffic') : 'traffic',
                       hit ? 9 : 1);
-  if (hit && hit.kind === 'officer') { if (traffic.officerHit?.(hit.ref, weapon.spec.damage)) modes?.onOfficerDown(); crosshair.hit(hit.ref.down); }
+  if (hit && hit.kind === 'officer') { if (traffic.officerHit?.(hit.ref, weapon.spec.damage)) { modes?.onOfficerDown(); hud.flash(modes?.active === 'holdout' ? 'OFFICER DOWN · +50' : 'OFFICER DOWN'); } crosshair.hit(hit.ref.down); }
   if (hit && hit.kind === 'person') hit.ref.down = 0.001;
   if (hit && hit.kind !== 'person') {
     hit.ref.speed *= 0.55;
@@ -1057,6 +1060,10 @@ chatter = new ChatterEngine(audio, chat);
 modes = new Modes(scene, hud, traffic);
 window.__modes = modes;   // phone cards call startRange / startHoldout
 /* The phone's gun counter. Cash is the garage's; the weapon is the player's. */
+window.__buyArmour = (price = 800) => {
+  if ((garage?.cash ?? 0) < price) { hud.flash('NOT ENOUGH CASH'); return false; }
+  garage.addCash(-price, 'BODY ARMOUR'); armour = 1; hud.flash('BODY ARMOUR · 100%'); return true;
+};
 window.__buyWeapon = (kind, price) => {
   if (!ARSENAL[kind]) return false;
   if ((garage?.cash ?? 0) < price) { hud.flash('NOT ENOUGH CASH'); return false; }
@@ -1436,7 +1443,7 @@ function frameBody() {
     ? { x: onFoot.x, y: onFoot.y, z: onFoot.z, vx: onFoot.vx, vz: onFoot.vz,
         speed: Math.hypot(onFoot.vx, onFoot.vz), onFoot: true, crouch, firedAt: lastFiredAt }
     : currentVehicle;
-  traffic.world = world; traffic.chatter = chatter; traffic.decals = decals; traffic.crowd = crowd;   // buildings for line of sight, the radio, the marks their misses leave, the street that scatters
+  traffic.world = world; traffic.chatter = chatter; traffic.decals = decals; traffic.crowd = crowd; traffic.heli = heli;   // buildings for line of sight, the radio, the marks their misses leave, the street that scatters
   traffic.update(quarry, dt, worldTime);
   if (chatter) chatter.updateWanted(traffic.wanted);
   if (world.updateSignals) world.updateSignals(worldTime);
@@ -1470,7 +1477,9 @@ function frameBody() {
     swayPhase += swayPhaseStep(onFoot.speed ?? 0, dt);
   }
   placeHeldGun();
-  hud.setAmmo(weapon.spec.name, weapon.ammo, weapon.reserveNow, weapon.reloading);
+  hud.setAmmo(weapon.spec.name, weapon.ammo, weapon.reserveNow, weapon.reloading, armour);
+  if (onFoot.active) hud.setArsenal?.(WEAPON_KINDS.map((k, i) => ({ key: i + 1, name: ARSENAL[k].name, mag: k === weapon.kind ? weapon.ammo : weapon.mags[k], reserve: weapon.reserve[k], current: k === weapon.kind })));
+  else if (hud.arsEl) hud.arsEl.innerHTML = '', hud._arsKey = '';
   skids.update(car, car.wheelGround ? car.wheelGround[2] : 0);
   if (firing) pullTrigger();
   if (crowd) crowd.update(car, dt, (speed) => traffic.reportCrime('person', speed));

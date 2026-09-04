@@ -130,3 +130,20 @@ export function pickRooftops(roofs, px, pz, { near = 45, far = 130, minH = 18, c
   }
   return out;
 }
+
+/**
+ * Which side of the cruiser to take cover on: the side AWAY from the player,
+ * so the car body is between them. Returns the door position. Pure; tested.
+ */
+export function coverSide(cx, cz, yaw, px, pz, off = 1.9) {
+  const ax = cx + Math.cos(yaw + Math.PI / 2) * off, az = cz - Math.sin(yaw + Math.PI / 2) * off;
+  const bx = cx - Math.cos(yaw + Math.PI / 2) * off, bz = cz + Math.sin(yaw + Math.PI / 2) * off;
+  return Math.hypot(ax - px, az - pz) >= Math.hypot(bx - px, bz - pz) ? { x: ax, z: az } : { x: bx, z: bz };
+}
+
+/** Body armour soaks 60% of a hit until it is gone. Returns { health, armour } deltas applied. */
+export function absorb(armour, hit) {
+  if (armour <= 0) return { toHealth: hit, toArmour: 0 };
+  const soak = Math.min(armour, hit * 0.6);
+  return { toHealth: hit - soak, toArmour: soak };
+}

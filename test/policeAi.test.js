@@ -81,3 +81,18 @@ test('state machine: arrest beats everything but death, and death beats all', ()
 test('the deployed cap is a small number', () => {
   assert.ok(MAX_DEPLOYED >= 4 && MAX_DEPLOYED <= 8);
 });
+
+test('officers take cover on the far side of the cruiser from the player', async () => {
+  const { coverSide } = await import('../src/game/policeAi.js');
+  const a = coverSide(10, 0, 0, 10, 20);   // player on +z: door should be on -z side
+  assert.ok(a.z < 0);
+  const b = coverSide(10, 0, 0, 10, -20);
+  assert.ok(b.z > 0);
+});
+
+test('body armour soaks 60% of a hit until it runs out', async () => {
+  const { absorb } = await import('../src/game/policeAi.js');
+  assert.deepEqual(absorb(0, 0.2), { toHealth: 0.2, toArmour: 0 });
+  const r = absorb(1, 0.2); assert.ok(Math.abs(r.toHealth - 0.08) < 1e-9 && Math.abs(r.toArmour - 0.12) < 1e-9);
+  const last = absorb(0.05, 0.2); assert.ok(Math.abs(last.toArmour - 0.05) < 1e-9 && Math.abs(last.toHealth - 0.15) < 1e-9, 'the last of the armour goes first, the rest is yours');
+});

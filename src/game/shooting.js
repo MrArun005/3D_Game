@@ -230,3 +230,9 @@ export function reloadPose(frac) {
 /** Which arsenal entries exist, for a switch UI. */
 export const WEAPON_ORDER = Object.keys(ARSENAL);
 export { spreadFor };
+
+/** Spread multiplier from how you are moving: still 1, walking 1.25, sprinting 1.7, crouched x0.8. Pure. */
+export function movementSpread(speed, crouch) {
+  const m = speed > 4 ? 1.7 : speed > 1 ? 1.25 : 1;
+  return m * (crouch ? 0.8 : 1);
+}

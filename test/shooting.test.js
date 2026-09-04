@@ -78,3 +78,11 @@ test('the reload pose dips in, holds, and comes back up', () => {
   assert.ok(reloadPose(0.5).dy < -0.1, 'fully down in the middle');
   assert.ok(reloadPose(1).dy > -1e-9 && reloadPose(1).tilt < 1e-9, 'back up at the end');
 });
+
+test('moving widens the cone and crouching tightens it', async () => {
+  const { movementSpread } = await import('../src/game/shooting.js');
+  assert.equal(movementSpread(0, false), 1);
+  assert.equal(movementSpread(2, false), 1.25);
+  assert.equal(movementSpread(6, false), 1.7);
+  assert.ok(movementSpread(0, true) < 1);
+});

@@ -404,7 +404,23 @@ export class Hud {
    * red when it is empty -- you should be able to read "reload now" without
    * reading the number.
    */
-  setAmmo(name, ammo, reserve, reloading) {
+  /** Four weapon slots with their rounds; the one in hand is lit. Redrawn only when the summary string changes. */
+  setArsenal(rows) {
+    if (!this.arsEl) {
+      const el = document.createElement('div');
+      el.style.cssText = 'position:fixed;right:26px;bottom:262px;z-index:40;display:flex;gap:6px;pointer-events:none';
+      document.body.appendChild(el);
+      this.arsEl = el;
+    }
+    const key = rows.map((r) => `${r.key}${r.current ? '*' : ''}${r.mag}/${r.reserve}`).join('|');
+    if (key === this._arsKey) return;
+    this._arsKey = key;
+    this.arsEl.innerHTML = rows.map((r) => `<div style="min-width:52px;padding:5px 7px;border-radius:6px;text-align:center;font:700 10px ui-monospace,Menlo,monospace;letter-spacing:.05em;`
+      + `background:${r.current ? 'rgba(234,241,251,.92)' : 'rgba(9,12,18,.72)'};color:${r.current ? '#0b0e14' : '#c8d2e2'};border:1px solid rgba(120,140,170,.35)">`
+      + `<div>${r.key}</div><div style="font-size:12px">${r.name}</div><div style="opacity:.75">${r.mag}/${r.reserve}</div></div>`).join('');
+  }
+
+  setAmmo(name, ammo, reserve, reloading, armour = 0) {
     const mag = reserve;   // the second number is now the reserve, not the magazine size
     if (!this.ammoEl) {
       const el = document.createElement('div');
@@ -417,11 +433,12 @@ export class Hud {
     const el = this.ammoEl;
     el.style.display = 'block';
     const low = ammo === 0 ? '#ff5f5f' : ammo <= 4 ? '#ffc23c' : '#eaf1fb';
-    el.innerHTML = reloading
+    const arm = armour > 0 ? `<br><span style="font-size:11px;color:#6fb1ff">ARMOUR ${Math.round(armour * 100)}%</span>` : '';
+    el.innerHTML = (reloading
       ? `<span style="opacity:.65">${name}</span><br><span style="font-size:20px;color:#ffc23c">RELOADING</span>`
       : `<span style="opacity:.65">${name}</span><br>`
         + `<span style="font-size:24px;color:${low}">${ammo}</span>`
-        + `<span style="opacity:.5"> / ${mag}</span>`;
+        + `<span style="opacity:.5"> / ${mag}</span>`) + arm;
   }
 
   setHealth(v) {
@@ -670,6 +687,10 @@ export class Hud {
         + 'letter-spacing:4px;color:#ffb020;text-shadow:0 2px 8px rgba(0,0,0,.8);pointer-events:none';
       document.body.appendChild(el);
       this.wantedEl = el;
+    }
+    // when an officer has a line on you the stars pulse; no line, they sit still
+    if (traffic?.hot) { this.wantedEl.style.filter = 'drop-shadow(0 0 7px rgba(255,74,74,.95))'; this.wantedEl.style.opacity = String(0.7 + 0.3 * Math.abs(Math.sin(performance.now() / 160))); }
+    else { this.wantedEl.style.filter = ''; this.wantedEl.style.opacity = '1';
     }
     const n = Math.ceil(w - 0.001);
     if (n === this.lastWanted) return;
