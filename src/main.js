@@ -320,6 +320,9 @@ function onDeath() {
   if (wastedAnim === 1) return;        // the clip is still playing; the timer will call us back
   wastedAnim = 0;                      // 2 -> 0: the animation ran, now the real WASTED path
   bustFlash = 2.8;
+  /* The hospital bills you: GTA's rule, and the reason a death costs something
+     when the ammo comes back with you. Never more than you have. */
+  if (garage && garage.cash > 0) { const fee = Math.min(garage.cash, 500); garage.addCash(-fee, 'HOSPITAL'); hud.flash(`HOSPITAL FEE · -$${fee}`); }
   jobs?.fail('WASTED · JOB LOST');
   hud.setDead(true);
   traffic.standDown();
@@ -338,6 +341,13 @@ function onDeath() {
 }
 
 function onBust() {
+  /* The station takes your guns (GTA's classic): reserves to zero, grenades
+     gone, armour off; you walk out with the pistol and one magazine. Cash
+     stays -- the fine is the confiscation. */
+  for (const k of WEAPON_KINDS) { weapon.reserve[k] = 0; if (k !== 'pistol') weapon.mags[k] = 0; }
+  weapon.mags.pistol = ARSENAL.pistol.mag; weapon.switchTo('pistol'); fistsMode = false; grenadeMode = false;
+  grenades.count = 0; armour = 0; refreshHeldGun(); saveArsenal();
+  hud.flash('BUSTED · WEAPONS CONFISCATED');
   jobs?.fail('BUSTED · JOB LOST');
   bustFlash = 2.6;
   traffic.standDown();
