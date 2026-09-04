@@ -39,7 +39,7 @@ export class DispatchService {
       this.garage.cash -= cost;
     }
 
-    const pad = this.#findHeliPad(playerPos.x, playerPos.z);
+    const pad = this.#findHeliPad(playerPos.x, playerPos.z, playerPos.y || 0, playerPos.yaw || 0);
     const heli = new HelicopterVehicle(this.scene, this.world, {
       x: pad.x,
       y: pad.y + 1.25,
@@ -105,34 +105,36 @@ export class DispatchService {
     return tank;
   }
 
-  #findHeliPad(px, pz) {
-    // 1. Search for a rooftop with suitable dimensions (w >= 16, d >= 16) within 160m
-    const buildings = this.world?.nearbyBuildings ? this.world.nearbyBuildings(px, pz) : [];
-    let bestRoof = null;
-    let bestDist = Infinity;
+  #findHeliPad(px, pz, py = 0, yaw = 0) {
+    // 1. If player is high on a skyscraper / rooftop (> 15m), find rooftop helipad
+    if (py > 15) {
+      const buildings = this.world?.nearbyBuildings ? this.world.nearbyBuildings(px, pz) : [];
+      let bestRoof = null;
+      let bestDist = Infinity;
 
-    for (const b of buildings) {
-      if ((b.hw * 2) >= 16 && (b.hd * 2) >= 16 && b.height >= 18) {
-        const dist = Math.hypot(b.x - px, b.z - pz);
-        if (dist < bestDist && dist > 15) {
-          bestDist = dist;
-          bestRoof = {
-            x: b.x,
-            y: b.height,
-            z: b.z,
-            yaw: b.angle || 0,
-            isRoof: true,
-          };
+      for (const b of buildings) {
+        if ((b.hw * 2) >= 16 && (b.hd * 2) >= 16 && b.height >= 18) {
+          const dist = Math.hypot(b.x - px, b.z - pz);
+          if (dist < bestDist && dist > 15) {
+            bestDist = dist;
+            bestRoof = {
+              x: b.x,
+              y: b.height,
+              z: b.z,
+              yaw: b.angle || 0,
+              isRoof: true,
+            };
+          }
         }
+      }
+
+      if (bestRoof && bestDist < 180) {
+        return bestRoof;
       }
     }
 
-    if (bestRoof && bestDist < 180) {
-      return bestRoof;
-    }
-
-    // 2. Fallback: Search open street tarmac within 40-90m
-    return this.#findStreetDrop(px, pz, 0);
+    // 2. Default: Clear street drop ahead of player for direct street-level boarding
+    return this.#findStreetDrop(px, pz, yaw);
   }
 
   #findStreetDrop(px, pz, yaw) {

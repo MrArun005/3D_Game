@@ -10,9 +10,27 @@ export class Hud {
     this.stats = document.getElementById('stats');
     this.overlay = document.getElementById('hud');
     this.district = null;
+
+    // Dedicated flight controls banner
+    this.flightBanner = document.getElementById('flight-banner');
+    if (!this.flightBanner && typeof document !== 'undefined') {
+      const b = document.createElement('div');
+      b.id = 'flight-banner';
+      b.style.cssText = 'position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:60;'
+        + 'background:rgba(12,18,28,0.88);backdrop-filter:blur(10px);border:1px solid rgba(57,255,176,0.45);'
+        + 'border-radius:24px;padding:8px 20px;color:#cfe0f5;font:600 12px/1.4 system-ui,-apple-system,sans-serif;'
+        + 'letter-spacing:.06em;box-shadow:0 8px 32px rgba(0,0,0,0.65),0 0 16px rgba(57,255,176,0.22);'
+        + 'display:none;align-items:center;gap:12px;pointer-events:none;';
+      b.innerHTML = '<span style="color:#39ffb0;font-size:15px">🚁</span> '
+        + '<span><b style="color:#fff;background:rgba(255,255,255,0.18);padding:2px 7px;border-radius:4px">W</b> / <b style="color:#fff;background:rgba(255,255,255,0.18);padding:2px 7px;border-radius:4px">SPACE</b> Fly Up</span> · '
+        + '<span><b style="color:#fff;background:rgba(255,255,255,0.18);padding:2px 7px;border-radius:4px">SHIFT</b> / <b style="color:#fff;background:rgba(255,255,255,0.18);padding:2px 7px;border-radius:4px">S</b> Descend</span> · '
+        + '<span><b style="color:#fff;background:rgba(255,255,255,0.18);padding:2px 7px;border-radius:4px">A/D</b> Turn</span> · '
+        + '<span><b style="color:#fff;background:rgba(255,255,255,0.18);padding:2px 7px;border-radius:4px">F</b> Exit</span>';
+      document.body.appendChild(b);
+      this.flightBanner = b;
+    }
   }
 
-  /** Once Halstead Bay is loaded the minimap draws real streets. */
   /** Once Halstead Bay is loaded the minimap draws real streets. */
   useDistrict(d) { this.district = d; }
 
@@ -26,6 +44,9 @@ export class Hud {
 
   update(car, traffic, mission, net, heli) {
     this.heli = heli;
+    if (this.flightBanner) {
+      this.flightBanner.style.display = car.type === 'helicopter' ? 'flex' : 'none';
+    }
     this.#drawWanted(traffic);
     this.#drawMission(mission);
     this.net = net;

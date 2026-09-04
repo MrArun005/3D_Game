@@ -209,64 +209,126 @@ export class HelicopterVehicle extends Vehicle {
     if (this.tail) this.tail.rotation.x = this.tailRotorAngle;
     if (this.disc) this.disc.material.opacity = 0.16 * this.rotorRpm;
 
-    // 2. Control inputs
+    // Ground elevation & surface
+    const groundElev = this.world?.district?.elevationAt?.(this.x, this.z) ?? 0;
+    const roofSurface = this.#getSurfaceUnderneath(this.x, this.z, this.y, groundElev);
+    const groundLevel = roofSurface.y;
+    this.altitudeAboveGround = Math.max(0, this.y - groundLevel);
+
+    // If unpiloted, helicopter stays firmly grounded on its skids (zero phantom hover)
+    if (!isPiloted) {
+      const restingY = groundLevel + this.minGroundClearance;
+      if (this.y <= restingY + 0.5) {
+        this.y = restingY;
+        this.vy = 0;
+        this.vx = 0;
+        this.vz = 0;
+        this.landed = true;
+      } else {
+        // Fall under gravity to ground if spawned in air
+        this.vy -= 9.8 * dt;
+        this.y += this.vy * dt;
+        if (this.y <= restingY) {
+          this.y = restingY;
+          this.vy = 0;
+          this.landed = true;
+        }
+      }
+      this.pitch = 0;
+      this.roll = 0;
+      this.yawRate = 0;
+      if (this.mesh) {
+        this.mesh.position.set(this.x, this.y, this.z);
+        this.mesh.rotation.set(0, this.yaw, 0);
+      }
+      if (this.downwash) this.downwash.visible = false;
+      return;
+    }
+
+    // 2. Control inputs for piloted flight
     let throttleFwd = 0;
     let pedalYaw = 0;
     let collectiveClimb = 0;
     let strafeRoll = 0;
     let boost = false;
 
-    if (isPiloted && input && this.rotorRpm > 0.3) {
-      throttleFwd = (input.throttle || 0) - (input.brake || 0); // W/S
-      pedalYaw = -(input.steer || 0);                           // A/D
-      collectiveClimb = (input.handbrake ? 1 : 0) - (input.hold ? 1 : 0); // Space/Shift
+    if (input && this.rotorRpm > 0.25) {
+      throttleFwd = (input.throttle || 0) - (input.brake || 0); // W/S or ArrowUp/ArrowDown
+      pedalYaw = -(input.steer || 0);                           // A/D or ArrowLeft/ArrowRight
       boost = !!input.nos;
-      // Also allow Q/E or secondary strafe if available
+
+      // Secondary strafe roll with Q / E
       if (context.keys?.KeyQ) strafeRoll -= 1;
       if (context.keys?.KeyE) strafeRoll += 1;
+
+      // Collective vertical climb / descend logic:
+      if (input.handbrake) {
+        // Dedicated rapid vertical climb (SPACE)
+        collectiveClimb = 1.0;
+        this.landed = false;
+      } else if (input.hold || context.keys?.KeyC) {
+        // Dedicated descent (SHIFT or C)
+        collectiveClimb = -1.0;
+      } else if ((input.throttle || 0) > 0.08) {
+        // Forward key (W or ArrowUp):
+        // When landed or near ground (< 10m), holding W lifts off and climbs smoothly!
+        // When cruising aloft, holding W provides positive climb assist (0.45)
+        // so forward flight effortlessly gains altitude over city buildings!
+        if (this.landed || this.altitudeAboveGround < 10.0) {
+          collectiveClimb = 1.0;
+          this.landed = false;
+        } else {
+          collectiveClimb = 0.45;
+        }
+      } else if ((input.brake || 0) > 0.1 && Math.abs(this.fwdSpeed) < 8.0) {
+        // Brake / Reverse key (S) while hovering or slow: smooth landing descent
+        collectiveClimb = -0.6;
+      }
     }
 
     // 3. Flight dynamics
-    const pwr = Math.min(1, this.rotorRpm / 0.7);
+    const pwr = Math.min(1, this.rotorRpm / 0.65);
 
     // Yaw dynamics
     const wantYawRate = pedalYaw * this.yawSpeed * pwr;
     this.yawRate += (wantYawRate - this.yawRate) * Math.min(1, dt * 5.0);
     this.yaw += this.yawRate * dt;
 
-    // Pitch attitude: forward input tilts nose down (negative pitch)
-    const targetPitch = -throttleFwd * 0.32 * pwr;
+    // Pitch attitude:
+    // Limit forward pitch near ground so skids don't dig into pavement during takeoff
+    const pitchLimit = this.altitudeAboveGround < 3.0 ? 0.14 : 0.35;
+    const targetPitch = -throttleFwd * pitchLimit * pwr;
     if (throttleFwd !== 0) {
-      this.pitch += (targetPitch - this.pitch) * Math.min(1, dt * 3.5);
+      this.pitch += (targetPitch - this.pitch) * Math.min(1, dt * 4.0);
     } else {
-      // Auto-level pitch
       this.pitch += (0 - this.pitch) * Math.min(1, dt * this.autoLevelRate);
     }
 
-    // Roll attitude: rudder yaw and strafe bank the helicopter into turns
-    const targetRoll = -this.yawRate * 0.24 + strafeRoll * 0.28 * pwr;
+    // Roll attitude: rudder yaw and strafe bank into turns
+    const targetRoll = -this.yawRate * 0.22 + strafeRoll * 0.28 * pwr;
     if (pedalYaw !== 0 || strafeRoll !== 0) {
       this.roll += (targetRoll - this.roll) * Math.min(1, dt * 4.2);
     } else {
-      // Auto-level roll
       this.roll += (0 - this.roll) * Math.min(1, dt * this.autoLevelRate);
     }
 
     // 4. Ground Cushion (Ground Effect)
-    const groundElev = this.world?.district?.elevationAt?.(this.x, this.z) ?? 0;
-    const roofSurface = this.#getSurfaceUnderneath(this.x, this.z, this.y, groundElev);
-    const groundLevel = roofSurface.y;
-    this.altitudeAboveGround = Math.max(0, this.y - groundLevel);
-
-    const cushion = this.altitudeAboveGround < this.cushionHeight
-      ? Math.pow((this.cushionHeight - this.altitudeAboveGround) / this.cushionHeight, 2) * 5.5 * pwr
+    const cushion = (this.altitudeAboveGround < this.cushionHeight && !this.landed)
+      ? Math.pow((this.cushionHeight - this.altitudeAboveGround) / this.cushionHeight, 2) * 6.0 * pwr
       : 0;
 
     // 5. Vertical Lift & Gravity
-    const baseLift = 9.8 * pwr;
-    const verticalThrust = collectiveClimb * this.climbRate * pwr;
-    const netVerticalAcc = baseLift + verticalThrust + cushion - 9.8 - this.vy * 0.85;
-    this.vy += netVerticalAcc * dt;
+    const baseLift = this.landed ? 0 : 9.8 * pwr;
+    const climbMult = boost ? 1.35 : 1.0;
+    const verticalThrust = collectiveClimb * this.climbRate * pwr * climbMult;
+
+    if (this.landed && collectiveClimb <= 0.05) {
+      this.vy = 0;
+    } else {
+      this.landed = false;
+      const netVerticalAcc = baseLift + verticalThrust + cushion - 9.8 - this.vy * 0.85;
+      this.vy += netVerticalAcc * dt;
+    }
 
     // 6. Horizontal Aerodynamics & Thrust
     const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);

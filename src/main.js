@@ -545,25 +545,39 @@ function driverDoor(hold = 0.9) {
 function useVehicle() {
   if (!started) { started = true; hud.dismiss(); }
   if (activeVehicle && activeVehicle !== carVehicle) {
+    if (activeVehicle.type === 'helicopter' && activeVehicle.altitudeAboveGround > 3.5 && !activeVehicle.landed) {
+      hud.flash('TOO HIGH TO EXIT — DESCEND WITH SHIFT OR S TO LAND SAFELY');
+      return;
+    }
     // Step out of helicopter or tank
     const prev = activeVehicle;
     prev.exit();
     activeVehicle = carVehicle;
-    onFoot.exit({ x: prev.x, z: prev.z, yaw: prev.yaw || 0 });
+    hero.visible = false;
+    const exitOffset = prev.type === 'helicopter' ? 2.6 : 3.2;
+    const cy = Math.cos(prev.yaw || 0), sy = Math.sin(prev.yaw || 0);
+    onFoot.exit({
+      x: prev.x - sy * exitOffset,
+      z: prev.z - cy * exitOffset,
+      yaw: prev.yaw || 0,
+    });
+    hud.flash('EXITED VEHICLE');
     return;
   }
   if (onFoot.active) {
     // 1. Check nearby dispatched vehicles (heli, tank)
     if (dispatch?.dispatchedVehicles?.length) {
       for (const v of dispatch.dispatchedVehicles) {
-        const reach = v.type === 'helicopter' ? 7.5 : 5.5;
+        const reach = v.type === 'helicopter' ? 8.5 : 5.5;
         const d = Math.hypot(v.x - onFoot.x, v.z - onFoot.z);
         if (d < reach) {
           onFoot.enter();
           v.enter(hero);
           activeVehicle = v;
+          hero.visible = false;
+          car.throttle = 0; car.brake = 1; car.hand = 1; car.vx = 0; car.vz = 0;
           if (v.type === 'helicopter') {
-            hud.flash('AIRBORNE — W/S tilt & speed, A/D rudder, SPACE climb, SHIFT descend');
+            hud.flash('AIRBORNE — W/SPACE climb, S/SHIFT descend, A/D turn, F exit');
           } else if (v.type === 'tank') {
             hud.flash('HEAVY ARMOR — W/S drive, A/D pivot steer, MOUSE AIM cannon');
           }
@@ -585,7 +599,9 @@ function useVehicle() {
       dispatch?.dispatchedVehicles.push(playerHeli);
       playerHeli.enter(hero);
       activeVehicle = playerHeli;
-      hud.flash('AIRBORNE — W/S tilt & speed, A/D rudder, SPACE climb, SHIFT descend');
+      hero.visible = false;
+      car.throttle = 0; car.brake = 1; car.hand = 1; car.vx = 0; car.vz = 0;
+      hud.flash('AIRBORNE — W/SPACE climb, S/SHIFT descend, A/D turn, F exit');
       return;
     }
     // 3. Nearest vehicle within reach: your own car, or somebody else's
@@ -624,13 +640,15 @@ function useVehicle() {
     // Check if parked right next to a dispatched helicopter or tank
     if (dispatch?.dispatchedVehicles?.length) {
       for (const v of dispatch.dispatchedVehicles) {
-        const reach = v.type === 'helicopter' ? 8.5 : 6.5;
+        const reach = v.type === 'helicopter' ? 9.0 : 6.5;
         const d = Math.hypot(v.x - car.x, v.z - car.z);
         if (d < reach) {
           activeVehicle = v;
           v.enter(hero);
+          hero.visible = false;
+          car.throttle = 0; car.brake = 1; car.hand = 1; car.vx = 0; car.vz = 0;
           if (v.type === 'helicopter') {
-            hud.flash('AIRBORNE — W/S tilt & speed, A/D rudder, SPACE climb, SHIFT descend');
+            hud.flash('AIRBORNE — W/SPACE climb, S/SHIFT descend, A/D turn, F exit');
           } else if (v.type === 'tank') {
             hud.flash('HEAVY ARMOR — W/S drive, A/D pivot steer, MOUSE AIM cannon');
           }
@@ -640,6 +658,7 @@ function useVehicle() {
     }
     driverDoor(1.4);                       // step out; it swings shut behind you
     onFoot.exit(car);
+    hero.visible = true;
     car.throttle = 0; car.brake = 1; car.hand = 1;
   }
 }
@@ -1135,14 +1154,10 @@ function frameBody() {
   if (!started && (c.throttle > 0.08 || c.brake > 0.25 || Math.abs(c.steer) > 0.3)) start();
   if (activeVehicle && activeVehicle.type === 'helicopter') {
     activeVehicle.update(c, dt, { keys: input.keys });
-    car.x = activeVehicle.x; car.z = activeVehicle.z;
-    car.vx = activeVehicle.vx; car.vz = activeVehicle.vz;
-    car.throttle = 0; car.brake = 1; car.steerTarget = 0;
+    car.throttle = 0; car.brake = 1; car.steerTarget = 0; car.vx = 0; car.vz = 0;
   } else if (activeVehicle && activeVehicle.type === 'tank') {
     activeVehicle.update(c, dt, { firing, chase });
-    car.x = activeVehicle.x; car.z = activeVehicle.z;
-    car.vx = activeVehicle.vx; car.vz = activeVehicle.vz;
-    car.throttle = 0; car.brake = 1; car.steerTarget = 0;
+    car.throttle = 0; car.brake = 1; car.steerTarget = 0; car.vx = 0; car.vz = 0;
   } else if (onFoot.active) {
     onFoot.update(c, dt, camera, walkSolid);
     car.throttle = 0; car.brake = 1; car.steerTarget = 0;
@@ -1185,18 +1200,27 @@ function frameBody() {
   if (dt > 0.05) physicsAccumulator = Math.min(physicsAccumulator, STEP * 4);
   physicsAccumulator += dt;
   let guard = 0;
-  while (physicsAccumulator >= STEP && guard++ < 4) {
-    stepVehicle(car, STEP);
-    physicsAccumulator -= STEP;
+  if (!activeVehicle || activeVehicle === carVehicle) {
+    while (physicsAccumulator >= STEP && guard++ < 4) {
+      stepVehicle(car, STEP);
+      physicsAccumulator -= STEP;
+    }
+  } else {
+    physicsAccumulator = 0;
   }
   const physMs = performance.now() - tPhys0;
   performance.mark('physics-end');
 
   // ---- pose ----
   // group carries x/y/z and yaw; the body carries the sprung motion; the wheels ride the road
-  const gy = (world.district?.elevationAt?.(car.x, car.z) ?? groundHeightAt(car.x, car.z));
-  hero.position.set(car.x, gy, car.z);
-  hero.rotation.set(0, car.yaw, 0);
+  if (!activeVehicle || activeVehicle === carVehicle) {
+    hero.visible = !onFoot.active;
+    const gy = (world.district?.elevationAt?.(car.x, car.z) ?? groundHeightAt(car.x, car.z));
+    hero.position.set(car.x, gy, car.z);
+    hero.rotation.set(0, car.yaw, 0);
+  } else {
+    hero.visible = false;
+  }
   const body = hero.userData.body;
   /* A flat tyre drops the CAR, not just the wheel. Lowering the hub alone
      pushed the tyre through the tarmac and left the shell at full ride
@@ -1286,7 +1310,8 @@ function frameBody() {
   if (beach) beach.update(dt);
   if (water) water.update(dt);
 
-  dome.position.set(car.x, 0, car.z);
+  const currentVehicle = (activeVehicle && activeVehicle !== carVehicle) ? activeVehicle : car;
+  dome.position.set(currentVehicle.x, 0, currentVehicle.z);
 
   if (film) {
     film.shots.update(car, camera, dt);
@@ -1295,7 +1320,7 @@ function frameBody() {
     photo.update(dt);          // the chase camera is frozen while photo mode owns the view
   } else {
     if (!onFoot.active) {
-      const targetVehicle = activeVehicle || car;
+      const targetVehicle = currentVehicle;
       // ease the free look back behind the car once you are driving again
       if (chase.looking && Math.abs(targetVehicle.fwdSpeed || 0) > 6) {
         const d = 1 - Math.pow(0.35, dt);
@@ -1309,14 +1334,16 @@ function frameBody() {
       targetVehicle.camera ? targetVehicle.camera(chase, dt) : chase.update(targetVehicle, dt);
     }
   }
-  clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: car, dome, stars });
-  if (weather) weather.update(camera, car, dt);
-  lightPool?.update(dt, car.x, car.z, traffic);
+  clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: currentVehicle, dome, stars });
+  if (weather) weather.update(camera, currentVehicle, dt);
+  lightPool?.update(dt, currentVehicle.x, currentVehicle.z, traffic);
   grade.setDrops(DAY ? 0 : chase.mode >= 2 ? 1.2 : 0.68);
-  const streamX = photo?.on ? camera.position.x : car.x;
-  const streamZ = photo?.on ? camera.position.z : car.z;
+  const streamX = photo?.on ? camera.position.x : currentVehicle.x;
+  const streamZ = photo?.on ? camera.position.z : currentVehicle.z;
+  const streamVx = photo?.on ? 0 : (currentVehicle.vx || 0);
+  const streamVz = photo?.on ? 0 : (currentVehicle.vz || 0);
   performance.mark('stream-start');
-  world.update(streamX, streamZ, photo?.on ? 0 : car.vx, photo?.on ? 0 : car.vz);
+  world.update(streamX, streamZ, streamVx, streamVz);
   performance.mark('stream-end');
   resolution(dt);
   /* One render: the pipeline owns the frame (scene MRT pass, GTAO, bloom,
@@ -1399,15 +1426,15 @@ function frameBody() {
             z: mission.points[mission.index].z !== undefined ? mission.points[mission.index].z : mission.points[mission.index].y,
           }
         : null;
-  navigation?.update(car, missionTarget);
+  navigation?.update(currentVehicle, missionTarget);
 
-  hud.update(car, traffic, mission, net, heli);
+  hud.update(currentVehicle, traffic, mission, net, heli);
   if (bustFlash > 0) {
     bustFlash -= dt;
     hud.setBusted(bustFlash);
     if (bustFlash <= 0) hud.setDead(false);
   }
-  audio.update(car);
+  audio.update(currentVehicle);
   audio.setRain(DAY ? 0 : 1);
   /* Halstead Bay is a harbour city and the car's ground plane is y=0
      everywhere, so without this you simply drive out to sea. Sink, then put

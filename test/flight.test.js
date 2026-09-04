@@ -61,3 +61,39 @@ test('HelicopterVehicle ground cushion prevents sinking through ground', () => {
   assert.ok(heli.y >= 1.25, `Helicopter should rest on skids above ground, got y=${heli.y}`);
   assert.equal(heli.landed, true);
 });
+
+test('HelicopterVehicle stays grounded when unpiloted and does not phantom hover', () => {
+  const scene = new THREE.Group();
+  const heli = new HelicopterVehicle(scene, null, { x: 10, y: 1.25, z: 10, running: true });
+
+  // Update while unpiloted over multiple seconds
+  for (let i = 0; i < 40; i++) {
+    heli.update(null, 0.05);
+  }
+
+  assert.equal(heli.landed, true);
+  assert.equal(heli.y, 1.25, 'Unpiloted helicopter must remain landed on ground skids');
+  assert.equal(heli.vy, 0, 'Vertical velocity must be zero when unpiloted');
+});
+
+test('HelicopterVehicle takes off and climbs with W and Space keys', () => {
+  const scene = new THREE.Group();
+  const heli = new HelicopterVehicle(scene, null, { x: 0, y: 1.25, z: 0, running: true });
+  heli.enter({ id: 'pilot' });
+  heli.rotorRpm = 1.0;
+
+  // Press W from ground: must initiate takeoff and lift off
+  for (let i = 0; i < 20; i++) {
+    heli.update({ throttle: 1, brake: 0, steer: 0, handbrake: 0 }, 0.05);
+  }
+  assert.ok(heli.y > 1.35, `Helicopter should lift off from ground when W is held, got y=${heli.y}`);
+  assert.equal(heli.landed, false);
+
+  // Press Space: dedicated full climb
+  const prevY = heli.y;
+  for (let i = 0; i < 20; i++) {
+    heli.update({ throttle: 0, brake: 0, steer: 0, handbrake: 1 }, 0.05);
+  }
+  assert.ok(heli.y > prevY + 5.0, `Helicopter should climb rapidly with Space, gained ${heli.y - prevY}m`);
+});
+
