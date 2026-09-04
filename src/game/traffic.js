@@ -543,16 +543,50 @@ export class Traffic {
     return out;
   }
 
+  /* Dropped weapons: a downed officer's gun stays on the road for 40 s and the
+     player can walk over it to take it (GTA's oldest loop). One list, no
+     allocation beyond the drop record; the gun mesh is re-parented, not cloned. */
+  #dropWeapon(c) {
+    this.drops ??= [];
+    const g = c.gun; if (!g) return;
+    c.joints.armR.remove(g);
+    g.position.set(c.officer.position.x + 0.4, groundHeightAt(c.officer.position.x, c.officer.position.z) + 0.03, c.officer.position.z + 0.3);
+    g.rotation.set(Math.PI / 2, 0, this.rand() * Math.PI * 2);
+    g.visible = true;
+    this.scene.add(g);
+    this.drops.push({ kind: c.gunKind, mesh: g, t: 40, x: g.position.x, z: g.position.z });
+    c.gun = null;
+  }
+
+  /** Called by main each frame: hands back a dropped weapon kind if the player stands on one. */
+  pickupAt(x, z) {
+    if (!this.drops) return null;
+    for (let i = this.drops.length - 1; i >= 0; i--) {
+      const d = this.drops[i];
+      if (Math.hypot(d.x - x, d.z - z) < 1.2) { this.scene.remove(d.mesh); this.drops.splice(i, 1); return d.kind; }
+    }
+    return null;
+  }
+
+  #tickDrops(dt) {
+    if (!this.drops) return;
+    for (let i = this.drops.length - 1; i >= 0; i--) {
+      const d = this.drops[i]; d.t -= dt;
+      if (d.t <= 0) { this.scene.remove(d.mesh); this.drops.splice(i, 1); }
+    }
+  }
+
   /** A player round hit a deployed officer. Two rifle rounds or four pistol rounds put him down. */
   officerHit(c, damage = 26) {
     if (!c?.deployed || c.down > 0) return false;
     c.hp -= damage;
     c.quietFor = 0;
-    if (c.hp <= 0) { c.state = 'down'; c.down = 0.001; this.chatter?.radio?.('Officer down! Officer down!'); return true; }
+    if (c.hp <= 0) { c.state = 'down'; c.down = 0.001; this.chatter?.radio?.('Officer down! Officer down!'); this.#dropWeapon(c); return true; }
     return false;
   }
 
   update(player, dt, time) {
+    this.#tickDrops(dt);
     this.time = time !== undefined ? time : this.time + dt;
     const t = this.time;
     this.player = player;
@@ -742,10 +776,15 @@ export class Traffic {
            Cover behind the door, peek out to fire an aimed burst that needs a
            real line of sight, back into cover, advance to the next cover when
            you go quiet, cuff you when you stop, go down when hit. */
+        // run down by the car: a deployed officer within a bonnet's length of a moving car goes down
+        if (!c.down && !player.onFoot && (player.speed ?? 0) > 4 && Math.hypot(c.officer.position.x - player.x, c.officer.position.z - player.z) < 1.7) {
+          this.officerHit(c, 100);
+          this.reportCrime?.('police', 6);
+        }
         if (c.down > 0) {
           c.down += dt;
           poseOfficer(c.joints, 'fall', Math.min(1, c.down / 0.6));
-          c.gun.visible = false; c.flash.visible = false;
+          if (c.gun) c.gun.visible = false; if (c.flash) c.flash.visible = false;
           if (c.down > 12) { c.deployed = false; c.officer.visible = false; c.live = false; c.mesh.visible = false; c.mode = 'road'; }
           continue;
         }
@@ -760,7 +799,7 @@ export class Traffic {
         if (next !== c.state) {
           if (next === 'peek') { const b = burstFor(c.gunKind); c.burstLeft = b.shots; c.fireT = 0.12; }
           if (next === 'advance') { const ang = Math.atan2(player.z - c.coverZ, player.x - c.coverX); const step = Math.min(8, Math.max(0, gap - 7)); c.coverX += Math.cos(ang) * step; c.coverZ += Math.sin(ang) * step; }
-          if (next === 'down') { c.down = 0.001; this.chatter?.radio?.('Officer down! Officer down!'); }
+          if (next === 'down') { c.down = 0.001; this.chatter?.radio?.('Officer down! Officer down!'); this.#dropWeapon(c); }
           else if (next === 'advance') this.chatter?.radio?.('Suspect has gone quiet. Moving up.');
           else if (next === 'arrest') this.chatter?.radio?.('On the ground! Hands where I can see them!');
           else if (next === 'peek' && c.state === 'cover' && c.stateT > 3) this.chatter?.radio?.('Taking fire, returning fire.');
@@ -784,13 +823,13 @@ export class Traffic {
         c.blender.apply(c.joints, c.pose, c.state === 'advance' ? c.poseT * 6 : c.poseT, dt, c.pose === 'peek' ? 0.12 : 0.22);
         // eyes on you: the head turns toward the player within what a neck allows
         lookAt(c.joints, Math.atan2(-(player.z - sz), player.x - sx) - face);
-        c.gun.visible = !arresting;
+        if (c.gun) c.gun.visible = !arresting;
 
         /* Fire only from 'peek', only with a line, one aimed shot per weapon
            cycle inside the burst. Each shot is a real ray with the officer's
            skill on top of the weapon's spread; a miss is heard, not felt. */
         c.fireT -= dt;
-        c.flash.visible = c.fireT > -0.06 && c.fireT < 0 && c.state === 'peek';
+        if (c.flash) c.flash.visible = c.fireT > -0.06 && c.fireT < 0 && c.state === 'peek';
         if (c.state === 'peek' && c.burstLeft > 0 && c.fireT <= -0.06) {
           const b = burstFor(c.gunKind);
           c.fireT = b.gap;

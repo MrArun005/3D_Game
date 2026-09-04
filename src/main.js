@@ -1432,6 +1432,8 @@ function frameBody() {
   if (net) net.update(car, dt);
   weapon.update(dt);
   modes?.update(dt);
+  // walk over a downed officer's weapon and it is yours, magazine full
+  if (onFoot.active) { const k = traffic.pickupAt?.(onFoot.x, onFoot.z); if (k) { weapon.switchTo(k) || (weapon.ammo = weapon.magSize); refreshHeldGun(); hud.flash(`PICKED UP ${ARSENAL[k].name}`); } }
   if (modes?.active) hud.setJob?.(modes.line());
   else if (modes?.justEnded) { modes.justEnded = false; hud.setJob?.(null); }
   const adsTarget = aiming && onFoot.active ? 1 : 0;
