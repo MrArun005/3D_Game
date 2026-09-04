@@ -232,6 +232,24 @@ export class Phone {
         this.content.appendChild(cCard);
       });
     } else if (this.tab === 'contacts') {
+      // Maze Bank Tester Grant (One-touch test funds)
+      const fundCard = document.createElement('div');
+      fundCard.style.cssText = 'background: rgba(46, 204, 113, 0.12); border: 1px solid rgba(46, 204, 113, 0.35); border-radius: 12px; padding: 12px; display:flex; justify-content:space-between; align-items:center;';
+      fundCard.innerHTML = `
+        <div>
+          <div style="font-weight:800; font-size:13px; color:#2ecc71;">MAZE BANK TEST GRANT</div>
+          <div style="font-size:11px; color:#bbb;">+$50,000 · Test Heli ($2.5k), Tank ($12k), Tuning</div>
+        </div>
+        <button id="claim-funds-btn" style="padding:8px 14px; border-radius:8px; border:none; background:#27ae60; color:#fff; font-weight:800; font-size:11px; cursor:pointer;">
+          +$50K CASH
+        </button>
+      `;
+      fundCard.querySelector('#claim-funds-btn').onclick = () => {
+        this.garage.addCash(50000, 'TESTER GRANT');
+        this.#render();
+      };
+      this.content.appendChild(fundCard);
+
       // Pegasus Helicopter Dispatch
       const heliCard = document.createElement('div');
       heliCard.style.cssText = 'background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 12px; display:flex; justify-content:space-between; align-items:center;';

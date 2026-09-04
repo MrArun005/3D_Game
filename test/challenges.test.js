@@ -172,3 +172,34 @@ test('StoryManager and Jobs automatically auto-map GPS waypoint to challenge tar
   jobs.toggle({ x: 0, z: 0 }); // abandon
   assert.equal(waypoint, null, 'Abandoning job must clear GPS waypoint');
 });
+
+test('Jobs grants one-time $50,000 test funds to player and persists flag', () => {
+  const store = {};
+  const mockStorage = {
+    getItem: (k) => store[k] ?? null,
+    setItem: (k, v) => { store[k] = String(v); },
+  };
+
+  const origStorage = globalThis.localStorage;
+  globalThis.localStorage = mockStorage;
+
+  try {
+    const mockMission = { addListener: () => {} };
+    const mockTraffic = {};
+    const mockHud = { setJob: () => {}, flash: () => {} };
+    const mockDistrict = { blocks: [], graph: { nodes: [] } };
+
+    // First initialization: grants $50,000
+    const jobs1 = new Jobs(mockMission, mockTraffic, mockHud, mockDistrict);
+    assert.equal(jobs1.cash, 50000, 'First startup should grant $50,000 test funds');
+    assert.equal(store['hb.grant_50k'], '1', 'Should set one-time grant flag');
+    assert.equal(store['hb.cash'], '50000', 'Should persist $50,000 cash balance');
+
+    // Second initialization: does not double grant
+    const jobs2 = new Jobs(mockMission, mockTraffic, mockHud, mockDistrict);
+    assert.equal(jobs2.cash, 50000, 'Second startup should retain $50,000 without double-granting');
+  } finally {
+    if (origStorage) globalThis.localStorage = origStorage;
+    else delete globalThis.localStorage;
+  }
+});

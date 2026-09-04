@@ -25,10 +25,17 @@ export class Jobs {
     this.mission = mission; this.traffic = traffic; this.hud = hud; this.district = district; this.audio = audio;
     this.navigation = navigation;
     let savedCash = 0, savedDone = 0;
+    let grantedBonus = false;
     try {
       if (typeof localStorage !== 'undefined') {
         savedCash = Number(localStorage.getItem('hb.cash') || 0);
         savedDone = Number(localStorage.getItem('hb.jobs') || 0);
+        if (!localStorage.getItem('hb.grant_50k')) {
+          savedCash += 50000;
+          grantedBonus = true;
+          localStorage.setItem('hb.grant_50k', '1');
+          localStorage.setItem('hb.cash', String(savedCash));
+        }
       }
     } catch { /* private mode */ }
     this.cash = savedCash;
@@ -42,6 +49,11 @@ export class Jobs {
       mission.onFinish = (t) => { if (prev) prev(t); this.#finish(t); };
     }
     this.#show();
+    if (grantedBonus && this.hud) {
+      setTimeout(() => {
+        if (this.hud?.flash) this.hud.flash('💰 +$50,000 TEST FUNDS CREDITED! OPEN PHONE [M] TO CALL HELI / TANK');
+      }, 1500);
+    }
   }
 
   #districtAt(x, z) {
