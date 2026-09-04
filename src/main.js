@@ -350,7 +350,7 @@ function placeHeldGun() {
   const sx = Math.cos(yaw + Math.PI / 2), sz = -Math.sin(yaw + Math.PI / 2);
   // right hand: forward of the chest and out to the side, same convention as
   // the officer's stance in traffic.js
-  heldGun.position.set(onFoot.x + fx * 0.26 + sx * 0.20, 1.14, onFoot.z + fz * 0.26 + sz * 0.20);
+  heldGun.position.set(onFoot.x + fx * 0.26 + sx * 0.20, (onFoot.y || 0) + 1.14, onFoot.z + fz * 0.26 + sz * 0.20);
   heldGun.rotation.set(0, yaw, 0);
   heldGun.visible = true;
 }
@@ -370,7 +370,7 @@ function pullTrigger() {
   camera.getWorldDirection(_triggerDir);
   const ox = onFoot.active ? onFoot.x : car.x;
   const oz = onFoot.active ? onFoot.z : car.z;
-  const oy = onFoot.active ? 1.35 : 1.0;
+  const oy = onFoot.active ? ((onFoot.y || 0) + 1.35) : 1.0;
 
   _triggerTargets.length = 0;
   if (crowd) {
@@ -593,7 +593,7 @@ function useVehicle() {
       x: prev.x - sy * exitOffset,
       z: prev.z - cy * exitOffset,
       yaw: prev.yaw || 0,
-    });
+    }, (x, z) => Math.max(world.district?.elevationAt?.(x, z) ?? 0, groundHeightAt(x, z)));
     hud.flash('EXITED VEHICLE');
     return;
   }
@@ -696,7 +696,7 @@ function useVehicle() {
       }
     }
     driverDoor(1.4);                       // step out; it swings shut behind you
-    onFoot.exit(car);
+    onFoot.exit(car, (x, z) => Math.max(world.district?.elevationAt?.(x, z) ?? 0, groundHeightAt(x, z)));
     hero.visible = true;
     car.throttle = 0; car.brake = 1; car.hand = 1;
   }
@@ -1058,7 +1058,15 @@ async function stopFilm({ download = true } = {}) {
 function applyPerk(persona) {
   window._activePersona = persona;
   if (!persona) return;
-  if (persona.id === 'leo') {
+  if (persona.id === 'valerie') {
+    car.steerBoost = 1.15;
+    car.ramForce = 1.1;
+    car.cashMult = 1.15;
+  } else if (persona.id === 'maya') {
+    car.steerBoost = 1.25;
+    car.ramForce = 1.0;
+    car.cashMult = 1.1;
+  } else if (persona.id === 'leo') {
     car.steerBoost = 1.35;
     car.ramForce = 1.0;
     car.cashMult = 1.0;
@@ -1204,7 +1212,7 @@ function frameBody() {
     activeVehicle.update(c, dt, { firing, chase });
     car.throttle = 0; car.brake = 1; car.steerTarget = 0; car.vx = 0; car.vz = 0;
   } else if (onFoot.active) {
-    onFoot.update(c, dt, camera, walkSolid);
+    onFoot.update(c, dt, camera, walkSolid, (x, z) => Math.max(world.district?.elevationAt?.(x, z) ?? 0, groundHeightAt(x, z)));
     car.throttle = 0; car.brake = 1; car.steerTarget = 0;
   } else {
   car.holdGear = c.hold;
@@ -1318,7 +1326,7 @@ function frameBody() {
      stopped" precondition for the arrest every single frame. */
   const currentVehicle = (activeVehicle && activeVehicle !== carVehicle) ? activeVehicle : car;
   const quarry = onFoot.active
-    ? { x: onFoot.x, z: onFoot.z, vx: onFoot.vx, vz: onFoot.vz,
+    ? { x: onFoot.x, y: onFoot.y, z: onFoot.z, vx: onFoot.vx, vz: onFoot.vz,
         speed: Math.hypot(onFoot.vx, onFoot.vz) }
     : currentVehicle;
   traffic.update(quarry, dt, worldTime);

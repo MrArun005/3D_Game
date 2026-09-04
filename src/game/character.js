@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { retargetClip } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { PARTS } from '../../tools/avatar/avatar.mjs';
+import { SHAPES } from '../../tools/avatar/shapes.mjs';
 
 /**
  * The player, as an actual rigged human.
@@ -37,6 +38,8 @@ export const CHARACTERS = [
 ];
 
 export const NAMED_CHARACTERS = [
+  { id: 'valerie', name: 'VALERIE CROSS', role: 'SHADOW OPERATIVE', perk: 'Agile athletics & silent footwork', index: 9 },
+  { id: 'maya', name: 'MAYA LIN', role: 'STREET RACER', perk: 'Precision apex control & drift bonus', index: 2 },
   { id: 'leo', name: 'LEO VANCE', role: 'GETAWAY SPECIALIST', perk: 'Sharper steering response', index: 0 },
   { id: 'marcus', name: 'MARCUS STERLING', role: 'MASTERMIND', perk: 'Cool heat & +20% payouts', index: 3 },
   { id: 'jax', name: 'JAX MILLER', role: 'ENFORCER', perk: 'Heavy ram force & NOS boost', index: 6 },
@@ -104,19 +107,25 @@ const CLIPS = {
   idle: ['Idle', 'Standing'],
   walk: ['Walk'],
   run: ['Run'],
+  jump: ['Jump'],
+  runningJump: ['RunningJump'],
   hit: ['Death'],
   punch: ['Punch'],
 };
 const TARGET_HEIGHT = 1.78;            // metres, so they match the cars
 
 export class Character {
-  constructor(scene, url = CHARACTERS[0]) {
+  constructor(scene, url = CHARACTERS[9]) {
     this.root = new THREE.Group();
     this.root.visible = false;
     scene.add(this.root);
     this.ready = false;
     this.actions = {};
     this.current = null;
+    this.morphMeshes = [];
+    this.blinkTimer = 2.0;
+    this.blinkProgress = -1;
+    this.blinkDuration = 0.15;
     this.index = Math.max(0, CHARACTERS.indexOf(url));
     this.#load(url);
   }
@@ -143,68 +152,154 @@ export class Character {
     this.mixer = null;
     this.actions = {};
     this.current = null;
+    this.morphMeshes = [];
     this.ready = false;
     this.#load(CHARACTERS[i]);
     this.root.visible = wasVisible;
     return i;
   }
 
+  setMorph(name, val) {
+    for (let i = 0; i < this.morphMeshes.length; i++) {
+      const m = this.morphMeshes[i];
+      let idx = m.morphTargetDictionary ? m.morphTargetDictionary[name] : -1;
+      if (idx === undefined || idx < 0) {
+        idx = SHAPES.indexOf(name);
+      }
+      if (idx >= 0 && idx < m.morphTargetInfluences.length) {
+        m.morphTargetInfluences[idx] = val;
+      }
+    }
+  }
+
+  #initFace() {
+    this.blinkTimer = 1.5 + Math.random() * 2.0;
+    this.blinkProgress = -1;
+    this.blinkDuration = 0.15;
+    // Naturally warm, confident, pretty resting facial expression
+    this.setMorph('mouthSmile', 0.14);
+    this.setMorph('browInnerUp', 0.06);
+    this.setMorph('eyeSquintLeft', 0.04);
+    this.setMorph('eyeSquintRight', 0.04);
+  }
+
+  #updateFace(dt) {
+    if (!this.morphMeshes.length) return;
+    this.blinkTimer -= dt;
+    if (this.blinkTimer <= 0 && this.blinkProgress < 0) {
+      this.blinkProgress = 0;
+      this.blinkTimer = 3.2 + Math.random() * 2.2;
+    }
+    if (this.blinkProgress >= 0) {
+      this.blinkProgress += dt / this.blinkDuration;
+      if (this.blinkProgress >= 1) {
+        this.blinkProgress = -1;
+        this.setMorph('eyeBlinkLeft', 0);
+        this.setMorph('eyeBlinkRight', 0);
+      } else {
+        const w = Math.sin(this.blinkProgress * Math.PI);
+        this.setMorph('eyeBlinkLeft', w);
+        this.setMorph('eyeBlinkRight', w);
+      }
+    }
+  }
+
   #load(url) {
-    new GLTFLoader().load(url, async (gltf) => {
-      const model = gltf.scene;
-      model.traverse((o) => {
-        if (!o.isMesh) return;
-        o.castShadow = true;
-        o.receiveShadow = true;
-        o.frustumCulled = false;      // skinned bounds go stale as it animates
-        if (WARDROBE_PARTS.has(o.name)) o.visible = false;   // wardrobe is a menu
-      });
+    try {
+      new GLTFLoader().load(url, async (gltf) => {
+        const model = gltf.scene;
+        this.morphMeshes = [];
+        model.traverse((o) => {
+          if (!o.isMesh && !o.isSkinnedMesh) return;
+          o.castShadow = true;
+          o.receiveShadow = true;
+          o.frustumCulled = false;      // skinned bounds go stale as it animates
+          if (o.name === 'Wolf3D_Glasses' || WARDROBE_PARTS.has(o.name)) o.visible = false;   // reveal eyes/face
+          if (o.morphTargetInfluences && o.morphTargetInfluences.length > 0) {
+            this.morphMeshes.push(o);
+          }
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          for (const m of mats) {
+            if (!m) continue;
+            if (m.name === 'Wolf3D_Eye' || o.name.includes('Eye')) {
+              m.roughness = 0.12;
+              m.metalness = 0.05;
+              if (m.color) m.color.multiplyScalar(1.15); // glowing vivid iris
+            } else if (m.name === 'Wolf3D_Skin') {
+              m.roughness = 0.55;
+              m.metalness = 0.02;
+            } else if (m.name === 'Wolf3D_Hair') {
+              m.roughness = 0.62;
+            }
+          }
+        });
 
-      // normalise: these packs are authored at whatever scale suits them
-      const box = new THREE.Box3().setFromObject(model);
-      const h = box.max.y - box.min.y || 1;
-      const s = TARGET_HEIGHT / h;
-      model.scale.setScalar(s);
-      model.position.y = -box.min.y * s;
-      this.root.add(model);
+        // normalise: these packs are authored at whatever scale suits them
+        const box = new THREE.Box3().setFromObject(model);
+        const h = box.max.y - box.min.y || 1;
+        const s = TARGET_HEIGHT / h;
+        model.scale.setScalar(s);
+        model.position.y = -box.min.y * s;
+        this.root.add(model);
 
-      // RPM avatars ship no clips; borrow the donor's, retargeted
-      let animations = gltf.animations;
-      let mixerRoot = model;
-      if (!animations.length) {
-        let target = null;
-        model.traverse((o) => { if (o.isSkinnedMesh) target ??= o; });
-        if (target) {
-          try { animations = await retargetedClips(target); }
-          catch (e) { console.warn('avatar retarget failed:', e?.message || e); animations = []; }
-          if (this.root.children[0] !== model) return;   // swapped away mid-await
-          if (animations.length) mixerRoot = target;     // `.bones[…]` tracks bind here
+        // RPM avatars ship no clips; borrow the donor's, retargeted
+        let animations = gltf.animations;
+        let mixerRoot = model;
+        if (!animations.length) {
+          let target = null;
+          model.traverse((o) => { if (o.isSkinnedMesh) target ??= o; });
+          if (target) {
+            try { animations = await retargetedClips(target); }
+            catch (e) { console.warn('avatar retarget failed:', e?.message || e); animations = []; }
+            if (this.root.children[0] !== model) return;   // swapped away mid-await
+            if (animations.length) mixerRoot = target;     // `.bones[…]` tracks bind here
+          }
         }
-      }
 
-      this.mixer = new THREE.AnimationMixer(mixerRoot);
-      for (const [key, names] of Object.entries(CLIPS)) {
-        const clip = animations.find((a) =>
-          names.some((n) => a.name.toLowerCase().endsWith(n.toLowerCase())));
-        if (clip) this.actions[key] = this.mixer.clipAction(clip);
-      }
-      this.play('idle', 0);
-      this.ready = true;
-      if (this.onReady) this.onReady();
-    }, undefined, (err) => {
-      console.warn('character failed to load, keeping the box figure:', err?.message || err);
+        this.mixer = new THREE.AnimationMixer(mixerRoot);
+        for (const [key, names] of Object.entries(CLIPS)) {
+          const clip = animations.find((a) => {
+            const lower = a.name.toLowerCase();
+            return names.some((n) => {
+              const nl = n.toLowerCase();
+              return lower === nl || lower.endsWith('_' + nl) || lower.endsWith('|' + nl);
+            });
+          }) || animations.find((a) =>
+            names.some((n) => a.name.toLowerCase().endsWith(n.toLowerCase()))
+          );
+          if (clip) this.actions[key] = this.mixer.clipAction(clip);
+        }
+        this.play('idle', 0);
+        this.#initFace();
+        this.ready = true;
+        if (this.onReady) this.onReady();
+      }, undefined, (err) => {
+        console.warn('character failed to load, keeping the box figure:', err?.message || err);
+        if (this.onFail) this.onFail();
+      });
+    } catch (err) {
       if (this.onFail) this.onFail();
-    });
+    }
   }
 
   /** Cross-fade to a state. Re-requesting the current one is a no-op. */
   play(name, fade = 0.22) {
-    const next = this.actions[name];
+    let next = this.actions[name];
+    if (!next && name === 'runningJump') next = this.actions.jump;
     if (!next || next === this.current) return;
     next.reset();
     next.enabled = true;
     next.setEffectiveWeight(1);
-    if (name === 'hit') { next.clampWhenFinished = true; next.setLoop(THREE.LoopOnce, 1); }
+    if (name === 'hit') {
+      next.clampWhenFinished = true;
+      next.setLoop(THREE.LoopOnce, 1);
+    } else if (name === 'jump' || name === 'runningJump') {
+      next.clampWhenFinished = true;
+      next.setLoop(THREE.LoopOnce, 1);
+    } else {
+      next.clampWhenFinished = false;
+      next.setLoop(THREE.LoopRepeat, Infinity);
+    }
     if (this.current) next.crossFadeFrom(this.current, fade, false);
     next.play();
     this.current = next;
@@ -224,17 +319,31 @@ export class Character {
   }
 
   /** `speed` in m/s decides the clip; the model faces +X like everything else. */
-  update(dt, x, y, z, yaw, speed) {
+  update(dt, x, y, z, yaw, speed, isGrounded = true) {
     if (!this.ready) return;
     this.root.position.set(x, y, z);
     this.root.rotation.y = -yaw + Math.PI / 2;
+    this.#updateFace(dt);
+
     if (!(this.busyUntil > performance.now())) {
-      this.play(speed > 4.2 ? 'run' : speed > 0.35 ? 'walk' : 'idle');
+      if (!isGrounded) {
+        if (speed > 3.8 && this.actions.runningJump) {
+          this.play('runningJump', 0.12);
+        } else if (this.actions.jump) {
+          this.play('jump', 0.12);
+        }
+      } else {
+        this.play(speed > 4.2 ? 'run' : speed > 0.35 ? 'walk' : 'idle', 0.2);
+      }
     }
     // the clips are authored at their own pace; nudge playback so the feet
     // roughly keep up with how fast we are actually moving
     if (this.current) {
-      this.current.timeScale = speed > 0.35 ? Math.max(0.6, Math.min(1.7, speed / (speed > 4.2 ? 5.2 : 1.9))) : 1;
+      if (this.current === this.actions.jump || this.current === this.actions.runningJump) {
+        this.current.timeScale = 1.05;
+      } else {
+        this.current.timeScale = speed > 0.35 ? Math.max(0.6, Math.min(1.7, speed / (speed > 4.2 ? 5.2 : 1.9))) : 1;
+      }
     }
     this.mixer.update(dt);
   }

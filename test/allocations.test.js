@@ -11,6 +11,8 @@ test('no forbidden THREE allocations in hot update() loops', () => {
     'src/game/traffic.js',
     'src/game/crowd.js',
     'src/game/people.js',
+    'src/game/onfoot.js',
+    'src/game/character.js',
   ];
 
   for (const rel of hotFiles) {

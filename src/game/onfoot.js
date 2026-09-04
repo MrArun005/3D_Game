@@ -15,19 +15,25 @@ import { Character, CHARACTERS } from '../game/character.js';
  * trains people to expect: push forward, go where you are looking.
  */
 
-const WALK = 3.1;
-const RUN = 6.4;
-const ACCEL = 26;
+const WALK = 3.2;
+const RUN = 7.0;
+const ACCEL = 32;
 const RADIUS = 0.42;
+const GRAVITY = 18.0;
+const JUMP_VELOCITY = 5.6;
 
 export class OnFoot {
   constructor(scene) {
-    this.x = 0; this.z = 0; this.yaw = 0;
-    this.vx = 0; this.vz = 0;
+    this.x = 0; this.y = 0; this.z = 0;
+    this.yaw = 0;
+    this.vx = 0; this.vz = 0; this.vy = 0;
+    this.groundY = 0;
+    this.isGrounded = true;
+    this.jumpCooldown = 0;
     this.active = false;
     this.bob = 0;
     this.camYaw = 0;
-    this.camPitch = 0;
+    this.camPitch = 0.08;
     this.camPos = new THREE.Vector3();
 
     const body = new THREE.Mesh(
@@ -49,22 +55,29 @@ export class OnFoot {
 
     /* The blocks above stay as the fallback. If the rigged model loads they
        are hidden and never used again; if it fails you still have a body. */
-    /* Which of the six you are. `?me=` picks one for a session -- useful for
-       a multiplayer room, where two players otherwise arrive as the same
-       person -- and K cycles in play. */
-    const want = Number(new URLSearchParams(location.search).get('me'));
-    this.character = new Character(scene,
-      CHARACTERS[Number.isFinite(want) ? ((want % CHARACTERS.length) + CHARACTERS.length) % CHARACTERS.length : 0]);
+    /* Which of the characters you are. ?me= picks one; default is Valerie Cross (index 9).
+       K cycles in play. */
+    const want = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('me') : null;
+    const defaultIdx = 9; // VALERIE CROSS (featured pretty hero face)
+    const charIdx = (want !== null && Number.isFinite(Number(want)))
+      ? (((Number(want) % CHARACTERS.length) + CHARACTERS.length) % CHARACTERS.length)
+      : defaultIdx;
+    this.character = new Character(scene, CHARACTERS[charIdx]);
     this.character.onReady = () => { this.group.visible = false; this.character.show(this.active); };
   }
 
   /** Step out of the car, standing at the driver's door. */
-  exit(car) {
+  exit(car, elevationAt = null) {
     const side = car.yaw + Math.PI / 2;     // left of travel
     this.x = car.x + Math.cos(side) * 1.85;
     this.z = car.z - Math.sin(side) * 1.85;
+    this.groundY = elevationAt ? elevationAt(this.x, this.z) : (car.y !== undefined ? car.y - 0.62 : 0);
+    this.y = this.groundY;
+    this.vy = 0;
+    this.isGrounded = true;
     this.yaw = car.yaw;
     this.camYaw = car.yaw;
+    this.camPitch = 0.08;
     this.vx = 0; this.vz = 0;
     this.active = true;
     if (this.character.ready) this.character.show(true);
@@ -79,59 +92,121 @@ export class OnFoot {
 
   enter() {
     this.active = false;
+    this.vy = 0;
     this.group.visible = false;
     this.character.show(false);
   }
 
   /**
-   * `c` is the shared control read: throttle/brake drive forward/back and
-   * steer turns the camera, so the same keys work in both modes without a
-   * second binding scheme.
+   * `c` is the shared control read:
+   * W/S drive forward/backward along camera look.
+   * A/D strafe left/right perpendicular to camera look.
+   * Space triggers jump.
+   * Shift sprints.
    */
-  update(c, dt, camera, solid) {
+  update(c, dt, camera, solid, elevationAt = null) {
     if (!this.active) return;
 
-    // A/D swing the view; W/S move along it
-    this.camYaw += c.steer * dt * 2.6;
+    // Movement intent:
+    // W/S drive forward/backward along camera look
+    // A/D strafe left/right perpendicular to camera look
     const fwd = (c.throttle || 0) - (c.brake || 0);
-    const run = c.hold ? RUN : WALK;
-    const wantX = Math.cos(this.camYaw) * fwd * run;
-    const wantZ = -Math.sin(this.camYaw) * fwd * run;
-    this.vx += (wantX - this.vx) * Math.min(1, dt * ACCEL / 4);
-    this.vz += (wantZ - this.vz) * Math.min(1, dt * ACCEL / 4);
+    const strafe = -(c.steer || 0); // A has c.steer = +1 -> strafe left (-1); D has c.steer = -1 -> strafe right (+1)
+
+    // Camera look vectors in the XZ plane
+    const camFwdX = Math.cos(this.camYaw);
+    const camFwdZ = -Math.sin(this.camYaw);
+    const camRightX = Math.sin(this.camYaw);
+    const camRightZ = Math.cos(this.camYaw);
+
+    const inputMag = Math.hypot(fwd, strafe);
+    let wantX = 0, wantZ = 0;
+    if (inputMag > 0.05) {
+      const invMag = 1 / inputMag;
+      const speedTarget = (c.hold ? RUN : WALK) * Math.min(1, inputMag);
+      wantX = (camFwdX * fwd + camRightX * strafe) * invMag * speedTarget;
+      wantZ = (camFwdZ * fwd + camRightZ * strafe) * invMag * speedTarget;
+    }
+
+    const accelRate = this.isGrounded ? ACCEL : (ACCEL * 0.45);
+    this.vx += (wantX - this.vx) * Math.min(1, dt * accelRate);
+    this.vz += (wantZ - this.vz) * Math.min(1, dt * accelRate);
 
     const nx = this.x + this.vx * dt;
     const nz = this.z + this.vz * dt;
     const [px, pz] = solid ? solid(nx, nz, RADIUS) : [nx, nz];
     this.x = px; this.z = pz;
 
+    // Elevation & ground tracking
+    this.groundY = elevationAt ? elevationAt(this.x, this.z) : 0;
+
+    // Jump trigger
+    this.jumpCooldown = Math.max(0, this.jumpCooldown - dt);
+    if (c.handbrake && this.isGrounded && this.jumpCooldown <= 0) {
+      this.vy = JUMP_VELOCITY;
+      this.isGrounded = false;
+      this.jumpCooldown = 0.35;
+    }
+
+    // Vertical airborne dynamics & gravity
+    if (!this.isGrounded) {
+      this.vy -= GRAVITY * dt;
+      this.y += this.vy * dt;
+      if (this.y <= this.groundY) {
+        this.y = this.groundY;
+        this.vy = 0;
+        this.isGrounded = true;
+      }
+    } else {
+      if (this.y > this.groundY + 0.22) {
+        this.isGrounded = false;
+        this.vy = 0;
+      } else {
+        this.y += (this.groundY - this.y) * Math.min(1, dt * 24);
+      }
+    }
+
     const speed = Math.hypot(this.vx, this.vz);
-    if (speed > 0.2) this.yaw = Math.atan2(-this.vz, this.vx);
+    if (speed > 0.2) {
+      const targetYaw = Math.atan2(-this.vz, this.vx);
+      let diff = targetYaw - this.yaw;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      this.yaw += diff * Math.min(1, dt * 14);
+    }
     this.bob += dt * speed * 2.1;
 
     if (this.character.ready) {
-      this.character.update(dt, this.x, 0, this.z, this.yaw, speed);
+      this.character.update(dt, this.x, this.y, this.z, this.yaw, speed, this.isGrounded);
     } else {
-      this.group.position.set(this.x, Math.abs(Math.sin(this.bob)) * 0.055, this.z);
+      this.group.position.set(this.x, this.y + Math.abs(Math.sin(this.bob)) * 0.055, this.z);
       this.group.rotation.y = -this.yaw + Math.PI / 2;
     }
 
-    // camera: over the shoulder, lagging the look direction
-    const back = 5.2, up = 2.35;
-    const flat = Math.cos(this.camPitch);
-    const tx = this.x - Math.cos(this.camYaw) * back * flat;
-    const tz = this.z + Math.sin(this.camYaw) * back * flat;
-    const k = 1 - Math.pow(0.0025, dt);
-    this.camPos.x += (tx - this.camPos.x) * k;
-    this.camPos.y += (up + Math.sin(this.camPitch) * back - this.camPos.y) * k;
-    this.camPos.z += (tz - this.camPos.z) * k;
-    camera.position.copy(this.camPos);
-    camera.lookAt(
-      this.x + Math.cos(this.camYaw) * 6 * flat,
-      1.35 - Math.sin(this.camPitch) * 3,
-      this.z - Math.sin(this.camYaw) * 6 * flat,
-    );
-    if (Math.abs(camera.fov - 62) > 0.01) { camera.fov = 62; camera.updateProjectionMatrix(); }
+    // Camera: over the shoulder, smoothly tracking position and elevation
+    if (camera) {
+      const back = c.hold ? 5.2 : 4.6;
+      const up = 2.15;
+      const flat = Math.cos(this.camPitch);
+      const tx = this.x - Math.cos(this.camYaw) * back * flat;
+      const tz = this.z + Math.sin(this.camYaw) * back * flat;
+      const ty = this.y + up + Math.sin(this.camPitch) * back;
+      const k = 1 - Math.pow(0.002, dt);
+      this.camPos.x += (tx - this.camPos.x) * k;
+      this.camPos.y += (ty - this.camPos.y) * k;
+      this.camPos.z += (tz - this.camPos.z) * k;
+      camera.position.copy(this.camPos);
+      camera.lookAt(
+        this.x + Math.cos(this.camYaw) * 6 * flat,
+        this.y + 1.35 - Math.sin(this.camPitch) * 3,
+        this.z - Math.sin(this.camYaw) * 6 * flat,
+      );
+      const targetFov = c.hold && speed > 4.8 ? 66 : 60;
+      if (camera.fov !== undefined && Math.abs(camera.fov - targetFov) > 0.05) {
+        camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 8);
+        camera.updateProjectionMatrix();
+      }
+    }
   }
 }
 
