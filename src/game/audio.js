@@ -262,6 +262,20 @@ export function createAudio() {
       }
       g.connect(p); p.connect(master);
     },
+    /* A round going past your head: a short band of noise sweeping down, panned
+       to the side it passed on. The miss you hear is what makes the hit you
+       take feel earned. */
+    whiz(pan = 0) {
+      if (!ready || !ctx || ctx.state !== 'running') return;
+      const now = ctx.currentTime, n = ctx.createBufferSource();
+      n.buffer = makeNoise(ctx, 0.14);
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 2.2;
+      bp.frequency.setValueAtTime(3200, now); bp.frequency.exponentialRampToValueAtTime(500, now + 0.12);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.22, now); g.gain.exponentialRampToValueAtTime(0.0008, now + 0.13);
+      const p = ctx.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan));
+      n.connect(bp); bp.connect(g); g.connect(p); p.connect(master);
+      n.start(now); n.stop(now + 0.15);
+    },
     cash() {
       if (!ready || !ctx || ctx.state !== 'running') return;
       const now = ctx.currentTime;
