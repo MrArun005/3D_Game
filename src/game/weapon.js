@@ -42,6 +42,7 @@ export class Weapon {
     this.reloadT = 0;
     this.kick = 0;
     this.shake = 0;
+    this.spreadMul = 1;    // set by the feel layer each frame: <1 with the sights up. Scales the cone, never the heat.
 
     const flash = new THREE.Mesh(
       new THREE.SphereGeometry(0.26, 8, 6),
@@ -224,7 +225,7 @@ export class Weapon {
     if (_side.lengthSq() < 1e-6) _side.set(1, 0, 0);
     _side.normalize();
     const upv = new THREE.Vector3().crossVectors(_side, _dir).normalize();
-    const cone = spreadFor(this.kind, this.heat);
+    const cone = spreadFor(this.kind, this.heat) * this.spreadMul;
     const pellets = Math.max(1, w.pellets | 0);
 
     let hit = null, hitT = range;

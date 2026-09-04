@@ -120,3 +120,15 @@ test('reserve ammunition: reloads draw from it, switching remembers each magazin
   assert.equal(w.reload(), false, 'nothing to reload from');
   w.addMag('pistol'); assert.equal(w.ammo, ARSENAL.pistol.mag, 'an empty gun takes the mag directly');
 });
+
+test('aiming down sights tightens the cone for the shot without erasing accumulated heat', async () => {
+  const { Weapon } = await import('../src/game/weapon.js');
+  const w = new Weapon({ add() {} });
+  w.switchTo('smg'); w.cool = 0;
+  for (let i = 0; i < 6; i++) { w.fire(0, 1, 0, 1, 0, 0, []); w.cool = 0; }
+  const heatBefore = w.heat;
+  assert.ok(heatBefore > 0.1, 'six SMG rounds build real heat');
+  w.spreadMul = 0.45;
+  w.fire(0, 1, 0, 1, 0, 0, []);
+  assert.ok(w.heat >= heatBefore, 'a shot in ADS adds heat like any other; it does not reset it');
+});

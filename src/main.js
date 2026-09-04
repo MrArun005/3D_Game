@@ -450,8 +450,7 @@ function pullTrigger() {
     }
   }
   modes?.targets(_triggerTargets);
-  const spreadMul = 1 - ads * (1 - (ADS[weapon.kind]?.spread ?? 0.4));
-  weapon.heat *= spreadMul;                     // sights up: the cone you actually fire through
+  weapon.spreadMul = 1 - ads * (1 - (ADS[weapon.kind]?.spread ?? 0.4));   // sights up: a tighter cone for THIS shot; the heat you built stays
   const hit = weapon.fire(ox, oy, oz, dx, dy, dz, _triggerTargets);
   if (hit === null && !weapon.ready && weapon.ammo === 0) return;   // dry: reload started, no shot
   // recoil: a learnable path, indexed by shots in this burst; gentler on the sights
