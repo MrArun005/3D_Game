@@ -24,7 +24,7 @@ export class Mission {
     this.points = [];
     this.index = 0;
     this.time = 0;
-    this.best = Number(localStorage.getItem('hb.best') || 0) || null;
+    this.best = (typeof localStorage !== 'undefined') ? (Number(localStorage.getItem('hb.best') || 0) || null) : null;
     this.message = '';
     this.messageFor = 0;
 
@@ -135,14 +135,22 @@ export class Mission {
     this.#place();
   }
 
-  /** Route to a given list of graph nodes (jobs.js). No best-time bookkeeping. */
-  route(points, label) {
+  /** Route to a given list of graph nodes (jobs.js) or story mission steps. No best-time bookkeeping. */
+  route(points, label, isStory = false) {
     this.points = points; this.index = 0; this.time = 0; this.active = true; this.isJob = true;
+    this.isStory = !!isStory;
+    this._radiusScale = 1.0;
     this.#say(label); this.#place();
+  }
+
+  setRadius(r = RING_R) {
+    this._radiusScale = Math.max(0.6, r / RING_R);
   }
 
   stop(reason) {
     this.active = false;
+    this.isStory = false;
+    this._radiusScale = 1.0;
     this.marker.visible = false;
     this.nextMarker.visible = false;
     if (reason) this.#say(reason);
@@ -171,8 +179,12 @@ export class Mission {
     this.time += dt;
 
     this.ring.rotation.z += dt * 0.9;
-    const pulse = 1 + Math.sin(this.time * 4) * 0.04;
+    const baseScale = this._radiusScale || 1.0;
+    const pulse = baseScale * (1 + Math.sin(this.time * 4) * 0.04);
     this.marker.scale.set(pulse, pulse, pulse);
+
+    // If managed by StoryManager, StoryManager owns distance check, stopping requirements, and step progression.
+    if (this.isStory) return;
 
     const p = this.points[this.index];
     if (!p) return;

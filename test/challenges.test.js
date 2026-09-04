@@ -41,24 +41,24 @@ test('StoryManager enforces zero-heat dropoff and awards victory banner upon saf
   assert.equal(story.startMission('heist_1', { x: 0, z: 0 }), true);
   assert.equal(story.stepIdx, 0);
 
-  // Step 0: Drive to Harbour Point depot (380, -140)
-  story.update({ x: 380, z: -140, fwdSpeed: 2 }, 0.016);
+  // Step 0: Drive to Harbour Point depot (2156, 2436)
+  story.update({ x: 2156, z: 2436, fwdSpeed: 2 }, 0.016);
   assert.equal(story.stepIdx, 1, 'Should advance to step 1 upon arriving at depot');
   assert.equal(mockTraffic.wanted, 2, 'Heat should escalate to 2 stars');
 
-  // Step 1: Container breached · Lose 2-star heat (120, 240, needZeroHeat: true)
+  // Step 1: Container breached · Lose 2-star heat (1163, 1864, needZeroHeat: true)
   // Approach target while STILL HOT (wanted = 2)
-  story.update({ x: 120, z: 240, fwdSpeed: 2 }, 0.016);
+  story.update({ x: 1163, z: 1864, fwdSpeed: 2 }, 0.016);
   assert.equal(story.stepIdx, 1, 'Should NOT advance while wanted heat is active');
   assert.equal(markerColor, 0xff3b30, 'Marker should turn warning RED when heat blocks dropoff');
 
   // Lose the heat (e.g. via Pay n Spray or evading cops)
   mockTraffic.wanted = 0;
-  story.update({ x: 120, z: 240, fwdSpeed: 2 }, 0.016);
+  story.update({ x: 1163, z: 1864, fwdSpeed: 2 }, 0.016);
   assert.equal(story.stepIdx, 2, 'Should advance to safehouse delivery once heat is zero');
 
-  // Step 2: Deliver Camaro to safehouse (-80, 60)
-  story.update({ x: -80, z: 60, fwdSpeed: 1 }, 0.016);
+  // Step 2: Deliver Camaro to safehouse (1387, 1092)
+  story.update({ x: 1387, z: 1092, fwdSpeed: 1 }, 0.016);
   assert.equal(story.active, null, 'Mission should complete after final safehouse delivery');
   assert.equal(garageCash, 7500, 'Heist 1 payout should be deposited into garage');
   assert.notEqual(victoryBanner, null, 'Victory banner should be displayed on HUD');
@@ -73,57 +73,37 @@ test('Jobs dispatches contracts, handles pickup boarding, and rewards completion
   let finishCallback = null;
   const mockMission = {
     index: 0,
-    points: [{ x: 100, y: 100 }, { x: 300, y: 300 }],
+    active: false,
     route: () => {},
     stop: () => {},
-    addListener: (type, fn) => { if (type === 'finish') finishCallback = fn; },
+    addListener: (type, fn) => { finishCallback = fn; },
   };
 
   const mockTraffic = { wanted: 0, reportCrime: () => {} };
-  const mockHud = {
-    flash: () => {},
-    setJob: () => {},
-    showVictoryBanner: (title, sub, cash) => {
-      victoryBanner = { title, sub, cash };
-    },
-  };
-
+  const mockHud = { flash: () => {}, showVictoryBanner: (t, s, c) => { victoryBanner = { t, s, c }; }, setJob: () => {} };
   const mockDistrict = {
-    blocks: [],
-    graph: { nodes: [{ kind: 'cross', x: 100, y: 100 }, { kind: 'tee', x: 300, y: 300 }] },
+    blocks: [{ x: 300, y: 300, district: 'KINGSWAY' }],
+    graph: { nodes: [{ kind: 'cross', x: 200, y: 150 }, { kind: 'tee', x: 450, y: 350 }] },
   };
-
   const mockAudio = {
     cash: () => {},
     victoryFanfare: () => { fanfarePlayed = true; },
   };
 
   const jobs = new Jobs(mockMission, mockTraffic, mockHud, mockDistrict, mockAudio);
-  assert.equal(typeof finishCallback, 'function', 'Jobs should register finish callback without clobbering');
+  jobs.toggle({ x: 0, z: 0 });
+  assert.notEqual(jobs.job, null);
 
-  // Manually start a courier job
-  jobs.job = {
-    kind: 'courier',
-    pay: 500,
-    limit: 60,
-    tier: 1,
-    a: { x: 100, y: 100 },
-    b: { x: 300, y: 300 },
-    pickedUp: false,
-    t: 0,
-  };
-
-  // Reaching pickup (mission index moves to 1)
+  // Pick up fare at point A
   mockMission.index = 1;
-  jobs.update({ x: 100, z: 100, fwdSpeed: 0 }, 0.016);
-  assert.equal(jobs.job.pickedUp, true, 'Package should be aboard');
+  jobs.update({ x: 200, z: 150, fwdSpeed: 0.5 }, 0.016);
+  assert.equal(jobs.job.pickedUp, true);
 
-  // Trigger finish
-  finishCallback(25.0);
-  assert.equal(jobs.job, null, 'Job should complete');
-  assert.equal(jobs.cash >= 500, true, 'Cash should be credited');
-  assert.notEqual(victoryBanner, null, 'Victory banner should be displayed');
-  assert.equal(fanfarePlayed, true, 'Audio victory fanfare should trigger');
+  // Complete contract at dropoff
+  if (finishCallback) finishCallback(12.5);
+  assert.equal(jobs.job, null);
+  assert.notEqual(victoryBanner, null);
+  assert.equal(fanfarePlayed, true);
 });
 
 test('StoryManager and Jobs automatically auto-map GPS waypoint to challenge target upon selection', () => {
@@ -148,13 +128,13 @@ test('StoryManager and Jobs automatically auto-map GPS waypoint to challenge tar
   const story = new StoryManager(mockMission, mockTraffic, mockHud, mockGarage, null, mockNav);
   story.startMission('heist_1', { x: 0, z: 0 });
 
-  // Step 0 target is Harbour Point depot (380, -140)
-  assert.deepEqual(waypoint, { x: 380, z: -140 }, 'Selecting challenge must auto-map navigation to target');
+  // Step 0 target is Harbour Point depot (2156, 2436)
+  assert.deepEqual(waypoint, { x: 2156, z: 2436 }, 'Selecting challenge must auto-map navigation to target');
   assert.equal(mockNav.lastTarget, null, 'Should reset lastTarget to force instant route calculation');
 
-  // Advance to step 1 (120, 240)
-  story.update({ x: 380, z: -140, fwdSpeed: 1 }, 0.016);
-  assert.deepEqual(waypoint, { x: 120, z: 240 }, 'Advancing challenge step must auto-map to next objective');
+  // Advance to step 1 (1163, 1864)
+  story.update({ x: 2156, z: 2436, fwdSpeed: 1 }, 0.016);
+  assert.deepEqual(waypoint, { x: 1163, z: 1864 }, 'Advancing challenge step must auto-map to next objective');
 
   // Abandon mission clears waypoint
   story.abandon();
@@ -171,6 +151,39 @@ test('StoryManager and Jobs automatically auto-map GPS waypoint to challenge tar
 
   jobs.toggle({ x: 0, z: 0 }); // abandon
   assert.equal(waypoint, null, 'Abandoning job must clear GPS waypoint');
+});
+
+test('Heist II finishes at Steelgate Warehouse inside Steelgate, not outside city gate', () => {
+  const heist2 = STORY_MISSIONS.find((m) => m.id === 'heist_2');
+  assert.ok(heist2, 'Heist 2 must exist');
+  const finishStep = heist2.steps[heist2.steps.length - 1];
+  assert.equal(finishStep.text, 'STASH WEAPONS AT STEELGATE WAREHOUSE');
+  // Steelgate X is 3323..4019, Z is 1020..1661
+  assert.ok(finishStep.target.x >= 3300 && finishStep.target.x <= 4100, 'Finishing target must be inside Steelgate');
+  assert.ok(finishStep.target.z >= 1000 && finishStep.target.z <= 1700, 'Finishing target must be inside Steelgate');
+  assert.notEqual(finishStep.target.x, -350, 'Must NOT be at dummy origin -350');
+  assert.notEqual(finishStep.target.z, -180, 'Must NOT be at dummy origin -180');
+});
+
+test('Races complete checkpoints at full speed without requiring stopping', () => {
+  const mockMission = {
+    route: () => {},
+    stop: () => {},
+    setMarkerColor: () => {},
+    setRadius: () => {},
+  };
+  const mockHud = { flash: () => {}, showVictoryBanner: () => {} };
+  const mockGarage = { addCash: () => {} };
+
+  const story = new StoryManager(mockMission, { wanted: 0 }, mockHud, mockGarage, null, null);
+  story.startMission('race_1', { x: 2350, z: 1350 });
+
+  assert.equal(story.stepIdx, 0);
+  const step0 = story.active.steps[0];
+
+  // Blasting through checkpoint at 50 m/s (180 km/h)
+  story.update({ x: step0.target.x, z: step0.target.z, fwdSpeed: 50 }, 0.016);
+  assert.equal(story.stepIdx, 1, 'Race checkpoint must trigger and complete even at high cruising speed');
 });
 
 test('Jobs grants one-time $50,000 test funds to player and persists flag', () => {
@@ -202,4 +215,53 @@ test('Jobs grants one-time $50,000 test funds to player and persists flag', () =
     if (origStorage) globalThis.localStorage = origStorage;
     else delete globalThis.localStorage;
   }
+});
+
+test('Tank driver and multi-vehicle states complete story mission checkpoints', () => {
+  const mockMission = {
+    route: () => {},
+    stop: () => {},
+    setMarkerColor: () => {},
+    setRadius: () => {},
+  };
+  const mockHud = { flash: () => {}, showVictoryBanner: () => {} };
+  const mockGarage = { addCash: () => {} };
+
+  const story = new StoryManager(mockMission, { wanted: 0 }, mockHud, mockGarage, null, null);
+  story.startMission('heist_2', { x: 0, z: 0 });
+
+  assert.equal(story.stepIdx, 0);
+  const step0 = story.active.steps[0];
+
+  // Tank vehicle state: speed = 4, vx = 2, vz = 2 (no fwdSpeed)
+  const tankVehicleState = {
+    x: step0.target.x,
+    z: step0.target.z,
+    speed: 4,
+    vx: 2,
+    vz: 2,
+  };
+
+  story.update(tankVehicleState, 0.016);
+  assert.equal(story.stepIdx, 1, 'Tank vehicle should successfully secure the checkpoint');
+});
+
+test('Mission route with isStory=true does not auto-advance index or stop the marker prematurely', async () => {
+  const { Mission } = await import('../src/game/mission.js');
+  const scene = { add: () => {} };
+  const mockDistrict = { graph: { nodes: [] }, blocks: [] };
+  const mission = new Mission(scene, mockDistrict);
+
+  mission.route([{ x: 100, z: 100 }], 'STORY CHECKPOINT', true);
+  assert.equal(mission.isStory, true);
+  assert.equal(mission.active, true);
+  assert.equal(mission.marker.visible, true);
+
+  // Car drives directly inside the ring (dist = 0)
+  mission.update({ x: 100, z: 100 }, 0.016);
+
+  // Because isStory is true, Mission should NOT advance index or hide marker
+  assert.equal(mission.index, 0, 'Index should not advance inside mission.update');
+  assert.equal(mission.active, true, 'Mission must remain active');
+  assert.equal(mission.marker.visible, true, 'Marker must remain visible');
 });

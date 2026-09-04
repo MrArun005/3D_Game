@@ -7,9 +7,9 @@ export const STORY_MISSIONS = [
     payout: 7500,
     heat: 2,
     steps: [
-      { text: 'DRIVE TO HARBOUR POINT DEPOT', target: { x: 380, z: -140 }, radius: 18 },
-      { text: 'CONTAINER BREACHED · LOSE 2-STAR HEAT', target: { x: 120, z: 240 }, radius: 24, needZeroHeat: true },
-      { text: 'DELIVER THE CAMARO TO SAFEHOUSE', target: { x: -80, z: 60 }, radius: 15 }
+      { text: 'DRIVE TO HARBOUR POINT DEPOT', target: { x: 2156, z: 2436 }, radius: 24 },
+      { text: 'CONTAINER BREACHED · LOSE 2-STAR HEAT', target: { x: 1163, z: 1864 }, radius: 28, needZeroHeat: true },
+      { text: 'DELIVER THE CAMARO TO SAFEHOUSE', target: { x: 1387, z: 1092 }, radius: 22 }
     ]
   },
   {
@@ -20,9 +20,9 @@ export const STORY_MISSIONS = [
     payout: 20000,
     heat: 3,
     steps: [
-      { text: 'MEET THE CREW AT OLD QUARTER GUN SHOP', target: { x: -210, z: 180 }, radius: 20 },
-      { text: 'CARGO SECURED · SHAKE 3-STAR TACTICAL PURSUIT', target: { x: 40, z: -320 }, radius: 25, needZeroHeat: true },
-      { text: 'STASH WEAPONS AT STEELGATE WAREHOUSE', target: { x: -350, z: -180 }, radius: 18 }
+      { text: 'MEET THE CREW AT OLD QUARTER GUN SHOP', target: { x: 1387, z: 1092 }, radius: 24 },
+      { text: 'CARGO SECURED · SHAKE 3-STAR TACTICAL PURSUIT', target: { x: 2167, z: 469 }, radius: 32, needZeroHeat: true },
+      { text: 'STASH WEAPONS AT STEELGATE WAREHOUSE', target: { x: 3662, z: 1221 }, radius: 26 }
     ]
   },
   {
@@ -33,9 +33,9 @@ export const STORY_MISSIONS = [
     payout: 60000,
     heat: 4,
     steps: [
-      { text: 'BREACH THE KINGSWAY VAULT PLAZA', target: { x: 20, z: -15 }, radius: 22 },
-      { text: 'VAULT CRACKED · EVADE 4-STAR SWAT & CHOPPER', target: { x: 420, z: 350 }, radius: 30, needZeroHeat: true },
-      { text: 'FINAL DROP: JETTY GETAWAY BOAT', target: { x: 580, z: -80 }, radius: 20 }
+      { text: 'BREACH THE KINGSWAY VAULT PLAZA', target: { x: 2196, z: 1300 }, radius: 26 },
+      { text: 'VAULT CRACKED · EVADE 4-STAR SWAT & CHOPPER', target: { x: 773, z: 539 }, radius: 34, needZeroHeat: true },
+      { text: 'FINAL DROP: JETTY GETAWAY BOAT', target: { x: 2300, z: 2550 }, radius: 26 }
     ]
   },
   {
@@ -46,9 +46,9 @@ export const STORY_MISSIONS = [
     payout: 12000,
     heat: 1,
     steps: [
-      { text: 'LOCATE TARGET VEHICLE IN THE FLATS', target: { x: -160, z: -90 }, radius: 25 },
-      { text: 'RAM OR ELIMINATE THE TARGET ENFORCER', target: { x: -140, z: 40 }, radius: 30 },
-      { text: 'DROP TO GROUND ZERO AND LAY LOW', target: { x: 60, z: 120 }, radius: 20, needZeroHeat: true }
+      { text: 'LOCATE TARGET VEHICLE IN THE FLATS', target: { x: 500, z: 1851 }, radius: 28 },
+      { text: 'RAM OR ELIMINATE THE TARGET ENFORCER', target: { x: 1163, z: 1864 }, radius: 32 },
+      { text: 'DROP TO GROUND ZERO AND LAY LOW', target: { x: 2350, z: 1350 }, radius: 25, needZeroHeat: true }
     ]
   },
   {
@@ -59,10 +59,11 @@ export const STORY_MISSIONS = [
     payout: 15000,
     heat: 0,
     steps: [
-      { text: 'CHECKPOINT 1: COAST HIGHWAY', target: { x: 180, z: -200 }, radius: 25 },
-      { text: 'CHECKPOINT 2: TUNNEL ENTRANCE', target: { x: 320, z: 10 }, radius: 25 },
-      { text: 'CHECKPOINT 3: KINGSWAY OVERPASS', target: { x: 80, z: 220 }, radius: 25 },
-      { text: 'FINAL SPRINT: FINISH LINE', target: { x: 24, z: 6 }, radius: 20 }
+      { text: 'CHECKPOINT 1: KINGSWAY OVERPASS', target: { x: 2350, z: 1350 }, radius: 28 },
+      { text: 'CHECKPOINT 2: HARBOUR POINT DOCKS', target: { x: 2156, z: 2436 }, radius: 28 },
+      { text: 'CHECKPOINT 3: VELLERY ROW BOULEVARD', target: { x: 1163, z: 1864 }, radius: 28 },
+      { text: 'CHECKPOINT 4: OLD QUARTER COMMERCE', target: { x: 1387, z: 1092 }, radius: 28 },
+      { text: 'FINAL SPRINT: KINGSWAY PLAZA FINISH', target: { x: 2196, z: 1300 }, radius: 26 }
     ]
   }
 ];
@@ -118,9 +119,10 @@ export class StoryManager {
     if (this.stepIdx === 1 && this.active.heat > 0 && this.traffic) {
       this.traffic.wanted = Math.max(this.traffic.wanted, this.active.heat);
     }
-    // Route mission marker to target
+    // Route mission marker to target with isStory = true so mission does not auto-terminate
     if (this.mission && step.target) {
-      this.mission.route([step.target], step.text);
+      this.mission.route([step.target], step.text, true);
+      if (this.mission.setRadius) this.mission.setRadius(step.radius || 24);
     }
     // Auto-map navigation GPS route directly to challenge target
     if (this.navigation && step.target) {
@@ -134,9 +136,9 @@ export class StoryManager {
     const step = this.active.steps[this.stepIdx];
     if (!step) return;
 
-    // Check distance to target and speed
+    // Check distance to target and speed across all vehicle types
     const dist = Math.hypot(car.x - step.target.x, car.z - step.target.z);
-    const speed = Math.abs(car.fwdSpeed ?? car.speed ?? 0);
+    const speed = Math.hypot(car.vx || 0, car.vz || 0) || Math.abs(car.fwdSpeed ?? car.speed ?? 0);
     const radius = step.radius || 24;
     const inRange = dist < radius;
 
@@ -159,10 +161,11 @@ export class StoryManager {
     }
 
     if (inRange) {
-      // If player is flying through at high speed, prompt them to come to a stop
-      if (speed > 6.5) {
+      const isRace = this.active.type === 'race';
+      // In races, checkpoints trigger at full cruising speed without requiring stopping!
+      if (!isRace && speed > 7.0) {
         this._stopWarn = (this._stopWarn || 0) + dt;
-        if (this._stopWarn > 1.2) {
+        if (this._stopWarn > 1.0) {
           this._stopWarn = 0;
           this.hud?.flash('🛑 COME TO A STOP IN ZONE TO SECURE OBJECTIVE');
         }

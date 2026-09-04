@@ -1280,15 +1280,16 @@ function frameBody() {
      arrested an empty parked vehicle while you walked away -- and the
      on-foot control path pins car.brake = 1, which satisfied the "has
      stopped" precondition for the arrest every single frame. */
+  const currentVehicle = (activeVehicle && activeVehicle !== carVehicle) ? activeVehicle : car;
   const quarry = onFoot.active
     ? { x: onFoot.x, z: onFoot.z, vx: onFoot.vx, vz: onFoot.vz,
         speed: Math.hypot(onFoot.vx, onFoot.vz) }
-    : car;
+    : currentVehicle;
   traffic.update(quarry, dt, worldTime);
   if (chatter) chatter.updateWanted(traffic.wanted);
   if (world.updateSignals) world.updateSignals(worldTime);
   if (heli && !flying) { heli.update(quarry, traffic, dt); traffic.eyesOn = heli.eyesOn; }
-  const playerTarget = onFoot.active ? quarry : car;
+  const playerTarget = onFoot.active ? quarry : currentVehicle;
   if (mission) mission.update(playerTarget, dt);
   if (jobs) jobs.update(playerTarget, dt);
   if (story) story.update(playerTarget, dt);
@@ -1319,7 +1320,6 @@ function frameBody() {
   if (beach) beach.update(dt);
   if (water) water.update(dt);
 
-  const currentVehicle = (activeVehicle && activeVehicle !== carVehicle) ? activeVehicle : car;
   dome.position.set(currentVehicle.x, 0, currentVehicle.z);
 
   if (film) {

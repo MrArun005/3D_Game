@@ -142,7 +142,8 @@ export class Phone {
           if (isCurrent) {
             this.story.abandon();
           } else {
-            this.story.startMission(m.id, this.hero.userData?.car);
+            const activeV = (typeof window !== 'undefined') ? window._activeVehicle : null;
+            this.story.startMission(m.id, activeV || this.car || this.hero);
             this.toggle(false);
           }
           this.#render();
