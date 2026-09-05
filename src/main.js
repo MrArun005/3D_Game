@@ -1550,6 +1550,7 @@ function frameBody() {
   } else {
   c = input.read();
   if (c && (c.throttle || c.brake || c.steer || c.handbrake || c.lookBack || c.hold)) idleT = 0; else idleT += dt;
+  idleCam = false;   // the car and on-foot branches set it; anything else (heli, tank, film) is never idle-cam
   if (garage) {
     garage.setNos(c.nos);
     garage.update(dt, car);
