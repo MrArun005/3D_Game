@@ -168,6 +168,7 @@ export function createWeather(scene, { hemi = null, onStrike = null, dome = null
       // the sky under rain: the dome (tinted per frame by the clock, so multiplying never accumulates) darkens with the rain and whites out with the flash
       const d = domeOf();
       if (d?.material?.color) d.material.color.multiplyScalar(1 - 0.45 * amount).addScalar(0.7 * flash);
+      if (scene.fog?.color) scene.fog.color.multiplyScalar(1 - 0.45 * amount).addScalar(0.5 * flash);   // the haze darkens with the sky, so fogged silhouettes do not float pale in front of it
     },
   });
   return api;
