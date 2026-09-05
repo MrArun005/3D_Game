@@ -40,7 +40,9 @@ const WALLS = [
   [0xd9d4c7, 0xbcb6a8], [0xb8b2a6, 0x9b958a], [0x8c8f93, 0x6f7276], [0x6b4f3a, 0x52392a],
   [0x4b6a6e, 0x3a5457], [0xe8e2d3, 0xcfc8b8], [0x9d7b6a, 0x7d5f50], [0x7a8794, 0x5f6b77],
 ];
-const NEON = [[1.0, 0.25, 0.75], [0.2, 0.9, 1.0], [1.0, 0.85, 0.2], [0.95, 0.95, 1.0], [1.0, 0.3, 0.2], [0.5, 1.0, 0.4]];
+const MAGENTA = [1.0, 0.25, 0.75], CYAN = [0.2, 0.9, 1.0];
+// weighted by repetition: the cover art is six parts magenta/cyan to four of everything else
+const NEON = [MAGENTA, CYAN, MAGENTA, CYAN, MAGENTA, CYAN, [1.0, 0.85, 0.2], [0.95, 0.95, 1.0], [1.0, 0.3, 0.2], [0.5, 1.0, 0.4]];
 const WARM = [1.0, 0.82, 0.55], COOL = [0.72, 0.85, 1.0];
 const _c = new THREE.Color();
 
@@ -127,10 +129,10 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
     for (let s = 1; s < floors; s++) {
       for (let b = 0; b < bays; b++) {
         const along = -f.w / 2 + pitch * (b + 0.5);
-        const lit = rnd() < 0.55;
+        const lit = rnd() < 0.38;   // fewer, dimmer windows than the first cut: on the cover the neon owns the night, the windows are a texture behind it
         const em = lit ? (rnd() < 0.7 ? WARM : COOL) : null;
         const [x, z] = onFace(f, along, 0.035);
-        parts.push(at(quad(Math.min(1.4, pitch * 0.55), 1.5, 0x131a24, em, 0.85), x, floorY(s) + 1.55, z, f.yaw));
+        parts.push(at(quad(Math.min(1.4, pitch * 0.55), 1.5, 0x131a24, em, 0.55), x, floorY(s) + 1.55, z, f.yaw));
         // balconies: residential backs and sides, one storey in two
         if (residential && f.name !== 'front' && s >= 2 && rnd() < 0.5) {
           const [bx, bz] = onFace(f, along, 0.5);
@@ -216,8 +218,10 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
       // the column glows in the building's neon (or white), a tinted backing for the tenant panels
       const cc = neon ?? [0.9, 0.9, 0.9];
       parts.push(at(box(0.28, colH, 0.95, 0xf2f2f2, cc, 0.55, flickerOf(rnd)), hw + 0.18, 4.6 + colH / 2, cz));
-      parts.push(at(box(0.05, colH + 0.2, 0.06, 0x222222, cc, 1.5), hw + 0.33, 4.6 + colH / 2, cz + 0.5), at(box(0.05, colH + 0.2, 0.06, 0x222222, cc, 1.5), hw + 0.33, 4.6 + colH / 2, cz - 0.5));   // tube edges either side of the column
+      parts.push(at(box(0.05, colH + 0.2, 0.06, 0x222222, cc, 1.9), hw + 0.33, 4.6 + colH / 2, cz + 0.5), at(box(0.05, colH + 0.2, 0.06, 0x222222, cc, 1.9), hw + 0.33, 4.6 + colH / 2, cz - 0.5));   // tube edges either side of the column
       { const nc = pick(NEON); lamps.push({ x: hw + 1.4, y: 4.6 + colH * 0.45, z: cz, colour: _c.setRGB(nc[0], nc[1], nc[2]).getHex() }); }
+      // the column's spill on the pavement: a flat emissive patch in the same colour, so the neon reads at street level (wet or dry)
+      { const g = quad(2.4, 1.7, 0x2a2a2e, cc, 0.32); g.applyMatrix4(_m.makeRotationX(-Math.PI / 2)); parts.push(at(g, hw + 1.35, 0.03, cz)); }
       /* A kanban is a stack of tenants. The atlas tiles are 4:1 landscape, so a
          panel is `vertical`: the caller rolls the quad 90 degrees and the tile
          runs UP the column (rotated lettering, as real kanban often carry).
@@ -243,7 +247,7 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
   }
   if (neon) for (let s = 1; s < floors; s += 1 + Math.floor(rnd() * 2)) {
     const [nx, nz] = onFace(front, 0, 0.06);
-    parts.push(at(box(0.06, 0.07, front.w * 0.96, 0x222222, neon, 1.4, flickerOf(rnd)), nx, floorY(s) + 0.2, nz));
+    parts.push(at(box(0.06, 0.07, front.w * 0.96, 0x222222, neon, 1.9, flickerOf(rnd)), nx, floorY(s) + 0.2, nz));
   }
 
   // the roof: parapet, tank, antenna, stair bulkhead, and a billboard frame on a third
