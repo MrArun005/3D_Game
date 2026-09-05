@@ -54,6 +54,15 @@ import { newState as newLightning, step as lightningStep } from './lightning.js'
  * few frames and the rain sheet brightens with it. `onStrike(delay)` is
  * called once per strike for the thunder. Both optional.
  */
+/**
+ * Does it rain at time t (seconds)? Spells, not a constant: one slow sine, so
+ * a night has dry hours and wet hours (about 40% wet, spells of ~20 min on a
+ * ~50 min cycle). Pure; tested. main gates it with the clock's night.
+ */
+export function rainSpell(t) {
+  return Math.sin(t * 0.0021 + 1.0) > 0.2;
+}
+
 export function createWeather(scene, { hemi = null, onStrike = null } = {}) {
   const storm = newLightning();
   let hemiBase = null;
@@ -63,7 +72,11 @@ export function createWeather(scene, { hemi = null, onStrike = null } = {}) {
      it is above 0.7 -- a drizzle has no thunder in it. main reads .amount for
      the rain audio. */
   let wt = 0;
-  const api = { amount: 1 };
+  const api = {
+    amount: 1, enabled: true,
+    /** Off: the sheet and spray are hidden and amount reads 0 (dry grip, dry audio, matte road). Fades are the caller's business. */
+    setEnabled(on) { if (on === api.enabled) return; api.enabled = on; rain.visible = on; spray.visible = on; if (!on) api.amount = 0; },
+  };
   const rainGeo = new THREE.BufferGeometry();
   const rainPos = new Float32Array(RAIN_N * 3);
   for (let i = 0; i < RAIN_N; i++) {
@@ -106,6 +119,7 @@ export function createWeather(scene, { hemi = null, onStrike = null } = {}) {
   Object.assign(api, {
     rain, spray,
     update(camera, car, dt) {
+      if (!api.enabled) { api.amount = 0; return; }
       wt += dt;
       const amount = 0.675 + 0.325 * (0.6 * Math.sin(wt * 0.0105) + 0.4 * Math.sin(wt * 0.0037 + 1.7));
       api.amount = amount;

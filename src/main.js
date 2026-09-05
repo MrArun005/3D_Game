@@ -77,7 +77,7 @@ import { buildRoute, Autopilot, useGraphForRoutes } from './game/autopilot.js';
 import { Cinematic } from './game/cinematic.js';
 import { Recorder } from './game/recorder.js';
 import { createAudio } from './game/audio.js';
-import { createWeather } from './world/weather.js';
+import { createWeather, rainSpell } from './world/weather.js';
 import { buildHuman } from './world/human.js';
 import { Debris } from './world/breakables.js';
 
@@ -1213,7 +1213,7 @@ hero.add(beamPool);
 
 const traffic = new Traffic(scene, assets, DAY ? 36 : 40, !DAY);   // Phase 5: denser, and lit at night
 const chase = new ChaseCamera(camera);
-const weather = DAY ? null : createWeather(scene, { hemi, onStrike: (delay) => audio.thunder?.(delay) });   // storm nights: lightning on the hemisphere light, thunder by distance
+const weather = createWeather(scene, { hemi, onStrike: (delay) => audio.thunder?.(delay) });   // always built: rain comes in night spells (rainSpell) on the day cycle, and all night with ?night
 const hud = new Hud();
 let navigation = null;
 const clock = new GameClock({ startHour: +(new URLSearchParams(location.search).get('time') ?? (DAY ? 12.0 : 19.5)) });
@@ -1794,6 +1794,9 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: currentVehicle, dome, stars });
   // the rain audio follows the weather's breathing, and rain is grip: the physics reads car.wet
   if (weather) {
+    // rain only at night (the clock's thresholds), in spells on the normal cycle, all night with ?night
+    const nightNow = clock.hour >= 20.5 || clock.hour < 5.2;
+    weather.setEnabled(nightNow && (!DAY || rainSpell(now / 1000)));
     weather.update(camera, currentVehicle, dt); car.wet = weather.amount ?? 1;
     if (Math.abs((weather.amount ?? 1) - (rainHeard ?? -1)) > 0.05) { rainHeard = weather.amount; audio.setRain(rainHeard); }
     // the road LOOKS wet: tarmac roughness drops and its reflection rises with the rain (uniforms only, no recompile; bundles carry uniform changes)
