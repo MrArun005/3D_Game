@@ -460,6 +460,7 @@ let farSirenT = 70;       // distant siren cadence (ambient, any hour)
 let rainHeard = null;     // last rain amount handed to the audio
 let tokyoAmbT = 0;        // district-ambience poll cadence
 let clockRestored = false;
+let idleT = 0, idleCam = false;   // seconds since any input; the parked-car orbit camera
 let lastDistrict = null, distT = 0;  // for the area toast and the dispatch call-out on a district change (polled twice a second)
 let vigilante = null;     // { f: fugitive car, t: seconds left } while a patrol chase near you is yours to finish
 let hurtPulse = 0;        // the red edge on the frame, decays each frame (grade.setHurt)
@@ -1395,6 +1396,7 @@ function applyPerk(persona) {
 applyPerk(NAMED_CHARACTERS[0]);
 
 const input = createInput((action) => {
+  idleT = 0;
   if (action === 'lights') {
     if (!car.headlights || car.headlightMode === 'low') {
       car.headlights = true;
@@ -1483,6 +1485,7 @@ addEventListener('contextmenu', (e) => { if (document.pointerLockElement === can
 
 addEventListener('mousemove', (e) => {
   if (document.pointerLockElement !== canvas) return;
+  idleT = 0;
   if (photo.on) return photo.look(e.movementX, e.movementY);
   if (onFoot.active) onFoot.look(e.movementX, e.movementY);
   else chase.look(e.movementX, e.movementY);
@@ -1546,6 +1549,7 @@ function frameBody() {
     car.holdGear = false;
   } else {
   c = input.read();
+  if (c && (c.throttle || c.brake || c.steer || c.handbrake || c.lookBack || c.hold)) idleT = 0; else idleT += dt;
   if (garage) {
     garage.setNos(c.nos);
     garage.update(dt, car);
@@ -1846,6 +1850,15 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
       if ((targetVehicle.impact || 0) > 6.0) rumble(Math.min(1.0, targetVehicle.impact / 18.0), 120);
       if (spawnSnap) { spawnSnap = false; chase.snap(targetVehicle); }
       targetVehicle.camera ? targetVehicle.camera(chase, dt) : chase.update(targetVehicle, dt);
+      /* Parked and idle for twenty seconds: the camera drifts into a slow orbit
+         of the car, GTA's idle cinematic. Any input ends it and the chase
+         camera picks up from wherever the orbit left it. */
+      idleCam = !targetVehicle.camera && !photo.on && idleT > 20 && Math.abs(targetVehicle.fwdSpeed || 0) < 0.5;
+      if (idleCam) {
+        const a = (performance.now() / 1000) * 0.11, r = 7.5 + Math.sin(a * 0.7) * 1.5, gy = hero.position.y;
+        camera.position.set(targetVehicle.x + Math.cos(a) * r, gy + 1.9 + Math.sin(a * 0.5) * 0.5, targetVehicle.z + Math.sin(a) * r);
+        camera.lookAt(targetVehicle.x, gy + 0.9, targetVehicle.z);
+      }
     }
   }
   clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: currentVehicle, dome, stars });
