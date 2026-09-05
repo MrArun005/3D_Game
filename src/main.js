@@ -1908,7 +1908,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     const chaser = traffic.police.find((c) => c.live && c.chase);
     const f = chaser?.chase ?? null;
     const px = onFoot.active ? onFoot.x : car.x, pz = onFoot.active ? onFoot.z : car.z;
-    if (f && !vigilante && traffic.wanted < 1 && Math.hypot(f.x - px, f.z - pz) < 150) { vigilante = { f, t: 30 }; hud.flash('VIGILANTE · STOP THE FLEEING CAR · $400'); hud.setJob?.('VIGILANTE · stop the fleeing car'); }
+    if (f && !vigilante && !f.vigOffered && f.fleeT > 0 && traffic.wanted < 1 && Math.hypot(f.x - px, f.z - pz) < 150) { f.vigOffered = true; vigilante = { f, t: 30 }; hud.flash('VIGILANTE · STOP THE FLEEING CAR · $400'); hud.setJob?.('VIGILANTE · stop the fleeing car'); }
     if (vigilante) {
       vigilante.t -= dt;
       const v = vigilante.f, near = Math.hypot(v.x - px, v.z - pz) < 16;
