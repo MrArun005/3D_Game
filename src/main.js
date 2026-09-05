@@ -1459,6 +1459,8 @@ applyPerk(NAMED_CHARACTERS[0]);
 
 const input = createInput((action) => {
   idleT = 0;
+  // C: cycle the chase camera; on foot it is the crouch toggle. (The handler was lost in a headlight edit; the key still sent 'camera'.)
+  if (action === 'camera') { if (onFoot.active) { crouch = !crouch; onFoot.crouch = crouch; hud.flash(crouch ? 'CROUCH' : 'STAND'); } else chase.cycle(); }
   if (action === 'lights') {
     if (!car.headlights || car.headlightMode === 'low') {
       car.headlights = true;
@@ -1546,9 +1548,11 @@ addEventListener('mousedown', (e) => {
 });
 addEventListener('contextmenu', (e) => { if (document.pointerLockElement === canvas) e.preventDefault(); });
 
+addEventListener('mousemove', () => { idleT = 0; });   // ANY mouse movement is input to the idle camera, locked pointer or not
+addEventListener('keydown', () => { idleT = 0; });
+addEventListener('mousedown', () => { idleT = 0; });
 addEventListener('mousemove', (e) => {
   if (document.pointerLockElement !== canvas) return;
-  idleT = 0;
   if (photo.on) return photo.look(e.movementX, e.movementY);
   if (onFoot.active) onFoot.look(e.movementX, e.movementY);
   else chase.look(e.movementX, e.movementY);
@@ -1614,6 +1618,7 @@ function frameBody() {
   c = input.read();
   if (c && (c.throttle || c.brake || c.steer || c.handbrake || c.lookBack || c.hold)) idleT = 0; else idleT += dt;
   idleCam = false;   // the car and on-foot branches set it; anything else (heli, tank, film) is never idle-cam
+  if (document.pointerLockElement !== canvas) idleT = Math.min(idleT, 0);   // no pointer lock means you are not playing: never orbit, never look 'locked'
   if (garage) {
     garage.setNos(c.nos);
     garage.update(dt, car);
