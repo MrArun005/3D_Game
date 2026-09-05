@@ -109,7 +109,7 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
   const floorY = (f) => (f === 0 ? 0 : GROUND_H + (f - 1) * FLOOR_H);   // bottom of storey f
   const [wall, band] = pick(WALLS);
   const residential = rnd() < 0.5;
-  const neon = rnd() < 0.45 ? pick(NEON) : null;
+  const neon = rnd() < 0.7 ? pick(NEON) : null;   // the cover art is mostly neon: seven in ten buildings carry a tube colour
   const parts = [], boards = [], lamps = [];   // lamps: where the night light pool may put a real coloured light (the kanban)
   const F = faces(hw, hd);
 
@@ -213,7 +213,10 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
     for (const side of [-1, 1]) {
       if (rnd() < 0.15) continue;
       const cz = side * (hd - 0.55);
-      parts.push(at(box(0.28, colH, 0.95, 0xf2f2f2, [0.9, 0.9, 0.9], 0.5, flickerOf(rnd)), hw + 0.18, 4.6 + colH / 2, cz));
+      // the column glows in the building's neon (or white), a tinted backing for the tenant panels
+      const cc = neon ?? [0.9, 0.9, 0.9];
+      parts.push(at(box(0.28, colH, 0.95, 0xf2f2f2, cc, 0.55, flickerOf(rnd)), hw + 0.18, 4.6 + colH / 2, cz));
+      parts.push(at(box(0.05, colH + 0.2, 0.06, 0x222222, cc, 1.5), hw + 0.33, 4.6 + colH / 2, cz + 0.5), at(box(0.05, colH + 0.2, 0.06, 0x222222, cc, 1.5), hw + 0.33, 4.6 + colH / 2, cz - 0.5));   // tube edges either side of the column
       { const nc = pick(NEON); lamps.push({ x: hw + 1.4, y: 4.6 + colH * 0.45, z: cz, colour: _c.setRGB(nc[0], nc[1], nc[2]).getHex() }); }
       /* A kanban is a stack of tenants. The atlas tiles are 4:1 landscape, so a
          panel is `vertical`: the caller rolls the quad 90 degrees and the tile

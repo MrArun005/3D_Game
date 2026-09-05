@@ -231,8 +231,11 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   bundled, ~1090 direct) by day AND night (night adds ~22). The direct part
   is not the facade/prop batches (bundling them changed nothing) -- it is
   view-dependent: shadow-cascade and dynamic draws along a 500 m sightline.
-  Nobody has profiled which yet; the F3 overlay's per-pass breakdown is the
-  next step. Do not "fix" it by dropping bundles or shells.
+  Halving the casters (1161 -> 565 by re-applying the shadow ring when the
+  prop batch lands) did not move the count either: those were already culled
+  from the cascades. The ~1080 direct draws need a per-pass breakdown
+  (renderer.info counts all 25 passes) before anyone touches them. Do not
+  "fix" it by dropping bundles or shells.
 - **Recording (2026-09-05)**: `tools/record-tour.mjs` drives a headed
   Playwright Chrome against `vite preview` (never the dev server: an HMR
   reload mid-tour killed one take) with `recordVideo`, captions each scene,
