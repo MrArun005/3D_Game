@@ -151,6 +151,16 @@ export class GameClock {
           idx++;
         }
       }
+
+      // Stagger 4: 3D Kit building window illumination illuminates as twilight falls
+      if (assets.kitBuildings) {
+        for (const k of Object.keys(assets.kitBuildings)) {
+          const mat = assets.kitBuildings[k]?.mat;
+          if (mat && mat.emissiveMap) {
+            mat.emissiveIntensity = 0.05 + 1.25 * nightFactor;
+          }
+        }
+      }
     }
 
     // Night lighting state: headlights default active at night & dusk if not manually toggled

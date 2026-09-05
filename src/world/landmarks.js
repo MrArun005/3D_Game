@@ -14,6 +14,27 @@ const LANDMARKS = [
   { file: 'gun-shop',    district: 'OLD QUARTER',  minW: 8,  name: "Schneider's Guns" },
   { file: 'supermarket', district: 'THE FLATS',    minW: 30, name: 'Flats Supermarket' },
   { file: 'street-set',  district: 'VELLERY ROW',  minW: 12, name: 'Vellery corner' },
+  {
+    file: '/models/vendor/kenney/commercial/building-skyscraper-d.glb',
+    district: 'KINGSWAY',
+    minW: 24,
+    targetW: 28,
+    name: 'Kingsway Apex Tower',
+  },
+  {
+    file: '/models/vendor/kenney/industrial/water-tower.glb',
+    district: 'STEELGATE',
+    minW: 20,
+    targetW: 22,
+    name: 'Steelgate Waterworks & Silo',
+  },
+  {
+    file: '/models/vendor/kenney/industrial/windmill.glb',
+    district: 'HARBOUR POINT',
+    minW: 20,
+    targetW: 20,
+    name: 'Harbour Point Turbine & Signal',
+  },
 ];
 
 export class Landmarks {
@@ -31,11 +52,13 @@ export class Landmarks {
       const lot = lots[0] ?? this.district.blocks.filter((b) => (b.type === 'lot' || b.type === 'vacant') && !used.has(b) && Math.min(b.w, b.h) >= lm.minW).sort((a, b) => Math.min(a.w, a.h) - Math.min(b.w, b.h))[0];
       if (!lot) { console.warn('landmark: no lot for', lm.file); return; }
       used.add(lot);
-      let gltf; try { gltf = await new Promise((res, rej) => loader.load(BASE + lm.file + '.glb', res, undefined, rej)); } catch (e) { console.warn('landmark', lm.file, e.message); return; }
+      const path = lm.file.startsWith('/') ? lm.file : BASE + lm.file + '.glb';
+      let gltf; try { gltf = await new Promise((res, rej) => loader.load(path, res, undefined, rej)); } catch (e) { console.warn('landmark', lm.file, e.message); return; }
       const obj = gltf.scene;
       obj.updateMatrixWorld(true);
       const bb = new THREE.Box3().setFromObject(obj), size = bb.getSize(new THREE.Vector3()), c = bb.getCenter(new THREE.Vector3());
-      const k = Math.min((lot.w - 3) / size.x, (lot.h - 3) / size.z, 1.6);        // fit the lot, never blow up a small model
+      const maxK = lm.maxScale ?? 1.6;
+      const k = lm.targetW ? (lm.targetW / size.x) : Math.min((lot.w - 3) / size.x, (lot.h - 3) / size.z, maxK);        // fit the lot or scale to target dimension
       const wrap = new THREE.Group();
       obj.position.set(-c.x, -bb.min.y, -c.z);
       wrap.add(obj);

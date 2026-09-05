@@ -411,22 +411,26 @@ function blockDressing(batch, blocks, district, solids) {
  */
 export function dressRoofs(batch, boxes, district) {
   for (const b of boxes) {
-    if (b.kit || b.hw < 3.5 || b.hd < 3.5) continue;
+    if (b.hw < 3.5 || b.hd < 3.5) continue;
+    // Suburban residential houses have pitched gables; skip industrial clutter
+    if (b.kit && (b.district === 'NORTHLINE' || b.district === 'GREENFELL PARK' || b.district === 'MARROW HILL')) continue;
     const y = KERB_H + b.height;
-    // Phase 5: clutter scales with the roof, 1 unit per ~45 m2, capped at 12
-    const n = Math.max(1, Math.min(12, Math.round((b.hw * b.hd * 4) / 45 * (0.7 + hash(b.x, b.z) * 0.6))));
+    // Clutter scales with the roof, 1 unit per ~45 m2, capped at 12 (or 5 for kit roofs)
+    const maxClutter = b.kit ? 5 : 12;
+    const n = Math.max(1, Math.min(maxClutter, Math.round((b.hw * b.hd * 4) / 45 * (0.7 + hash(b.x, b.z) * 0.6))));
     const ca = Math.cos(b.angle), sa = Math.sin(b.angle);
+    const spread = b.kit ? 0.75 : 1.3;
     for (let i = 0; i < n; i++) {
       const r = hash(b.x + i * 3.7, b.z - i * 1.9);
       const k = pick(ROOF_KIT, r);
-      const lx = (hash(b.z + i, b.x) - 0.5) * (b.hw * 1.3);
-      const lz = (hash(b.x, b.z + i) - 0.5) * (b.hd * 1.3);
+      const lx = (hash(b.z + i, b.x) - 0.5) * (b.hw * spread);
+      const lz = (hash(b.x, b.z + i) - 0.5) * (b.hd * spread);
       const px = b.x + lx * ca - lz * sa;
       const pz = b.z + lx * sa + lz * ca;
       batch.add(k.asset, place(px, y, pz, b.angle + Math.round(r * 4) * (Math.PI / 2)));
     }
-    // a parapet round the edge reads at street level as a real roofline
-    if (hash(b.z, b.x) < 0.55) {
+    // a parapet round the edge reads at street level as a real roofline on procedural boxes
+    if (!b.kit && hash(b.z, b.x) < 0.55) {
       for (let t = -b.hw; t <= b.hw; t += 2.4) {
         for (const side of [-1, 1]) {
           const lx = t, lz = side * b.hd;

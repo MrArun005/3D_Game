@@ -1198,7 +1198,9 @@ export class DistrictWorld {
         if (kit && hash(wx * 0.37, wz * 0.61) < kd[1] && g.w > 6 && g.d > 6) {
           const wantTall = bl.type === 'tower' || (bl.type === 'mid' && h > 30);
           const m = pickKitModel(kit, g.w, g.d, wantTall, hash(wz, wx));
-          const sx = g.w / m.w, sz = g.d / m.d, sy = Math.min(sx, sz) * (wantTall ? 1.15 : 1.0);
+          const sx = g.w / m.w, sz = g.d / m.d;
+          const minS = Math.min(sx, sz);
+          const sy = wantTall ? Math.max(minS * 1.25, Math.min(minS * 3.2, h / m.h)) : minS;
           const geo = m.geo.clone().applyMatrix4(new THREE.Matrix4().compose(
             new THREE.Vector3(wx, KERB_H, wz), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, bl.angle, 0)), new THREE.Vector3(sx, sy, sz)));
           (kitPlaced[kd[0]] ??= []).push(geo);
