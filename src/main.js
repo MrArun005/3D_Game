@@ -1792,7 +1792,8 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     }
   }
   clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: currentVehicle, dome, stars });
-  if (weather) { weather.update(camera, currentVehicle, dt); if (Math.abs((weather.amount ?? 1) - (rainHeard ?? -1)) > 0.05) { rainHeard = weather.amount; audio.setRain(rainHeard); } }   // the rain audio follows the weather's breathing
+  // the rain audio follows the weather's breathing, and rain is grip: the physics reads car.wet
+  if (weather) { weather.update(camera, currentVehicle, dt); car.wet = weather.amount ?? 1; if (Math.abs((weather.amount ?? 1) - (rainHeard ?? -1)) > 0.05) { rainHeard = weather.amount; audio.setRain(rainHeard); } }
   lightPool?.update(dt, currentVehicle.x, currentVehicle.z, traffic);
   reputation?.update(dt, playerTarget.x, playerTarget.z, traffic, car, damageModel);
   intelScanner?.update(dt, camera, playerTarget, traffic, reputation?.safehouses);
