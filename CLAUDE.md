@@ -202,7 +202,13 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   stars calls `traffic.standDown()`; a completed carjack while unseen adds
   6 s to `traffic.coldFor`. Pedestrians cross on `signalState` of their own
   junction (`crowd.signalTime`), Tokyo junctions carry pedestrian lamps and
-  the crossing chime follows the nearest junction's phase. Draws and fps
+  the crossing chime follows the nearest junction's phase. Police: the PIT
+  (slot-0 cruiser rams at 3 stars, `c.ramming`), ramming back costs the other
+  car's engine (`collision.js` records `car.hitRef`; one `damageVehicle` in
+  main for bullets, rams and blasts), dispatch names your paint
+  (`paintName`) and the last-seen district, a radio newsflash at 3 stars
+  (`radio.news`), a heartbeat under 25% health, gunshots echo
+  (`audio.js echoBus`), the range's 60 m boards slide. Draws and fps
   at kingsway-corner NOT re-measured since (no browser in this session).
   Also: `buildTokyoStreet` (poles + wires), `buildShrine` (park block),
   landmark slabs to 24 storeys on tower blocks, `District.districtAt` steers
