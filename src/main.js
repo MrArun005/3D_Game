@@ -938,7 +938,7 @@ function useVehicle() {
           hero.visible = false;
           car.throttle = 0; car.brake = 1; car.hand = 1; car.vx = 0; car.vz = 0;
           if (v.type === 'helicopter') {
-            hud.flash('AIRBORNE — W/SPACE climb, S/SHIFT descend, A/D turn, F exit');
+            hud.flash('🚁 W fly forward · S brake · SPACE climb · SHIFT descend · A/D turn · F exit');
           } else if (v.type === 'tank') {
             hud.flash('HEAVY ARMOR — W/S drive, A/D pivot steer, MOUSE AIM cannon');
           }
@@ -964,7 +964,7 @@ function useVehicle() {
       car.type = 'helicopter';
       hero.visible = false;
       car.throttle = 0; car.brake = 1; car.hand = 1; car.vx = 0; car.vz = 0;
-      hud.flash('AIRBORNE — W/SPACE climb, S/SHIFT descend, A/D turn, F exit');
+      hud.flash('🚁 W fly forward · S brake · SPACE climb · SHIFT descend · A/D turn · F exit');
       return;
     }
     // 3. Nearest vehicle within reach: your own car, or somebody else's
@@ -1013,7 +1013,7 @@ function useVehicle() {
           hero.visible = false;
           car.throttle = 0; car.brake = 1; car.hand = 1; car.vx = 0; car.vz = 0;
           if (v.type === 'helicopter') {
-            hud.flash('AIRBORNE — W/SPACE climb, S/SHIFT descend, A/D turn, F exit');
+            hud.flash('🚁 W fly forward · S brake · SPACE climb · SHIFT descend · A/D turn · F exit');
           } else if (v.type === 'tank') {
             hud.flash('HEAVY ARMOR — W/S drive, A/D pivot steer, MOUSE AIM cannon');
           }

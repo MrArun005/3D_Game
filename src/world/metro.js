@@ -78,6 +78,8 @@ export class Metro {
     // stations along the arc length
     for (let s = STATION_EVERY * 0.6; s < len - 60; s += STATION_EVERY) {
       const p = this.#at(pts, cum, s), q = this.#at(pts, cum, s + 1);
+      // Skip station platforms and roofs on bridges or elevated ramps to prevent floating box clutter
+      if (this.district.elevationAt(p.x, p.z) > 0.5) continue;
       const yaw = Math.atan2(-(q.z - p.z), q.x - p.x);
       conc.push(box(40, 0.5, 3.0, p.x + Math.sin(yaw) * 3.4, DECK_Y + 0.5, p.z + Math.cos(yaw) * 3.4, yaw));   // platform beside the track
       conc.push(box(40, 0.3, 4.5, p.x + Math.sin(yaw) * 3.0, DECK_Y + 5.2, p.z + Math.cos(yaw) * 3.0, yaw));   // roof

@@ -114,37 +114,48 @@ export function buildWater(scene, district, day = true) {
   }
 
   /* --- bridges ---
-     The carriageway itself stays flat at y=0: re-elevating the road graph
-     would mean re-deriving every kerb, marking and lamp that hangs off it.
-     What was missing is everything UNDER the road -- so each crossing gets a
-     deck soffit, piers down to the water, and parapets you can see over. */
+     The carriageway itself stays flat at y=0 on the road graph, but ramps
+     up to 7.6m over water in districtWorld. What water.js provides is the
+     deck soffit under the elevated river section and realistic concrete piers
+     in the water channel, stopping clear of the approach ramps. */
   const decks = [], piers = [];
   for (const br of D.bridges) {
-    const pts = br.points, half = br.width / 2;
+    const pts = br.points;
     for (let i = 0; i < pts.length - 1; i++) {
       const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
       const L = Math.hypot(bx - ax, bz - az);
       if (L < 1) continue;
       const yaw = Math.atan2(bz - az, bx - ax);
-      const mx = (ax + bx) / 2, mz = (az + bz) / 2;
-      decks.push(M(mx, DECK_Y - DECK_T, mz, yaw, L, DECK_T, br.width));
-      /* No rails here any more. districtWorld emits a parapet per road segment
-         that FOLLOWS the ramp from the same corner heights as the tarmac; a
-         second, fixed-height rail at DECK_Y doubled it over the water and
-         stopped dead at the abutments. The deck soffit and piers stay: they
-         are what you see from the water, and nothing else draws them. */
-      // piers every ~40m, stopping short of the abutments
-      for (let t = 16; t < L - 14; t += 40) {
-        const px = ax + Math.cos(yaw) * t, pz = az + Math.sin(yaw) * t;
-        piers.push(M(px, WATER_Y - 4, pz, yaw, 3.4, DECK_Y - DECK_T - (WATER_Y - 4), br.width * 0.55));
+      const cy = Math.cos(yaw), sy = Math.sin(yaw);
+
+      // Inset deck soffit by ramp distance (60m) so it never overhangs sloped approach ramps on land
+      const rampInset = Math.min(60, L * 0.28);
+      const deckLen = L - rampInset * 2;
+      if (deckLen > 4) {
+        const mx = ax + cy * (L / 2), mz = az + sy * (L / 2);
+        decks.push(M(mx, DECK_Y - DECK_T, mz, yaw, deckLen, DECK_T, br.width));
+      }
+
+      // Concrete piers placed strictly in the river channel between the abutments
+      const pierStart = rampInset + 18;
+      const pierEnd = L - rampInset - 18;
+      for (let t = pierStart; t <= pierEnd; t += 46) {
+        const px = ax + cy * t, pz = az + sy * t;
+        // Submerged pier down into riverbed
+        piers.push(M(px, WATER_Y - 4, pz, yaw, 4.2, DECK_Y - DECK_T - (WATER_Y - 4), br.width * 0.52));
       }
     }
   }
   const box = new THREE.BoxGeometry(1, 1, 1);
   box.translate(0, 0.5, 0);
-  const inst = (list, colour, shadow) => {
+  const concreteMat = new THREE.MeshStandardMaterial({
+    color: day ? 0x9a978e : 0x767980,
+    roughness: 0.85,
+    metalness: 0.12,
+  });
+  const inst = (list, shadow) => {
     if (!list.length) return;
-    const m = new THREE.InstancedMesh(box, new THREE.MeshLambertMaterial({ color: colour }), list.length);
+    const m = new THREE.InstancedMesh(box, concreteMat, list.length);
     list.forEach((mm, i) => m.setMatrixAt(i, mm));
     m.instanceMatrix.needsUpdate = true;
     m.frustumCulled = false;
@@ -152,8 +163,8 @@ export function buildWater(scene, district, day = true) {
     m.receiveShadow = true;
     group.add(m);
   };
-  inst(decks, day ? 0x8c8880 : 0x1b2027, true);
-  inst(piers, day ? 0x7d7a72 : 0x171c22, true);
+  inst(decks, true);
+  inst(piers, true);
 
   scene.add(group);
 

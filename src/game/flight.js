@@ -4,15 +4,26 @@ import { M4, mergeGeos } from '../core/geometry.js';
 
 /**
  * Arcade Helicopter Flight Model.
- * 
+ *
+ * Controls:
+ *   W          — pitch nose down, fly forward (auto-cruise altitude hold)
+ *   S          — flare nose up, aerodynamic brake / gentle descent when slow
+ *   SPACE      — dedicated rapid vertical climb
+ *   SHIFT / C  — dedicated descent / landing
+ *   A / D      — yaw turn with coordinated banking
+ *   Q / E      — lateral strafe
+ *   NOS        — turbo boost
+ *
  * Features:
  * - 3-axis arcade aerodynamics (collective climb/pitch, cyclic bank/strafe, rudder yaw)
- * - Turbine boost surge (Shift / NOS)
+ * - Turbine boost surge
  * - Auto-leveling attitude stabilization
  * - Ground cushion effect (< 8m) for silky smooth landings
+ * - Cruise altitude hold when flying forward
  * - Rotor spool-up / spool-down dynamics
  * - Full 3D rooftop, building, and ground collision
  * - Dedicated downwash dust ring on ground / roofs
+ * - Premium 3D model: cockpit canopy glass, twin turbines, fenestron, nav lights
  * - Custom chase camera rig with look-down angle
  */
 export class HelicopterVehicle extends Vehicle {
@@ -38,8 +49,8 @@ export class HelicopterVehicle extends Vehicle {
     this.fwdSpeed = 0;
 
     // Flight parameters
-    this.maxSpeed = 48;           // m/s
-    this.boostSpeed = 66;         // m/s
+    this.maxSpeed = 52;           // m/s (~190 km/h)
+    this.boostSpeed = 68;         // m/s
     this.climbRate = 16;          // m/s max vertical rate
     this.yawSpeed = 2.2;          // rad/s
     this.autoLevelRate = 4.2;     // restoring rate
@@ -74,86 +85,224 @@ export class HelicopterVehicle extends Vehicle {
     const group = new THREE.Group();
     group.name = 'Helicopter';
 
-    const dark = new THREE.MeshStandardMaterial({
-      color: 0x16202c,
-      roughness: 0.45,
-      metalness: 0.35,
+    // ── Materials ──
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: 0x16202c, roughness: 0.38, metalness: 0.42,
     });
-    const stripeMat = new THREE.MeshStandardMaterial({
-      color: 0xe6eef8,
-      roughness: 0.5,
+    const canopyMat = new THREE.MeshPhysicalMaterial({
+      color: 0x1a3a5c, roughness: 0.05, metalness: 0.1,
+      transmission: 0.6, thickness: 0.3, ior: 1.5,
+      transparent: true, opacity: 0.72, side: THREE.DoubleSide,
+    });
+    const chromeMat = new THREE.MeshStandardMaterial({
+      color: 0xc0c8d4, roughness: 0.15, metalness: 0.92,
     });
     const rotorMat = new THREE.MeshStandardMaterial({
-      color: 0x0f151c,
-      roughness: 0.3,
-      metalness: 0.6,
+      color: 0x0f151c, roughness: 0.3, metalness: 0.6,
+    });
+    const hazardMat = new THREE.MeshStandardMaterial({
+      color: 0xf0a818, roughness: 0.4, metalness: 0.2,
+    });
+    const stripeMat = new THREE.MeshStandardMaterial({
+      color: 0xe6eef8, roughness: 0.5,
+    });
+    const navRedMat = new THREE.MeshStandardMaterial({
+      color: 0xff2020, emissive: 0xff2020, emissiveIntensity: 2.0,
+    });
+    const navGreenMat = new THREE.MeshStandardMaterial({
+      color: 0x20ff40, emissive: 0x20ff40, emissiveIntensity: 2.0,
+    });
+    const beaconMat = new THREE.MeshStandardMaterial({
+      color: 0xff3030, emissive: 0xff3030, emissiveIntensity: 3.0,
     });
 
-    // Fuselage
-    const hull = new THREE.Mesh(createHeliHullGeometry(), dark);
+    // ── Fuselage (merged hull) ──
+    const hull = new THREE.Mesh(createHeliHullGeometry(), bodyMat);
     hull.castShadow = true;
     hull.receiveShadow = true;
     group.add(hull);
 
-    // Decorative side stripes
+    // ── Cockpit canopy glass (wrap-around tinted) ──
+    const canopyGeo = new THREE.SphereGeometry(
+      1.25, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55,
+    );
+    canopyGeo.applyMatrix4(M4(1.1, 0.28, 0, 0, 0, 0, 1.35, 0.88, 1.06));
+    const canopy = new THREE.Mesh(canopyGeo, canopyMat);
+    group.add(canopy);
+
+    // ── Decorative side stripes ──
     const stripe = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.35, 0.06), stripeMat);
-    stripe.position.set(-0.2, 0.1, 1.04);
+    stripe.position.set(-0.2, 0.1, 1.06);
     group.add(stripe);
     const stripe2 = stripe.clone();
-    stripe2.position.z = -1.04;
+    stripe2.position.z = -1.06;
     group.add(stripe2);
 
-    // Skids
+    // ── Twin turboshaft engine nacelles ──
     for (const side of [-1, 1]) {
-      const skid = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.12, 0.14), dark);
-      skid.position.set(-0.1, -1.35, side * 0.88);
+      const nacelle = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.28, 0.32, 1.6, 10),
+        bodyMat,
+      );
+      nacelle.rotation.z = Math.PI / 2;
+      nacelle.position.set(-0.8, 1.08, side * 0.52);
+      nacelle.castShadow = true;
+      group.add(nacelle);
+
+      // Chrome exhaust nozzle
+      const exhaust = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.14, 0.19, 0.28, 8),
+        chromeMat,
+      );
+      exhaust.rotation.z = Math.PI / 2;
+      exhaust.position.set(-1.65, 1.08, side * 0.52);
+      group.add(exhaust);
+    }
+
+    // ── FLIR camera pod (under nose) ──
+    const flir = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6), chromeMat);
+    flir.position.set(2.15, -0.78, 0);
+    group.add(flir);
+
+    // ── Landing skids (curved aluminum) ──
+    for (const side of [-1, 1]) {
+      // Main skid runner
+      const skid = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.06, 0.06, 4.2, 6),
+        chromeMat,
+      );
+      skid.rotation.z = Math.PI / 2;
+      skid.position.set(-0.1, -1.4, side * 0.9);
       skid.castShadow = true;
       group.add(skid);
-      for (const at of [-1.0, 0.8]) {
-        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.75, 0.12), dark);
-        leg.position.set(at, -0.98, side * 0.88);
-        leg.castShadow = true;
-        group.add(leg);
+
+      // Front curve (toe)
+      const toe = new THREE.Mesh(
+        new THREE.TorusGeometry(0.32, 0.06, 6, 6, Math.PI * 0.5),
+        chromeMat,
+      );
+      toe.position.set(2.0, -1.08, side * 0.9);
+      toe.rotation.z = Math.PI * 0.5;
+      group.add(toe);
+
+      // Cross-struts
+      for (const at of [-0.9, 0.85]) {
+        const strut = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.05, 0.06, 0.8, 6),
+          chromeMat,
+        );
+        strut.position.set(at, -1.0, side * 0.9);
+        strut.castShadow = true;
+        group.add(strut);
       }
     }
 
-    // Main rotor: 4 blades + translucent disc
+    // ── Main rotor assembly ──
     const rotor = new THREE.Group();
+
+    // Swashplate hub
+    const hub = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.3, 0.35, 0.18, 12),
+      chromeMat,
+    );
+    rotor.add(hub);
+
+    // 4 composite blades with yellow hazard tips
     for (let i = 0; i < 4; i++) {
-      const blade = new THREE.Mesh(new THREE.BoxGeometry(11.8, 0.08, 0.44), rotorMat);
-      blade.rotation.y = (i / 4) * Math.PI * 2;
+      const bg = new THREE.Group();
+      bg.rotation.y = (i / 4) * Math.PI * 2;
+
+      const blade = new THREE.Mesh(
+        new THREE.BoxGeometry(10.4, 0.08, 0.46), rotorMat,
+      );
       blade.castShadow = true;
-      rotor.add(blade);
+      bg.add(blade);
+
+      // Yellow hazard tip at each end of the blade
+      const tipA = new THREE.Mesh(
+        new THREE.BoxGeometry(0.7, 0.09, 0.47), hazardMat,
+      );
+      tipA.position.x = 5.55;
+      bg.add(tipA);
+      const tipB = new THREE.Mesh(
+        new THREE.BoxGeometry(0.7, 0.09, 0.47), hazardMat,
+      );
+      tipB.position.x = -5.55;
+      bg.add(tipB);
+
+      rotor.add(bg);
     }
+
+    // Translucent rotor disc
     const disc = new THREE.Mesh(
       new THREE.CircleGeometry(6.1, 28),
       new THREE.MeshBasicMaterial({
-        color: 0xa0b4c8,
-        transparent: true,
-        opacity: 0.12,
-        side: THREE.DoubleSide,
-        depthWrite: false,
+        color: 0xa0b4c8, transparent: true, opacity: 0.12,
+        side: THREE.DoubleSide, depthWrite: false,
       }),
     );
     disc.rotation.x = -Math.PI / 2;
     rotor.add(disc);
-    rotor.position.set(-0.1, 1.52, 0);
+    rotor.position.set(-0.1, 1.55, 0);
     group.add(rotor);
     this.rotor = rotor;
     this.disc = disc;
 
-    // Tail rotor
-    const tail = new THREE.Group();
-    for (let i = 0; i < 3; i++) {
-      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.0, 0.24), rotorMat);
-      blade.rotation.x = (i / 3) * Math.PI * 2;
-      tail.add(blade);
-    }
-    tail.position.set(-5.3, 0.55, 0.24);
-    group.add(tail);
-    this.tail = tail;
+    // ── Tail rotor with fenestron ring ──
+    const tailGroup = new THREE.Group();
+    const fenestron = new THREE.Mesh(
+      new THREE.TorusGeometry(0.62, 0.1, 8, 16),
+      bodyMat,
+    );
+    fenestron.rotation.y = Math.PI / 2;
+    tailGroup.add(fenestron);
 
-    // Searchlight
+    for (let i = 0; i < 4; i++) {
+      const blade = new THREE.Mesh(
+        new THREE.BoxGeometry(0.06, 1.05, 0.2), rotorMat,
+      );
+      blade.rotation.x = (i / 4) * Math.PI * 2;
+      tailGroup.add(blade);
+    }
+    tailGroup.position.set(-5.35, 0.55, 0.24);
+    group.add(tailGroup);
+    this.tail = tailGroup;
+
+    // ── Navigation lights ──
+    // Port (left) – red
+    const navRed = new THREE.Mesh(
+      new THREE.BoxGeometry(0.12, 0.08, 0.08), navRedMat,
+    );
+    navRed.position.set(0.5, 0.0, -1.12);
+    group.add(navRed);
+
+    // Starboard (right) – green
+    const navGreen = new THREE.Mesh(
+      new THREE.BoxGeometry(0.12, 0.08, 0.08), navGreenMat,
+    );
+    navGreen.position.set(0.5, 0.0, 1.12);
+    group.add(navGreen);
+
+    // Anti-collision beacon (top of mast)
+    const beacon = new THREE.Mesh(
+      new THREE.SphereGeometry(0.1, 6, 4), beaconMat,
+    );
+    beacon.position.set(-0.1, 1.72, 0);
+    group.add(beacon);
+    this.beacon = beacon;
+
+    // White tail strobe
+    const tailStrobe = new THREE.Mesh(
+      new THREE.BoxGeometry(0.1, 0.08, 0.08),
+      new THREE.MeshStandardMaterial({
+        color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 2.0,
+      }),
+    );
+    tailStrobe.position.set(-5.5, 1.6, 0);
+    group.add(tailStrobe);
+    this.tailStrobe = tailStrobe;
+
+    // ── Searchlight ──
     const spot = new THREE.SpotLight(0xf4f8ff, 800, 160, 0.24, 0.5, 1.2);
     spot.position.set(1.2, -0.6, 0);
     spot.target.position.set(1.2, -50, 0);
@@ -164,11 +313,8 @@ export class HelicopterVehicle extends Vehicle {
     const downwash = new THREE.Mesh(
       new THREE.RingGeometry(2.0, 5.5, 24),
       new THREE.MeshBasicMaterial({
-        color: 0xd8e4f0,
-        transparent: true,
-        opacity: 0,
-        side: THREE.DoubleSide,
-        depthWrite: false,
+        color: 0xd8e4f0, transparent: true, opacity: 0,
+        side: THREE.DoubleSide, depthWrite: false,
       }),
     );
     downwash.rotation.x = -Math.PI / 2;
@@ -263,26 +409,24 @@ export class HelicopterVehicle extends Vehicle {
 
       // Collective vertical climb / descend logic:
       if (input.handbrake) {
-        // Dedicated rapid vertical climb (SPACE)
+        // SPACE: dedicated rapid vertical climb
         collectiveClimb = 1.0;
         this.landed = false;
       } else if (input.hold || context.keys?.KeyC) {
-        // Dedicated descent (SHIFT or C)
+        // SHIFT / C: dedicated descent
         collectiveClimb = -1.0;
       } else if ((input.throttle || 0) > 0.08) {
-        // Forward key (W or ArrowUp):
-        // When landed or near ground (< 10m), holding W lifts off and climbs smoothly!
-        // When cruising aloft, holding W provides positive climb assist (0.45)
-        // so forward flight effortlessly gains altitude over city buildings!
-        if (this.landed || this.altitudeAboveGround < 10.0) {
-          collectiveClimb = 1.0;
+        // W: forward flight with automatic altitude hold.
+        // Near ground or landed, W also lifts off gently.
+        if (this.landed || this.altitudeAboveGround < 5.0) {
+          collectiveClimb = 0.6;
           this.landed = false;
-        } else {
-          collectiveClimb = 0.45;
         }
+        // When aloft (> 5m), collectiveClimb stays 0:
+        // pure forward cruise with strong vertical damping holds altitude.
       } else if ((input.brake || 0) > 0.1 && Math.abs(this.fwdSpeed) < 8.0) {
-        // Brake / Reverse key (S) while hovering or slow: smooth landing descent
-        collectiveClimb = -0.6;
+        // S while hovering or slow: smooth landing descent
+        collectiveClimb = -0.4;
       }
     }
 
@@ -295,8 +439,9 @@ export class HelicopterVehicle extends Vehicle {
     this.yaw += this.yawRate * dt;
 
     // Pitch attitude:
-    // Limit forward pitch near ground so skids don't dig into pavement during takeoff
-    const pitchLimit = this.altitudeAboveGround < 3.0 ? 0.14 : 0.35;
+    // At altitude, deep nose-down tilt (0.44 rad) for fast forward flight (~190 km/h).
+    // Near ground, limited pitch to prevent skids digging in during takeoff.
+    const pitchLimit = this.altitudeAboveGround < 3.0 ? 0.15 : 0.44;
     const targetPitch = -throttleFwd * pitchLimit * pwr;
     if (throttleFwd !== 0) {
       this.pitch += (targetPitch - this.pitch) * Math.min(1, dt * 4.0);
@@ -326,7 +471,10 @@ export class HelicopterVehicle extends Vehicle {
       this.vy = 0;
     } else {
       this.landed = false;
-      const netVerticalAcc = baseLift + verticalThrust + cushion - 9.8 - this.vy * 0.85;
+      // Stronger vertical damping during cruise (collectiveClimb ≈ 0) gives
+      // rock-solid altitude hold while flying forward with W.
+      const vertDrag = collectiveClimb === 0 ? 2.2 : 0.85;
+      const netVerticalAcc = baseLift + verticalThrust + cushion - 9.8 - this.vy * vertDrag;
       this.vy += netVerticalAcc * dt;
     }
 
@@ -336,7 +484,10 @@ export class HelicopterVehicle extends Vehicle {
     const rgtX = sy, rgtZ = cy;
 
     const fwdThrustMult = boost ? 1.45 : 1.0;
-    const fwdForce = -this.pitch * 60.0 * pwr * fwdThrustMult;
+    // Pitch-based aerodynamic thrust (main source of forward speed)
+    // plus a direct forward impulse when W is held for snappy response.
+    const directFwd = (input?.throttle || 0) > 0.08 && !this.landed ? 8.0 : 0;
+    const fwdForce = -this.pitch * 48.0 * pwr * fwdThrustMult + directFwd * pwr;
     const rgtForce = -this.roll * 38.0 * pwr;
 
     const ax = fwdX * fwdForce + rgtX * rgtForce - this.vx * 0.55;
@@ -364,7 +515,17 @@ export class HelicopterVehicle extends Vehicle {
       this.mesh.rotateX(this.pitch);
     }
 
-    // 9. Downwash Particle FX
+    // 9. Nav beacon strobe (uses rotor angle as clock, zero allocations)
+    if (this.beacon) {
+      const flash = (this.rotorAngle * 0.3) % 6.28;
+      this.beacon.material.emissiveIntensity = flash < 0.5 ? 5.0 : 0.3;
+    }
+    if (this.tailStrobe) {
+      const flash2 = ((this.rotorAngle * 0.3) + 3.14) % 6.28;
+      this.tailStrobe.material.emissiveIntensity = flash2 < 0.4 ? 4.0 : 0.2;
+    }
+
+    // 10. Downwash Particle FX
     if (this.downwash) {
       if (this.rotorRpm > 0.25 && this.altitudeAboveGround < 18) {
         this.downwash.visible = true;
@@ -482,28 +643,50 @@ export class HelicopterVehicle extends Vehicle {
   }
 }
 
-/** Fuselage geometry: aerodynamic nose, cabin, boom, vertical stabilizer, and rotor mast. */
+/** Premium fuselage geometry: aerodynamic nose, sculpted cabin, chin fairing,
+ *  tail boom, vertical & horizontal stabilizers, engine deck, and rotor mast. */
 function createHeliHullGeometry() {
   const parts = [];
-  const cabin = new THREE.SphereGeometry(1.5, 12, 9);
-  cabin.applyMatrix4(M4(0, 0, 0, 0, 0, 0, 1.5, 0.95, 1.05));
+
+  // Main cabin – wide sculpted body
+  const cabin = new THREE.SphereGeometry(1.55, 14, 10);
+  cabin.applyMatrix4(M4(0, 0, 0, 0, 0, 0, 1.6, 0.98, 1.08));
   parts.push(cabin);
 
-  const nose = new THREE.SphereGeometry(1.05, 10, 8);
-  nose.applyMatrix4(M4(1.85, -0.16, 0, 0, 0, 0, 1.25, 0.82, 0.94));
+  // Nose – sharper aerodynamic profile
+  const nose = new THREE.SphereGeometry(1.1, 12, 10);
+  nose.applyMatrix4(M4(2.0, -0.18, 0, 0, 0, 0, 1.3, 0.78, 0.92));
   parts.push(nose);
 
-  const boom = new THREE.CylinderGeometry(0.22, 0.44, 4.5, 8);
-  boom.applyMatrix4(M4(-3.25, 0.45, 0, 0, 0, Math.PI / 2));
+  // Chin (ventral fairing under nose for avionics)
+  const chin = new THREE.SphereGeometry(0.48, 8, 6);
+  chin.applyMatrix4(M4(1.4, -0.65, 0, 0, 0, 0, 0.9, 0.5, 0.7));
+  parts.push(chin);
+
+  // Tail boom – long tapering cylinder
+  const boom = new THREE.CylinderGeometry(0.2, 0.46, 5.0, 8);
+  boom.applyMatrix4(M4(-3.5, 0.48, 0, 0, 0, Math.PI / 2));
   parts.push(boom);
 
-  const fin = new THREE.BoxGeometry(1.0, 1.6, 0.14);
-  fin.applyMatrix4(M4(-5.35, 1.05, 0));
+  // Vertical fin (stabilizer)
+  const fin = new THREE.BoxGeometry(1.2, 1.8, 0.14);
+  fin.applyMatrix4(M4(-5.4, 1.15, 0));
   parts.push(fin);
 
-  const mast = new THREE.CylinderGeometry(0.18, 0.22, 0.92, 8);
-  mast.applyMatrix4(M4(-0.1, 1.12, 0));
+  // Horizontal stabilizer wings
+  const hstab = new THREE.BoxGeometry(0.6, 0.1, 2.2);
+  hstab.applyMatrix4(M4(-5.0, 0.72, 0));
+  parts.push(hstab);
+
+  // Rotor mast
+  const mast = new THREE.CylinderGeometry(0.18, 0.24, 0.95, 8);
+  mast.applyMatrix4(M4(-0.1, 1.14, 0));
   parts.push(mast);
+
+  // Engine deck fairing (between nacelles)
+  const deck = new THREE.BoxGeometry(1.8, 0.22, 1.0);
+  deck.applyMatrix4(M4(-0.6, 0.98, 0));
+  parts.push(deck);
 
   return mergeGeos(parts);
 }

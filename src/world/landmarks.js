@@ -41,6 +41,7 @@ export class Landmarks {
   constructor(scene, district) {
     this.scene = scene; this.district = district; this.placed = [];
     this.#buildTokyoArch();
+    this.#buildHalsteadLiftBridge();
     this.#place();
   }
 
@@ -216,5 +217,230 @@ export class Landmarks {
     group.rotation.y = -0.03;
     this.scene.add(group);
     console.info('Tokyo Gateway Arch placed at 2356.5, 1378.0 across Tokyo Street (Road 168)');
+  }
+
+  #buildHalsteadLiftBridge() {
+    const ax = 1939, az = 2317, bx = 1962, bz = 2698;
+    const dx = bx - ax, dz = bz - az;
+    const L = Math.hypot(dx, dz);
+    const yaw = Math.atan2(dz, dx);
+    const width = 26.0;
+    const deckY = 7.6;
+
+    const group = new THREE.Group();
+    group.name = 'HalsteadLiftBridge';
+
+    const steelMat = new THREE.MeshStandardMaterial({
+      color: 0x484f59,
+      roughness: 0.42,
+      metalness: 0.75,
+    });
+    const darkSteel = new THREE.MeshStandardMaterial({
+      color: 0x272d36,
+      roughness: 0.48,
+      metalness: 0.82,
+    });
+    const pierMat = new THREE.MeshStandardMaterial({
+      color: 0x7c7f86,
+      roughness: 0.85,
+      metalness: 0.12,
+    });
+    const beaconMat = new THREE.MeshStandardMaterial({
+      color: 0xff1100,
+      emissive: 0xff1100,
+      emissiveIntensity: 3.8,
+      roughness: 0.2,
+    });
+    const greenNavMat = new THREE.MeshStandardMaterial({
+      color: 0x00ff66,
+      emissive: 0x00ff66,
+      emissiveIntensity: 3.2,
+      roughness: 0.2,
+    });
+    const redNavMat = new THREE.MeshStandardMaterial({
+      color: 0xff2200,
+      emissive: 0xff2200,
+      emissiveIntensity: 3.2,
+      roughness: 0.2,
+    });
+
+    // 1. Dual Vertical Lift Towers flanking the navigation channel
+    const towerPositions = [142, 238];
+    const towerH = 34.0;
+    const halfW = width / 2;
+
+    for (const tPos of towerPositions) {
+      const towerGroup = new THREE.Group();
+      towerGroup.position.set(tPos, deckY, 0);
+
+      // Deep concrete caisson footing under tower into riverbed
+      for (const side of [-1, 1]) {
+        const footing = new THREE.Mesh(new THREE.BoxGeometry(10.0, 11.6, 6.5), pierMat);
+        footing.position.set(0, -5.8, side * (halfW + 1.2));
+        footing.castShadow = true;
+        footing.receiveShadow = true;
+        towerGroup.add(footing);
+
+        // River navigation hazard light on outer face of footing
+        const navLight = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.4, 8), redNavMat);
+        navLight.position.set(0, -1.8, side * (halfW + 4.5));
+        towerGroup.add(navLight);
+      }
+
+      // Vertical steel columns on both sides of roadway (4 main columns per tower)
+      for (const side of [-1, 1]) {
+        const sideZ = side * (halfW + 1.2);
+        for (const colX of [-3.8, 3.8]) {
+          const col = new THREE.Mesh(new THREE.BoxGeometry(1.2, towerH, 1.2), steelMat);
+          col.position.set(colX, towerH / 2, sideZ);
+          col.castShadow = true;
+          towerGroup.add(col);
+        }
+
+        // Side lattice cross-bracing (K-truss and X-braces between columns)
+        for (let yLevel = 6; yLevel < towerH - 4; yLevel += 7) {
+          const hBeam = new THREE.Mesh(new THREE.BoxGeometry(7.6, 0.55, 0.55), steelMat);
+          hBeam.position.set(0, yLevel, sideZ);
+          towerGroup.add(hBeam);
+
+          const diag1 = new THREE.Mesh(new THREE.BoxGeometry(10.2, 0.35, 0.35), darkSteel);
+          diag1.position.set(0, yLevel + 3.5, sideZ);
+          diag1.rotation.z = Math.atan2(7.0, 7.6);
+          towerGroup.add(diag1);
+
+          const diag2 = new THREE.Mesh(new THREE.BoxGeometry(10.2, 0.35, 0.35), darkSteel);
+          diag2.position.set(0, yLevel + 3.5, sideZ);
+          diag2.rotation.z = -Math.atan2(7.0, 7.6);
+          towerGroup.add(diag2);
+        }
+
+        // Tower top machinery penthouse
+        const penthouse = new THREE.Mesh(new THREE.BoxGeometry(9.4, 3.2, 3.8), steelMat);
+        penthouse.position.set(0, towerH + 1.6, sideZ);
+        towerGroup.add(penthouse);
+
+        // Counterweight sheaves (large cable pulley wheels)
+        for (const sheaveX of [-2.6, 2.6]) {
+          const sheave = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, 0.45, 16), darkSteel);
+          sheave.rotation.x = Math.PI / 2;
+          sheave.position.set(sheaveX, towerH + 2.2, sideZ);
+          towerGroup.add(sheave);
+        }
+
+        // Red aviation warning beacon on tower pinnacle
+        const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), beaconMat);
+        beacon.position.set(0, towerH + 4.2, sideZ);
+        towerGroup.add(beacon);
+      }
+
+      // Overhead roadway portal crossbeam connecting the two towers (7.8m clearance above road)
+      const portalBeam = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.6, width + 5.0), steelMat);
+      portalBeam.position.set(0, 8.2, 0);
+      portalBeam.castShadow = true;
+      towerGroup.add(portalBeam);
+
+      // Top overhead tie-strut across towers at Y = towerH
+      const topTie = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.8, width + 5.0), steelMat);
+      topTie.position.set(0, towerH, 0);
+      towerGroup.add(topTie);
+
+      // Overhead highway portal sign
+      if (typeof document !== 'undefined') {
+        const signCanvas = document.createElement('canvas');
+        signCanvas.width = 1024; signCanvas.height = 256;
+        const sctx = signCanvas.getContext('2d');
+        sctx.fillStyle = '#0e1824';
+        sctx.fillRect(0, 0, 1024, 256);
+        sctx.strokeStyle = '#3fd2ff';
+        sctx.lineWidth = 10;
+        sctx.strokeRect(6, 6, 1012, 244);
+        sctx.font = '900 62px system-ui, -apple-system, sans-serif';
+        sctx.textAlign = 'center';
+        sctx.textBaseline = 'middle';
+        sctx.fillStyle = '#ffffff';
+        sctx.shadowColor = '#00e5ff';
+        sctx.shadowBlur = 18;
+        sctx.fillText('HALSTEAD LIFT BRIDGE', 512, 90);
+        sctx.font = '700 42px system-ui, -apple-system, sans-serif';
+        sctx.fillStyle = '#39ffb0';
+        sctx.shadowColor = '#39ffb0';
+        sctx.shadowBlur = 12;
+        sctx.fillText('VERTICAL CLEARANCE 7.6M · EST. 1928', 512, 168);
+
+        const signTex = new THREE.CanvasTexture(signCanvas);
+        signTex.colorSpace = THREE.SRGBColorSpace;
+        const portalSignMat = new THREE.MeshStandardMaterial({
+          map: signTex,
+          emissiveMap: signTex,
+          emissive: 0xffffff,
+          emissiveIntensity: 2.4,
+          roughness: 0.3,
+        });
+
+        for (const faceDir of [-1, 1]) {
+          const signMesh = new THREE.Mesh(new THREE.PlaneGeometry(16.0, 3.4), portalSignMat);
+          signMesh.position.set(faceDir * 1.25, 8.2, 0);
+          signMesh.rotation.y = faceDir > 0 ? Math.PI / 2 : -Math.PI / 2;
+          towerGroup.add(signMesh);
+        }
+      }
+
+      group.add(towerGroup);
+    }
+
+    // 2. Through-Truss framework along the river span (t = 68m to t = 312m)
+    const trussStart = 68;
+    const trussEnd = 312;
+    const trussH = 5.2;
+    const panelW = 8.0;
+
+    for (let t = trussStart; t < trussEnd; t += panelW) {
+      const segLen = Math.min(panelW, trussEnd - t);
+      const segMid = t + segLen / 2;
+
+      for (const side of [-1, 1]) {
+        const sideZ = side * (halfW + 0.35);
+
+        // Lower and upper chords (horizontal steel box beams)
+        const topChord = new THREE.Mesh(new THREE.BoxGeometry(segLen, 0.45, 0.45), steelMat);
+        topChord.position.set(segMid, deckY + trussH, sideZ);
+        group.add(topChord);
+
+        const bottomChord = new THREE.Mesh(new THREE.BoxGeometry(segLen, 0.45, 0.45), steelMat);
+        bottomChord.position.set(segMid, deckY + 0.35, sideZ);
+        group.add(bottomChord);
+
+        // Vertical post
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.4, trussH, 0.4), steelMat);
+        post.position.set(t, deckY + trussH / 2, sideZ);
+        group.add(post);
+
+        // Diagonal truss brace
+        const diagLen = Math.hypot(segLen, trussH);
+        const diag = new THREE.Mesh(new THREE.BoxGeometry(diagLen, 0.32, 0.32), darkSteel);
+        diag.position.set(segMid, deckY + trussH / 2, sideZ);
+        diag.rotation.z = (side > 0 ? 1 : -1) * Math.atan2(trussH, segLen);
+        group.add(diag);
+      }
+
+      // Overhead sway frame struts across roadway every 16m
+      if ((t - trussStart) % 16 < panelW) {
+        const swayBeam = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, width + 0.7), steelMat);
+        swayBeam.position.set(t, deckY + trussH, 0);
+        group.add(swayBeam);
+      }
+    }
+
+    // Center shipping navigation channel green beacon suspended from bridge center
+    const centerSpanT = (towerPositions[0] + towerPositions[1]) / 2;
+    const centerNavLight = new THREE.Mesh(new THREE.SphereGeometry(0.38, 10, 8), greenNavMat);
+    centerNavLight.position.set(centerSpanT, deckY - 1.2, 0);
+    group.add(centerNavLight);
+
+    // Transform whole bridge group along Halstead Lift Bridge vector
+    group.position.set(ax, 0, az);
+    group.rotation.y = -yaw;
+    this.scene.add(group);
+    console.info('Halstead Lift Bridge 3D Architecture installed at', ax, az, 'length:', L);
   }
 }
