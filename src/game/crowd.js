@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { FigureFleet, FOOT_DROP } from '../world/figure.js';
-import { CYCLE } from '../world/signals.js';
+import { CYCLE, signalState } from '../world/signals.js';
 
 /**
  * People on the pavements.
@@ -166,10 +166,19 @@ export class Crowd {
         if ((this.rain || 0) > 0.4 && speed > 0.15) speed *= 1 + 0.35 * this.rain;   // in the rain people hurry (main sets crowd.rain from the weather)
         if (p.panic > 0) { p.panic -= dt; speed = 2.8; }   // running
         const atKerb = p.j && Math.hypot(p.j.x - p.x, p.j.y - p.z) < 7;
+        /* Wait for the light. The road being crossed runs across the crossing
+           vector (ox, oz); its cars are held when that axis reads red, and that
+           is when the green man shows (districtWorld's pedestrian lamps use the
+           same rule). Without a signal time from main -- or a junction the
+           graph never lit -- the old shared cycle phase stands in. */
+        const axis = Math.abs(p.ox ?? 0) > Math.abs(p.oz ?? 0) ? 1 : 0;
+        const held = atKerb && (this.signalTime !== undefined && p.j.id !== undefined
+          ? signalState(p.j.id, 0, axis, this.signalTime) !== 'red'
+          : ((this.clock + p.jitter * 0.1) % CYCLE) / CYCLE < 0.45);
+        p.kerbWait = held;
         if (atKerb && !p.cross) {
-          const ph = ((this.clock + p.jitter * 0.1) % CYCLE) / CYCLE;
-          if (ph < 0.45) speed = 0;
-          // green: the ones who waited cross together to the far pavement
+          if (held) speed = 0;
+          // green man: the ones who waited cross together to the far pavement
           else if (!p.crossed && p.ox !== undefined && this.rand() < dt * 1.5) {
             p.cross = { tx: p.x + p.ox, tz: p.z + p.oz };
           }
@@ -199,7 +208,7 @@ export class Crowd {
       }
 
       // the stride advances with distance covered, so feet do not skate
-      const moving = p.panic > 0 || p.speed > 0.15 && !(p.j && Math.hypot(p.j.x - p.x, p.j.y - p.z) < 7 && ((this.clock + p.jitter * 0.1) % CYCLE) / CYCLE < 0.45);
+      const moving = p.panic > 0 || p.speed > 0.15 && !p.kerbWait;
       if (!p.down && moving) p.phase += p.speed * dt * 2.6;
       const state = p.down ? 3 : !moving ? 0 : (p.panic > 0 || p.speed > 2.2) ? 2 : 1;
       if (!p.down && state === 0) p.phase += dt * 1.4;      // idle breathing

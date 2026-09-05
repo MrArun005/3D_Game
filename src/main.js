@@ -1807,6 +1807,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   lastArsKey = arsKey;
   skids.update(car, car.wheelGround ? car.wheelGround[2] : 0);
   if (firing) pullTrigger();
+  if (crowd) crowd.signalTime = worldTime;   // pedestrians wait for the same lights the cars obey
   if (crowd) crowd.update(car, dt, (speed, p) => {
     traffic.reportCrime('person', speed);
     if (p && speed > 3) {   // a pedestrian under the car: blood where they fell, a scuff of dust, and it hurts to watch
