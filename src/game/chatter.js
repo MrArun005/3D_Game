@@ -153,6 +153,21 @@ export class ChatterEngine {
     this.#speak(line, { rate: 1.1, pitch: 1.05, volume: 0.75 });
   }
 
+  /** Somebody on the pavement, at you: a light quick voice on the STREET channel, at most one every 6 s. */
+  civilian(key = 'horn') {
+    const LINES = {
+      horn: ['Hey! Watch it!', 'Oi! Slow down!', 'Are you crazy?!', 'Get off the pavement!'],
+      near: ['Whoa!', 'Hey, careful!', 'Watch where you are going!'],
+      gun: ['He has a gun!', 'Run!', 'Somebody call the police!'],
+    };
+    const now = performance.now();
+    if (now - (this._lastCivil || 0) < 6000) return;
+    this._lastCivil = now;
+    const pool = LINES[key] ?? LINES.horn, line = pool[Math.floor(Math.random() * pool.length)];
+    this.chat?.post?.('STREET', line);
+    this.#speak(line, { rate: 1.15, pitch: 1.25, volume: 0.6 });
+  }
+
   /** One dispatch line from the firefight AI, with the squelch, at most one a second. */
   radio(line) {
     const now = performance.now();

@@ -1419,6 +1419,7 @@ const input = createInput((action) => {
     audio.horn?.(0, 0);
     const fx = Math.cos(car.yaw), fz = -Math.sin(car.yaw);
     crowd?.panic(car.x + fx * 7, car.z + fz * 7, 7);
+    if (crowd && Math.abs(car.fwdSpeed || 0) > 3 && crowd.people.some((p) => p.live && !p.down && Math.hypot(p.x - car.x - fx * 7, p.z - car.z - fz * 7) < 7)) chatter?.civilian?.('horn');   // somebody ahead answers
     for (const v of traffic.cars) {
       if (!v.live) continue;
       const dx = v.x - car.x, dz = v.z - car.z, along = dx * fx + dz * fz, side = Math.abs(-dx * fz + dz * fx);
@@ -1474,7 +1475,7 @@ addEventListener('mouseup', (e) => { if (e.button === 0) firing = false; if (e.b
 addEventListener('mousedown', (e) => {
   if (document.pointerLockElement === canvas && e.button === 2) {
     aiming = true;
-    if (onFoot.active && held === 'gun') crowd?.panic(onFoot.x, onFoot.z, 9);   // raising a gun clears the pavement around you, GTA-style
+    if (onFoot.active && held === 'gun') { crowd?.panic(onFoot.x, onFoot.z, 9); if (crowd?.people.some((p) => p.live && !p.down && Math.hypot(p.x - onFoot.x, p.z - onFoot.z) < 9)) chatter?.civilian?.('gun'); }   // raising a gun clears the pavement around you, GTA-style
   }
 });
 addEventListener('contextmenu', (e) => { if (document.pointerLockElement === canvas) e.preventDefault(); });
