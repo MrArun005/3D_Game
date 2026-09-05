@@ -142,7 +142,7 @@ export function createWeather(scene, { hemi = null, onStrike = null, dome = null
       // Additive sprites STACK where they overlap, and the spray is a tight
       // cluster behind the wheels — at 0.5 each, four overlapping puffs clip to
       // white. Keep any single particle faint and let the density do the work.
-      spray.material.opacity = 0.035 + wet * 0.10 + car.slip * 0.08;
+      spray.material.opacity = (0.035 + wet * 0.10 + car.slip * 0.08) * (0.4 + 0.6 * amount);   // less spray in a drizzle
       spray.material.size = 0.6 + wet * 0.45;
       const fy = Math.cos(car.yaw), fz = -Math.sin(car.yaw);
       const rx = Math.sin(car.yaw), rz = Math.cos(car.yaw);
