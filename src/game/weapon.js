@@ -303,7 +303,5 @@ export class Weapon {
       this.sparkVel[i * 3 + 2] = -dz * (2 + Math.random() * 4) + (Math.random() - 0.5) * 6;
       this.sparkLife[i] = 0.22 + Math.random() * 0.18;
     }
-
-    return hit;
   }
 }
