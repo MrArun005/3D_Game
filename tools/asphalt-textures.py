@@ -59,3 +59,19 @@ rough = np.clip(0.84 + 0.08 * (patch - 0.5) + 0.04 * (grain - 0.5) - specks * 0.
 orm = np.dstack([np.ones_like(h), rough, np.zeros_like(h)])
 Image.fromarray((orm * 255).astype(np.uint8), 'RGB').save('public/textures/asphalt_orm.png')
 print('asphalt set written')
+
+# ---- kerb stone: the same dot placeholder, replaced by a granite -- pale grey, fine grain, faint mineral flecks, flat
+kg = rng.random((N, N)); kp = tile_noise(6, 2); km = tile_noise(48, 1)
+flecks = rng.random((N, N)) > 0.992
+kh = 0.5 * kg + 0.3 * km + 0.2 * kp
+kbase = 0.30 + 0.05 * (kp - 0.5) + 0.03 * (km - 0.5) + 0.04 * (kg - 0.5) - flecks * 0.12
+kalb = np.clip(kbase, 0, 1) ** (1 / 2.2)
+kalb = np.dstack([kalb, kalb, kalb * 0.98])
+Image.fromarray((kalb * 255).astype(np.uint8), 'RGB').save('public/textures/kerb_stone_albedo.png')
+kdx = (np.roll(kh, -1, 1) - np.roll(kh, 1, 1)) * 0.5; kdy = (np.roll(kh, -1, 0) - np.roll(kh, 1, 0)) * 0.5
+kl = np.sqrt(kdx * kdx + kdy * kdy + 1)
+knrm = np.dstack([-kdx / kl, kdy / kl, 1 / kl]) * 0.5 + 0.5
+Image.fromarray((knrm * 255).astype(np.uint8), 'RGB').save('public/textures/kerb_stone_normal.png')
+krough = np.clip(0.72 + 0.06 * (kp - 0.5) + 0.03 * (kg - 0.5), 0, 1)
+Image.fromarray((np.dstack([np.ones_like(kh), krough, np.zeros_like(kh)]) * 255).astype(np.uint8), 'RGB').save('public/textures/kerb_stone_orm.png')
+print('kerb set written')
