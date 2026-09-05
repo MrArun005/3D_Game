@@ -68,6 +68,15 @@ export class Radio {
     const bumpers = DJ_BUMPERS[st.name] || [];
     const b = bumpers[Math.floor(Math.random() * bumpers.length)] || '';
     this.hud.flash(`📻 ${st.name}\n"${b}"`);
+    // the DJ says it too: the browser's speech synthesis, brighter and slower than dispatch (?novoice turns every voice off)
+    try {
+      if (b && typeof speechSynthesis !== 'undefined' && !new URLSearchParams(location.search).has('novoice')) {
+        speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(`${st.name}. ${b}`.replace(/[^\x00-\x7F]/g, ' '));
+        u.rate = 1.0; u.pitch = 1.12; u.volume = 0.6; u.lang = 'en-US';
+        speechSynthesis.speak(u);
+      }
+    } catch { /* no voice, no harm */ }
     this.timer = setInterval(() => this.#schedule(), 90);
   }
 
