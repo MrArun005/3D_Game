@@ -87,11 +87,16 @@ export class Crowd {
          lands in the middle of road B. Ask the world what is actually
          underfoot instead. */
       if (this.district.roadDepth(x, z) < 0.8) continue;
+      /* Little Tokyo is crowded. While you are in it, six in ten candidate spots
+         outside it are thrown back, so the fleet concentrates on its pavements;
+         and more of its people stand -- shop windows, phones, queues. */
+      const inTokyo = this.tokyo && this.district.districtAt?.(x, z) === 'LITTLE TOKYO';
+      if (this.tokyo && !inTokyo && this.rand() < 0.6) continue;
       p.live = true; p.x = x; p.z = z; p.down = 0;
       p.hx = x; p.hz = z;          // leash anchor: the verified pavement spot
       // walk along the kerb, in the direction the pavement runs
       p.yaw = Math.atan2(-uz, ux) + (this.rand() < 0.5 ? 0 : Math.PI);
-      p.speed = this.rand() < 0.12 ? 0 : 1.0 + this.rand() * 0.5;   // some just stand: phones, shop windows
+      p.speed = this.rand() < (inTokyo ? 0.28 : 0.12) ? 0 : 1.0 + this.rand() * 0.5;   // some just stand: phones, shop windows
       p.phase = this.rand() * 6.28;
       p.wait = 0; p.jitter = this.rand() * CYCLE;
       // the far pavement: mirror this spot across the road's centreline (Phase 4b crossing target)
@@ -122,6 +127,7 @@ export class Crowd {
 
   update(car, dt, onHit) {
     this.clock += dt;
+    this.tokyo = this.district.districtAt?.(car.x, car.z) === 'LITTLE TOKYO';   // where you are steers where the crowd spawns (see #spawn)
     for (let i = 0; i < COUNT; i++) {
       const p = this.people[i];
       if (!p.live) { this.#spawn(p, car); if (!p.live) { this.fleet.hide(i); continue; } }

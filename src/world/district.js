@@ -165,6 +165,17 @@ export class District {
   }
 
   /** Blocks whose footprint touches a radius — the streamer's unit of work. */
+  /** The district a point stands in: the nearest block's, within 60 m; null on the water or far outside the plan. */
+  districtAt(x, z) {
+    let best = null, bd = 60;
+    for (const i of this.blocksNear(x, z, 60)) {   // blocksNear returns indices into this.blocks
+      const b = this.blocks[i]; if (!b) continue;
+      const d = Math.hypot(b.x - x, b.y - z) - Math.max(b.w, b.h) * 0.5;   // distance to the block's edge, roughly
+      if (d < bd && b.district) { bd = d; best = b.district; }
+    }
+    return best;
+  }
+
   blocksNear(x, z, radius) {
     const out = new Set();
     const r = Math.ceil(radius / CELL);

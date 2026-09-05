@@ -77,3 +77,12 @@ test('the streamer can ask what is nearby', () => {
   const near = city.blocksNear(2100, 1400, 300);
   assert.ok(near.length > 0 && near.length < data.blocks.length, `nearby ${near.length}`);
 });
+
+test('districtAt names the district a point stands in, and null far off the plan', async () => {
+  const fs = await import('node:fs');
+  const { District } = await import('../src/world/district.js');
+  const d = new District(JSON.parse(fs.readFileSync('public/halstead-bay.district.json', 'utf8')));
+  assert.equal(d.districtAt(2320, 1410), 'LITTLE TOKYO', 'the ramen alley place sits in Little Tokyo');
+  assert.equal(typeof d.districtAt(2350, 1348), 'string', 'the spawn corner is in some district');
+  assert.equal(d.districtAt(-5000, -5000), null);
+});
