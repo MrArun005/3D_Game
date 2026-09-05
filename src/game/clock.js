@@ -98,7 +98,7 @@ export class GameClock {
         scene.fog.density = isNight ? 0.0028 : isDusk ? 0.00028 : 0.00018;
       }
       // Phase 2 ownership: Sky radiance & HDRI environment intensity follows solar cycle
-      scene.environmentIntensity = isDay ? 1.15 : (isDusk || isDawn) ? 0.80 : 0.38;
+      scene.environmentIntensity = isDay ? 1.15 : (isDusk || isDawn) ? 0.80 : 0.24;   // night: the cover art is ink, not slate
     }
 
     // Phase 2 ownership: synchronize sky dome rotation & tint and stars visibility
@@ -113,7 +113,7 @@ export class GameClock {
           const t = (this.hour - 5.2) / 2.0;
           dome.material.color.setRGB(0.55 + t * 0.45, 0.45 + t * 0.55, 0.60 + t * 0.40);
         } else {
-          dome.material.color.setRGB(0.12, 0.16, 0.24);
+          dome.material.color.setRGB(0.045, 0.05, 0.10);   // near-black indigo; the day dome tinted to 0.12 read as mid-blue
         }
       }
     }
@@ -135,7 +135,7 @@ export class GameClock {
 
       // Stagger 2: Commercial neon signs ignite at 20% dusk
       const signOn = nightFactor > 0.20;
-      if (assets.mat?.sign) assets.mat.sign.emissiveIntensity = signOn ? 0.06 + 1.6 * nightFactor : 0.06;
+      if (assets.mat?.sign) assets.mat.sign.emissiveIntensity = signOn ? 0.06 + 2.4 * nightFactor : 0.06;   // neon that blooms (grade.setNight threshold 0.72)
       if (assets.mat?.beacon) assets.mat.beacon.emissiveIntensity = signOn ? 0.6 + 1.8 * nightFactor : 0.6;
 
       // Stagger 3: Tower & residential window illumination staggers between 40% and 85% dusk

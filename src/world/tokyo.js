@@ -386,5 +386,5 @@ export function tokyoMaterial() {
 
 /** 0 by day, 1 at night: the windows, neon and kanban faces come up with it. */
 export function setTokyoNight(k) {
-  if (MAT) MAT.emissiveIntensity = 0.05 + 1.15 * Math.max(0, Math.min(1, k));
+  if (MAT) MAT.emissiveIntensity = 0.05 + 1.75 * Math.max(0, Math.min(1, k));   // hot enough to bloom under the night threshold
 }

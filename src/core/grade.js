@@ -91,6 +91,8 @@ export function createGrade(renderer, scene, camera, {
   const lTime = uniform(0);
   const lAmt = uniform(0.7);
   const uHurt = uniform(0);      // 0..1: red at the frame edge -- a hit pulses it, low health holds it
+  const uSat = uniform(1.0);     // colour saturation: 1 by day, up at night for the neon look
+  const uSplit = uniform(0.0);   // split tone amount: shadows toward indigo, highlights toward warm magenta
   const uSpeed = uniform(0);     // 0..1: high speed / NOS visual warp and chromatic stretch
 
   /* --- scene pass --------------------------------------------------------
@@ -161,6 +163,14 @@ export function createGrade(renderer, scene, camera, {
     const tint = mix(vec3(1.05, 1.00, 0.93), vec3(0.93, 0.96, 1.07), uv().y);
     c.mulAssign(vec3(v).mul(tint));
 
+    /* Night look (the cover art): saturation up, and a split tone -- the
+       darks lean indigo, the brights lean warm magenta -- so neon reads as
+       neon and the sky as ink. Both uniforms sit at 0/1 by day: no change. */
+    const lum = c.r.mul(0.2126).add(c.g.mul(0.7152)).add(c.b.mul(0.0722));
+    c.assign(mix(vec3(lum), c, uSat));
+    const shadowTint = vec3(0.86, 0.90, 1.18), highTint = vec3(1.08, 0.97, 1.05);
+    c.assign(c.mul(mix(shadowTint, highTint, smoothstep(0.05, 0.75, lum)).sub(1.0).mul(uSplit).add(1.0)));
+
     // hurt: blood at the edges of vision, GTA's way of saying the number without the number
     const hurtEdge = smoothstep(0.30, 0.80, r).mul(uHurt);
     c.assign(mix(c, vec3(0.42, 0.01, 0.01), hurtEdge.mul(0.85)));
@@ -222,10 +232,13 @@ export function createGrade(renderer, scene, camera, {
        threshold stays where windows (emissive ~1.0 * tint <= 1) do not bloom
        but sign boards (1.4) and lamp caps (3.2) do. */
     setNight(on) {
+      uSat.value = on ? 1.32 : 1.0;
+      uSplit.value = on ? 1.0 : 0.0;
       if (!bloomPass) return;
-      bloomPass.strength.value = on ? 0.95 : BLOOM_STRENGTH;
-      bloomPass.radius.value = on ? 0.55 : 0.35;
-      bloomPass.threshold.value = on ? 0.9 : 0.25;
+      // the neon night: more bloom, wider, from a lower floor (lit windows glow, as they do in the reference)
+      bloomPass.strength.value = on ? 1.35 : BLOOM_STRENGTH;
+      bloomPass.radius.value = on ? 0.72 : 0.35;
+      bloomPass.threshold.value = on ? 0.72 : 0.25;
     },
 
     setDrops(amount) { lAmt.value = amount; },

@@ -898,11 +898,17 @@ export class DistrictWorld {
              its perpendicular (-ddz, ddx). Built from the approach direction
              turned 45 degrees either way -- a yaw offset alone put the 26 m run
              across the row and the stripes merged into two white wedges. */
-          const len = half * 2 * 1.1, c45 = Math.SQRT1_2;
+          /* Shibuya's diagonals are striped CROSSWALKS: a 4 m wide band along
+             each diagonal whose stripes run across it (perpendicular to the
+             walking direction), stepping along the band every 1.45 m. The
+             first cut ran the stripes along the diagonal and they merged into
+             solid wedges. */
+          const c45 = Math.SQRT1_2, reach = half * 1.05;
           for (const sgn of [1, -1]) {
-            const ddx = dx * c45 - sgn * dz * c45, ddz = dz * c45 + sgn * dx * c45;
-            const yd = Math.atan2(-ddz, ddx), px2 = -ddz, pz2 = ddx;
-            for (let k = -half * 0.75; k <= half * 0.75; k += 1.45) zebra.push(flatRect(node.x + px2 * k, 0.022, node.y + pz2 * k, yd, len, 0.62));
+            const ddx = dx * c45 - sgn * dz * c45, ddz = dz * c45 + sgn * dx * c45;   // the walking direction
+            const sx = -ddz, sz = ddx;                                             // the stripe runs across it
+            const ys = Math.atan2(-sz, sx);
+            for (let k = -reach; k <= reach; k += 1.45) zebra.push(flatRect(node.x + ddx * k, 0.022, node.y + ddz * k, ys, 4.0, 0.62));
           }
         }
 
