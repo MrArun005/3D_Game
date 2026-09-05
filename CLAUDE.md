@@ -182,8 +182,10 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   vertical kanban panels, projecting signs, rooftop billboards), one mesh +
   one LineSegments (poles/wires, `buildTokyoStreet`) per chunk. Also:
   lanterns, string lights, striped awnings, shutters, external stairs,
-  vending machines, the shrine (its hall is a solid). Photo preset
-  `little-tokyo`. Draws and fps
+  vending machines, the shrine (its hall is a solid), framed lit doors,
+  scramble crossings at its cross nodes (#signals), kanban registered as
+  coloured night-light heads (`headsByChunk` + LightPool head colour), taxi
+  liveries on 40% of civilians spawning there. Photo preset `little-tokyo`. Draws and fps
   at kingsway-corner NOT re-measured since (no browser in this session).
   Also: `buildTokyoStreet` (poles + wires), `buildShrine` (park block),
   landmark slabs to 24 storeys on tower blocks, `District.districtAt` steers
