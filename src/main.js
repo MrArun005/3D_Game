@@ -458,7 +458,7 @@ let skidT = 0;            // tyre-smoke cadence
 let farShotT = 25;        // distant gunfire cadence (ambient, night)
 let farSirenT = 70;       // distant siren cadence (ambient, any hour)
 let rainHeard = null;     // last rain amount handed to the audio
-let tokyoAmbT = 0;        // district-ambience poll cadence
+let tokyoAmbT = 0, tokyoNodes = null, chimeT = 0;   // district-ambience poll cadence; the district's junctions; crossing-chime cadence
 let clockRestored = false;
 let idleT = 0, idleCam = false, idleCamShown = false;   // seconds since any input; the parked-car orbit camera; whether the HUD is currently faded for it
 let lastDistrict = null, distT = 0;  // for the area toast and the dispatch call-out on a district change (polled twice a second)
@@ -1888,7 +1888,28 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     }
   }
   // Little Tokyo's sound follows you in and out of the district
-  if (audio.tokyo && districtRef?.districtAt) { tokyoAmbT = (tokyoAmbT ?? 0) - dt; if (tokyoAmbT <= 0) { tokyoAmbT = 0.5; audio.tokyo(districtRef.districtAt(onFoot.active ? onFoot.x : car.x, onFoot.active ? onFoot.z : car.z) === 'LITTLE TOKYO'); } }
+  if (audio.tokyo && districtRef?.districtAt) {
+    tokyoAmbT = (tokyoAmbT ?? 0) - dt;
+    if (tokyoAmbT <= 0) {
+      tokyoAmbT = 0.5;
+      const px = onFoot.active ? onFoot.x : car.x, pz = onFoot.active ? onFoot.z : car.z;
+      const inTokyo = districtRef.districtAt(px, pz) === 'LITTLE TOKYO';
+      /* The crossing chime follows the nearest Tokyo junction's lights: it plays
+         every 2.5 s while either axis is green (its pedestrians' man is green),
+         and stops on the all-red -- the melody you hear at Shibuya, in time. */
+      let chime = false;
+      if (inTokyo) {
+        tokyoNodes ??= (districtRef.graph?.nodes ?? []).filter((n) => (n.kind === 'cross' || n.kind === 'tee') && districtRef.districtAt(n.x, n.y) === 'LITTLE TOKYO');
+        let best = null, bd = 45;
+        for (const n of tokyoNodes) { const d = Math.hypot(n.x - px, n.y - pz); if (d < bd) { bd = d; best = n; } }
+        const green = best && (signalState(best.id, 0, 0, worldTime) === 'green' || signalState(best.id, 0, 1, worldTime) === 'green');
+        chimeT -= 0.5;
+        if (green && chimeT <= 0) { chimeT = 2.5; chime = true; }
+        if (!green) chimeT = 0.4;
+      }
+      audio.tokyo(inTokyo, chime);
+    }
+  }
   // Little Tokyo's windows, neon and kanban come up with the night (tokyo.js emissive attribute)
   { const hr = clock.hour; setTokyoNight(hr >= 20.5 || hr < 5.2 ? 1 : hr >= 18 ? (hr - 18) / 2.5 : hr < 7.2 ? (7.2 - hr) / 2 : 0); }
   if (weather) {

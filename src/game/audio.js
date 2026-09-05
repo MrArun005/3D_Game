@@ -322,7 +322,7 @@ export function createAudio() {
        wander) that fades in while you are in the district, and every ~9 s the
        two-note pedestrian-crossing chime Japanese junctions play. Built once,
        silent at gain 0. */
-    tokyo(on) {
+    tokyo(on, chime = false) {   // `chime`: play the crossing melody now (main syncs it to the nearest junction's green man)
       if (!ready || !ctx || ctx.state !== 'running') return;
       const now = ctx.currentTime;
       if (!tokyoNode) {
@@ -335,8 +335,8 @@ export function createAudio() {
       const t = tokyoNode;
       t.g.gain.setTargetAtTime(on ? 0.05 : 0, now, 0.8);
       t.bp.frequency.setTargetAtTime(380 + 90 * Math.sin(now * 0.37), now, 0.5);   // the murmur breathes
-      if (on && now >= t.nextChime) {
-        t.nextChime = now + 8 + Math.random() * 3;
+      if (on && (chime || now >= t.nextChime)) {
+        t.nextChime = now + (chime ? 1e9 : 8 + Math.random() * 3);   // once main drives the chime, the fallback timer retires
         for (const [f, at] of [[1046.5, 0], [880, 0.42]]) {   // C6 then A5: the crossing
           const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
           const eg = ctx.createGain(); eg.gain.setValueAtTime(0.0001, now + at); eg.gain.exponentialRampToValueAtTime(0.028, now + at + 0.03); eg.gain.exponentialRampToValueAtTime(0.0001, now + at + 0.38);
