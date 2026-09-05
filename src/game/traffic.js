@@ -5,7 +5,7 @@ import { mulberry32 } from '../core/rng.js';
 import { personGeometry } from '../world/beach.js';
 import { PAINT_COLOURS, BODY_KEYS, BODY_TYPES } from '../vehicle/config.js';
 import { groundHeightAt } from '../world/metrics.js';
-import { buildOfficer, poseOfficer, PoseBlender, lookAt, officerMaterial } from '../world/officer.js';
+import { buildOfficer, poseOfficer, PoseBlender, lookAt, officerMaterial, dressOfficer } from '../world/officer.js';
 import { buildWeaponMesh, ARSENAL } from './weapons.js';
 import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED, pickRooftops, coverSide, evasionDecay, searchRadius, crimeWitnessed, shouldFire } from './policeAi.js';
 import { roofsNear } from '../world/districtWorld.js';
@@ -784,7 +784,7 @@ export class Traffic {
       const picks = pickRooftops(roofs, player.x, player.z);
       for (let i = 0; i < picks.length; i++) {
         const r = picks[i];
-        const built = buildOfficer(90 + i);
+        const built = buildOfficer(90 + i, { swat: true });   // rooftops are a four-star response: tactical dress
         built.group.position.set(r.x, r.h + 0.5, r.z);
         const gun = buildWeaponMesh('rifle'); gun.position.set(0, -0.58, 0); gun.rotation.z = -Math.PI / 2;
         const flash = muzzleFlashMesh('rifle'); gun.add(flash);   // you see the rooftop shot before you hear it
@@ -1140,6 +1140,8 @@ export class Traffic {
         c.deployed = true; this._deployed++; c.fireT = 0.5; c.state = 'cover'; c.stateT = 0; c.hp = 100; c.down = 0;
         // the response draws heavier guns as the stars climb; the mesh swaps geometry, not material
         c.gunKind = weaponForWanted(Math.floor(this.wanted), c.slot);
+        const swat = Math.floor(this.wanted) >= 4;   // four stars: the tactical unit steps out (geometry swap, same material)
+        if (!!c.joints.swat !== swat) dressOfficer(c.joints, swat);
         if (!c.gun) {   // his last one is lying in the road from the time he went down
           c.gun = buildWeaponMesh(c.gunKind); c.gun.position.set(0, -0.58, 0); c.gun.rotation.z = -Math.PI / 2; c.joints.armR.add(c.gun);
           c.flash = new THREE.Mesh(flashGeo(), flashMat()); c.flash.visible = false; c.gun.add(c.flash);   // shared: one sphere, one material for every muzzle

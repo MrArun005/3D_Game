@@ -38,7 +38,7 @@ export class Roadblock {
        with a line of sight, and can be shot back at (main hands them in as
        targets). Seeds 70/71 so they are the same two faces every time. */
     this.posts = [0, 1].map((i) => {
-      const b = buildOfficer(70 + i);
+      const b = buildOfficer(70 + i, { swat: true });   // a roadblock is a three-star-plus response: tactical dress
       const gun = buildWeaponMesh('rifle'); gun.position.set(0, -0.58, 0); gun.rotation.z = -Math.PI / 2; b.joints.armR.add(gun);
       const flash = muzzleFlashMesh('rifle'); gun.add(flash);
       b.group.visible = false; scene.add(b.group);

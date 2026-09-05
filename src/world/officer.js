@@ -128,6 +128,53 @@ function legGeo() {
   return mergeGeometries(p, false);
 }
 
+/* ------------------------------------------------------------ SWAT variant
+   Four stars and up: the tactical unit. Same head, same seven-mesh contract,
+   same shared material -- only the geometry differs, so it costs one extra
+   geometry set for the whole city and zero pipeline variants. Black helmet
+   with a visor band, black plate carrier with a white POLICE strip, long
+   dark sleeves and gloves (no skin forearms), knee pads. */
+const S = { black: 0x0e0f12, plate: 0x181a1f, drab: 0x23262c, strip: 0xe9ecf2, visor: 0x2a3140 };
+
+function helmetGeo() {
+  const p = [];
+  p.push(at(cyl(0.118, 0.124, 0.13, S.black, 14), 0, 0.17, 0));           // shell
+  p.push(at(box(0.06, 0.05, 0.19, S.visor), 0.09, 0.13, 0));             // visor band, up
+  p.push(at(box(0.20, 0.02, 0.06, S.black), 0.02, 0.235, 0));            // crown ridge
+  p.push(at(box(0.012, 0.09, 0.02, S.black), -0.11, 0.10, 0.10));        // chin strap tab
+  return mergeGeometries(p);
+}
+function swatTorsoGeo() {
+  const p = [];
+  p.push(at(box(0.20, 0.42, 0.34, S.drab), 0, 0.28, 0));                 // blouse
+  p.push(at(box(0.235, 0.32, 0.375, S.plate), 0, 0.30, 0));              // plate carrier
+  p.push(at(box(0.02, 0.045, 0.19, S.strip), 0.121, 0.36, 0));           // POLICE strip, front
+  p.push(at(box(0.02, 0.045, 0.19, S.strip), -0.121, 0.36, 0));          // and back
+  p.push(at(box(0.05, 0.09, 0.09, S.black), 0.11, 0.22, -0.11));         // mag pouches
+  p.push(at(box(0.05, 0.09, 0.09, S.black), 0.11, 0.22, 0.11));
+  p.push(at(box(0.23, 0.055, 0.36, S.black), 0, 0.045, 0));              // belt
+  p.push(at(box(0.05, 0.10, 0.05, S.black), 0.02, 0.02, 0.175));         // holster
+  p.push(at(box(0.045, 0.075, 0.035, S.black), -0.09, 0.40, 0.12));      // radio
+  for (const s of [-1, 1]) p.push(at(cyl(0.058, 0.062, 0.07, S.drab, 8), 0, 0.44, s * 0.185)); // shoulders
+  return mergeGeometries(p);
+}
+function swatArmGeo() {
+  const p = [];
+  p.push(at(cyl(0.054, 0.047, UPPER_ARM, S.drab), 0, -UPPER_ARM / 2, 0));
+  p.push(at(cyl(0.047, 0.044, FOREARM, S.drab), 0, -UPPER_ARM - FOREARM / 2, 0));   // long sleeve
+  p.push(at(box(0.06, 0.05, 0.06, S.black), 0, -UPPER_ARM - FOREARM - 0.01, 0));   // glove
+  p.push(at(box(0.06, 0.06, 0.055, S.black), 0.01, -UPPER_ARM * 0.55, 0));           // elbow pad
+  return mergeGeometries(p);
+}
+function swatLegGeo() {
+  const p = [];
+  p.push(at(cyl(0.072, 0.06, THIGH, S.drab), 0, -THIGH / 2, 0));
+  p.push(at(cyl(0.06, 0.052, SHIN, S.drab), 0, -THIGH - SHIN / 2, 0));
+  p.push(at(box(0.075, 0.075, 0.075, S.black), 0.03, -THIGH - 0.02, 0));           // knee pad
+  p.push(at(box(0.09, 0.08, 0.20, S.black), 0.03, -THIGH - SHIN - 0.03, 0));       // boot
+  return mergeGeometries(p);
+}
+
 /* ------------------------------------------------------------------ sharing
    One set of geometry and one material for every officer in the city. Built on
    first use so importing this module costs nothing at boot. */
@@ -138,8 +185,10 @@ function shared() {
     mat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.06 }),
     head: headGeo(), cap: capGeo(), torso: torsoGeo(), arm: armGeo(), leg: legGeo(),
     moustache: box(0.012, 0.012, 0.05, 0x2a1d16),
+    swat: { cap: helmetGeo(), torso: swatTorsoGeo(), arm: swatArmGeo(), leg: swatLegGeo() },
   };
   for (const k of ['head', 'cap', 'torso', 'arm', 'leg']) SHARED[k].computeBoundingSphere();
+  for (const k of ['cap', 'torso', 'arm', 'leg']) SHARED.swat[k].computeBoundingSphere();
   return SHARED;
 }
 
@@ -150,6 +199,7 @@ export function officerMaterial() { return shared().mat; }
 export function disposeOfficers() {
   if (!SHARED) return;
   for (const k of ['head', 'cap', 'torso', 'arm', 'leg', 'moustache']) SHARED[k].dispose();
+  for (const k of ['cap', 'torso', 'arm', 'leg']) SHARED.swat[k].dispose();
   SHARED.mat.dispose();
   SHARED = null;
 }
@@ -158,7 +208,7 @@ export function disposeOfficers() {
  * One officer. Returns the group to add to the scene plus the joints to pose.
  * Seven meshes; geometry and material shared with every other officer.
  */
-export function buildOfficer(seed = 1) {
+export function buildOfficer(seed = 1, { swat = false } = {}) {
   const s = shared();
   const group = new THREE.Group();
   /* Seeded variety, so officer #3 is the same person every load (CLAUDE.md:
@@ -197,8 +247,23 @@ export function buildOfficer(seed = 1) {
     head.add(m);
   }
   const joints = { head, cap, torso, armL, armR, legL, legR };
+  if (swat) dressOfficer(joints, true);
   poseOfficer(joints, 'idle', 0);
   return { group, joints, variety };
+}
+
+/**
+ * Swap an existing officer between patrol dress and SWAT: geometry only, so
+ * a cruiser built at one star fields a tactical officer at four. The helmet
+ * always shows (variety.cap hid the peaked cap for one in five).
+ */
+export function dressOfficer(joints, swat) {
+  const s = shared(), src = swat ? s.swat : s;
+  joints.cap.geometry = src.cap; joints.torso.geometry = src.torso;
+  joints.armL.geometry = src.arm; joints.armR.geometry = src.arm;
+  joints.legL.geometry = src.leg; joints.legR.geometry = src.leg;
+  if (swat) joints.cap.visible = true;
+  joints.swat = swat;
 }
 
 /**
