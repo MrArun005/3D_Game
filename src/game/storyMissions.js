@@ -52,6 +52,19 @@ export const STORY_MISSIONS = [
     ]
   },
   {
+    id: 'tokyo_1',
+    type: 'bounty',
+    title: 'LITTLE TOKYO: THE YOKOCHO DEBT',
+    subtitle: 'Collect at the ramen alley; the syndicate will not let it go quietly',
+    payout: 9000,
+    heat: 2,
+    steps: [
+      { text: 'MEET THE COOK AT RAMEN YOKOCHO', target: { x: 2320, z: 1410 }, radius: 22 },
+      { text: 'THE SYNDICATE CALLED IT IN · HOLD KABUKICHO · THREE DOWN', target: { x: 2450, z: 1405 }, radius: 36, needDowned: 3 },
+      { text: 'LOSE THE HEAT · LIE LOW AT THE CAPSULE HOTEL', target: { x: 2285, z: 1510 }, radius: 24, needZeroHeat: true },
+    ],
+  },
+  {
     id: 'standoff_1',
     type: 'bounty',
     title: 'DEPOT STAND-OFF',
