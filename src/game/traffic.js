@@ -886,7 +886,15 @@ export class Traffic {
       }
 
       /* --- whatever is in front, including the player --- */
-      limit = Math.min(limit, this.#leaderLimit(car, player));
+      const lead = this.#leaderLimit(car, player);
+      limit = Math.min(limit, lead);
+      /* Held by a CAR (not a light) at a standstill for a few seconds: a horn,
+         with a cooldown so a jam is a scatter of horns, not a chord. The player
+         parked across a lane gets the same treatment -- that is the point. */
+      if (!car.hunt && lead < 1.0 && car.speed < 0.6) {
+        car.stuckT = (car.stuckT ?? 0) + dt;
+        if (car.stuckT > 2.5 + this.rand() * 2) { car.stuckT = -2 - this.rand() * 4; this.honk?.(car.x, car.z); }
+      } else if ((car.stuckT ?? 0) > 0) car.stuckT = 0;
       /* Sirens: civilians within 70 m of a pursuit slow to a crawl and drift
          to the kerb lane, so a chase runs through parting traffic. */
       if (!car.hunt && policeActive && Math.hypot(car.x - player.x, car.z - player.z) < 70) {

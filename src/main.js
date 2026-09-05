@@ -1636,7 +1636,13 @@ function frameBody() {
     ? { x: onFoot.x, y: onFoot.y, z: onFoot.z, vx: onFoot.vx, vz: onFoot.vz,
         speed: Math.hypot(onFoot.vx, onFoot.vz), onFoot: true, crouch, firedAt: lastFiredAt }
     : currentVehicle;
-  traffic.world = world; traffic.chatter = chatter; traffic.decals = decals; traffic.tracers = tracers; traffic.flashLight = weapon.light; traffic.puffs = puffs; traffic.blood = bloodDecals; traffic.brass = (x, y, z, dx, dz) => weapon.eject?.(x, y, z, dx, dz); traffic.crowd = crowd; traffic.heli = heli; traffic.grenadeLook = grenades;
+  traffic.world = world; traffic.chatter = chatter; traffic.decals = decals; traffic.tracers = tracers; traffic.flashLight = weapon.light; traffic.puffs = puffs; traffic.blood = bloodDecals; traffic.brass = (x, y, z, dx, dz) => weapon.eject?.(x, y, z, dx, dz);
+traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from wherever you are
+  const px = onFoot.active ? onFoot.x : car.x, pz = onFoot.active ? onFoot.z : car.z, d = Math.hypot(x - px, z - pz);
+  if (d > 90) return;
+  const look = onFoot.active ? onFoot.camYaw : car.yaw;
+  audio.horn?.(-Math.sin(Math.atan2(-(z - pz), x - px) - look), d / 90);
+}; traffic.crowd = crowd; traffic.heli = heli; traffic.grenadeLook = grenades;
   if (!onFoot.active) quarry.firedAt = lastFiredAt;   // the car object is the quarry in a car; officers read this for 'quiet'   // buildings for line of sight, the radio, the marks their misses leave, the street that scatters
   traffic.update(quarry, dt, worldTime);
   if (chatter) chatter.updateWanted(traffic.wanted);
