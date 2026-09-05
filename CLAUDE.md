@@ -185,7 +185,13 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   vending machines, the shrine (its hall is a solid), framed lit doors,
   scramble crossings at its cross nodes (#signals), kanban registered as
   coloured night-light heads (`headsByChunk` + LightPool head colour), taxi
-  liveries on 40% of civilians spawning there. Photo preset `little-tokyo`. Draws and fps
+  liveries on 40% of civilians spawning there. Photo preset `little-tokyo`.
+  Around it: a sixth radio station (SHIBUYA CITY POP, yo scale), the story
+  mission `tokyo_1`, the big map shows cruisers + the search ring + a
+  magenta Tokyo tint (legend updated), an area-name toast on district
+  change (`districtAt`, polled 2/s) with a dispatch call-out while wanted,
+  rain slows traffic 28% / hurries pedestrians 35% / scales spray, puddles
+  come and dry over 3 min, a distant siren every 60-180 s. Draws and fps
   at kingsway-corner NOT re-measured since (no browser in this session).
   Also: `buildTokyoStreet` (poles + wires), `buildShrine` (park block),
   landmark slabs to 24 storeys on tower blocks, `District.districtAt` steers
