@@ -788,11 +788,13 @@ export class Traffic {
         const r = picks[i];
         const built = buildOfficer(90 + i, { swat: true });   // rooftops are a four-star response: tactical dress
         built.group.position.set(r.x, r.h + 0.5, r.z);
-        const gun = buildWeaponMesh('rifle'); gun.position.set(0, -0.58, 0); gun.rotation.z = -Math.PI / 2;
-        const flash = muzzleFlashMesh('rifle'); gun.add(flash);   // you see the rooftop shot before you hear it
+        // at five stars the first marksman carries the sniper rifle: one round every 1.15 s that takes most of your health
+        const kind = stars >= 5 && i === 0 ? 'sniper' : 'rifle';
+        const gun = buildWeaponMesh(kind); gun.position.set(0, -0.58, 0); gun.rotation.z = -Math.PI / 2;
+        const flash = muzzleFlashMesh(kind); gun.add(flash);   // you see the rooftop shot before you hear it
         built.joints.armR.add(gun);
         this.scene.add(built.group);
-        this.marks.push({ group: built.group, joints: built.joints, blender: new PoseBlender(), roof: r, fireT: 1.5 + i, burstLeft: 0, poseT: 0, gun, flash, flashT: 0, down: 0 });
+        this.marks.push({ group: built.group, joints: built.joints, blender: new PoseBlender(), roof: r, fireT: 1.5 + i, burstLeft: 0, poseT: 0, gun, flash, flashT: 0, down: 0, kind });
         this.chatter?.radioPool?.('rooftops');
       }
     }
@@ -815,10 +817,11 @@ export class Traffic {
       const canSee = hasLineOfSight(gx, gy, gz, player.x, ty, player.z, bldg, this.cars, null);
       m.fireT -= dt;
       if (canSee && m.fireT <= 0) {
-        if (m.burstLeft <= 0) m.burstLeft = burstFor('rifle').shots;
+        const mk = m.kind ?? 'rifle';
+        if (m.burstLeft <= 0) m.burstLeft = mk === 'sniper' ? 1 : burstFor('rifle').shots;
         m.burstLeft--;
-        m.fireT = m.burstLeft > 0 ? burstFor('rifle').gap : 1.4 + this.rand() * 1.2;
-        this.fireAt(gx, gy, gz, player, 'rifle', stars, 0.8);   // a braced rifle from height: steadier than the street
+        m.fireT = m.burstLeft > 0 ? burstFor('rifle').gap : (mk === 'sniper' ? 2.6 + this.rand() * 1.4 : 1.4 + this.rand() * 1.2);
+        this.fireAt(gx, gy, gz, player, mk, stars, mk === 'sniper' ? 0.6 : 0.8);   // a braced rifle from height: steadier than the street; the sniper steadier still
         m.flashT = 0.07;
       }
     }
