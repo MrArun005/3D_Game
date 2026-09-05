@@ -167,6 +167,14 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   const-shadowing TypeError fixed + cruiser headlights + a red/blue beacon
   point light, marksmen fall on their roof, every shooter has a muzzle flash
   (`traffic.muzzleFlashMesh`).
+- **Little Tokyo is self-built (2026-09-06)**: `world/tokyo.js` generates
+  every building on the LITTLE TOKYO blocks (district.js assigns them) as
+  one merged vertex-coloured geometry with an `emit` attribute; one
+  `tokyoMaterial()` (MeshStandardNodeMaterial, emissiveNode = emit x
+  emissiveIntensity, `setTokyoNight(k)` from main) per chunk mesh. Sign
+  boards ride the shared atlas quads with the Tokyo tiles. districtWorld
+  skips kit, massing and facade dressing for `box.tokyo`; `?notokyo` is the
+  escape hatch. Arun's rule for this area: no Kenney, no kit -- ours.
 - **iCloud evicts `.git` (2026-09-05)**: the repo lives in `~/Desktop`, which
   iCloud syncs; it marked `.git/index` and 85+ objects `dataless`, so git
   timed out on mmap. `rm .git/index && git reset` rebuilt it once the files

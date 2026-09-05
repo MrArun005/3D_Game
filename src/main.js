@@ -62,6 +62,7 @@ import { Grenades, BLAST_R, KILL_R, HURT_R, blastFalloff } from './game/grenade.
 import { Crosshair, DecalPool, ADS, ADS_BLEND_S, spreadToPixels, spreadFor, recoilFor, firstBuildingHit, swayFor, swayPhaseStep, reloadPose, movementSpread, aimAssist } from './game/shooting.js';
 import { Tracers } from './game/tracers.js';
 import { Puffs } from './world/puffs.js';
+import { tokyoMaterial, setTokyoNight } from './world/tokyo.js';
 import { glow } from './core/additive.js';
 import { absorb } from './game/policeAi.js';
 import { SkidMarks } from './world/skidmarks.js';
@@ -1810,6 +1811,8 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   }
   clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: currentVehicle, dome, stars });
   // the rain audio follows the weather's breathing, and rain is grip: the physics reads car.wet
+  // Little Tokyo's windows, neon and kanban come up with the night (tokyo.js emissive attribute)
+  { const hr = clock.hour; setTokyoNight(hr >= 20.5 || hr < 5.2 ? 1 : hr >= 18 ? (hr - 18) / 2.5 : hr < 7.2 ? (7.2 - hr) / 2 : 0); }
   if (weather) {
     // rain only at night (the clock's thresholds), in spells on the normal cycle, all night with ?night
     const nightNow = clock.hour >= 20.5 || clock.hour < 5.2;
@@ -1894,6 +1897,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     compileMats.add(bloodDecals.mesh.material);
     compileMats.add(grenades.ball.material); compileMats.add(grenades.mat);
     for (const m of policeMaterials()) compileMats.add(m);
+    compileMats.add(tokyoMaterial());
     /* The pipeline is keyed on the material AND the object kind: a
        PointsMaterial warmed on a Mesh compiles the wrong program, and an
        InstancedMesh's vertex stage differs from a Mesh's. Warm each on what

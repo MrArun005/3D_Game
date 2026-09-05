@@ -11,6 +11,8 @@ import { PAINT_COLOURS, BODY_KEYS } from '../vehicle/config.js';
 import { signalState, LAMP_COLOURS } from './signals.js';
 import { BREAK_CLASS } from './breakables.js';
 import { ZEBRA_DEPTH } from '../game/traffic.js';
+import { buildTokyoBuilding, frontRotation, tokyoMaterial } from './tokyo.js';
+import { tileUv, SIGN_TILES } from './signs.js';
 
 /**
  * Halstead Bay in three dimensions.
@@ -1173,6 +1175,7 @@ export class DistrictWorld {
     const blocks = this.blkByChunk.get(k) ?? [];
     const boxes = [];              // solid building footprints in this chunk
     const kitPlaced = {};          // kit -> [geometry with matrix applied] (whole Kenney buildings)
+    const tokyoParts = [], tokyoBoards = [];   // Little Tokyo: our own buildings (world/tokyo.js), one mesh per chunk
     const slabs = { block: [], park: [], lot: [], vacant: [] };
     const facades = {}, bases = {};
     const roofs = [], glassRoofs = [], crowns = [], masts = [];
@@ -1201,6 +1204,32 @@ export class DistrictWorld {
         /* A whole kit building instead of the box, where the district builds that
            way (kitBuildings.js). Height stays in the model's proportion to its
            footprint, so a scaled house is house-height and a skyscraper towers. */
+        /* Little Tokyo builds its own (world/tokyo.js): no kit, no generic
+           massing, no kit facade dressing. The footprint's street side is found
+           by probing tarmac depth around it; the building is built facing +X and
+           turned onto that side, then through the block's transform. Its sign
+           boards join the chunk's atlas quads. ?notokyo restores the old massing. */
+        const noTokyo = typeof location !== 'undefined' && new URLSearchParams(location.search).has('notokyo');
+        if (bl.district === 'LITTLE TOKYO' && !noTokyo && g.w >= 4 && g.d >= 4) {
+          const toWorld = (lx, lz) => [wx + lx * ca - lz * sa, wz + lx * sa + lz * ca];
+          const rot = frontRotation((x, z) => this.district.tarmacDepth(x, z), toWorld, g.w / 2, g.d / 2);
+          const swap = Math.abs(rot) > Math.PI / 4 && Math.abs(Math.abs(rot) - Math.PI) > 1e-6;   // a +/-90 turn swaps the footprint axes
+          const b = buildTokyoBuilding(Math.floor(hash(wx * 0.71, wz * 0.29) * 1e9), swap ? g.d / 2 : g.w / 2, swap ? g.w / 2 : g.d / 2, h);
+          // local (front +X) -> footprint local (turned onto the street side) -> world (the block's frame), same rotation sense as mat4()
+          const M = new THREE.Matrix4().makeRotationY(-bl.angle).multiply(new THREE.Matrix4().makeRotationY(rot));
+          M.setPosition(wx, KERB_H, wz);
+          b.geo.applyMatrix4(M);
+          tokyoParts.push(b.geo);
+          const _p = new THREE.Vector3();
+          for (const bd of b.boards) {
+            _p.set(bd.x, bd.y, bd.z).applyMatrix4(M);
+            const yaw = bd.yaw + rot - bl.angle;   // the same two turns, applied to the board's facing
+            const [u, v] = tileUv(Math.floor(hash(_p.x * 0.37 + bd.y, _p.z * 1.3) * SIGN_TILES), true);
+            tokyoBoards.push({ m: mat4(_p.x, _p.y, _p.z, -yaw, bd.w, bd.h, 1), u, v });
+          }
+          boxes.push({ x: wx, z: wz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: b.height, district: bl.district, tokyo: true });
+          continue;
+        }
         const noKit = typeof location !== 'undefined' && new URLSearchParams(location.search).has('nokit');
         const kd = noKit ? null : KIT_DISTRICT[bl.district];
         const kits = this.assets.kitBuildings;
@@ -1345,7 +1374,8 @@ export class DistrictWorld {
       this.headsByChunk.set(k, dressHeads.map((hd) => ({ x: hd.x, y: hd.y, z: hd.z })));
       yield;
       // sliced: one big dressRoofs was a 10+ ms step against a 4 ms budget
-      for (let i = 0; i < boxes.length; i += 24) { dressRoofs(batch, boxes.slice(i, i + 24), this.district); yield; }
+      const dressable = boxes.filter((b) => !b.tokyo);   // Little Tokyo dresses itself (tokyo.js)
+      for (let i = 0; i < dressable.length; i += 24) { dressRoofs(batch, dressable.slice(i, i + 24), this.district); yield; }
 
       /* Facades are their own batch and their own group. They are far and away
          the most expensive thing in the kit -- a dressed frontage is roughly a
@@ -1356,9 +1386,9 @@ export class DistrictWorld {
       group.add(faces);
       this.facadeGroups.set(k, faces);
       const fbatch = new InstanceBatch(this.catalogue);
-      const signs = [], windows = [];
+      const signs = [...tokyoBoards], windows = [];   // Little Tokyo's kanban and fascias ride the same atlas quads
       // sliced: the frontage walk (modules, signs, windows, side walls) was the worst step
-      for (let i = 0; i < boxes.length; i += 10) { dressFacades(fbatch, boxes.slice(i, i + 10), this.district, roadDepth, signs, windows); yield; }
+      for (let i = 0; i < dressable.length; i += 10) { dressFacades(fbatch, dressable.slice(i, i + 10), this.district, roadDepth, signs, windows); yield; }
       /* Phase 1: the shop signs, one instanced draw per chunk. Per-instance
          atlas cell in aTile; the quad's width/height ride the matrix. They
          live in the facade group so they share its tighter visibility ring.
@@ -1402,6 +1432,20 @@ export class DistrictWorld {
       for (const p of dressPools) pools.push(flat(p.x, p.y, p.z, p.size));
     }
 
+    // Little Tokyo: every building in the chunk in one mesh, one material (tokyo.js)
+    if (tokyoParts.length) {
+      const merged = mergeGeometries(tokyoParts, false);
+      for (const g of tokyoParts) g.dispose();
+      if (merged) {
+        merged.userData.owned = true;
+        merged.computeBoundingSphere();
+        const tm = new THREE.Mesh(merged, tokyoMaterial());
+        tm.castShadow = true; tm.receiveShadow = true;
+        tm.userData.shell = true;
+        tm.layers.enable(SHADOW_FAR_LAYER);
+        group.add(tm);
+      }
+    }
     // one merged mesh per kit per chunk: the whole Kenney buildings placed above
     for (const [kitName, geos] of Object.entries(kitPlaced)) {
       const merged = mergeGeometries(geos, false);
