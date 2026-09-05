@@ -194,7 +194,10 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   come and dry over 3 min, a distant siren every 60-180 s. Voices: chatter
   speaks every dispatch line (speechSynthesis, `?novoice` off) and officer
   shouts (arrest/pinned/reload/frag) in a raised voice without the squelch;
-  the player's horn is I. Time of day persists in `hb.clock`. Draws and fps
+  the player's horn is I. Time of day persists in `hb.clock`. Idle cinematic:
+  20 s without input, stopped (car or foot) -> the camera orbits you and the
+  HUD fades (`idleT`/`idleCam`, body class `idlecam`). Tokyo neon has a
+  per-vertex `flick` phase driven in TSL (one glowing part in seven buzzes). Draws and fps
   at kingsway-corner NOT re-measured since (no browser in this session).
   Also: `buildTokyoStreet` (poles + wires), `buildShrine` (park block),
   landmark slabs to 24 storeys on tower blocks, `District.districtAt` steers
