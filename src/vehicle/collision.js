@@ -159,7 +159,7 @@ export function resolveObstacles(car, obstacles) {
               if (into > (car.impact || 0)) car.hitAt = { x: sx, z: sz };
               car.impact = Math.max(car.impact || 0, into);
               // who you hit decides whether anyone comes looking for you
-              if (into > (car.hitForce || 0)) { car.hitForce = into; car.hitTag = o.tag || 'prop'; }
+              if (into > (car.hitForce || 0)) { car.hitForce = into; car.hitTag = o.tag || 'prop'; car.hitRef = o.car || null; }   // hitRef: the traffic car behind the body, for ram damage
               if (o.car) {
                 o.car.panic = 4.0;
                 o.car.speed = Math.max(0, o.car.speed - into * 0.4 * (car.ramForce || 1.0));

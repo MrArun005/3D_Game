@@ -258,6 +258,19 @@ let dying = 0;
 
 /* Being shot at, and being nicked. Damage is deliberately cosmetic for now --
    a shot rocks the car and marks it; there is no health bar to lose. */
+/* A vehicle's engine: vhp starts at 8. Bullets take one each (a shotgun's
+   pellets count once), a hard ram from your car one or two. At zero the
+   cruise drops to 0 and it rolls to a stop; a cruiser's officers step out, a
+   civilian's driver bails. One place, for the trigger and the collision. */
+function damageVehicle(v, amount, isPolice) {
+  if (!v || v.vhp === 0) return;
+  v.vhp = Math.max(0, (v.vhp ?? 8) - amount);
+  if (v.vhp === 0) {
+    v.cruise = 0; v.baseCruise = 0; v.fleeT = 0; hud.flash(isPolice ? 'CRUISER DISABLED' : 'ENGINE OUT'); audio.thud?.(8);
+    if (!isPolice) crowd?.eject(v.x, v.z, v.yaw);
+  }
+}
+
 function onShot(gap, landed = null, damage = 26, from = null, kind = 'pistol') {
   audio.gunshot(Math.max(0.12, 1 - gap / 70), kind);   // quieter and duller with distance, in the weapon's voice
   // a landed round tells you which way it came from, as a wedge on the screen edge
@@ -688,11 +701,7 @@ function pullTrigger() {
     /* A vehicle takes eight rounds (a shotgun's pellets count once). Then the
        engine is done: cruise 0, so a cruiser rolls to a stop where it is and
        its officers have to come out on foot. spawnGraph resets it on respawn. */
-    hit.ref.vhp = (hit.ref.vhp ?? 8) - 1;
-    if (hit.ref.vhp === 0) {
-      hit.ref.cruise = 0; hit.ref.baseCruise = 0; hit.ref.fleeT = 0; hud.flash(hit.kind === 'police' ? 'CRUISER DISABLED' : 'ENGINE OUT'); audio.thud?.(8);
-      if (hit.kind === 'car') crowd?.eject(hit.ref.x, hit.ref.z, hit.ref.yaw);   // the driver bails and runs
-    }
+    damageVehicle(hit.ref, 1, hit.kind === 'police');
   }
 }
 const _obsBuffer = [];
@@ -2135,7 +2144,9 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   if (car.hitTag) {
     traffic.reportCrime(car.hitTag, car.hitForce || 0);
     damageModel.hit(car.hitForce || 0, car.hitAt);
-    car.hitTag = null; car.hitForce = 0;
+    // ramming a car or a cruiser hurts ITS engine too: a hard hit is one or two of its eight points (PIT them back)
+    if (car.hitRef && (car.hitForce || 0) > 4.5) damageVehicle(car.hitRef, (car.hitForce || 0) > 9 ? 2 : 1, car.hitTag === 'police');
+    car.hitTag = null; car.hitForce = 0; car.hitRef = null;
   }
   if (car.impact > 2.4) damageModel.hit(car.impact, car.hitAt);
   if (car.impact > 3.2 && car.hitAt && !onFoot.active) {
