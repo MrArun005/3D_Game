@@ -455,6 +455,7 @@ let lastHurtAt = -1e9;    // health regenerates to half once this is six seconds
 let healTick = 0;
 let skidT = 0;            // tyre-smoke cadence
 let farShotT = 25;        // distant gunfire cadence (ambient, night)
+let rainHeard = null;     // last rain amount handed to the audio
 let vigilante = null;     // { f: fugitive car, t: seconds left } while a patrol chase near you is yours to finish
 let hurtPulse = 0;        // the red edge on the frame, decays each frame (grade.setHurt)
 let armour = 0;           // body armour 0..1, bought at Ammu-Nation, soaks 60% of a hit until gone
@@ -1791,7 +1792,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     }
   }
   clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: currentVehicle, dome, stars });
-  if (weather) weather.update(camera, currentVehicle, dt);
+  if (weather) { weather.update(camera, currentVehicle, dt); if (Math.abs((weather.amount ?? 1) - (rainHeard ?? -1)) > 0.05) { rainHeard = weather.amount; audio.setRain(rainHeard); } }   // the rain audio follows the weather's breathing
   lightPool?.update(dt, currentVehicle.x, currentVehicle.z, traffic);
   reputation?.update(dt, playerTarget.x, playerTarget.z, traffic, car, damageModel);
   intelScanner?.update(dt, camera, playerTarget, traffic, reputation?.safehouses);

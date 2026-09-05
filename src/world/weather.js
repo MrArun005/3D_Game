@@ -57,6 +57,13 @@ import { newState as newLightning, step as lightningStep } from './lightning.js'
 export function createWeather(scene, { hemi = null, onStrike = null } = {}) {
   const storm = newLightning();
   let hemiBase = null;
+  /* The rain is not a constant. `amount` breathes 0.35..1.0 over about ten
+     minutes (two slow sines so it does not read as a metronome); the sheet's
+     density, fall speed and opacity follow it, and lightning only comes when
+     it is above 0.7 -- a drizzle has no thunder in it. main reads .amount for
+     the rain audio. */
+  let wt = 0;
+  const api = { amount: 1 };
   const rainGeo = new THREE.BufferGeometry();
   const rainPos = new Float32Array(RAIN_N * 3);
   for (let i = 0; i < RAIN_N; i++) {
@@ -96,11 +103,14 @@ export function createWeather(scene, { hemi = null, onStrike = null } = {}) {
     return v;
   };
 
-  return {
+  Object.assign(api, {
     rain, spray,
     update(camera, car, dt) {
+      wt += dt;
+      const amount = 0.675 + 0.325 * (0.6 * Math.sin(wt * 0.0105) + 0.4 * Math.sin(wt * 0.0037 + 1.7));
+      api.amount = amount;
       const cx = camera.position.x, cz = camera.position.z;
-      const fall = (13 + car.speed * 0.22) * dt;
+      const fall = (13 + car.speed * 0.22) * dt * (0.7 + 0.3 * amount);
       const pos = rainGeo.attributes.position.array;
       for (let i = 0; i < RAIN_N; i++) {
         const i3 = i * 3;
@@ -133,13 +143,14 @@ export function createWeather(scene, { hemi = null, onStrike = null } = {}) {
       sprayGeo.attributes.position.needsUpdate = true;
 
       // lightning (world/lightning.js): the sky goes white in stutters, the rain shows for a moment, thunder follows
-      const flash = lightningStep(storm, dt);
-      if (storm.strike && onStrike) onStrike(storm.strike.delay);
+      const flash = amount > 0.7 ? lightningStep(storm, dt) : 0;   // no thunder in a drizzle
+      if (flash > 0 && storm.strike && onStrike) onStrike(storm.strike.delay);
       if (hemi) {
         if (flash > 0) { if (hemiBase === null) hemiBase = hemi.intensity; hemi.intensity = hemiBase * (1 + 7 * flash) + 1.2 * flash; }
         else if (hemiBase !== null) { hemi.intensity = hemiBase; hemiBase = null; }
       }
-      rain.material.opacity = 0.55 + 0.4 * flash;
+      rain.material.opacity = (0.25 + 0.30 * amount) + 0.4 * flash;
     },
-  };
+  });
+  return api;
 }
