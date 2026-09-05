@@ -164,6 +164,19 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
   const awningCol = pick([0xc0392b, 0x2e86de, 0xf1c40f, 0xecf0f1, 0x27ae60]);
   const [ax, az] = onFace(front, 0, 0.7);
   parts.push(at(box(1.35, 0.08, front.w * 0.9, awningCol), ax, 3.25, az));
+  if (rnd() < 0.5) {   // striped: white bands across the awning, the cafe-and-noodle look
+    const stripes = Math.max(2, Math.floor(front.w * 0.9 / 0.9));
+    for (let i = 0; i < stripes; i += 2) parts.push(at(box(1.36, 0.02, 0.42, 0xf4f4f0), ax, 3.30, az - front.w * 0.45 + 0.45 + i * 0.9));
+  }
+  // string lights over the shopfront on a third: a sagging row of small warm bulbs between the kanban columns
+  if (rnd() < 0.33) {
+    const n = Math.max(4, Math.floor(front.w / 0.9)), [cx0, cz0] = onFace(front, 0, 1.2);
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1), s = 4 * t * (1 - t);
+      const along = -front.w * 0.42 + front.w * 0.84 * t;
+      parts.push(at(box(0.09, 0.09, 0.09, 0x3a2a1a, [1.0, 0.72, 0.35], 1.3), cx0, 4.35 - 0.35 * s, cz0 + along));
+    }
+  }
   boards.push({ x: front.off + 0.16, y: 3.85, z: 0, yaw: front.yaw, w: front.w * 0.82, h: 0.85 });   // the fascia
   const colH = Math.min(H - 5.5, 6 + rnd() * 8);
   if (colH > 3.5) {
