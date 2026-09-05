@@ -175,6 +175,11 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   boards ride the shared atlas quads with the Tokyo tiles. districtWorld
   skips kit, massing and facade dressing for `box.tokyo`; `?notokyo` is the
   escape hatch. Arun's rule for this area: no Kenney, no kit -- ours.
+  Cost, measured from the district file in node: 122 buildings, ~185k
+  triangles for the whole district (windows every 2.4 m on the street face,
+  3.4 m elsewhere), 369+ atlas boards (instanced), one mesh + one
+  LineSegments (poles/wires, `buildTokyoStreet`) per chunk. Draws and fps
+  at kingsway-corner NOT re-measured since (no browser in this session).
 - **iCloud evicts `.git` (2026-09-05)**: the repo lives in `~/Desktop`, which
   iCloud syncs; it marked `.git/index` and 85+ objects `dataless`, so git
   timed out on mmap. `rm .git/index && git reset` rebuilt it once the files
