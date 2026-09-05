@@ -137,7 +137,7 @@ export class Phone {
           <div style="font-weight: 800; font-size: 12px; color: ${m.type === 'heist' ? '#f39c12' : '#3498db'};">${m.title}</div>
           <div style="font-size: 11px; color: #bbb;">${m.subtitle}</div>
           <div style="display:flex; justify-content:space-between; align-items:center; margin-top: 6px;">
-            <div style="font-weight:800; color:#2ecc71; font-size:12px;">+$${m.payout.toLocaleString()}</div>
+            <div style="font-weight:800; color:#2ecc71; font-size:12px;">+$${(m.payout ?? m.pay ?? 0).toLocaleString()}</div>
             <button class="start-mission-btn" style="padding: 5px 12px; border-radius: 6px; border:none; background:${isCurrent ? '#e74c3c' : '#27ae60'}; color:#fff; font-weight:700; font-size:11px; cursor:pointer;">
               ${isCurrent ? 'ABANDON' : 'START HEIST'}
             </button>

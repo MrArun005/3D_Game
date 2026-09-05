@@ -132,7 +132,7 @@ export class StoryManager {
     if (!this.active) return;
     if (this.stepIdx >= this.active.steps.length) {
       // Completed!
-      const reward = this.active.payout;
+      const reward = this.active.payout ?? this.active.pay ?? 0;   // one mission entry says `pay`, not `payout`
       if (typeof window !== 'undefined' && window._reputation) {
         if (this.active.type === 'heist') {
           window._reputation.adjust(-85, 'HEIST MASTERMIND');
