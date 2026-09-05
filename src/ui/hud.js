@@ -433,6 +433,9 @@ export class Hud {
       ['#ffc23c', 'dot', 'Objective'],
       ['#2fbf6a', 'dot', 'Hospital'],
       ['#3f7dff', 'dot', 'Police station'],
+      ['#ff6b6b', 'dot', 'Police cruiser (flashing: lit)'],
+      ['rgba(255,255,255,0.7)', 'line', 'Search area when they lost you'],
+      ['rgba(255,64,180,0.6)', 'dot', 'Little Tokyo'],
     ];
     const w = 250, h = 30 + items.length * 20, x = W - w - 26, y = H - h - 26;
     g.fillStyle = 'rgba(9,12,18,0.9)'; g.fillRect(x, y, w, h);
