@@ -1498,7 +1498,16 @@ export class DistrictWorld {
          prop mesh was a direct draw (~450 of them at kingsway). Each landing
          now applies the bundle rule (no per-object culling inside a recording)
          and bumps the bundle once. */
-      const landed = (g) => { g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; }); group.needsUpdate = true; };
+      const landed = (g) => {
+        g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+        /* The shadow ring gate in update() only re-applies when a chunk's ring
+           changes; a batch landing after it ran kept the emit's default
+           castShadow = true in EVERY chunk until you crossed a boundary --
+           measured 1161 casters at the spawn, ~700 of them prop batches.
+           Forget the ring so the next frame re-applies the rule. */
+        props.userData.shadowRing = undefined;
+        group.needsUpdate = true;
+      };
       fbatch.emit(faces, { shadow: false, lod: 1 }).then(() => landed(faces))
         .catch((e) => console.warn('facades failed:', e.message));
       // fire and forget: the chunk is usable now, the props land a frame later
