@@ -616,7 +616,10 @@ function pullTrigger() {
        engine is done: cruise 0, so a cruiser rolls to a stop where it is and
        its officers have to come out on foot. spawnGraph resets it on respawn. */
     hit.ref.vhp = (hit.ref.vhp ?? 8) - 1;
-    if (hit.ref.vhp === 0) { hit.ref.cruise = 0; hit.ref.baseCruise = 0; hit.ref.fleeT = 0; hud.flash(hit.kind === 'police' ? 'CRUISER DISABLED' : 'ENGINE OUT'); audio.thud?.(8); }
+    if (hit.ref.vhp === 0) {
+      hit.ref.cruise = 0; hit.ref.baseCruise = 0; hit.ref.fleeT = 0; hud.flash(hit.kind === 'police' ? 'CRUISER DISABLED' : 'ENGINE OUT'); audio.thud?.(8);
+      if (hit.kind === 'car') crowd?.eject(hit.ref.x, hit.ref.z, hit.ref.yaw);   // the driver bails and runs
+    }
   }
 }
 const _obsBuffer = [];
