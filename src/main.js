@@ -461,7 +461,7 @@ let rainHeard = null;     // last rain amount handed to the audio
 let tokyoAmbT = 0, tokyoNodes = null, chimeT = 0;   // district-ambience poll cadence; the district's junctions; crossing-chime cadence
 let clockRestored = false;
 let idleT = 0, idleCam = false, idleCamShown = false;   // seconds since any input; the parked-car orbit camera; whether the HUD is currently faded for it
-let lastDistrict = null, distT = 0;  // for the area toast and the dispatch call-out on a district change (polled twice a second)
+let lastDistrict = null, distT = 0, wantedWas = 0;   // wantedWas: the first star's dispatch call  // for the area toast and the dispatch call-out on a district change (polled twice a second)
 let vigilante = null;     // { f: fugitive car, t: seconds left } while a patrol chase near you is yours to finish
 let hurtPulse = 0;        // the red edge on the frame, decays each frame (grade.setHurt)
 let armour = 0;           // body armour 0..1, bought at Ammu-Nation, soaks 60% of a hit until gone
@@ -1883,6 +1883,9 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   if (districtRef?.districtAt && distT <= 0) {
     distT = 0.5;
     const here = districtRef.districtAt(onFoot.active ? onFoot.x : car.x, onFoot.active ? onFoot.z : car.z);
+    // the first star: dispatch puts out the description -- on foot or in a vehicle, and where
+    if (traffic.wanted >= 1 && wantedWas < 1) chatter?.radio?.(`All units: suspect ${onFoot.active ? 'on foot' : 'in a vehicle'}${here ? ', ' + here.charAt(0) + here.slice(1).toLowerCase() : ''}. Respond.`);
+    wantedWas = traffic.wanted;
     if (here && here !== lastDistrict) {
       if (lastDistrict !== null) { hud.flash(here); if (traffic.wanted >= 1) chatter?.radio?.(`Suspect heading into ${here.charAt(0) + here.slice(1).toLowerCase()}. Units in the area respond.`); }
       lastDistrict = here;
