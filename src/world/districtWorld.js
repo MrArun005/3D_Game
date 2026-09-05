@@ -1230,8 +1230,11 @@ export class DistrictWorld {
       // Little Tokyo's park block carries a small shrine at its centre, in the Tokyo mesh
       if (bl.district === 'LITTLE TOKYO' && bl.type === 'park' && !(typeof location !== 'undefined' && new URLSearchParams(location.search).has('notokyo'))) {
         const sh = buildShrine(bl.id);
-        sh.geo.applyMatrix4(mat4(bl.x, KERB_H, bl.y, bl.angle, 1, 1, 1));
+        const shM = mat4(bl.x, KERB_H, bl.y, bl.angle, 1, 1, 1);
+        sh.geo.applyMatrix4(shM);
         tokyoParts.push(sh.geo);
+        // the two stone lanterns are warm night-light candidates (the same pool the kanban and lamp heads feed)
+        for (const side of [-1, 1]) { const lp = new THREE.Vector3(-2.5, 2.55, side * 3.6).applyMatrix4(shM); tokyoHeads.push({ x: lp.x, y: lp.y, z: lp.z, colour: 0xffb060 }); }
         // the hall is solid (the torii you may drive through, as in life): its centre is 5.2 m behind the apron centre, in the block's frame
         const hca = Math.cos(bl.angle), hsa = Math.sin(bl.angle);
         boxes.push({ x: bl.x + (-5.2) * hca, z: bl.y + (-5.2) * hsa, angle: bl.angle, hw: 1.6, hd: 1.8, height: 3.0, district: bl.district, tokyo: true });
