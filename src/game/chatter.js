@@ -119,6 +119,7 @@ export class ChatterEngine {
    */
   /** A line from a rotating pool for an event, so the same call is not heard twice running. */
   radioPool(key) {
+    const SHOUTED = new Set(['arrest', 'pinned', 'reload', 'frag']);
     const POOLS = {
       deploy: ['Unit on scene, suspect stopped. Stepping out.', 'Contact. Going on foot.', 'Suspect vehicle stationary, moving in.'],
       deployHot: ['Shots fired, officers on foot, requesting backup.', 'Taking fire! Send everything you have.', 'Officer needs assistance, shots fired!'],
@@ -139,7 +140,17 @@ export class ChatterEngine {
     const pool = POOLS[key]; if (!pool) return;
     this._poolIdx ??= {};
     const i = (this._poolIdx[key] = ((this._poolIdx[key] ?? -1) + 1) % pool.length);
-    this.radio(pool[i]);
+    // what an officer SHOUTS at you is not a radio call: no squelch, a raised voice, the POLICE channel
+    if (SHOUTED.has(key)) this.shout(pool[i]); else this.radio(pool[i]);
+  }
+
+  /** An officer's shout across the street: no squelch, louder and higher than dispatch, at most one every 1.5 s. */
+  shout(line) {
+    const now = performance.now();
+    if (now - (this._lastShout || 0) < 1500) return;
+    this._lastShout = now;
+    this.chat?.post?.('POLICE', line);
+    this.#speak(line, { rate: 1.1, pitch: 1.05, volume: 0.75 });
   }
 
   /** One dispatch line from the firefight AI, with the squelch, at most one a second. */
@@ -156,14 +167,14 @@ export class ChatterEngine {
      licence. Fast, low, a little quiet, through the squelch -- a radio, not a
      narrator. One utterance at a time (a new call cancels the old). ?novoice
      turns it off; so does a browser without the API. */
-  #speak(line) {
+  #speak(line, { rate = 1.18, pitch = 0.82, volume = 0.55 } = {}) {
     try {
       if (typeof speechSynthesis === 'undefined' || typeof SpeechSynthesisUtterance === 'undefined') return;
       if (this._novoice === undefined) this._novoice = typeof location !== 'undefined' && new URLSearchParams(location.search).has('novoice');
       if (this._novoice) return;
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(line.replace(/[^\x00-\x7F]/g, ' '));   // the radio does not read emoji
-      u.rate = 1.18; u.pitch = 0.82; u.volume = 0.55; u.lang = 'en-US';
+      u.rate = rate; u.pitch = pitch; u.volume = volume; u.lang = 'en-US';
       speechSynthesis.speak(u);
     } catch { /* a browser that lists the API but refuses it */ }
   }
