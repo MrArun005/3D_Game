@@ -708,6 +708,7 @@ export class Traffic {
     this._from.x = ox; this._from.y = oy; this._from.z = oz;
     this.onShot?.(gap, landed, w.damage * dmgMul, this._from, kind);
     if (gap < 60) this.puffs?.puff(ox, oy, oz, { r: 0.20, g: 0.19, b: 0.18, life: 0.5, vy: 0.5 });   // a wisp off his muzzle too
+    if (gap < 30) { const dl = Math.hypot(player.x - ox, player.z - oz) || 1; this.brass?.(ox, oy - 0.05, oz, (player.x - ox) / dl, (player.z - oz) / dl); }   // and brass off his breech (weapon.eject)
     if (this.flashLight && gap < 35) {
       // the muzzle lights the street for a frame: the player's flash light, borrowed (grenades borrow it too)
       this.flashLight.position.set(ox, oy, oz); this.flashLight.intensity = 3.2; this._flashT = 0.06;
