@@ -908,7 +908,8 @@ export class DistrictWorld {
             const ddx = dx * c45 - sgn * dz * c45, ddz = dz * c45 + sgn * dx * c45;   // the walking direction
             const sx = -ddz, sz = ddx;                                             // the stripe runs across it
             const ys = Math.atan2(-sz, sx);
-            for (let k = -reach; k <= reach; k += 1.45) zebra.push(flatRect(node.x + ddx * k, 0.022, node.y + ddz * k, ys, 4.0, 0.62));
+            // flatRect's first extent runs ACROSS the yaw direction here (measured: the 4 m run merged the row into a band), so the stripe's 0.62 goes first
+            for (let k = -reach; k <= reach; k += 1.45) zebra.push(flatRect(node.x + ddx * k, 0.022, node.y + ddz * k, ys, 0.62, 4.0));
           }
         }
 

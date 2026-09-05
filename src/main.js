@@ -2112,7 +2112,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     weather.update(camera, currentVehicle, dt); car.wet = weather.amount ?? 1; traffic.wet = car.wet; if (crowd) crowd.rain = car.wet;
     if (Math.abs((weather.amount ?? 1) - (rainHeard ?? -1)) > 0.05) { rainHeard = weather.amount; audio.setRain(rainHeard); }
     // the road LOOKS wet: tarmac roughness drops and its reflection rises with the rain (uniforms only, no recompile; bundles carry uniform changes)
-    const tm = assets?.mat?.tarmac; if (tm) { tm.roughness = 0.48 - 0.30 * car.wet; tm.envMapIntensity = 1.1 + 0.9 * car.wet; }
+    const tm = assets?.mat?.tarmac; if (tm) { tm.roughness = 0.48 - 0.34 * car.wet; tm.envMapIntensity = 1.1 + 2.6 * car.wet; }   // the night environment is dark now, so a wet road needs more of it to mirror the neon
     if (scene.fog) scene.fog.density *= 1 + 0.9 * car.wet;   // rain thickens the air; multiplies the clock's per-frame value, so it never accumulates
     if (stars && car.wet > 0.05) stars.visible = false;   // no stars through cloud (the clock re-decides every frame)
   }
