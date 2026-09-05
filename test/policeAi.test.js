@@ -113,7 +113,8 @@ test('losing them: unseen for ten seconds with cruisers searching nearby drains 
   assert.equal(evasionDecay({ ...base, eyesOn: true }), 0, 'the helicopter does not lose you');
   assert.equal(evasionDecay({ ...base, coldFor: 4 }), 0, 'not yet');
   assert.equal(evasionDecay({ ...base, nearest: Infinity }), 0, 'no cruiser has arrived: nothing to evade');
-  assert.equal(evasionDecay({ ...base, wanted: 4 }), 0, 'four stars: only distance clears it');
+  assert.equal(evasionDecay({ ...base, wanted: 4 }), 0, 'four stars: ten seconds is not enough');
+  assert.ok(evasionDecay({ ...base, wanted: 4, coldFor: 21 }) > 0, 'twenty is, once the helicopter has lost you too');
   assert.equal(evasionDecay({ ...base, nearest: 400, coldFor: 0, cool: 10 }), 0.55, 'the old 240 m rule still applies');
   assert.ok(searchRadius(3) < searchRadius(20) && searchRadius(200) === 90, 'the ring grows and caps');
 });

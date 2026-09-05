@@ -176,7 +176,7 @@ export function evasionDecay({ hot, eyesOn, coldFor, nearest, wanted, cool = 0 }
   if (hot || eyesOn) return 0;
   if (cool > 9) return 0.55;                                     // nobody within 240 m: the old rule
   if (nearest === Infinity || nearest > 200) return 0;           // they have not arrived; nothing to hide from yet
-  if (wanted >= 4) return 0;                                     // at four stars the air keeps eyes on you
+  if (wanted >= 4) return coldFor > HIDDEN_AFTER_S * 2 ? 0.25 : 0;   // four stars: the air has to lose you too, and it takes twice as long
   return coldFor > HIDDEN_AFTER_S ? 0.35 : 0;
 }
 

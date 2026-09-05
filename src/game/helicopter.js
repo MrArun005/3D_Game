@@ -254,7 +254,9 @@ export class Helicopter {
     this.t += dt;
     // lead the car, then orbit the lead point
     const lead = 1.6;
-    const tx = car.x + car.vx * lead, tz = car.z + car.vz * lead;
+    // eyes lost: it searches where the ground units last had you (traffic.seenX/Z), not where you are
+    const lost = this.sight <= 0 && traffic?.seenX !== undefined;
+    const tx = lost ? traffic.seenX : car.x + car.vx * lead, tz = lost ? traffic.seenZ : car.z + car.vz * lead;
     const gap = Math.hypot(tx - this.pos.x, tz - this.pos.z);
     let aimX, aimZ;
     if (gap > ORBIT * 1.4) {
