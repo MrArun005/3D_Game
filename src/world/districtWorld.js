@@ -967,6 +967,13 @@ export class DistrictWorld {
           }
         }
         meta.push({ node: node.id, axis, base: lens.length - 3 });
+        /* Little Tokyo: a pedestrian lamp pair beside the mast -- stop over
+           walk -- lit from this approach's own phase: walk when its cars are
+           red. Two more lens instances, recoloured in updateSignals. */
+        if (this.district.districtAt?.(node.x, node.y) === 'LITTLE TOKYO') {
+          for (let k = 0; k < 2; k++) lens.push(mat4(px - dz * 0.36 + dx * 0.12, KERB_H + 2.45 - k * 0.3, pz + dx * 0.36 + dz * 0.12, -yaw, 0.8, 0.8, 0.8));
+          meta.push({ node: node.id, axis, base: lens.length - 2, ped: true });
+        }
       }
     }
 
@@ -1030,6 +1037,12 @@ export class DistrictWorld {
     for (const { mesh, meta } of this.signalsByChunk.values()) {
       for (const m of meta) {
         const state = signalState(m.node, 0, m.axis, t);
+        if (m.ped) {   // pedestrian pair: red man while cars flow, green man while they are held
+          const walk = state === 'red';
+          mesh.setColorAt(m.base, c.setHex(walk ? 0x2a0a08 : 0xff2a1c));
+          mesh.setColorAt(m.base + 1, c.setHex(walk ? 0x2bd85a : 0x0a1408));
+          continue;
+        }
         const cols = LAMP_COLOURS[state];
         for (let k = 0; k < 3; k++) mesh.setColorAt(m.base + k, c.setHex(cols[k]));
       }
