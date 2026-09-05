@@ -171,6 +171,13 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   const-shadowing TypeError fixed + cruiser headlights + a red/blue beacon
   point light, marksmen fall on their roof, every shooter has a muzzle flash
   (`traffic.muzzleFlashMesh`).
+- **Asphalt textures are real now (2026-09-05)**: the shipped `asphalt_*`
+  set was the library's generic dot pattern; under the wet-road env boost
+  every dot mirrored as a cobble. `tools/asphalt-textures.py` (numpy + PIL,
+  seeded) writes a grain/patch/speck set with near-flat normals and ~0.07
+  linear albedo; `main.js` also fades `tarmac.normalScale` 0.8 -> 0.25 with
+  `car.wet`. Verified day and night in the preview build. The other library
+  textures are still the dot generator -- check before blaming a shader.
 - **Little Tokyo is self-built (2026-09-06)**: `world/tokyo.js` generates
   every building on the LITTLE TOKYO blocks (district.js assigns them) as
   one merged vertex-coloured geometry with an `emit` attribute; one
