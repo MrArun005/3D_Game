@@ -100,7 +100,7 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
   const [wall, band] = pick(WALLS);
   const residential = rnd() < 0.5;
   const neon = rnd() < 0.45 ? pick(NEON) : null;
-  const parts = [], boards = [];
+  const parts = [], boards = [], lamps = [];   // lamps: where the night light pool may put a real coloured light (the kanban)
   const F = faces(hw, hd);
 
   // the mass and the storey bands
@@ -196,6 +196,7 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
       if (rnd() < 0.15) continue;
       const cz = side * (hd - 0.55);
       parts.push(at(box(0.28, colH, 0.95, 0xf2f2f2, [0.9, 0.9, 0.9], 0.5), hw + 0.18, 4.6 + colH / 2, cz));
+      { const nc = pick(NEON); lamps.push({ x: hw + 1.4, y: 4.6 + colH * 0.45, z: cz, colour: _c.setRGB(nc[0], nc[1], nc[2]).getHex() }); }
       /* A kanban is a stack of tenants. The atlas tiles are 4:1 landscape, so a
          panel is `vertical`: the caller rolls the quad 90 degrees and the tile
          runs UP the column (rotated lettering, as real kanban often carry).
@@ -245,7 +246,7 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
   const geo = mergeGeometries(parts, false);
   for (const p of parts) p.dispose();
   geo.computeBoundingSphere();
-  return { geo, boards, height: H, floors, tris: geo.index ? geo.index.count / 3 : geo.attributes.position.count / 3 };
+  return { geo, boards, lamps, height: H, floors, tris: geo.index ? geo.index.count / 3 : geo.attributes.position.count / 3 };
 }
 
 /**

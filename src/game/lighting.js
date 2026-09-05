@@ -60,6 +60,7 @@ export class LightPool {
       }
     }
     this.intensity = intensity;
+    this.colour = colour;   // the default head colour; a head may carry its own (Little Tokyo's kanban)
     this.t = 0; this.next = 0;
     // four headlight spots, lent to the nearest moving traffic cars
     this.spots = [];
@@ -152,6 +153,7 @@ export class LightPool {
         // hysteresis: 20% closer, and the owner has had its second
         if (slot.head && !(best.d2 < cur * 0.8 && this.t - slot.since > 1.0)) continue;
         slot.from = slot.head; slot.head = best.h; slot.since = this.t; slot.fade = 0;
+        slot.light.color.setHex(best.h.colour ?? this.colour);
         owned.add(best.h); free.shift();
       }
     }

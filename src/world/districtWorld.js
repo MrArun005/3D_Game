@@ -1188,7 +1188,7 @@ export class DistrictWorld {
     /* --- blocks: a raised slab is its own kerb, and buildings stand on it --- */
     const blocks = this.blkByChunk.get(k) ?? [];
     const kitPlaced = {};          // kit -> [geometry with matrix applied] (whole Kenney buildings)
-    const tokyoParts = [], tokyoBoards = [], tokyoProps = [];   // Little Tokyo: our own buildings (world/tokyo.js), one mesh per chunk
+    const tokyoParts = [], tokyoBoards = [], tokyoProps = [], tokyoHeads = [];   // Little Tokyo: our own buildings (world/tokyo.js), one mesh per chunk
     const slabs = { block: [], park: [], lot: [], vacant: [] };
     const facades = {}, bases = {};
     const roofs = [], glassRoofs = [], crowns = [], masts = [];
@@ -1243,6 +1243,7 @@ export class DistrictWorld {
           b.geo.applyMatrix4(M);
           tokyoParts.push(b.geo);
           const _p = new THREE.Vector3();
+          for (const lp of b.lamps ?? []) { _p.set(lp.x, lp.y, lp.z).applyMatrix4(M); tokyoHeads.push({ x: _p.x, y: _p.y, z: _p.z, colour: lp.colour }); }   // the kanban as candidates for the real night lights
           for (const bd of b.boards) {
             _p.set(bd.x, bd.y, bd.z).applyMatrix4(M);
             const yaw = bd.yaw + rot - bl.angle;   // the same two turns, applied to the board's facing
@@ -1405,7 +1406,7 @@ export class DistrictWorld {
       // emissive caps on the authored lamps, so the heads bloom at night
       for (const hd of dressHeads) heads.push(mat4(hd.x, hd.y, hd.z, -hd.yaw, 1, 1, 1));
       // lamp-head positions for game/lighting.js: the pool of real lights follows the nearest
-      this.headsByChunk.set(k, dressHeads.map((hd) => ({ x: hd.x, y: hd.y, z: hd.z })));
+      this.headsByChunk.set(k, [...dressHeads.map((hd) => ({ x: hd.x, y: hd.y, z: hd.z })), ...tokyoHeads]);
       yield;
       // sliced: one big dressRoofs was a 10+ ms step against a 4 ms budget
       const dressable = boxes.filter((b) => !b.tokyo);   // Little Tokyo dresses itself (tokyo.js)
