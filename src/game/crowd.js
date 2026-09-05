@@ -133,6 +133,7 @@ export class Crowd {
       if (!p.live) { this.#spawn(p, car); if (!p.live) { this.fleet.hide(i); continue; } }
 
       const gap = Math.hypot(p.x - car.x, p.z - car.z);
+      if (gap < 2.4 && gap > 1.7 && (car.speed || 0) > 7 && !p.down && this.onNear) this.onNear(p);   // a near miss at speed: somebody shouts (main throttles the voice)
       /* Being run over is reported from here, not from the hull collision.
          Going down removes them from bodies(), so the collision pass never
          sees the impact it would have had to infer the crime from -- and a
