@@ -1510,7 +1510,7 @@ function frameBody() {
     garage.update(dt, car);
   }
   if (vehicleVFX) vehicleVFX.update(dt, car, garage);
-  if (puddles) puddles.update(dt, car);
+  if (puddles) puddles.update(dt, car, weather ? (weather.amount ?? 1) : 0);   // dry day: only the puddles themselves spray
   if (billboards) billboards.update(worldTime);
   if (streetLife) streetLife.update(dt, car);
   if (airspace) airspace.update(dt, worldTime);
@@ -1793,7 +1793,12 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   }
   clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: currentVehicle, dome, stars });
   // the rain audio follows the weather's breathing, and rain is grip: the physics reads car.wet
-  if (weather) { weather.update(camera, currentVehicle, dt); car.wet = weather.amount ?? 1; if (Math.abs((weather.amount ?? 1) - (rainHeard ?? -1)) > 0.05) { rainHeard = weather.amount; audio.setRain(rainHeard); } }
+  if (weather) {
+    weather.update(camera, currentVehicle, dt); car.wet = weather.amount ?? 1;
+    if (Math.abs((weather.amount ?? 1) - (rainHeard ?? -1)) > 0.05) { rainHeard = weather.amount; audio.setRain(rainHeard); }
+    // the road LOOKS wet: tarmac roughness drops and its reflection rises with the rain (uniforms only, no recompile; bundles carry uniform changes)
+    const tm = assets?.mat?.tarmac; if (tm) { tm.roughness = 0.48 - 0.30 * car.wet; tm.envMapIntensity = 1.1 + 0.9 * car.wet; }
+  }
   lightPool?.update(dt, currentVehicle.x, currentVehicle.z, traffic);
   reputation?.update(dt, playerTarget.x, playerTarget.z, traffic, car, damageModel);
   intelScanner?.update(dt, camera, playerTarget, traffic, reputation?.safehouses);

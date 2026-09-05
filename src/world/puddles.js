@@ -127,7 +127,8 @@ export class PuddleSystem {
     this.scene.add(this.sprayParticles);
   }
 
-  update(dt, car) {
+  /** `rain` 0..1 is how hard it is raining now (weather.amount): the road-wide spray scales with it; a puddle sprays regardless. */
+  update(dt, car, rain = 1) {
     const speed = Math.abs(car.fwdSpeed || 0);
     const pos = this.sprayParticles?.geometry.attributes.position;
     if (!pos) return;
@@ -146,7 +147,7 @@ export class PuddleSystem {
     }
 
     // Spawn spray if moving fast over wet road
-    const shouldSpray = speed > 8 && (inPuddle || Math.random() < 0.35);
+    const shouldSpray = speed > 8 && (inPuddle || Math.random() < 0.35 * rain);
 
     for (let i = 0; i < life.length; i++) {
       if (life[i] > 0) {
