@@ -1887,6 +1887,13 @@ function frameBody() {
     car.hitTag = null; car.hitForce = 0;
   }
   if (car.impact > 2.4) damageModel.hit(car.impact, car.hitAt);
+  if (car.impact > 3.2 && car.hitAt && !onFoot.active) {
+    // the crash you see: sparks off the contact point and a burst of dust, scaled by the hit
+    const k = Math.min(1, (car.impact - 3) / 12), hx = car.hitAt.x, hz = car.hitAt.z, gy = groundHeightAt(hx, hz);
+    const ddx = (hx - car.x), ddz = (hz - car.z), dl = Math.hypot(ddx, ddz) || 1;
+    weapon.sparksAt?.(hx, gy + 0.45, hz, ddx / dl, ddz / dl);
+    for (let i = 0, n = 2 + Math.round(k * 5); i < n; i++) puffs.puff(hx + (Math.random() - 0.5) * 1.2, gy + 0.3 + Math.random() * 0.6, hz + (Math.random() - 0.5) * 1.2, { r: 0.24, g: 0.22, b: 0.19, life: 1.0 + k, vy: 0.8 + k, vx: -ddx / dl * 1.5, vz: -ddz / dl * 1.5 });
+  }
   car.hitAt = null;
 
   /* Burning, then gone.
