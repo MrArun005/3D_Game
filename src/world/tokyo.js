@@ -275,11 +275,18 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
  * footprint's local frame to world. Pure; tested.
  */
 export function frontRotation(probe, toWorld, hw, hd) {
-  const tests = [[hw + 3, 0, 0], [-hw - 3, 0, Math.PI], [0, hd + 3, -Math.PI / 2], [0, -hd - 3, Math.PI / 2]];
+  /* Probe 3, 7 and 11 m out from each face (a pavement is 3-6 m wide, so a
+     single 3 m sample read 0 on every side and the first face always won),
+     weighting the near samples: the side that reaches tarmac soonest is the
+     street. */
+  const tests = [[1, 0, 0], [-1, 0, Math.PI], [0, 1, -Math.PI / 2], [0, -1, Math.PI / 2]];
   let best = 0, bestD = -Infinity;
-  for (const [lx, lz, rot] of tests) {
-    const [x, z] = toWorld(lx, lz);
-    const d = probe(x, z);
+  for (const [nx, nz, rot] of tests) {
+    let d = 0;
+    for (const [out, w] of [[3, 3], [7, 2], [11, 1]]) {
+      const [x, z] = toWorld(nx * (hw + out), nz * (hd + out));
+      d += Math.max(0, probe(x, z)) * w;
+    }
     if (d > bestD) { bestD = d; best = rot; }
   }
   return best;
