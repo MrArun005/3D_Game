@@ -86,7 +86,8 @@ export class Modes {
         m.position.set(bx, groundHeightAt(bx, bz), bz);
         m.rotation.y = yaw + Math.PI / 2;
         m.castShadow = true;
-        m.userData.range = { d, hitT: 0 };
+        // the far row slides: +/-3 m along the line of boards, half a cycle apart, so the 60 m shot is a moving one
+        m.userData.range = { d, hitT: 0, slide: d >= 60 ? { x0: bx, z0: bz, sx, sz, phase: side > 0 ? 0 : Math.PI } : null };
         this.scene.add(m);
         this.boards.push(m);
       }
@@ -145,9 +146,11 @@ export class Modes {
   update(dt) {
     if (!this.active) return;
     this.t -= dt;
+    this._t = (this._t ?? 0) + dt;
     for (const b of this.boards) {
       const info = b.userData.range;
       if (info.hitT > 0) { info.hitT -= dt; if (info.hitT <= 0) b.material = this.mat; }
+      if (info.slide) { const s = info.slide, k = Math.sin(this._t * 0.9 + s.phase) * 3; b.position.x = s.x0 + s.sx * k; b.position.z = s.z0 + s.sz * k; }
     }
     if (this.active === 'holdout') {
       this._elapsed += dt;
