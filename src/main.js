@@ -465,8 +465,7 @@ grenades.onBlast = (bx, by, bz) => {
     if (d >= BLAST_R) continue;
     const k = blastFalloff(d, BLAST_R);
     v.speed = (v.speed || 0) * (1 - 0.6 * k);
-    v.vhp = (v.vhp ?? 8) - Math.round(4 * k + 1);
-    if (v.vhp <= 0 && v.cruise !== 0) { v.vhp = 0; v.cruise = 0; v.baseCruise = 0; v.fleeT = 0; if (v.hunt === undefined || !v.hunt) crowd?.eject(v.x, v.z, v.yaw); }
+    damageVehicle(v, Math.round(4 * k + 1), !!v.hunt || traffic.police.includes(v));   // the same engine rule as bullets and rams
     v.mesh?.material?.color?.offsetHSL(0, -0.1, -0.12 * k);
   }
   for (const c of traffic.police) {
