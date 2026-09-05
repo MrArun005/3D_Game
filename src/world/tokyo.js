@@ -154,7 +154,13 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
   // the street face: shopfront glass, awning, fascia board, kanban columns, neon
   const front = F[0];
   const [gx, gz] = onFace(front, 0, 0.03);
-  parts.push(at(quad(front.w - 0.6, 2.7, 0x1c2430, WARM, 0.5), gx, 1.65, gz, front.yaw));
+  if (rnd() < 0.22) {
+    // shuttered: a ribbed grey roller door instead of glass -- every street has a few closed for the night
+    parts.push(at(quad(front.w - 0.6, 2.7, 0x8d9096), gx, 1.65, gz, front.yaw));
+    for (let r = 0; r < 6; r++) { const [rx, rz] = onFace(front, 0, 0.05); parts.push(at(box(0.02, 0.04, front.w - 0.7, 0x6f7378), rx, 0.5 + r * 0.42, rz)); }
+  } else {
+    parts.push(at(quad(front.w - 0.6, 2.7, 0x1c2430, WARM, 0.5), gx, 1.65, gz, front.yaw));
+  }
   const awningCol = pick([0xc0392b, 0x2e86de, 0xf1c40f, 0xecf0f1, 0x27ae60]);
   const [ax, az] = onFace(front, 0, 0.7);
   parts.push(at(box(1.35, 0.08, front.w * 0.9, awningCol), ax, 3.25, az));
