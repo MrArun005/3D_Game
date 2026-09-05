@@ -591,6 +591,7 @@ function pullTrigger() {
     }
   }
   const wall2 = Math.min(wall, carT);
+  if (carT < wall && carT < 60) { const look = onFoot.active ? onFoot.camYaw : car.yaw; audio.alarm?.(-Math.sin(Math.atan2(-dz, dx) - look), carT / 60); }   // a round into a parked car sets its alarm off
   if (wall2 < Infinity) {
     for (let i = _triggerTargets.length - 1; i >= 0; i--) {
       const t = _triggerTargets[i];

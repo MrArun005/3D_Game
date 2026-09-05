@@ -29,7 +29,7 @@ function startLoop(ctx, buffer, dest, rate = 1) {
 }
 
 export function createAudio() {
-  let sirenNode = null;
+  let sirenNode = null, alarmNode = null;
   let ctx = null;
   let master, engineBus;
   let layers = [];
@@ -276,6 +276,25 @@ export function createAudio() {
       const p = ctx.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan));
       n.connect(bp); bp.connect(g); g.connect(p); p.connect(master);
       n.start(now); n.stop(now + 0.15);
+    },
+    /* A parked car's alarm: a two-tone chirp cycle for `seconds`, panned and
+       faded by distance. One at a time -- a second call restarts it. */
+    alarm(pan = 0, far = 0, seconds = 5) {
+      if (!ready || !ctx || ctx.state !== 'running') return;
+      const now = ctx.currentTime;
+      if (alarmNode) { try { alarmNode.o.stop(now); } catch { /* already stopped */ } alarmNode = null; }
+      const o = ctx.createOscillator(); o.type = 'square';
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600;
+      const g = ctx.createGain(); g.gain.value = 0;
+      const p = ctx.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan));
+      o.connect(lp); lp.connect(g); g.connect(p); p.connect(master);
+      const k = 0.07 * (1 - far * 0.85);
+      for (let t = 0; t < seconds; t += 0.5) {
+        o.frequency.setValueAtTime(t % 1 < 0.5 ? 1180 : 880, now + t);
+        g.gain.setValueAtTime(k, now + t); g.gain.setValueAtTime(0.0001, now + t + 0.38);
+      }
+      o.start(now); o.stop(now + seconds);
+      alarmNode = { o };
     },
     cash() {
       if (!ready || !ctx || ctx.state !== 'running') return;
