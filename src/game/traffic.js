@@ -479,6 +479,7 @@ export class Traffic {
 
   /** Drop a car onto a random edge in a ring around the player. */
   #spawnGraph(car, player) {
+    if (!this.E || !this.E.length) return;   // no road graph yet (the district attaches after the first frames): try again next frame
     let pick = -1;
     for (let tries = 0; tries < 60 && pick < 0; tries++) {
       const id = Math.floor(this.rand() * this.E.length);
@@ -1332,6 +1333,9 @@ export class Traffic {
         // stop shoving once you are cornered: a pursuit that keeps ramming a
         // stationary car can never resolve into an arrest
         const target = ram ? c.cruise * 1.2 : (!cold && gap < 7) ? 0 : reach < 8 ? reach * 1.1 : (cold ? c.cruise * 0.55 : c.cruise);   // a ram does not slow for the contact; a search is driven slowly
+        // a free-mode cruiser sitting still far from you has no other way out (stale is road-mode, lost needs 150 m): six seconds, then it re-spawns
+        c.stuckT = (c.speed < 0.5 && gap > 40) ? (c.stuckT ?? 0) + dt : 0;
+        if (c.stuckT > 6) { c.live = false; c.mesh.visible = false; c.mode = 'road'; c.stuckT = 0; continue; }
         c.speed += Math.max(-14 * dt, Math.min(9 * dt, target - c.speed));
         c.x += Math.cos(c.yaw) * c.speed * dt;
         c.z -= Math.sin(c.yaw) * c.speed * dt;
