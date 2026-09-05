@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { glow } from '../core/additive.js';
+import { groundHeightAt } from '../world/metrics.js';
 import { ARSENAL, spreadFor, heatAfterShot, heatAfterRest } from './weapons.js';
+
+const CASINGS = 24;
+const _m4 = new THREE.Matrix4();
 
 /**
  * Shooting, on foot and from the car.
@@ -75,6 +79,17 @@ export class Weapon {
     glow(sparkMat, 1.3);
     this.sparks = new THREE.Points(sparkGeo, sparkMat);
     scene.add(this.sparks);
+
+    /* Brass. One InstancedMesh of CASINGS small boxes; a shot ejects one to
+       the right and up out of the breech, it falls, bounces once and lies
+       there until its slot is reused. One draw; the detail GTA sells a gun with. */
+    this.casings = new THREE.InstancedMesh(new THREE.BoxGeometry(0.012, 0.012, 0.032), new THREE.MeshStandardMaterial({ color: 0xc9a44a, metalness: 0.85, roughness: 0.35 }), CASINGS);
+    this.casings.frustumCulled = false;
+    this.casings.count = CASINGS;
+    this.caseState = new Float32Array(CASINGS * 7);   // x y z vx vy vz life
+    for (let i = 0; i < CASINGS; i++) { _m4.makeTranslation(0, -100, 0); this.casings.setMatrixAt(i, _m4); }
+    this.caseNext = 0;
+    scene.add(this.casings);
 
     // one reused tracer: at this fire rate you never see two at once
     const geo = new THREE.BufferGeometry();
@@ -174,6 +189,19 @@ export class Weapon {
         this.reserve[this.kind] -= take; this.ammo += take;
       }
     }
+    // brass in the air: gravity, one bounce, then it settles and stays until its slot is reused
+    if (this.caseLive === undefined) this.caseLive = 0;
+    { const s = this.caseState; let any = false;
+      for (let i = 0; i < CASINGS; i++) {
+        const o = i * 7; if (s[o + 6] <= 0) continue;
+        any = true; s[o + 6] -= dt;
+        s[o + 4] -= 9.8 * dt; s[o] += s[o + 3] * dt; s[o + 1] += s[o + 4] * dt; s[o + 2] += s[o + 5] * dt;
+        const gy = groundHeightAt(s[o], s[o + 2]) + 0.006;
+        if (s[o + 1] < gy) { s[o + 1] = gy; s[o + 4] = s[o + 4] < -0.6 ? -s[o + 4] * 0.3 : 0; s[o + 3] *= 0.5; s[o + 5] *= 0.5; }
+        _m4.makeRotationY(s[o + 6] * 9).setPosition(s[o], s[o + 1], s[o + 2]);
+        this.casings.setMatrixAt(i, _m4);
+      }
+      if (any) this.casings.instanceMatrix.needsUpdate = true; }
     if (this.flashFor > 0) {
       this.flashFor -= dt;
       if (this.flashFor <= 0) {
@@ -288,7 +316,18 @@ export class Weapon {
     this.flashFor = 0.055;
 
     this.sparksAt(ox + dx * end, oy + dy * end, oz + dz * end, dx, dz);
+    this.eject(ox + dx * 0.45, oy + dy * 0.45 - 0.05, oz + dz * 0.45, dx, dz);
     return hit;
+  }
+
+  /** A casing out of the breech: right of the shot, up, a little back. */
+  eject(x, y, z, dx, dz) {
+    const i = this.caseNext; this.caseNext = (this.caseNext + 1) % CASINGS;
+    const rx = -dz, rz = dx;                                          // right-hand side of the shot direction
+    const s = this.caseState, o = i * 7;
+    s[o] = x; s[o + 1] = y; s[o + 2] = z;
+    s[o + 3] = rx * (1.4 + Math.random() * 0.8) - dx * 0.4; s[o + 4] = 2.2 + Math.random() * 0.8; s[o + 5] = rz * (1.4 + Math.random() * 0.8) - dz * 0.4;
+    s[o + 6] = 1.6;
   }
 
   /** An impact spark burst at a point, thrown back against the round's direction. Police rounds on your car use it too (main.onShot). */
