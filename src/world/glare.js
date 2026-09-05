@@ -12,11 +12,15 @@
  * one shared uniform (`setGlareNight`).
  */
 import * as THREE from 'three';
-import { uv, texture, uniform, time, float, vec2, vec4, instancedBufferAttribute, sin, cos, smoothstep, length, cameraPosition } from 'three/tsl';
+import { uv, texture, uniform, time, float, vec2, vec3, vec4, instancedBufferAttribute, sin, cos, smoothstep, length, cameraPosition, select, abs, max } from 'three/tsl';
 import { glow } from '../core/additive.js';
 
 const glareNight = uniform(0);
 export function setGlareNight(k) { glareNight.value = Math.max(0, Math.min(1, k)); }
+/* The detailed ring: far sprites inside it collapse to nothing, because the
+   chunk there carries its own (depth-pulled) glare on the real lamp head. */
+const ringCentre = uniform(vec3(0, 0, 0)), ringR = uniform(1e9);
+export function setGlareRing(x, z, r) { ringCentre.value.set(x, 0, z); ringR.value = r; }
 
 let TEX = null;
 
@@ -40,17 +44,27 @@ function streakTexture() {
   return t;
 }
 
-function glareMaterial(posAttr, colAttr, phAttr) {
+function glareMaterial(posAttr, colAttr, phAttr, far = false) {
   TEX ??= streakTexture();
   const m = new THREE.SpriteNodeMaterial({
     transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, fog: false,
   });
   const pos = instancedBufferAttribute(posAttr), colour = instancedBufferAttribute(colAttr), ph = instancedBufferAttribute(phAttr);
-  /* The head position is the CENTRE of the lamp cap / kanban it belongs to, so a
-     plain depth test loses the sprite inside its own head. Pull it 0.8 m toward
-     the camera: still hidden by a building in front, never by the head itself. */
-  m.positionNode = pos.add(cameraPosition.sub(pos).normalize().mul(0.8));
-  m.scaleNode = vec2(3.6);   // metres (size attenuation is the sprite's own perspective)
+  if (far) {
+    /* The far set covers the WHOLE district; inside the detailed ring the chunk's
+       own sprite takes over, so these scale to zero there (a uniform, no matrix
+       rewrites -- unlike #cullFar's stand-ins). No depth pull: no head to hide in. */
+    const d = pos.sub(ringCentre);
+    const inside = max(abs(d.x), abs(d.z)).lessThan(ringR);
+    m.positionNode = pos;
+    m.scaleNode = select(inside, vec2(0), vec2(2.6));
+  } else {
+    /* The head position is the CENTRE of the lamp cap / kanban it belongs to, so a
+       plain depth test loses the sprite inside its own head. Pull it 0.8 m toward
+       the camera: still hidden by a building in front, never by the head itself. */
+    m.positionNode = pos.add(cameraPosition.sub(pos).normalize().mul(0.8));
+    m.scaleNode = vec2(3.6);   // metres (size attenuation is the sprite's own perspective)
+  }
   const c = uv().sub(0.5);
   const rot = (ang) => vec2(c.x.mul(cos(ang)).sub(c.y.mul(sin(ang))), c.x.mul(sin(ang)).add(c.y.mul(cos(ang)))).add(0.5);
   const a = time.mul(0.45).add(ph);
@@ -69,11 +83,11 @@ function glareMaterial(posAttr, colAttr, phAttr) {
 }
 
 /**
- * An instanced Sprite for one chunk. `heads`: [{x,y,z,colour?}] world positions;
+ * An instanced Sprite for one chunk (or, `far`, for the whole district's lamps). `heads`: [{x,y,z,colour?}] world positions;
  * lamp heads without a colour glow sodium. Returns null for an empty list
  * (a zero-count buffer is a WebGPU error, see districtWorld's inst guard).
  */
-export function buildGlare(heads, seed = 1) {
+export function buildGlare(heads, seed = 1, far = false) {
   if (!heads.length) return null;
   const n = heads.length;
   const pos = new Float32Array(n * 3), col = new Float32Array(n * 3), ph = new Float32Array(n);
@@ -85,7 +99,7 @@ export function buildGlare(heads, seed = 1) {
     ph[i] = ((seed * 7919 + i * 104729) % 628) / 100;
   });
   const posAttr = new THREE.InstancedBufferAttribute(pos, 3), colAttr = new THREE.InstancedBufferAttribute(col, 3), phAttr = new THREE.InstancedBufferAttribute(ph, 1);
-  const sp = new THREE.Sprite(glareMaterial(posAttr, colAttr, phAttr));
+  const sp = new THREE.Sprite(glareMaterial(posAttr, colAttr, phAttr, far));
   sp.count = n;
   sp.frustumCulled = false;      // bundle contents are culled as a chunk
   sp.renderOrder = 3;

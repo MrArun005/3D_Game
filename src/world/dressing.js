@@ -684,3 +684,38 @@ export function dressFacades(batch, boxes, district, roadNear, signs = null, win
     }
   }
 }
+
+/**
+ * Every lamp head in the district, from the same rows, seeds and guards
+ * kerbside() uses -- so the far glare sprite (world/glare.js) sits exactly
+ * where the real lamp will stand when its chunk streams in. Cheap: pure
+ * arithmetic over the segment list, run once at load.
+ */
+export function farLampHeads(district) {
+  const out = [];
+  for (const s of district.segments) {
+    if (s.cls === 'freeway' || s.cls === 'ramp') continue;
+    const dx = s.bx - s.ax, dz = s.bz - s.az;
+    const L = Math.hypot(dx, dz);
+    if (L < 22) continue;
+    const ux = dx / L, uz = dz / L, nx = -uz, nz = ux;
+    for (const row of KERB_ROWS) {
+      if (!row.asset.includes('lamp')) continue;
+      if (row.on && !row.on.includes(s.cls)) continue;
+      const arterial = row.asset.includes('arterial');
+      const reach = arterial ? 1.55 : 0.30, h = arterial ? 8.2 : 6.02;
+      for (let t = 10; t < L - 8; t += row.every) {
+        const seed = hash(s.ax + t * 1.31, s.az + t * 0.77);
+        if (seed > row.chance) continue;
+        const side = hash(s.az + t, s.ax) < 0.5 ? 1 : -1;
+        const off = (s.half + row.offset) * side;
+        const px = s.ax + ux * t + nx * off, pz = s.az + uz * t + nz * off;
+        if (district.tarmacDepth(px, pz) <= 0.2) continue;
+        const yaw = Math.atan2(nx * -side, nz * -side);
+        const y = KERB_H + district.elevationAt(px, pz);
+        out.push({ x: px + Math.sin(yaw) * reach, y: y + h, z: pz + Math.cos(yaw) * reach });
+      }
+    }
+  }
+  return out;
+}

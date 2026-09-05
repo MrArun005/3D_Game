@@ -185,6 +185,11 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   BLACK square (GTAO reads zero normal as occlusion) -- use `glow()` on
   quads. Cost: +1 draw per chunk (sprites are not bundled), ~+40 at the
   Tokyo interior (1471 -> 1520). Verified in the browser: glare6.jpg.
+  Plus the FAR set: `dressing.js:farLampHeads` replays the lamp rows over
+  the whole district (5,247 heads) into one instanced Sprite built with the
+  far stand-ins; `setGlareRing` (called from #cullFar) zero-scales the ones
+  inside the detailed ring, so the street lights run to the horizon
+  (farglare1.jpg). One draw for the whole map.
 - **Asphalt textures are real now (2026-09-05)**: the shipped `asphalt_*`
   set was the library's generic dot pattern; under the wet-road env boost
   every dot mirrored as a cobble. `tools/asphalt-textures.py` (numpy + PIL,

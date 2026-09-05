@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { InstanceBatch } from './catalogue.js';
-import { dressChunk, dressRoofs, dressFacades, place as placeAsset } from './dressing.js';
+import { dressChunk, dressRoofs, dressFacades, place as placeAsset, farLampHeads } from './dressing.js';
 import { KERB_H, roadDepth } from './metrics.js';
 import { ARCH, TOWER, MID, LOFT, PODIUM, DECK } from './facades.js';
 import { mulberry32 } from '../core/rng.js';
@@ -13,7 +13,7 @@ import { BREAK_CLASS } from './breakables.js';
 import { ZEBRA_DEPTH } from '../game/traffic.js';
 import { buildTokyoBuilding, frontRotation, tokyoMaterial, buildTokyoStreet, wireMaterial, buildShrine } from './tokyo.js';
 import { tileUv, SIGN_TILES } from './signs.js';
-import { buildGlare } from './glare.js';
+import { buildGlare, setGlareRing } from './glare.js';
 
 /**
  * Halstead Bay in three dimensions.
@@ -282,6 +282,10 @@ export class DistrictWorld {
        them is outside the sun's 120m shadow frustum by construction. */
     solidMesh.castShadow = false;
     far.add(solidMesh);
+    /* Every lamp in the district as a glare sprite (GTA's distant-light quads,
+       docs/GTA-VISUALS-RESEARCH.md item 2): one instanced draw, night-faded,
+       zero-scaled inside the detailed ring where the chunk's own glare sits. */
+    { const fl = buildGlare(farLampHeads(this.district), 17, true); if (fl) { fl.renderOrder = 2; far.add(fl); this.farGlareCount = fl.count; } }
 
     this.scene.add(far);
     this.far = far;
@@ -290,6 +294,7 @@ export class DistrictWorld {
   /** Zero-scale the far stand-ins that the detailed chunks now cover. */
   #cullFar(x, z) {
     const R = (this.radius + 0.5) * CHUNK;
+    setGlareRing(x, z, R);
     let dirty = false;
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
     for (let i = 0; i < this.farAt.length; i++) {

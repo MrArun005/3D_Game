@@ -86,7 +86,7 @@ Gaps, in the order they would change the frame most:
    `beamPool` cones and lamp caps, but no sprite glare, so distant lamps and
    headlights vanish instead of twinkling. One instanced quad pool per chunk;
    the sign heads and lamp caps already exist as positions (`headsByChunk`).
-2. **Distant light sprites.** Beyond the 3×3 ring, traffic and lamps stop
+2. **DONE 2026-09-05 (lamps; far headlights still open).** Distant light sprites. Beyond the 3×3 ring, traffic and lamps stop
    existing. A 32×32 sprite per lamp head and two per far car along the
    road graph is the cheapest thing GTA does and the reason its city reads
    as alive to the horizon. Our far stand-ins carry masts and beacons; the
