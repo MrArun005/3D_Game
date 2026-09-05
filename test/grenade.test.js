@@ -29,3 +29,10 @@ test('blast falloff is 1 at the centre, 0 at the edge, and quadratic between', (
   assert.equal(blastFalloff(9, 6), 0);
   assert.ok(Math.abs(blastFalloff(3, 6) - 0.25) < 1e-9);
 });
+
+test('lobSpeed lands a 35-degree throw at the distance, within arm limits', async () => {
+  const { lobSpeed } = await import('../src/game/grenade.js');
+  const g = 9.8, s70 = Math.sin(70 * Math.PI / 180);
+  for (const d of [10, 18, 26]) { const v = lobSpeed(d); assert.ok(Math.abs(v * v * s70 / g - d) < 1e-6, `range at ${d}`); }
+  assert.equal(lobSpeed(1), 8, 'floor'); assert.equal(lobSpeed(200), 22, 'cap');
+});

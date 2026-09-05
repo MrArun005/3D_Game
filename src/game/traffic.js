@@ -1189,6 +1189,18 @@ export class Traffic {
         const blockers = this._losBlockers || this.cars;
         const canSee = c.state === 'cover' ? hasLineOfSight(c.coverX, gunY, c.coverZ, player.x, ty, player.z, bldg, blockers, null) : hasLineOfSight(c.officer.position.x, gunY, c.officer.position.z, player.x, ty, player.z, bldg, blockers, null);
         if (canSee) this.hot = true;
+        /* Four stars: a tactical officer who has had no line on you for four
+           seconds, with you 10-28 m away and behind something, lobs a grenade
+           at where you were last seen (Grenades.throwFrom -- your count is
+           untouched). Twelve-second cooldown per officer; never inside 10 m,
+           he is not suicidal. Cover stops bullets, not this. */
+        c.noLosT = canSee ? 0 : (c.noLosT ?? 0) + dt;
+        c.nadeT = (c.nadeT ?? 6) - dt;
+        if (c.joints.swat && c.noLosT > 4 && c.nadeT <= 0 && gap > 10 && gap < 28 && this.grenadeLook?.throwFrom && this.seenX !== undefined) {
+          c.nadeT = 12; c.noLosT = 0;
+          const gx = c.officer.position.x, gz = c.officer.position.z;
+          if (this.grenadeLook.throwFrom(gx, c.officer.position.y + 1.4, gz, this.seenX, this.seenZ, Math.hypot(this.seenX - gx, this.seenZ - gz))) this.chatter?.radioPool?.('frag');
+        }
         c.quietFor = (player.firedAt !== undefined && performance.now() - player.firedAt < 1500) ? 0 : c.quietFor + dt;
         c.stateT += dt;
         const next = nextState({ state: c.state, hp: c.hp, gap, playerSpeed: player.speed ?? 0, quietFor: c.quietFor, canSee, burstLeft: c.burstLeft, t: c.stateT, playerOnFoot: !!player.onFoot });

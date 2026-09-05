@@ -30,6 +30,11 @@ export function launchVelocity(dx, dy, dz, speed = 14) {
   return { vx, vy, vz };
 }
 
+/** Launch speed to land a lob at distance d with a 35-degree throw (range = v^2 sin 70 / g), clamped to what an arm can do. */
+export function lobSpeed(d) {
+  return Math.min(22, Math.max(8, Math.sqrt(9.8 * Math.max(1, d) / Math.sin(70 * Math.PI / 180))));
+}
+
 /** One integration step: gravity, ground bounce keeping 35% and 60% lateral, roll friction. Mutates b. */
 export function stepBody(b, dt, groundY) {
   b.vy -= G * dt;
@@ -86,6 +91,23 @@ export class Grenades {
     mesh.position.set(x, y, z);
     this.scene.add(mesh);
     this.live.push({ x, y, z, vx: v.vx, vy: v.vy, vz: v.vz, t: 0, mesh });
+    return true;
+  }
+
+  /**
+   * Somebody else's grenade (SWAT, traffic.js): does not touch your count,
+   * lobbed at 35 degrees with the speed that lands it at `dist`. Same fuse,
+   * same blast, same pool cap.
+   */
+  throwFrom(x, y, z, tx, tz, dist) {
+    if (this.live.length >= MAX_LIVE) return false;
+    const dx = tx - x, dz = tz - z, l = Math.hypot(dx, dz) || 1;
+    const v = lobSpeed(dist), c = Math.cos(35 * Math.PI / 180), s = Math.sin(35 * Math.PI / 180);
+    const mesh = new THREE.Mesh(this.geo, this.mat);
+    mesh.castShadow = true;
+    mesh.position.set(x, y, z);
+    this.scene.add(mesh);
+    this.live.push({ x, y, z, vx: dx / l * v * c, vy: v * s, vz: dz / l * v * c, t: 0, mesh });
     return true;
   }
 
