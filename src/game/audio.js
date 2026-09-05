@@ -199,6 +199,20 @@ export function createAudio() {
     rifle:   { f0: 240, f1: 70, body: 0.10, noise: 0.18 },
     shotgun: { f0: 120, f1: 40, body: 0.16, noise: 0.26 },
   };
+  /* The city answers a shot: a slap echo (190 ms, two repeats, low-passed)
+     shared by every gunshot -- built once, lazily. A gun fired between
+     buildings does not sound like a gun fired in a field. */
+  let echo = null;
+  function echoBus() {
+    if (echo) return echo;
+    const d = ctx.createDelay(1.0); d.delayTime.value = 0.19;
+    const fb = ctx.createGain(); fb.gain.value = 0.32;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400;
+    const out = ctx.createGain(); out.gain.value = 0.35;
+    d.connect(lp); lp.connect(fb); fb.connect(d); lp.connect(out); out.connect(master);
+    echo = d;
+    return echo;
+  }
   function gunshot(gain = 1, kind = 'pistol') {
     if (!ctx) return;
     const v = VOICE[kind] ?? VOICE.pistol;
@@ -212,7 +226,7 @@ export function createAudio() {
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.30 * k, t);
     g.gain.exponentialRampToValueAtTime(0.0008, t + 0.09);
-    n.connect(hp); hp.connect(lp); lp.connect(g); g.connect(master);
+    n.connect(hp); hp.connect(lp); lp.connect(g); g.connect(master); g.connect(echoBus());   // dry, and the slap off the buildings
     n.start(t); n.stop(t + v.noise + 0.02);
     const body = ctx.createOscillator();
     body.type = 'square';
