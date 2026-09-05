@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mrt, vec4 } from 'three/tsl';
 import { ARSENAL, spreadFor, heatAfterShot, heatAfterRest } from './weapons.js';
 
 /**
@@ -69,6 +70,9 @@ export class Weapon {
     const sparkMat = new THREE.PointsMaterial({
       color: 0xffe270, size: 0.14, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false,
     });
+    /* Additive: it must not write into the MRT normal target or GTAO reads
+       every spark as occlusion (the rain speckle bug, CLAUDE.md 2026-08-31). */
+    sparkMat.mrtNode = mrt({ normal: vec4(0) });
     this.sparks = new THREE.Points(sparkGeo, sparkMat);
     scene.add(this.sparks);
 
