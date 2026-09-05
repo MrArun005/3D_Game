@@ -138,6 +138,19 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
     }
   }
 
+  // an external steel stair on the back of three in ten: landings at every storey with a railing, a stringer up the wall
+  if (rnd() < 0.3 && floors >= 3) {
+    const back = F[1], s0 = -back.w / 2 + 1.4;
+    const [sx, sz] = onFace(back, s0 - 0.7, 1.35);
+    parts.push(at(box(0.08, H - 1.0, 0.08, 0x3a3d42), sx, (H - 1.0) / 2 + 0.5, sz));   // the stringer
+    for (let s = 1; s < floors; s++) {
+      const [lx, lz] = onFace(back, s0, 0.7);
+      parts.push(at(box(1.4, 0.08, 1.4, 0x4a4d52), lx, floorY(s) + 0.05, lz, back.yaw));
+      const [rx, rz] = onFace(back, s0, 1.38);
+      parts.push(at(box(0.04, 0.9, 1.4, 0x3a3d42), rx, floorY(s) + 0.5, rz, back.yaw));
+    }
+  }
+
   // the street face: shopfront glass, awning, fascia board, kanban columns, neon
   const front = F[0];
   const [gx, gz] = onFace(front, 0, 0.03);
