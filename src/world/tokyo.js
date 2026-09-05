@@ -159,7 +159,19 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
     parts.push(at(quad(front.w - 0.6, 2.7, 0x8d9096), gx, 1.65, gz, front.yaw));
     for (let r = 0; r < 6; r++) { const [rx, rz] = onFace(front, 0, 0.05); parts.push(at(box(0.02, 0.04, front.w - 0.7, 0x6f7378), rx, 0.5 + r * 0.42, rz)); }
   } else {
-    parts.push(at(quad(front.w - 0.6, 2.7, 0x1c2430, WARM, 0.5), gx, 1.65, gz, front.yaw));
+    // konbini white or izakaya warm: the two lights every Tokyo street is made of
+    const konbini = rnd() < 0.35;
+    parts.push(at(quad(front.w - 0.6, 2.7, konbini ? 0x2a3038 : 0x1c2430, konbini ? [0.9, 0.95, 1.0] : WARM, konbini ? 0.75 : 0.5), gx, 1.65, gz, front.yaw));
+  }
+  // projecting signs: a small box out from the wall at first-floor height with a board on each face, on three in five
+  if (rnd() < 0.6) {
+    const s = -front.w / 2 + 1.2 + rnd() * Math.max(0.5, front.w - 2.4);
+    const [px, pz] = onFace(front, s, 0.75);
+    parts.push(at(box(1.3, 0.55, 0.12, 0x26292e, [0.8, 0.8, 0.8], 0.35), px, 5.1, pz, front.yaw + Math.PI / 2));   // the box, its long axis out from the wall
+    for (const side of [-1, 1]) {
+      const [bx, bz] = onFace(front, s + side * 0.075, 0.75);
+      boards.push({ x: bx, y: 5.1, z: bz, yaw: front.yaw + side * Math.PI / 2, w: 1.2, h: 0.5 });
+    }
   }
   const awningCol = pick([0xc0392b, 0x2e86de, 0xf1c40f, 0xecf0f1, 0x27ae60]);
   const [ax, az] = onFace(front, 0, 0.7);
