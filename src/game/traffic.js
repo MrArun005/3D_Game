@@ -816,6 +816,7 @@ export class Traffic {
   #airGunner(player, dt) {
     const h = this.heli;
     if (!h || Math.floor(this.wanted) < 5 || h.landed) { this._gunT = 1.5; return; }
+    if (this._heliFlashT > 0) { this._heliFlashT -= dt; if (this._heliFlashT <= 0 && h.gunFlash) h.gunFlash.visible = false; }
     this._gunT = (this._gunT ?? 1.5) - dt;
     if (this._gunT > 0) return;
     const ty = (player.y ?? 0) + targetProfile(!!player.onFoot, !!player.crouch).y;
@@ -824,6 +825,8 @@ export class Traffic {
     this._gunT = this._gunBurst > 0 ? burstFor('smg').gap : 2.5 + this.rand() * 1.5;
     if (!canSee) return;
     this.fireAt(h.pos.x, h.pos.y - 1, h.pos.z, player, 'smg', 5, 1.3);   // a moving platform: wide
+    if (h.group && !h.gunFlash) { h.gunFlash = muzzleFlashMesh('smg'); h.gunFlash.position.set(0.4, -0.9, 1.3); h.group.add(h.gunFlash); }   // the door gun's flash, on the aircraft
+    if (h.gunFlash) { h.gunFlash.visible = true; this._heliFlashT = 0.07; }
     this.crowd?.panic?.(player.x, player.z, 18);
   }
 
