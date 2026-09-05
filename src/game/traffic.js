@@ -944,6 +944,7 @@ export class Traffic {
       /* --- whatever is in front, including the player --- */
       const lead = this.#leaderLimit(car, player);
       limit = Math.min(limit, lead);
+      if ((this.wet || 0) > 0.3) limit = Math.min(limit, car.cruise * (1 - 0.28 * this.wet));   // rain: civilians ease off, up to 28% (main sets traffic.wet from the weather)
       /* Held by a CAR (not a light) at a standstill for a few seconds: a horn,
          with a cooldown so a jam is a scatter of horns, not a chord. The player
          parked across a lane gets the same treatment -- that is the point. */
