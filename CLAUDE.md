@@ -191,7 +191,10 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   magenta Tokyo tint (legend updated), an area-name toast on district
   change (`districtAt`, polled 2/s) with a dispatch call-out while wanted,
   rain slows traffic 28% / hurries pedestrians 35% / scales spray, puddles
-  come and dry over 3 min, a distant siren every 60-180 s. Draws and fps
+  come and dry over 3 min, a distant siren every 60-180 s. Voices: chatter
+  speaks every dispatch line (speechSynthesis, `?novoice` off) and officer
+  shouts (arrest/pinned/reload/frag) in a raised voice without the squelch;
+  the player's horn is I. Time of day persists in `hb.clock`. Draws and fps
   at kingsway-corner NOT re-measured since (no browser in this session).
   Also: `buildTokyoStreet` (poles + wires), `buildShrine` (park block),
   landmark slabs to 24 storeys on tower blocks, `District.districtAt` steers
