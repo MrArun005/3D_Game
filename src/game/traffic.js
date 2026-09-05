@@ -7,7 +7,7 @@ import { PAINT_COLOURS, BODY_KEYS, BODY_TYPES } from '../vehicle/config.js';
 import { groundHeightAt } from '../world/metrics.js';
 import { buildOfficer, poseOfficer, PoseBlender, lookAt, officerMaterial } from '../world/officer.js';
 import { buildWeaponMesh, ARSENAL } from './weapons.js';
-import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED, pickRooftops, coverSide, evasionDecay, searchRadius, crimeWitnessed } from './policeAi.js';
+import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED, pickRooftops, coverSide, evasionDecay, searchRadius, crimeWitnessed, shouldFire } from './policeAi.js';
 import { roofsNear } from '../world/districtWorld.js';
 import { glow } from '../core/additive.js';
 
@@ -1165,7 +1165,7 @@ export class Traffic {
         c.fireT -= dt;
         if (c.flash) c.flash.visible = c.fireT > -0.06 && c.fireT < 0 && c.state === 'peek';
         if (c.reloading > 0) { c.reloading -= dt; c.burstLeft = 0; }   // a reload is a burst that never comes; he goes back to cover
-        if (c.state === 'peek' && c.burstLeft > 0 && c.fireT <= -0.06) {
+        if (c.state === 'peek' && c.burstLeft > 0 && c.fireT <= -0.06 && shouldFire(Math.floor(this.wanted), c.quietFor)) {   // one star: they come to cuff you, and shoot only if you have
           const b = burstFor(c.gunKind);
           c.fireT = b.gap;
           c.burstLeft--;

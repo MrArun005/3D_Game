@@ -130,3 +130,10 @@ test('a crime needs a witness until you are wanted; hitting the police is always
   assert.equal(crimeWitnessed('police', 0, 0, [], []), true);
   assert.equal(crimeWitnessed('traffic', 0, 0, [], [], 2), true, 'already wanted: everything counts');
 });
+
+test('one-star officers hold fire unless you have been shooting; two stars fire on sight', async () => {
+  const { shouldFire } = await import('../src/game/policeAi.js');
+  assert.equal(shouldFire(1, 30), false);
+  assert.equal(shouldFire(1, 2), true, 'you fired eight seconds ago or less: they answer');
+  assert.equal(shouldFire(2, 30), true);
+});

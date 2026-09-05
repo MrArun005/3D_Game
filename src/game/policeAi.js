@@ -198,3 +198,12 @@ export function crimeWitnessed(tag, px, pz, peds, police, wanted = 0) {
   for (const p of peds) if (p.live && !p.down && Math.hypot(p.x - px, p.z - pz) < 45 && ++n >= (tag === 'person' ? 2 : 1)) return true;
   return false;
 }
+
+/**
+ * Does an officer open fire? At one star GTA's police come to ARREST you;
+ * they shoot back only if you have been shooting (quietFor is seconds since
+ * your last shot). From two stars they fire on sight. Pure; tested.
+ */
+export function shouldFire(stars, quietFor) {
+  return stars >= 2 || quietFor < 8;
+}
