@@ -459,6 +459,7 @@ let farShotT = 25;        // distant gunfire cadence (ambient, night)
 let farSirenT = 70;       // distant siren cadence (ambient, any hour)
 let rainHeard = null;     // last rain amount handed to the audio
 let tokyoAmbT = 0;        // district-ambience poll cadence
+let lastDistrict = null;  // for the area toast and the dispatch call-out on a district change
 let vigilante = null;     // { f: fugitive car, t: seconds left } while a patrol chase near you is yours to finish
 let hurtPulse = 0;        // the red edge on the frame, decays each frame (grade.setHurt)
 let armour = 0;           // body armour 0..1, bought at Ammu-Nation, soaks 60% of a hit until gone
@@ -1828,6 +1829,14 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   }
   clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: currentVehicle, dome, stars });
   // the rain audio follows the weather's breathing, and rain is grip: the physics reads car.wet
+  // crossing into a district: the area name, GTA-style, and dispatch tracks you if you are wanted
+  if (districtRef?.districtAt && tokyoAmbT <= 0.01) {
+    const here = districtRef.districtAt(onFoot.active ? onFoot.x : car.x, onFoot.active ? onFoot.z : car.z);
+    if (here && here !== lastDistrict) {
+      if (lastDistrict !== null) { hud.flash(here); if (traffic.wanted >= 1) chatter?.radio?.(`Suspect heading into ${here.charAt(0) + here.slice(1).toLowerCase()}. Units in the area respond.`); }
+      lastDistrict = here;
+    }
+  }
   // Little Tokyo's sound follows you in and out of the district
   if (audio.tokyo && districtRef?.districtAt) { tokyoAmbT = (tokyoAmbT ?? 0) - dt; if (tokyoAmbT <= 0) { tokyoAmbT = 0.5; audio.tokyo(districtRef.districtAt(onFoot.active ? onFoot.x : car.x, onFoot.active ? onFoot.z : car.z) === 'LITTLE TOKYO'); } }
   // Little Tokyo's windows, neon and kanban come up with the night (tokyo.js emissive attribute)
