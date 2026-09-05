@@ -107,11 +107,13 @@ export class Garage {
   async act() {
     const c = CATALOGUE[this.cursor];
     if (!this.browsing || c.file === this.fitted) {
-      // repair
-      if (this.damage?.value <= 0.02) { this.hud.flash('NOTHING TO REPAIR'); return; }
+      // repair -- and a respray: below three stars the garage also loses the police (GTA's Pay 'n' Spray; main wires onRepair)
+      const heat = this.heat?.() ?? 0;
+      if (this.damage?.value <= 0.02 && heat <= 0) { this.hud.flash('NOTHING TO REPAIR'); return; }
       if (!this.spendCash(REPAIR)) { this.hud.flash(`REPAIR $${REPAIR} · NOT ENOUGH CASH`); return; }
       this.damage?.repair();
-      this.hud.flash(`REPAIRED · -$${REPAIR}`);
+      const cleared = this.onRepair?.();
+      this.hud.flash(cleared ? `RESPRAYED · HEAT GONE · -$${REPAIR}` : `REPAIRED · -$${REPAIR}`);
       return;
     }
     if (!this.owned.has(c.file)) {
