@@ -162,6 +162,10 @@ export class Jobs {
     if (j.limit < Infinity && j.t > j.limit) pay = Math.round(pay * Math.max(0.3, 1 - (j.t - j.limit) / j.limit));
     pay = Math.round(pay * Math.max(0.2, 1 - stars * 0.2));
     if (stars === 0 && j.t < (j.limit === Infinity ? 1e9 : j.limit)) pay += 40;   // clean bonus
+    if (typeof window !== 'undefined' && window._reputation) {
+      if (window._reputation.score >= 80) pay = Math.round(pay * 1.25); // Bounty License perk bonus
+      window._reputation.adjust(25, 'CIVIC CONTRACT COMPLETED');
+    }
     this.cash += pay; this.done++;
     try { localStorage.setItem('hb.cash', String(this.cash)); localStorage.setItem('hb.jobs', String(this.done)); } catch { /* private mode */ }
 

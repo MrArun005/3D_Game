@@ -14,6 +14,7 @@ import { glow } from '../core/additive.js';
 /* Every officer's muzzle-flash sphere shares one geometry and one material;
    a redeploy used to allocate both and never dispose them. */
 let _flashGeo = null, _flashMat = null;
+const _UP = new THREE.Vector3(0, 1, 0);
 const flashGeo = () => (_flashGeo ??= new THREE.SphereGeometry(0.12, 8, 6));
 const flashMat = () => (_flashMat ??= glow(new THREE.MeshBasicMaterial({ color: 0xfff0c0, toneMapped: false }), 2.5));
 
@@ -80,6 +81,9 @@ export class Traffic {
     if (this.wanted === 0) { this.seenX = px; this.seenZ = pz; this.coldFor = 0; }   // the report says where: that is where they head
     this.wanted = Math.min(5, this.wanted + gain);
     this.cool = 0;
+    if (typeof window !== 'undefined' && window._reputation) {
+      window._reputation.adjust(-Math.round(gain * 10), 'CRIME REPORTED');
+    }
   }
 
   /** How many cars should be hunting at this wanted level. */
@@ -641,6 +645,7 @@ export class Traffic {
     if (!this.drops) return;
     for (let i = this.drops.length - 1; i >= 0; i--) {
       const d = this.drops[i]; d.t -= dt;
+      d.mesh.rotateOnWorldAxis(_UP, dt * 1.4);                        // a pickup turns slowly: it reads as something to take, not litter
       if (d.t < 6) d.mesh.visible = Math.floor(d.t * 5) % 2 === 0;   // the last six seconds blink, the way GTA's pickups say 'last chance'
       if (d.t <= 0) { this.scene.remove(d.mesh); this.drops.splice(i, 1); }
     }
@@ -1028,6 +1033,7 @@ export class Traffic {
           c.down += dt;
           poseOfficer(c.joints, 'fall', Math.min(1, c.down / 0.6));
           if (c.gun) c.gun.visible = false; if (c.flash) c.flash.visible = false;
+          if (c.down > 10.5) c.officer.position.y -= dt * 0.9;   // the last seconds: the body sinks out of the street rather than blinking off
           if (c.down > 12) { c.deployed = false; c.officer.visible = false; c.live = false; c.mesh.visible = false; c.mode = 'road'; }
           continue;
         }
