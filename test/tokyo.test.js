@@ -18,12 +18,14 @@ test('the same seed builds the same building; another seed a different one', () 
   assert.ok(a.tris !== c.tris || a.boards.length !== c.boards.length || a.geo.attributes.color.array[0] !== c.geo.attributes.color.array[0]);
 });
 
-test('the front is the side deepest into tarmac', () => {
-  const probe = (x, z) => (z > 6 ? 3 : 0);                      // the road is at +Z in world (the sample sits 8 m out)
+test('the front is the side nearest the street: tarmacDepth is a signed distance, negative on the road', () => {
+  const probe = (x, z) => (z > 6 ? -2 : 25);                    // the road is at +Z in world; everywhere else is far from any kerb
   const toWorld = (lx, lz) => [lx, lz];                          // no block rotation
   assert.equal(frontRotation(probe, toWorld, 5, 5), -Math.PI / 2, '+Z side -> rotate +X front by -90 degrees');
-  const probe2 = (x, z) => (x < -6 ? 2 : 0);
+  const probe2 = (x, z) => (x < -6 ? -1 : 30);
   assert.equal(frontRotation(probe2, toWorld, 5, 5), Math.PI, '-X side');
+  const probe3 = (x, z) => (x > 6 ? 4 : 30);                    // no tarmac anywhere: the nearest pavement edge still wins
+  assert.equal(frontRotation(probe3, toWorld, 5, 5), 0, '+X side');
 });
 
 test('the street builds poles and sagging wires only by Tokyo buildings, and is deterministic', async () => {

@@ -275,19 +275,20 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
  * footprint's local frame to world. Pure; tested.
  */
 export function frontRotation(probe, toWorld, hw, hd) {
-  /* Probe 3, 7 and 11 m out from each face (a pavement is 3-6 m wide, so a
-     single 3 m sample read 0 on every side and the first face always won),
-     weighting the near samples: the side that reaches tarmac soonest is the
-     street. */
+  /* `probe` is district.tarmacDepth: the SIGNED distance to the nearest road
+     edge, negative on tarmac, positive on the pavement, capped at 60 off the
+     plan. Probe 3, 7 and 11 m out from each face and take the side with the
+     smallest weighted distance -- the one that reaches the street soonest.
+     (The first cut maximised it, and every kanban went up on the back wall.) */
   const tests = [[1, 0, 0], [-1, 0, Math.PI], [0, 1, -Math.PI / 2], [0, -1, Math.PI / 2]];
-  let best = 0, bestD = -Infinity;
+  let best = 0, bestD = Infinity;
   for (const [nx, nz, rot] of tests) {
     let d = 0;
     for (const [out, w] of [[3, 3], [7, 2], [11, 1]]) {
       const [x, z] = toWorld(nx * (hw + out), nz * (hd + out));
-      d += Math.max(0, probe(x, z)) * w;
+      d += probe(x, z) * w;
     }
-    if (d > bestD) { bestD = d; best = rot; }
+    if (d < bestD) { bestD = d; best = rot; }
   }
   return best;
 }
