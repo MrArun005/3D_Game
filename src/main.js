@@ -1813,7 +1813,8 @@ function frameBody() {
      side, gone when the stars are. traffic._nearest is this frame's distance. */
   if (audio.siren) {
     let sx = 0, sz = 0, sd = Infinity;
-    if (traffic.wanted > 0) for (const c of traffic.police) { if (!c.live) continue; const d = Math.hypot(c.x - car.x, c.z - car.z); if (d < sd) { sd = d; sx = c.x; sz = c.z; } }
+    // hunting cruisers, or a patrol answering a call
+    for (const c of traffic.police) { if (!c.live || !(traffic.wanted > 0 || c.respondT > 0)) continue; const d = Math.hypot(c.x - car.x, c.z - car.z); if (d < sd) { sd = d; sx = c.x; sz = c.z; } }
     if (sd < 260) { const look = onFoot.active ? onFoot.camYaw : car.yaw; const b = Math.atan2(-(sz - car.z), sx - car.x) - look; audio.siren(-Math.sin(b), Math.min(1, sd / 260)); }
     else audio.siren(0, 1);
   }

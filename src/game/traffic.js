@@ -918,7 +918,14 @@ export class Traffic {
          what makes crimeWitnessed bite -- a cruiser 80 m away saw that. */
       c.hunt = this.wanted >= 1;
       if (!c.hunt) {
-        if (c.bar) { c.bar[0].emissiveIntensity = 0.15; c.bar[1].emissiveIntensity = 0.15; }
+        /* Street life: every so often the patrol 'takes a call' -- lights on,
+           foot down for eight seconds, then back to a crawl. Nothing to do
+           with you; a city where sirens pass is a city with other people in it. */
+        c.respondT = (c.respondT ?? 0) - dt;
+        if (c.respondT < -30 && this.rand() < dt / 25) { c.respondT = 8; c.cruise = (c.baseCruise ??= c.cruise) * 1.7; }
+        if (c.respondT <= 0 && c.baseCruise && c.cruise > c.baseCruise) c.cruise = c.baseCruise;
+        const lit = c.respondT > 0 && Math.floor(t * 6) % 2;
+        if (c.bar) { c.bar[0].emissiveIntensity = lit ? 5.5 : 0.15; c.bar[1].emissiveIntensity = c.respondT > 0 && !lit ? 5.5 : 0.15; }
         if (c.deployed) { c.deployed = false; c.officer.visible = false; }
         c.mode = 'road'; c.best = Infinity; c.stale = 0; c.deployT = 0;
         if (gap > 320) { c.live = false; c.mesh.visible = false; continue; }
@@ -964,7 +971,8 @@ export class Traffic {
          ON FOOT within 40 m. Before, a player who left the car and kept moving
          never met an officer: they circled in their cruisers forever. */
       const footContact = !!player.onFoot && gap < 40 && c.mode === 'free';
-      if ((c.mode === 'free' && stopped && close) || footContact) c.deployT += dt * (footContact ? 1.6 : 1);
+      const disabled = c.cruise === 0 && gap < 60;   // shot up: the car is done, so they come out whatever you are doing
+      if ((c.mode === 'free' && stopped && close) || footContact || disabled) c.deployT += dt * (footContact ? 1.6 : 1);
       else c.deployT = Math.max(0, c.deployT - dt * 0.8);
       if (!c.deployed && c.deployT > 1.0 && this._deployed < MAX_DEPLOYED) {
         c.deployed = true; this._deployed++; c.fireT = 0.5; c.state = 'cover'; c.stateT = 0; c.hp = 100; c.down = 0;

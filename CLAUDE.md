@@ -131,6 +131,15 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   line on you for 10 s (cruisers set `traffic.hot` by LOS too), cruisers
   sweep a `searchRadius` ring round `traffic.seenX/Z` that the minimap
   draws. Downed officers also drop a vest (15%: +50% armour).
+  Evening: `policeAi.crimeWitnessed` (no stars: a crime needs a cruiser
+  within 90 m or pedestrians within 45 m), a zero-star PATROL cruiser
+  (`traffic.patrol`, hunt=false, lights off, occasionally 'responds' with
+  lights + siren), `audio.siren` for the nearest hunting cruiser,
+  `traffic.fireAt` public (roadblock posts use it), vehicles carry `vhp`
+  (8 rounds -> cruise 0, officers step out), punctures via `w.shot`
+  (Damage.#wear holds them; the spike strip never worked before), flats
+  cost grip/drag in dynamics (`car.flat[]`), the frame catch renders the
+  last good state instead of going black.
 - **iCloud evicts `.git` (2026-09-05)**: the repo lives in `~/Desktop`, which
   iCloud syncs; it marked `.git/index` and 85+ objects `dataless`, so git
   timed out on mmap. `rm .git/index && git reset` rebuilt it once the files
