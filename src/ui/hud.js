@@ -111,7 +111,7 @@ export class Hud {
     this.#tickWedges(1 / 60);
     this.#drawMap(car, traffic);
     this.#drawMapOverlay(car, traffic, mission);
-    this.#drawBigMap(car, mission);
+    this.#drawBigMap(car, mission, traffic);
   }
 
   setStats(text) { this.stats.textContent = text; }
@@ -357,7 +357,7 @@ export class Hud {
     return c;
   }
 
-  #drawBigMap(car, mission) {
+  #drawBigMap(car, mission, traffic = null) {
     if (!this.mapOpen || !this.district) return;
     const g = this.mapEl.getContext('2d'), W = this.mapEl.width, H = this.mapEl.height;
     const { sc, ox, oz } = this.#mapTransform();
@@ -393,6 +393,24 @@ export class Hud {
       g.fillStyle = i === mission.index ? '#ffc23c' : 'rgba(74,163,255,0.8)';
       g.beginPath(); g.arc(X(p.x), Z(pz), i === mission.index ? 7 : 4, 0, 7); g.fill();
     });
+
+    // the police, as on the minimap: red dots, and the search ring where they last had you
+    if (traffic?.police) {
+      const scale = X(1) - X(0);
+      if (traffic.wanted > 0 && traffic.coldFor > 3 && traffic.seenX !== undefined) {
+        g.save();
+        g.beginPath(); g.arc(X(traffic.seenX), Z(traffic.seenZ), searchRadius(traffic.coldFor) * scale, 0, Math.PI * 2);
+        g.fillStyle = 'rgba(255,255,255,0.08)'; g.fill();
+        g.setLineDash([6, 5]); g.lineDashOffset = -(performance.now() / 60) % 11; g.strokeStyle = 'rgba(255,255,255,0.7)'; g.lineWidth = 1.5; g.stroke();
+        g.restore();
+      }
+      for (const c of traffic.police) {
+        if (!c.live) continue;
+        const lit = (traffic.wanted >= 1 && c.hunt) || c.respondT > 0;
+        g.fillStyle = lit ? (Math.floor(performance.now() / 250) % 2 ? '#ff3b30' : '#3b82ff') : '#ff6b6b';
+        g.beginPath(); g.arc(X(c.x), Z(c.z), lit ? 4.5 : 3.5, 0, 7); g.fill();
+      }
+    }
 
     // you: a heading triangle, which is what the legend has always promised
     const px = X(car.x), pz = Z(car.z);
