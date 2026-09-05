@@ -802,7 +802,7 @@ export class DistrictWorld {
   #signals(edgeIds, group, key) {
     const A = this.assets;
     const posts = [], arms = [], lens = [], meta = [], zebra = [];
-    const seen = new Set();
+    const seen = new Set(), scrambled = new Set();
     const sigBatch = this.catalogue ? new InstanceBatch(this.catalogue) : null;
     const ly = (x, z) => this.district.elevationAt(x, z);
 
@@ -887,6 +887,18 @@ export class DistrictWorld {
         const px = node.x - dx * back + -dz * (half - 1.2);
         const pz = node.y - dz * back + dx * (half - 1.2);
         const yaw = Math.atan2(-dz, dx);
+
+        /* Little Tokyo's four-way junctions are SCRAMBLE crossings, Shibuya's
+           signature: two diagonal zebra rows through the junction centre on
+           top of the four approach crossings. Once per node. */
+        if (node.kind === 'cross' && !scrambled.has(end) && this.district.districtAt?.(node.x, node.y) === 'LITTLE TOKYO') {
+          scrambled.add(end);
+          const len = half * 2 * 1.1;
+          for (const da of [Math.PI / 4, -Math.PI / 4]) {
+            const yd = yaw + da, px2 = Math.sin(yd), pz2 = Math.cos(yd);   // perpendicular to the stripe's run
+            for (let k = -half * 0.75; k <= half * 0.75; k += 1.45) zebra.push(flatRect(node.x + px2 * k, 0.022, node.y + pz2 * k, yd, len, 0.62));
+          }
+        }
 
         /* A crossing on every signalled approach, and the mast beside it.
            Without one the cars pulled up nose-to-post at the signal itself,
