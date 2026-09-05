@@ -219,9 +219,8 @@ export class Hud {
     if (this.district) {
       const t = performance.now();
       if (!this._distAt || t - this._distAt > 500) {
-        this._distAt = t; let best = null, bd = Infinity;
-        for (const b of this.district.blocks) { const d = Math.hypot(b.x - car.x, b.y - car.z); if (d < bd) { bd = d; best = b.district; } }
-        this._dist = best;
+        this._distAt = t;
+        this._dist = this.district.districtAt ? this.district.districtAt(car.x, car.z) : null;   // the spatial bucket, not a 506-block scan
       }
       if (this._dist) {
         g.fillStyle = 'rgba(8,11,16,0.55)'; g.fillRect(C - 60, S - 18, 120, 15);
@@ -274,6 +273,10 @@ export class Hud {
       g.rotate(b.angle || 0);
       g.fillStyle = BLOCK[b.type] || '#161b24';
       g.fillRect(-b.w * sc / 2, -b.h * sc / 2, b.w * sc, b.h * sc);
+      if (b.district === 'LITTLE TOKYO') {   // the neon district reads on the plan: a magenta wash and a hairline
+        g.fillStyle = 'rgba(255,64,180,0.16)'; g.fillRect(-b.w * sc / 2, -b.h * sc / 2, b.w * sc, b.h * sc);
+        g.strokeStyle = 'rgba(255,96,200,0.55)'; g.lineWidth = 1; g.strokeRect(-b.w * sc / 2, -b.h * sc / 2, b.w * sc, b.h * sc);
+      }
       g.restore();
     }
 
