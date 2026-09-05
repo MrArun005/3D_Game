@@ -69,34 +69,52 @@ export class LightPool {
       scene.add(sp, sp.target);
       this.spots.push(sp);
     }
+    /* One real light for the nearest hunting cruiser's bar, red/blue with its
+       flash: the wash on the buildings around you that the pool disc on the
+       tarmac cannot give. One point light, 30 m, off when nobody is hunting. */
+    this.beacon = new THREE.PointLight(0xff2a1c, 0, 30, 2);
+    this.beacon.castShadow = false;
+    scene.add(this.beacon);
   }
 
   #traffic(traffic, x, z) {
     if (!traffic || !traffic.cars) return;
     let c0 = null, c1 = null, c2 = null, c3 = null;
     let d0 = 4900, d1 = 4900, d2 = 4900, d3 = 4900; // 70m squared
-    const cars = traffic.cars;
-    for (let i = 0; i < cars.length; i++) {
-      const c = cars[i];
-      if (!c.live || !c.mesh?.visible || c.speed <= 1) continue;
+    /* The inner distance used to be `const d2`, shadowing the third slot: the
+       third comparison could never be true and `d2 = d1` was an assignment to
+       a const -- a TypeError the moment a second car came inside 70 m. Police
+       cruisers are candidates too; they had no headlights. */
+    let nearestBeacon = null, beaconD = 1600;   // 40 m squared
+    for (const list of [traffic.cars, traffic.police ?? []]) for (let i = 0; i < list.length; i++) {
+      const c = list[i];
+      if (!c.live || !c.mesh?.visible) continue;
       const dx = c.x - x, dz = c.z - z;
-      const d2 = dx * dx + dz * dz;
-      if (d2 < d0) {
+      const dd = dx * dx + dz * dz;
+      if (c.bar && (c.hunt || c.respondT > 0) && dd < beaconD) { beaconD = dd; nearestBeacon = c; }
+      if (c.speed <= 1) continue;
+      if (dd < d0) {
         c3 = c2; d3 = d2;
         c2 = c1; d2 = d1;
         c1 = c0; d1 = d0;
-        c0 = c; d0 = d2;
-      } else if (d2 < d1) {
+        c0 = c; d0 = dd;
+      } else if (dd < d1) {
         c3 = c2; d3 = d2;
         c2 = c1; d2 = d1;
-        c1 = c; d1 = d2;
-      } else if (d2 < d2) {
+        c1 = c; d1 = dd;
+      } else if (dd < d2) {
         c3 = c2; d3 = d2;
-        c2 = c; d2 = d2;
-      } else if (d2 < d3) {
-        c3 = c; d3 = d2;
+        c2 = c; d2 = dd;
+      } else if (dd < d3) {
+        c3 = c; d3 = dd;
       }
     }
+    if (nearestBeacon) {
+      const c = nearestBeacon, flash = Math.floor((traffic.time ?? 0) * 6) % 2;
+      this.beacon.position.set(c.x, c.mesh.position.y + 1.9, c.z);
+      this.beacon.color.setHex(flash ? 0xff2a1c : 0x2f6dff);
+      this.beacon.intensity = 70;
+    } else this.beacon.intensity = 0;
     const nearest = [c0, c1, c2, c3];
     for (let i = 0; i < 4; i++) {
       const sp = this.spots[i];
