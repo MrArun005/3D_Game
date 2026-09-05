@@ -140,6 +140,16 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   (Damage.#wear holds them; the spike strip never worked before), flats
   cost grip/drag in dynamics (`car.flat[]`), the frame catch renders the
   last good state instead of going black.
+  Visuals, same evening: `core/additive.js` -- `additive(mat)` puts the MRT
+  normal guard on every additive material (18 sites were unguarded: the
+  rain-speckle bug at every lamp cone), `glow(mat, k)` routes a material's
+  output into the emissive target so it BLOOMS (tracers, sparks, both muzzle
+  flashes, fire ball, grenade fireball); `world/puffs.js` one-draw smoke
+  pool (muzzle wisp, blast, dead engines via `traffic.puffs`); brass
+  casings (24-instance mesh in weapon.js); hurt vignette (`grade.setHurt`,
+  uHurt); officer head is a separate 3x target (`hit.head`); downed
+  officers sink, pickups turn and blink. Gemini works in the same tree
+  (reputation.js, intel.js): stage only your own hunks, never `git add -A`.
 - **iCloud evicts `.git` (2026-09-05)**: the repo lives in `~/Desktop`, which
   iCloud syncs; it marked `.git/index` and 85+ objects `dataless`, so git
   timed out on mmap. `rm .git/index && git reset` rebuilt it once the files

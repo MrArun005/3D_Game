@@ -61,6 +61,7 @@ import { Modes } from './game/modes.js';
 import { Grenades, BLAST_R, KILL_R, HURT_R, blastFalloff } from './game/grenade.js';
 import { Crosshair, DecalPool, ADS, ADS_BLEND_S, spreadToPixels, spreadFor, recoilFor, firstBuildingHit, swayFor, swayPhaseStep, reloadPose, movementSpread, aimAssist } from './game/shooting.js';
 import { Tracers } from './game/tracers.js';
+import { Puffs } from './world/puffs.js';
 import { absorb } from './game/policeAi.js';
 import { SkidMarks } from './world/skidmarks.js';
 import { Damage } from './game/damage.js';
@@ -397,6 +398,7 @@ const crosshair = new Crosshair();
 const decals = new DecalPool(scene);
 const tracers = new Tracers(scene);        // every round in the air, one draw
 weapon.tracers = tracers;                  // yours too: the one-frame line in weapon.js is the fallback
+const puffs = new Puffs(scene);            // smoke and dust: muzzles, blasts, dead engines
 /* Slot 5. In grenade mode E throws instead of firing; any digit 1-4 puts a gun
    back in your hand. The blast goes through the same debris system as the car
    and the tank, so a bin flies the same way whoever broke it. */
@@ -408,6 +410,7 @@ let wasReloading = false;
 let lastArsKey = '';
 let wastedAnim = 0;   // 0 idle, 1 Death clip playing, 2 clip done -> run the WASTED path once   // slot 0: bare hands. E swings at whoever is in front of you
 grenades.onBlast = (bx, by, bz) => {
+  for (let i = 0; i < 10; i++) { const a = Math.random() * Math.PI * 2, rr = Math.random() * 1.6; puffs.puff(bx + Math.cos(a) * rr, by + 0.5 + Math.random(), bz + Math.sin(a) * rr, { r: 0.14, g: 0.13, b: 0.12, life: 2.4 + Math.random() * 1.5, vy: 1.4 + Math.random(), vx: Math.cos(a) * 1.2, vz: Math.sin(a) * 1.2 }); }
   debris.breakNear(bx, bz, BLAST_R, car, 30);
   for (const c of traffic.police) {
     if (!c.live || !c.deployed || c.down > 0) continue;
@@ -617,6 +620,7 @@ function pullTrigger() {
     v.baseCruise ??= v.cruise; v.cruise = Math.max(v.cruise, v.baseCruise * 1.6); v.fleeT = 8;
   }
   audio.gunshot(1, weapon.kind);
+  puffs.puff(weapon.flash.position.x, weapon.flash.position.y, weapon.flash.position.z, { r: 0.22, g: 0.21, b: 0.20, life: 0.55, vy: 0.5, vx: dx * 1.5, vz: dz * 1.5 });   // a wisp off the muzzle
   // firing at all is a crime; hitting something is a worse one
   if (hit?.kind !== 'target' && modes?.active !== 'range') traffic.reportCrime(hit ? (hit.kind === 'person' ? 'person' : (hit.kind === 'police' || hit.kind === 'officer') ? 'police' : 'traffic') : 'traffic',
                       hit ? 9 : 1);
@@ -1615,7 +1619,7 @@ function frameBody() {
     ? { x: onFoot.x, y: onFoot.y, z: onFoot.z, vx: onFoot.vx, vz: onFoot.vz,
         speed: Math.hypot(onFoot.vx, onFoot.vz), onFoot: true, crouch, firedAt: lastFiredAt }
     : currentVehicle;
-  traffic.world = world; traffic.chatter = chatter; traffic.decals = decals; traffic.tracers = tracers; traffic.flashLight = weapon.light; traffic.crowd = crowd; traffic.heli = heli; traffic.grenadeLook = grenades;
+  traffic.world = world; traffic.chatter = chatter; traffic.decals = decals; traffic.tracers = tracers; traffic.flashLight = weapon.light; traffic.puffs = puffs; traffic.crowd = crowd; traffic.heli = heli; traffic.grenadeLook = grenades;
   if (!onFoot.active) quarry.firedAt = lastFiredAt;   // the car object is the quarry in a car; officers read this for 'quiet'   // buildings for line of sight, the radio, the marks their misses leave, the street that scatters
   traffic.update(quarry, dt, worldTime);
   if (chatter) chatter.updateWanted(traffic.wanted);
@@ -1632,6 +1636,7 @@ function frameBody() {
   weapon.update(dt);
   grenades.update(dt, groundHeightAt);
   tracers.update(dt);
+  puffs.update(dt);
   if (punchCool > 0) punchCool -= dt;
   arsenalSaveT += dt; if (arsenalSaveT > 5) { arsenalSaveT = 0; saveArsenal(); }
   /* Hospitals heal: stand within 6 m of one on foot and health climbs at 15%/s. Free, like GTA's. */

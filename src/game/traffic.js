@@ -772,6 +772,14 @@ export class Traffic {
     for (const v of this.cars) if (v.fleeT > 0) { v.fleeT -= dt; if (v.fleeT <= 0 && v.baseCruise) v.cruise = v.baseCruise; }
     this.#tickDrops(dt);
     if (this._flashT > 0) { this._flashT -= dt; if (this._flashT <= 0) this.flashLight.intensity = 0; }
+    if (this.puffs) {   // dead engines smoke: every disabled vehicle within 120 m puts up a grey puff eight times a second
+      this._puffT = (this._puffT ?? 0) - dt;
+      if (this._puffT <= 0) {
+        this._puffT = 0.125;
+        for (const v of this.cars) if (v.live && v.vhp === 0 && Math.hypot(v.x - player.x, v.z - player.z) < 120) this.puffs.puff(v.x + Math.cos(v.yaw) * 1.4, (v.mesh?.position.y ?? 0) + 1.0, v.z - Math.sin(v.yaw) * 1.4, { r: 0.13, g: 0.13, b: 0.14, life: 2.2, vy: 1.1 });
+        for (const v of this.police) if (v.live && v.vhp === 0 && Math.hypot(v.x - player.x, v.z - player.z) < 120) this.puffs.puff(v.x + Math.cos(v.yaw) * 1.4, (v.mesh?.position.y ?? 0) + 1.0, v.z - Math.sin(v.yaw) * 1.4, { r: 0.13, g: 0.13, b: 0.14, life: 2.2, vy: 1.1 });
+      }
+    }
     this.#rooftops(player, dt);
     this.#airGunner(player, dt);
     this.hot = false;   // set true below by any officer who can see you this frame
