@@ -1,3 +1,5 @@
+import * as THREE from 'three';
+
 /**
  * Fable-style Morality, Notoriety & Hero Alignment System + Safehouse Network.
  *
@@ -41,10 +43,12 @@ export const SAFENETWORK = [
 ];
 
 export class ReputationSystem {
-  constructor(garage, audio = null, hud = null) {
+  constructor(garage, audio = null, hud = null, scene = null) {
     this.garage = garage;
     this.audio = audio;
     this.hud = hud;
+    this.scene = scene;
+    this.beacons = [];
 
     // Load saved state or default
     this.score = 0; // -1000 to +1000
@@ -54,6 +58,52 @@ export class ReputationSystem {
 
     this.lastSafehouseCooldown = 0;
     this.cleanDrivingTimer = 0;
+
+    if (scene) this.#buildBeacons(scene);
+  }
+
+  #buildBeacons(scene) {
+    const group = new THREE.Group();
+    group.name = 'safehouse_beacons';
+
+    const cylGeo = new THREE.CylinderGeometry(1.6, 2.2, 45, 16, 1, true);
+    cylGeo.translate(0, 22.5, 0);
+    const ringGeo = new THREE.RingGeometry(1.5, 2.4, 32);
+    ringGeo.rotateX(-Math.PI / 2);
+
+    for (const house of this.safehouses) {
+      const g = new THREE.Group();
+      g.position.set(house.x, 0, house.z);
+
+      const isOwned = this.isOwned(house.id);
+      const color = isOwned ? 0x2ecc71 : 0x9b59b6;
+
+      const cylMat = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: isOwned ? 0.32 : 0.18,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      const cyl = new THREE.Mesh(cylGeo, cylMat);
+
+      const ringMat = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.6,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.position.y = 0.08;
+
+      g.add(cyl, ring);
+      group.add(g);
+      this.beacons.push({ group: g, cyl, ring, house });
+    }
+    scene.add(group);
   }
 
   #load() {
@@ -216,6 +266,19 @@ export class ReputationSystem {
       }
     } else {
       this.cleanDrivingTimer = Math.max(0, this.cleanDrivingTimer - dt * 0.5);
+    }
+
+    // Animate 3D safehouse beacons
+    if (this.beacons && this.beacons.length) {
+      for (let i = 0; i < this.beacons.length; i++) {
+        const b = this.beacons[i];
+        b.group.rotation.y += dt * 0.75;
+        const owned = this.isOwned(b.house.id);
+        const pulse = 0.9 + Math.sin(now * 0.003 + i) * 0.1;
+        b.cyl.scale.set(pulse, 1, pulse);
+        b.cyl.material.color.setHex(owned ? 0x2ecc71 : 0x9b59b6);
+        b.ring.material.color.setHex(owned ? 0x2ecc71 : 0x9b59b6);
+      }
     }
   }
 }

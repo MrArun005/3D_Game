@@ -12,6 +12,8 @@ import { LightPool } from './game/lighting.js';
 import { Jobs, onPavementAtSpeed } from './game/jobs.js';
 import { Garage } from './game/garage.js';
 import { StoryManager } from './game/storyMissions.js';
+import { ReputationSystem } from './game/reputation.js';
+import { IntelScanner } from './game/intel.js';
 import { Phone } from './ui/phone.js';
 import { VehicleVFX } from './vehicle/vfx.js';
 import { PuddleSystem } from './world/puddles.js';
@@ -196,7 +198,7 @@ let beach = null, water = null, crowd = null, heli = null, districtRef = null, d
 let districtFailed = false;
 let spawnSnap = false;        // the frame loop snaps the chase camera on its next update (chase is declared later; see the top-level awaits)   // lets the boot gate drop on the legacy grid if the district never lands
 let lightPool = null;
-let jobs = null, garage = null, story = null, phone = null, dispatch = null;
+let jobs = null, garage = null, story = null, phone = null, dispatch = null, reputation = null, intelScanner = null;
 let activeVehicle = null;
 let chat = null, chatter = null, commands = null;
 let vehicleVFX = null, puddles = null;
@@ -266,7 +268,7 @@ function onShot(gap, landed = null, damage = 26, from = null, kind = 'pistol') {
      and `damage` is the weapon's. The old distance-only field is kept as the
      fallback for any caller that has not been given a line of sight. */
   const hit = landed === null ? Math.max(0, 1 - gap / 18) : (landed ? damage / 26 : 0);
-  if (hit > 0) lastHurtAt = performance.now();
+  if (hit > 0) { lastHurtAt = performance.now(); hurtPulse = Math.min(1, 0.45 + hit * 0.5); }
   if (landed === false) return;                    // a miss: the shot is heard, nothing else
   if (onFoot.active && landed) {
     onFoot.character?.flinch?.();   // the body reacts before the number does
@@ -427,6 +429,7 @@ let aiming = false, ads = 0, burst = 0, sinceShot = 9, swayPhase = 0, crouch = f
 let lastFiredAt = -1e9;   // officers advance when you have been quiet for a while
 let lastHurtAt = -1e9;    // health regenerates to half once this is six seconds old
 let healTick = 0;
+let hurtPulse = 0;        // the red edge on the frame, decays each frame (grade.setHurt)
 let armour = 0;           // body armour 0..1, bought at Ammu-Nation, soaks 60% of a hit until gone
 /* The arsenal survives a reload of the page like cash and the garage do. */
 try { const d = JSON.parse(localStorage.getItem('hb.arsenal') || 'null'); if (d) { weapon.restore(d); grenades.count = d.grenades ?? grenades.count; armour = d.armour ?? 0; } } catch { /* private mode */ }
@@ -1004,7 +1007,11 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   if (new URLSearchParams(location.search).has('debug')) window.addCash = (amount = 50000) => {
     garage.addCash(amount, 'TEST FUNDS');
   };
-  phone = new Phone(story, garage, hero, traffic, dispatch, car);
+  reputation = new ReputationSystem(garage, audio, hud, scene);
+  window._reputation = reputation;
+  intelScanner = new IntelScanner(audio, hud);
+  window._intel = intelScanner;
+  phone = new Phone(story, garage, hero, traffic, dispatch, car, reputation, intelScanner, navigation);
   vehicleVFX = new VehicleVFX(scene, hero);
   window.vehicleVFX = vehicleVFX;
   puddles = new PuddleSystem(scene, district);
@@ -1338,6 +1345,7 @@ const input = createInput((action) => {
   if (action === 'lights') car.headlights = !car.headlights;
   if (action === 'photo') photo.toggle();
   if (action === 'phone') phone?.toggle();
+  if (action === 'intel') intelScanner?.toggle();
   if (action === 'garage') garage?.browse();
   if (action === 'buy') garage?.act();
   if (action === 'map') hud.toggleMap();
@@ -1706,7 +1714,12 @@ function frameBody() {
   clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: currentVehicle, dome, stars });
   if (weather) weather.update(camera, currentVehicle, dt);
   lightPool?.update(dt, currentVehicle.x, currentVehicle.z, traffic);
+  const playerTarget = onFoot.active ? { x: camera.position.x, y: camera.position.y, z: camera.position.z } : currentVehicle;
+  reputation?.update(dt, playerTarget.x, playerTarget.z, traffic, car, damageModel);
+  intelScanner?.update(dt, camera, playerTarget, traffic, reputation?.safehouses);
   grade.setDrops(DAY ? 0 : chase.mode >= 2 ? 1.2 : 0.68);
+  const speedRatio = Math.min(1, (Math.abs(car.fwdSpeed || 0) / 42)) * (car.nosActive ? 1.35 : 0.85);
+  grade.setSpeed?.(speedRatio);
   const streamX = photo?.on ? camera.position.x : currentVehicle.x;
   const streamZ = photo?.on ? camera.position.z : currentVehicle.z;
   const streamVx = photo?.on ? 0 : (currentVehicle.vx || 0);
@@ -1722,6 +1735,8 @@ function frameBody() {
      scene + shadow passes + ~15 fullscreen post quads. */
   performance.mark('render-start');
   const tRender0 = performance.now();
+  hurtPulse = Math.max(0, hurtPulse - dt * 2.2);
+  grade.setHurt?.(Math.max(hurtPulse, onFoot.active && health < 0.4 ? (0.4 - health) * 1.6 : 0));   // a hit flashes it; under 40% it stays
   grade.render(renderer, now / 1000);
   const renderMs = performance.now() - tRender0;
   performance.mark('render-end');

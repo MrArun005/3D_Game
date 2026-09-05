@@ -77,7 +77,7 @@ export function createGrade(renderer, scene, camera, {
       grain: { uniforms: { uTime: { value: 0 }, uAmount: { value: 0 } } },
       lens: { uniforms: { uTime: { value: 0 }, uAmt: { value: 0 } } },
       gtao: null, bloomNode: null, post: null, bloom: false,
-      setBloom() {}, setDrops() {},
+      setBloom() {}, setDrops() {}, setHurt() {}, setSpeed() {},
       beginScene(renderer) { renderer.setRenderTarget(null); return null; },
       sync() {}, resize() {},
       render(renderer) { renderer.render(scene, camera); },
@@ -90,6 +90,8 @@ export function createGrade(renderer, scene, camera, {
   const gAmount = uniform(0.030);
   const lTime = uniform(0);
   const lAmt = uniform(0.7);
+  const uHurt = uniform(0);      // 0..1: red at the frame edge -- a hit pulses it, low health holds it
+  const uSpeed = uniform(0);     // 0..1: high speed / NOS visual warp and chromatic stretch
 
   /* --- scene pass --------------------------------------------------------
      GTAO needs geometry (depth + view normals) and selective bloom needs the
@@ -159,14 +161,18 @@ export function createGrade(renderer, scene, camera, {
     const tint = mix(vec3(1.05, 1.00, 0.93), vec3(0.93, 0.96, 1.07), uv().y);
     c.mulAssign(vec3(v).mul(tint));
 
+    // hurt: blood at the edges of vision, GTA's way of saying the number without the number
+    const hurtEdge = smoothstep(0.30, 0.80, r).mul(uHurt);
+    c.assign(mix(c, vec3(0.42, 0.01, 0.01), hurtEdge.mul(0.85)));
+
     // cinematic film S-curve contrast: expands highlights, deepens shadows
     const contrasted = c.mul(c).mul(float(3.0).sub(c.mul(2.0)));
     c.assign(mix(c, contrasted, 0.22));
 
-    // subtle lens edge chromatic aberration on periphery
-    const chromaOffset = r.mul(r).mul(0.0025);
-    c.r.addAssign(chromaOffset.mul(0.12));
-    c.b.subAssign(chromaOffset.mul(0.12));
+    // subtle lens edge chromatic aberration on periphery + high-speed warp
+    const chromaOffset = r.mul(r).mul(float(0.0025).add(uSpeed.mul(0.012)));
+    c.r.addAssign(chromaOffset.mul(0.14));
+    c.b.subAssign(chromaOffset.mul(0.14));
 
     // grain
     const n = hash2(uv().mul(vec2(1920.0, 1080.0)).add(fract(gTime).mul(91.7)));
@@ -223,6 +229,8 @@ export function createGrade(renderer, scene, camera, {
     },
 
     setDrops(amount) { lAmt.value = amount; },
+    setHurt(amount) { uHurt.value = Math.max(0, Math.min(1, amount)); },
+    setSpeed(amount) { uSpeed.value = Math.max(0, Math.min(1, amount)); },
 
     /** Legacy no-op: the pipeline owns the frame now. */
     beginScene(renderer) { renderer.setRenderTarget(null); return null; },

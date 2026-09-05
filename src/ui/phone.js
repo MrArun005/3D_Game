@@ -1,16 +1,19 @@
 import { STORY_MISSIONS } from '../game/storyMissions.js';
 
 export class Phone {
-  constructor(storyManager, garage, hero, traffic, dispatchService = null, car = null) {
+  constructor(storyManager, garage, hero, traffic, dispatchService = null, car = null, reputation = null, intel = null, navigation = null) {
     this.story = storyManager;
     this.garage = garage;
     this.hero = hero;
     this.traffic = traffic;
     this.dispatch = dispatchService;
     this.car = car;
+    this.reputation = reputation;
+    this.intel = intel;
+    this.navigation = navigation;
 
     this.open = false;
-    this.tab = 'missions'; // 'missions' | 'garage' | 'contacts'
+    this.tab = 'missions'; // 'missions' | 'garage' | 'contacts' | 'intel'
     this.#build();
   }
 
@@ -53,7 +56,7 @@ export class Phone {
     const header = document.createElement('div');
     header.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding: 4px 18px 10px 18px; border-bottom: 1px solid rgba(255,255,255,0.08);';
     header.innerHTML = `
-      <div style="font-weight: 700; font-size: 13px; color: #5bc0be;">iFRUIT OS 5.0</div>
+      <div style="font-weight: 700; font-size: 13px; color: #5bc0be;">iFRUIT OS 5.1</div>
       <div id="phone-cash" style="font-weight: 800; font-size: 15px; color: #2ecc71;">$${this.garage.cash.toLocaleString()}</div>
     `;
     el.appendChild(header);
@@ -62,9 +65,10 @@ export class Phone {
     const nav = document.createElement('div');
     nav.style.cssText = 'display:flex; background:rgba(0,0,0,0.35); border-bottom:1px solid rgba(255,255,255,0.06);';
     nav.innerHTML = `
-      <button id="tab-missions" style="flex:1; padding:10px 4px; border:none; background:transparent; color:#fff; font-weight:700; font-size:11px; cursor:pointer; border-bottom: 2px solid #3498db;">HEISTS</button>
-      <button id="tab-garage" style="flex:1; padding:10px 4px; border:none; background:transparent; color:#888; font-weight:700; font-size:11px; cursor:pointer;">TUNING</button>
-      <button id="tab-contacts" style="flex:1; padding:10px 4px; border:none; background:transparent; color:#888; font-weight:700; font-size:11px; cursor:pointer;">SERVICES</button>
+      <button id="tab-missions" style="flex:1; padding:10px 4px; border:none; background:transparent; color:#fff; font-weight:700; font-size:10px; cursor:pointer; border-bottom: 2px solid #3498db;">HEISTS</button>
+      <button id="tab-garage" style="flex:1; padding:10px 4px; border:none; background:transparent; color:#888; font-weight:700; font-size:10px; cursor:pointer;">TUNING</button>
+      <button id="tab-contacts" style="flex:1; padding:10px 4px; border:none; background:transparent; color:#888; font-weight:700; font-size:10px; cursor:pointer;">SERVICES</button>
+      <button id="tab-intel" style="flex:1; padding:10px 4px; border:none; background:transparent; color:#888; font-weight:700; font-size:10px; cursor:pointer;">INTEL</button>
     `;
     el.appendChild(nav);
 
@@ -88,6 +92,7 @@ export class Phone {
     nav.querySelector('#tab-missions').onclick = () => this.#switchTab('missions');
     nav.querySelector('#tab-garage').onclick = () => this.#switchTab('garage');
     nav.querySelector('#tab-contacts').onclick = () => this.#switchTab('contacts');
+    nav.querySelector('#tab-intel').onclick = () => this.#switchTab('intel');
 
     // On-screen toggle trigger button
     const trigger = document.createElement('button');
@@ -336,6 +341,95 @@ export class Phone {
         this.#render();
       };
       this.content.appendChild(sprayCard);
+    } else if (this.tab === 'intel') {
+      // 1. Astra Tactical AI Scanner Card
+      const scannerCard = document.createElement('div');
+      scannerCard.style.cssText = 'background: rgba(0, 229, 255, 0.06); border: 1px solid rgba(0, 229, 255, 0.3); border-radius: 12px; padding: 12px; display:flex; flex-direction:column; gap:8px;';
+      const isScannerActive = !!this.intel?.active;
+      scannerCard.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <div style="font-weight:800; font-size:12px; color:#00e5ff; letter-spacing:1px;">🛰️ ASTRA 5.1 // TACTICAL RECON</div>
+            <div style="font-size:11px; color:#aaa;">Multimodal AR scanner · Chop values, police threat & safehouses</div>
+          </div>
+          <button id="scanner-toggle-btn" style="padding:8px 14px; border-radius:8px; border:none; background:${isScannerActive ? '#e74c3c' : '#00a8ff'}; color:#fff; font-weight:800; font-size:11px; cursor:pointer;">
+            ${isScannerActive ? 'DEACTIVATE' : 'ACTIVATE (Z)'}
+          </button>
+        </div>
+      `;
+      scannerCard.querySelector('#scanner-toggle-btn').onclick = (e) => {
+        e.stopPropagation();
+        this.intel?.toggle();
+        this.#render();
+      };
+      this.content.appendChild(scannerCard);
+
+      // 2. Hero Morality & Alignment Card (Fable System)
+      if (this.reputation) {
+        const repCard = document.createElement('div');
+        repCard.style.cssText = 'background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 12px; display:flex; flex-direction:column; gap:6px;';
+        const score = this.reputation.score;
+        const normPct = Math.round(((score + 1000) / 2000) * 100);
+        const title = this.reputation.title;
+        const align = this.reputation.alignmentName;
+        const color = align === 'OUTLAW' ? '#e74c3c' : align === 'VIGILANTE' ? '#3498db' : '#f1c40f';
+
+        repCard.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-size:11px; color:#888; font-weight:700;">HERO NOTORIETY</div>
+            <div style="font-size:12px; font-weight:800; color:${color};">${title}</div>
+          </div>
+          <div style="background:rgba(0,0,0,0.5); border-radius:6px; height:8px; position:relative; overflow:hidden; margin:4px 0;">
+            <div style="position:absolute; left:0; top:0; bottom:0; width:100%; background:linear-gradient(90deg, #e74c3c 0%, #7f8c8d 50%, #3498db 100%); opacity:0.35;"></div>
+            <div style="position:absolute; top:0; bottom:0; left:${normPct}%; width:4px; transform:translateX(-50%); background:#fff; box-shadow:0 0 8px #fff;"></div>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:10px; color:#aaa;">
+            <span>OUTLAW (-1000)</span>
+            <span style="font-weight:700; color:#fff;">SCORE: ${score > 0 ? '+' : ''}${score}</span>
+            <span>VIGILANTE (+1000)</span>
+          </div>
+          <div style="margin-top:6px; border-top:1px solid rgba(255,255,255,0.06); padding-top:6px;">
+            <div style="font-size:10px; font-weight:700; color:#888; margin-bottom:4px;">ACTIVE PERKS:</div>
+            ${this.reputation.perks.map(p => `<div style="font-size:11px; color:#ddd; margin-bottom:2px;">• <span style="font-weight:700; color:${color};">${p.name}</span>: ${p.desc}</div>`).join('')}
+          </div>
+        `;
+        this.content.appendChild(repCard);
+
+        // 3. Safehouse Network (Fable Asset Ownership)
+        const shTitle = document.createElement('div');
+        shTitle.style.cssText = 'font-weight:800; font-size:12px; color:#9b59b6; margin-top:4px; letter-spacing:0.5px;';
+        shTitle.textContent = 'HALSTEAD REFUGE SAFENETWORK';
+        this.content.appendChild(shTitle);
+
+        for (const house of this.reputation.safehouses) {
+          const owned = this.reputation.isOwned(house.id);
+          const hCard = document.createElement('div');
+          hCard.style.cssText = `background: rgba(255,255,255,0.05); border: 1px solid ${owned ? 'rgba(46, 204, 113, 0.4)' : 'rgba(255,255,255,0.1)'}; border-radius: 12px; padding: 10px; display:flex; justify-content:space-between; align-items:center;`;
+          hCard.innerHTML = `
+            <div style="flex:1; padding-right:8px;">
+              <div style="font-weight:800; font-size:12px; color:${owned ? '#2ecc71' : '#fff'};">${house.icon} ${house.name}</div>
+              <div style="font-size:10px; color:#aaa; margin-top:2px;">${house.district} · ${house.description}</div>
+              <div style="font-size:11px; font-weight:700; color:${owned ? '#2ecc71' : '#f1c40f'}; margin-top:4px;">${owned ? '✓ OWNED' : `$${house.cost.toLocaleString()}`}</div>
+            </div>
+            <button class="safehouse-action-btn" style="padding:6px 12px; border-radius:6px; border:none; background:${owned ? '#2980b9' : '#27ae60'}; color:#fff; font-weight:700; font-size:11px; cursor:pointer; white-space:nowrap;">
+              ${owned ? 'GPS ROUTE' : 'BUY'}
+            </button>
+          `;
+          hCard.querySelector('.safehouse-action-btn').onclick = (e) => {
+            e.stopPropagation();
+            if (owned) {
+              if (this.navigation) {
+                this.navigation.setWaypoint(house.x, house.z);
+                this.toggle(false);
+              }
+            } else {
+              this.reputation.buySafehouse(house.id);
+              this.#render();
+            }
+          };
+          this.content.appendChild(hCard);
+        }
+      }
     }
   }
 

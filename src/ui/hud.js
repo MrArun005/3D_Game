@@ -851,11 +851,70 @@ export class Hud {
         g.fillStyle = Math.floor(Date.now() / 160) % 2 ? '#ff3b2c' : '#3f7dff';
         g.fillRect(dx - 2, dz - 3, 4, 6);
       }
+
+      // Safehouse refuges on minimap
+      const rep = (typeof window !== 'undefined') ? window._reputation : null;
+      if (rep && rep.safehouses) {
+        for (let i = 0; i < rep.safehouses.length; i++) {
+          const sh = rep.safehouses[i];
+          const dx = (sh.x - car.x) * SC, dz = (sh.z - car.z) * SC;
+          if (dx * dx + dz * dz > 95 * 95) continue;
+          const isOwned = rep.isOwned(sh.id);
+          g.fillStyle = isOwned ? '#2ecc71' : '#9b59b6';
+          g.beginPath();
+          g.arc(dx, dz, 4.5, 0, 7);
+          g.fill();
+          g.strokeStyle = '#ffffff';
+          g.lineWidth = 1.2;
+          g.stroke();
+        }
+      }
+
+      // Active Navigation Waypoint indicator on radar rim
+      if (this.navigation && this.navigation.waypoint) {
+        const wp = this.navigation.waypoint;
+        const dx = (wp.x - car.x) * SC, dz = (wp.z - car.z) * SC;
+        const d = Math.hypot(dx, dz);
+        const maxR = C - 10;
+        if (d <= maxR) {
+          g.fillStyle = '#b026ff';
+          g.beginPath();
+          g.arc(dx, dz, 5.5, 0, 7);
+          g.fill();
+          g.strokeStyle = '#ffffff';
+          g.lineWidth = 1.5;
+          g.stroke();
+        } else {
+          const nx = dx / d, nz = dz / d;
+          const px = nx * maxR, pz = nz * maxR;
+          g.save();
+          g.translate(px, pz);
+          g.rotate(Math.atan2(nz, nx) + Math.PI / 2);
+          g.fillStyle = '#b026ff';
+          g.beginPath();
+          g.moveTo(0, -6);
+          g.lineTo(4.5, 5);
+          g.lineTo(-4.5, 5);
+          g.closePath();
+          g.fill();
+          g.strokeStyle = '#ffffff';
+          g.lineWidth = 1.2;
+          g.stroke();
+          g.restore();
+        }
+      }
     }
     g.restore();
     g.fillStyle = '#e8c489';
     g.beginPath();
     g.moveTo(C, C - 7); g.lineTo(C - 4.5, C + 5); g.lineTo(C + 4.5, C + 5);
     g.closePath(); g.fill();
+
+    // Subtle glass radar boundary ring
+    g.strokeStyle = 'rgba(120, 160, 210, 0.25)';
+    g.lineWidth = 1.5;
+    g.beginPath();
+    g.arc(C, C, C - 1.5, 0, 7);
+    g.stroke();
   }
 }

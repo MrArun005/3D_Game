@@ -155,6 +155,7 @@ export function createInput(onAction) {
     if (e.code === 'Digit5') onAction('weapon5');   // grenades
     if (e.code === 'Digit0' || e.code === 'Backquote') onAction('weapon0');   // fists
     if (e.code === 'KeyX') onAction('reload');
+    if (e.code === 'KeyZ') onAction('intel');   // Astra tactical AI scanner toggle
   });
   addEventListener('keyup', (e) => {
     const active = document.activeElement;
@@ -174,7 +175,7 @@ export function createInput(onAction) {
         handbrake: keys.Space ? 1 : 0,
         hold: !!(keys.ShiftLeft || keys.ShiftRight),
         nos: !!(keys.ShiftLeft || keys.ShiftRight),
-        lookBack: !!(keys.KeyQ || keys.KeyZ),
+        lookBack: !!keys.KeyQ,
       };
       const pad = readPad();
       for (const name of Object.keys(prevDown)) {

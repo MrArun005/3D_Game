@@ -20,11 +20,44 @@ export class LightPool {
   constructor(scene, world, { count = 6, radius = 60, colour = 0xffba75, intensity = 60, range = 26 } = {}) {
     this.scene = scene; this.world = world; this.radius = radius;
     this.lights = [];
+
+    const coronaTex = (() => {
+      if (typeof document === 'undefined') return null;
+      const c = document.createElement('canvas');
+      c.width = c.height = 64;
+      const ctx = c.getContext('2d');
+      const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 30);
+      g.addColorStop(0, 'rgba(255, 235, 190, 0.95)');
+      g.addColorStop(0.25, 'rgba(255, 185, 100, 0.45)');
+      g.addColorStop(0.65, 'rgba(255, 130, 40, 0.12)');
+      g.addColorStop(1, 'rgba(255, 100, 20, 0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 64, 64);
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    })();
+
+    this.coronas = [];
     for (let i = 0; i < count; i++) {
       const l = new THREE.PointLight(colour, 0, range, 2);
       l.castShadow = false;
       scene.add(l);
       this.lights.push({ light: l, head: null, since: -1e9, fade: 0, from: null, target: intensity });
+
+      if (coronaTex) {
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: coronaTex,
+          transparent: true,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          opacity: 0,
+        }));
+        sprite.scale.set(4.2, 4.2, 1);
+        sprite.visible = false;
+        scene.add(sprite);
+        this.coronas.push(sprite);
+      }
     }
     this.intensity = intensity;
     this.t = 0; this.next = 0;
@@ -104,13 +137,24 @@ export class LightPool {
         owned.add(best.h); free.shift();
       }
     }
-    for (const s of this.lights) {
+    for (let i = 0; i < this.lights.length; i++) {
+      const s = this.lights[i];
       const l = s.light;
-      if (!s.head) { l.intensity = 0; continue; }
+      const corona = this.coronas[i];
+      if (!s.head) {
+        l.intensity = 0;
+        if (corona) corona.visible = false;
+        continue;
+      }
       s.fade = Math.min(1, s.fade + dt / 0.4);
       // the light sits a little below the head so the pool lands on the pavement, not the lamp
       l.position.set(s.head.x, s.head.y - 0.4, s.head.z);
       l.intensity = this.intensity * s.fade;
+      if (corona) {
+        corona.position.set(s.head.x, s.head.y - 0.15, s.head.z);
+        corona.visible = true;
+        corona.material.opacity = 0.85 * s.fade;
+      }
     }
   }
 }
