@@ -505,7 +505,7 @@ let aiming = false, ads = 0, burst = 0, sinceShot = 9, swayPhase = 0, crouch = f
 let lastFiredAt = -1e9;   // officers advance when you have been quiet for a while
 let lastHurtAt = -1e9;    // health regenerates to half once this is six seconds old
 let healTick = 0;
-let skidT = 0;            // tyre-smoke cadence
+let skidT = 0, exhaustT = 0;   // tyre-smoke and exhaust cadences
 let farShotT = 25;        // distant gunfire cadence (ambient, night)
 let farSirenT = 70;       // distant siren cadence (ambient, any hour)
 let rainHeard = null;     // last rain amount handed to the audio
@@ -1810,6 +1810,17 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   }
   // a siren somewhere across the city every 60-180 s, when none is actually after you
   farSirenT -= dt; if (farSirenT <= 0) { farSirenT = 60 + Math.random() * 120; if (traffic.wanted < 1) audio.farSiren?.(Math.random() < 0.5 ? -0.8 : 0.8); }
+  // exhaust: a small grey wisp off the tailpipe every 0.22 s while the engine idles or crawls (it thins out with speed)
+  if (!onFoot.active && hero.visible) {
+    exhaustT -= dt;
+    const sp = Math.abs(car.fwdSpeed || 0);
+    if (exhaustT <= 0 && sp < 12) {
+      exhaustT = 0.22;
+      const fx = Math.cos(car.yaw), fz = -Math.sin(car.yaw), sx = Math.sin(car.yaw), sz = Math.cos(car.yaw);
+      const ex = car.x - fx * 2.2 + sx * 0.55, ez = car.z - fz * 2.2 + sz * 0.55;
+      puffs.puff(ex, hero.position.y + 0.3, ez, { r: 0.10, g: 0.10, b: 0.11, life: 0.7 + (1 - sp / 12) * 0.5, vy: 0.35, vx: -fx * 0.8, vz: -fz * 0.8 });
+    }
+  }
   // tyre smoke: a sliding rear axle puts up pale puffs behind each wheel (car.slip is the dynamics' slip measure)
   if (!onFoot.active && (car.slip || 0) > 0.3 && Math.abs(car.fwdSpeed || 0) > 4) {
     skidT -= dt;
