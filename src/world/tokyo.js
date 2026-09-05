@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { attribute, materialReference } from 'three/tsl';
+import { attribute, materialReference, time, sin, step, mix, float } from 'three/tsl';
 import { mulberry32 } from '../core/rng.js';
 
 /**
@@ -44,23 +44,27 @@ const NEON = [[1.0, 0.25, 0.75], [0.2, 0.9, 1.0], [1.0, 0.85, 0.2], [0.95, 0.95,
 const WARM = [1.0, 0.82, 0.55], COOL = [0.72, 0.85, 1.0];
 const _c = new THREE.Color();
 
-/** Add `color` and `emit` attributes to a geometry, flat. */
-function paint(geo, hex, emit = null, k = 1) {
+/** Add `color`, `emit` and `flick` attributes to a geometry, flat. `flick` > 0 marks a part whose glow buzzes (the phase is the value). */
+function paint(geo, hex, emit = null, k = 1, flick = 0) {
   _c.setHex(hex);
   const n = geo.attributes.position.count;
-  const col = new Float32Array(n * 3), em = new Float32Array(n * 3);
+  const col = new Float32Array(n * 3), em = new Float32Array(n * 3), fl = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     col[i * 3] = _c.r; col[i * 3 + 1] = _c.g; col[i * 3 + 2] = _c.b;
     if (emit) { em[i * 3] = emit[0] * k; em[i * 3 + 1] = emit[1] * k; em[i * 3 + 2] = emit[2] * k; }
+    fl[i] = flick;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   geo.setAttribute('emit', new THREE.BufferAttribute(em, 3));
+  geo.setAttribute('flick', new THREE.BufferAttribute(fl, 1));
   return geo;
 }
-const box = (w, h, d, hex, emit, k) => paint(new THREE.BoxGeometry(w, h, d), hex, emit, k);
+/** A flicker phase for a part, or 0: about one glowing part in seven buzzes. */
+const flickerOf = (rnd) => (rnd() < 0.15 ? 0.5 + rnd() * 6 : 0);
+const box = (w, h, d, hex, emit, k, flick) => paint(new THREE.BoxGeometry(w, h, d), hex, emit, k, flick);
 const cyl = (r, h, hex, seg = 10) => paint(new THREE.CylinderGeometry(r, r, h, seg), hex);
 /** A quad facing +Z in its own frame, then turned to face `ry` about Y and moved. */
-const quad = (w, h, hex, emit, k) => paint(new THREE.PlaneGeometry(w, h), hex, emit, k);
+const quad = (w, h, hex, emit, k, flick) => paint(new THREE.PlaneGeometry(w, h), hex, emit, k, flick);
 const _m = new THREE.Matrix4(), _e = new THREE.Euler();
 function at(geo, x, y, z, ry = 0) {
   if (ry) geo.applyMatrix4(_m.makeRotationFromEuler(_e.set(0, ry, 0)));
@@ -203,7 +207,7 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
     for (const side of [-1, 1]) {
       if (rnd() < 0.15) continue;
       const cz = side * (hd - 0.55);
-      parts.push(at(box(0.28, colH, 0.95, 0xf2f2f2, [0.9, 0.9, 0.9], 0.5), hw + 0.18, 4.6 + colH / 2, cz));
+      parts.push(at(box(0.28, colH, 0.95, 0xf2f2f2, [0.9, 0.9, 0.9], 0.5, flickerOf(rnd)), hw + 0.18, 4.6 + colH / 2, cz));
       { const nc = pick(NEON); lamps.push({ x: hw + 1.4, y: 4.6 + colH * 0.45, z: cz, colour: _c.setRGB(nc[0], nc[1], nc[2]).getHex() }); }
       /* A kanban is a stack of tenants. The atlas tiles are 4:1 landscape, so a
          panel is `vertical`: the caller rolls the quad 90 degrees and the tile
@@ -225,12 +229,12 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
     const n = 3 + Math.floor(rnd() * 3), span = front.w * 0.7;
     for (let i = 0; i < n; i++) {
       const [lx, lz] = onFace(front, -span / 2 + span * (i / Math.max(1, n - 1)), 0.55);
-      parts.push(at(paint(new THREE.CylinderGeometry(0.17, 0.17, 0.32, 8), 0xc0392b, [1.0, 0.32, 0.12], 1.1), lx, 2.95, lz));
+      parts.push(at(paint(new THREE.CylinderGeometry(0.17, 0.17, 0.32, 8), 0xc0392b, [1.0, 0.32, 0.12], 1.1, flickerOf(rnd)), lx, 2.95, lz));
     }
   }
   if (neon) for (let s = 1; s < floors; s += 1 + Math.floor(rnd() * 2)) {
     const [nx, nz] = onFace(front, 0, 0.06);
-    parts.push(at(box(0.06, 0.07, front.w * 0.96, 0x222222, neon, 1.4), nx, floorY(s) + 0.2, nz));
+    parts.push(at(box(0.06, 0.07, front.w * 0.96, 0x222222, neon, 1.4, flickerOf(rnd)), nx, floorY(s) + 0.2, nz));
   }
 
   // the roof: parapet, tank, antenna, stair bulkhead, and a billboard frame on a third
@@ -364,7 +368,12 @@ export function tokyoMaterial() {
   if (MAT) return MAT;
   const m = new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.84, metalness: 0.02, emissive: 0xffffff, emissiveIntensity: 1.0 });
   m.name = 'tokyo_facade';
-  m.emissiveNode = attribute('emit', 'vec3').mul(materialReference('emissiveIntensity', 'float', m));
+  /* The buzz: a part with flick > 0 drops to 45% for a beat when a fast sine
+     (its own phase) crosses a threshold -- the stutter of a tube on its way
+     out. Steady parts multiply by 1. */
+  const ph = attribute('flick', 'float');
+  const buzz = mix(float(1), float(0.45).add(float(0.55).mul(step(float(0.35), sin(time.mul(23).add(ph.mul(7)))))), step(float(0.01), ph));
+  m.emissiveNode = attribute('emit', 'vec3').mul(materialReference('emissiveIntensity', 'float', m)).mul(buzz);
   MAT = m;
   return m;
 }
