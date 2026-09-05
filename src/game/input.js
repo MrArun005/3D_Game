@@ -146,6 +146,7 @@ export function createInput(onAction) {
     if (e.code === 'KeyK') onAction('avatar'); // cycle which character you are
     if (e.code === 'KeyP') onAction('photo');  // photo mode: free camera + the plan's acceptance presets
     if (e.code === 'KeyT') onAction('time');   // advance day-night clock by 3 hours
+    if (e.code === 'KeyI') onAction('horn');   // the horn: pedestrians ahead scatter, the car in front gets a move on
     // weapons: 1-4 select, X reloads. Digits are the only keys left that a
     // driving game has not already spent, and they are what shooters use.
     if (e.code === 'Digit1') onAction('weapon1');

@@ -114,7 +114,7 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   in `world/officer.js` (7 vertex-coloured meshes with a geometric face,
   seeded variety, PoseBlender, lookAt), `game/modes.js` (range, hold-out;
   phone SERVICES cards). Keys: 0/` fists, 1-4 weapon, 5 grenades, X reload, RMB aim, C
-  crouch on foot, Q lean, E fire/throw/punch. Downed officers drop their
+  crouch on foot, Q lean, E fire/throw/punch, I horn (in the car). Downed officers drop their
   weapon (one in five a grenade); phone SERVICES sells guns, armour and
   grenades; `storyMissions` steps take `needDowned: N`. Ammo, grenades and
   armour persist in localStorage `hb.arsenal`. Parked cars block lines of

@@ -1414,6 +1414,17 @@ const input = createInput((action) => {
   if (action === 'radio') radio?.cycle();
   if (action === 'reset') respawnCar();
   if (action === 'time') { clock.hour = (clock.hour + 3) % 24; hud.flash(`TIME · ${clock.formattedTime}`); }
+  if (action === 'horn' && !onFoot.active) {
+    // your horn: heard, and answered -- pedestrians ahead break for the kerb, the car in front picks up for three seconds
+    audio.horn?.(0, 0);
+    const fx = Math.cos(car.yaw), fz = -Math.sin(car.yaw);
+    crowd?.panic(car.x + fx * 7, car.z + fz * 7, 7);
+    for (const v of traffic.cars) {
+      if (!v.live) continue;
+      const dx = v.x - car.x, dz = v.z - car.z, along = dx * fx + dz * fz, side = Math.abs(-dx * fz + dz * fx);
+      if (along > 2 && along < 16 && side < 3) { v.baseCruise ??= v.cruise; v.cruise = Math.max(v.cruise, v.baseCruise * 1.3); v.fleeT = 3; }
+    }
+  }
   if (action === 'weapon0') { held = 'fists'; hud.flash('FISTS'); if (heldGun) heldGun.visible = false; }
   else if (action === 'weapon5') { held = 'grenade'; hud.flash(`GRENADES · ${grenades.count}`); if (heldGun) heldGun.visible = false; }
   else if (action.startsWith('weapon')) {
