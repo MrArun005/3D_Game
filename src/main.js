@@ -413,6 +413,18 @@ let wastedAnim = 0;   // 0 idle, 1 Death clip playing, 2 clip done -> run the WA
 grenades.onBlast = (bx, by, bz) => {
   for (let i = 0; i < 10; i++) { const a = Math.random() * Math.PI * 2, rr = Math.random() * 1.6; puffs.puff(bx + Math.cos(a) * rr, by + 0.5 + Math.random(), bz + Math.sin(a) * rr, { r: 0.14, g: 0.13, b: 0.12, life: 2.4 + Math.random() * 1.5, vy: 1.4 + Math.random(), vx: Math.cos(a) * 1.2, vz: Math.sin(a) * 1.2 }); }
   debris.breakNear(bx, bz, BLAST_R, car, 30);
+  decals.stamp(bx, groundHeightAt(bx, bz) + 0.02, bz, 0, 1, 0, 34);   // the scorch: the bullet-hole disc at ~2 m
+  // vehicles in the blast: shoved, and four rounds' worth off the engine (small damage, no fireballs -- Arun's rule)
+  for (const v of [...traffic.cars, ...traffic.police]) {
+    if (!v.live) continue;
+    const d = Math.hypot(v.x - bx, v.z - bz);
+    if (d >= BLAST_R) continue;
+    const k = blastFalloff(d, BLAST_R);
+    v.speed = (v.speed || 0) * (1 - 0.6 * k);
+    v.vhp = (v.vhp ?? 8) - Math.round(4 * k + 1);
+    if (v.vhp <= 0 && v.cruise !== 0) { v.vhp = 0; v.cruise = 0; v.baseCruise = 0; v.fleeT = 0; if (v.hunt === undefined || !v.hunt) crowd?.eject(v.x, v.z, v.yaw); }
+    v.mesh?.material?.color?.offsetHSL(0, -0.1, -0.12 * k);
+  }
   for (const c of traffic.police) {
     if (!c.live || !c.deployed || c.down > 0) continue;
     if (Math.hypot(c.officer.position.x - bx, c.officer.position.z - bz) < KILL_R) traffic.officerHit?.(c, 100);
