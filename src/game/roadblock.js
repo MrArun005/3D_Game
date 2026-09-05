@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { buildOfficer, PoseBlender, lookAt } from '../world/officer.js';
-import { buildWeaponMesh, ARSENAL } from './weapons.js';
+import { buildWeaponMesh } from './weapons.js';
 import { roadblockPosts, burstFor, hasLineOfSight, targetProfile } from './policeAi.js';
 
 /**

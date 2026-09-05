@@ -430,7 +430,7 @@ export class Traffic {
     car.node = e.a;
     car.lane = this.rand() < 0.65 ? 0 : 1;
     car.cruise = (CLASS_SPEED[e.class] ?? 11) * (0.85 + this.rand() * 0.3);
-    car.baseCruise = undefined; car.fleeT = 0;   // a new incarnation, a new base for the flee boost
+    car.baseCruise = undefined; car.fleeT = 0; car.vhp = undefined;   // a new incarnation: a new base for the flee boost, a whole engine
     car.path = []; car.gates = []; car.pathLen = 0; car.s = 0;
     const line = this.#shift(this.#oriented(e, e.a), this.#laneOffset(e, car.lane));
     this.#push(car, line[0]);

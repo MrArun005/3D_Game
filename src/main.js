@@ -612,6 +612,11 @@ function pullTrigger() {
   if (hit && (hit.kind === 'car' || hit.kind === 'police')) {   // vehicles only: boards, marksmen and posts have no .mesh
     hit.ref.speed *= 0.55;
     hit.ref.mesh?.material?.color?.offsetHSL(0, -0.05, -0.04);
+    /* A vehicle takes eight rounds (a shotgun's pellets count once). Then the
+       engine is done: cruise 0, so a cruiser rolls to a stop where it is and
+       its officers have to come out on foot. spawnGraph resets it on respawn. */
+    hit.ref.vhp = (hit.ref.vhp ?? 8) - 1;
+    if (hit.ref.vhp === 0) { hit.ref.cruise = 0; hit.ref.baseCruise = 0; hit.ref.fleeT = 0; hud.flash(hit.kind === 'police' ? 'CRUISER DISABLED' : 'ENGINE OUT'); audio.thud?.(8); }
   }
 }
 const _obsBuffer = [];
@@ -1381,7 +1386,12 @@ addEventListener('mousedown', (e) => {
   firing = true;
 });
 addEventListener('mouseup', (e) => { if (e.button === 0) firing = false; if (e.button === 2) aiming = false; });
-addEventListener('mousedown', (e) => { if (document.pointerLockElement === canvas && e.button === 2) aiming = true; });
+addEventListener('mousedown', (e) => {
+  if (document.pointerLockElement === canvas && e.button === 2) {
+    aiming = true;
+    if (onFoot.active && held === 'gun') crowd?.panic(onFoot.x, onFoot.z, 9);   // raising a gun clears the pavement around you, GTA-style
+  }
+});
 addEventListener('contextmenu', (e) => { if (document.pointerLockElement === canvas) e.preventDefault(); });
 
 addEventListener('mousemove', (e) => {
