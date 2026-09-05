@@ -185,8 +185,11 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
   parts.push(at(cyl(0.85, 1.5, 0xbfc3c9), tx, H + 1.35, tz), at(box(1.9, 0.6, 1.9, 0x6f7276), tx, H + 0.3, tz));
   parts.push(at(box(0.07, 3.6, 0.07, 0x3a3d42), hw * 0.55, H + 1.8, -hd * 0.5));
   parts.push(at(box(2.2, 2.4, 2.4, wall), -hw * 0.3, H + 1.2, -hd * 0.45));
-  if (rnd() < 0.35 && 2 * hd > 5) {
-    const bw = Math.min(2 * hd - 1.2, 9), by = H + 2.2;
+  // a rooftop billboard on a third of them -- and on every landmark slab (18+ storeys), wider, with a neon frame
+  const landmark = floors >= 18;
+  if ((landmark || rnd() < 0.35) && 2 * hd > 5) {
+    const bw = Math.min(2 * hd - 1.2, landmark ? 14 : 9), by = H + (landmark ? 3.0 : 2.2);
+    if (landmark) { const nc = pick(NEON); parts.push(at(box(0.1, 0.12, bw + 0.4, 0x222222, nc, 1.3), -hw + 0.34, by + 1.55, 0), at(box(0.1, 0.12, bw + 0.4, 0x222222, nc, 1.3), -hw + 0.34, by - 1.55, 0)); }
     parts.push(at(box(0.12, 2.8, bw, 0x2b2e33), -hw + 0.3, by, 0));
     parts.push(at(box(0.08, 3.2, 0.08, 0x2b2e33), -hw + 0.3, H + 1.6, -bw / 2 + 0.2), at(box(0.08, 3.2, 0.08, 0x2b2e33), -hw + 0.3, H + 1.6, bw / 2 - 0.2));
     boards.push({ x: -hw + 0.38, y: by, z: 0, yaw: front.yaw, w: bw * 0.92, h: 2.4 });

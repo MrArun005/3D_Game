@@ -180,6 +180,9 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   3.4 m elsewhere), 369+ atlas boards (instanced), one mesh + one
   LineSegments (poles/wires, `buildTokyoStreet`) per chunk. Draws and fps
   at kingsway-corner NOT re-measured since (no browser in this session).
+  Also: `buildTokyoStreet` (poles + wires), `buildShrine` (park block),
+  landmark slabs to 24 storeys on tower blocks, `District.districtAt` steers
+  the crowd there, `audio.tokyo` ambience.
 - **iCloud evicts `.git` (2026-09-05)**: the repo lives in `~/Desktop`, which
   iCloud syncs; it marked `.git/index` and 85+ objects `dataless`, so git
   timed out on mmap. `rm .git/index && git reset` rebuilt it once the files
