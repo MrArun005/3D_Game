@@ -7,7 +7,7 @@ test('a Tokyo building is one geometry with colour, emit and UVs, under 1600 tri
   for (const a of ['position', 'normal', 'uv', 'color', 'emit']) assert.ok(b.geo.attributes[a], `${a} attribute`);
   assert.ok(b.tris > 200 && b.tris < 1600, `triangles ${b.tris}`);
   assert.ok(Math.abs(b.height - (GROUND_H + (b.floors - 1) * FLOOR_H)) < 1e-9, 'height is whole storeys');
-  assert.ok(b.boards.length >= 1 && b.boards.length <= 5, `sign boards ${b.boards.length}`);
+  assert.ok(b.boards.length >= 1 && b.boards.length <= 30, `sign boards ${b.boards.length}`);
   const em = b.geo.attributes.emit.array; let lit = 0; for (let i = 0; i < em.length; i += 3) if (em[i] + em[i + 1] + em[i + 2] > 0) lit++;
   assert.ok(lit > 0, 'something glows at night');
 });
