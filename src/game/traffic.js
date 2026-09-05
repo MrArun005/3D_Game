@@ -1303,8 +1303,17 @@ export class Traffic {
         }
         const hdx = hx - c.x, hdz = hz - c.z, hgap = Math.hypot(hdx, hdz);
         const bearing = Math.atan2(-hdz, hdx);
-        const spread = live.length > 1 ? ((slot / live.length) - 0.5) * 2.2 : 0;
-        const standoff = cold ? 0 : Math.max(3.4, Math.min(11, hgap * 0.55));
+        /* The PIT. From three stars the lead cruiser, when it has a line on you
+           inside 30 m, drops its standoff and drives INTO you for three seconds
+           every 9-14 s -- the cruiser is a solid body to the hero's collision,
+           so the shove is real. The other units keep their slots. */
+        c.ramT = (c.ramT ?? 8) - dt;
+        const canRam = slot === 0 && !cold && this.wanted >= 3 && c.seesYou && gap < 30 && gap > 5 && (player.speed ?? 0) > 3;
+        if (canRam && c.ramT <= 0) { c.ramT = 9 + this.rand() * 5; c.ramming = 3; this.chatter?.radioPool?.('ram'); }
+        if (c.ramming > 0) c.ramming -= dt;
+        const ram = c.ramming > 0 && !cold;
+        const spread = ram ? 0 : live.length > 1 ? ((slot / live.length) - 0.5) * 2.2 : 0;
+        const standoff = cold || ram ? 0 : Math.max(3.4, Math.min(11, hgap * 0.55));
         const aimX = hx - Math.cos(bearing + spread) * standoff;
         const aimZ = hz + Math.sin(bearing + spread) * standoff;
 
@@ -1314,7 +1323,7 @@ export class Traffic {
         const reach = Math.hypot(aimX - c.x, aimZ - c.z);
         // stop shoving once you are cornered: a pursuit that keeps ramming a
         // stationary car can never resolve into an arrest
-        const target = (!cold && gap < 7) ? 0 : reach < 8 ? reach * 1.1 : (cold ? c.cruise * 0.55 : c.cruise);   // a search is driven slowly
+        const target = ram ? c.cruise * 1.2 : (!cold && gap < 7) ? 0 : reach < 8 ? reach * 1.1 : (cold ? c.cruise * 0.55 : c.cruise);   // a ram does not slow for the contact; a search is driven slowly
         c.speed += Math.max(-14 * dt, Math.min(9 * dt, target - c.speed));
         c.x += Math.cos(c.yaw) * c.speed * dt;
         c.z -= Math.sin(c.yaw) * c.speed * dt;
