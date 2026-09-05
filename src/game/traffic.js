@@ -123,6 +123,20 @@ export class Traffic {
     return Math.max(this.patrol === false || !this.E ? 0 : 1, Math.min(6, Math.floor(this.wanted)));   // the patrol needs the road graph
   }
 
+  /** Off-graph pursuit steering toward a point: the free-mode maths without the fleet spread. Used by the patrol's own chases. */
+  #steerToward(c, tx, tz, dt, standoff, speedCap) {
+    const bearing = Math.atan2(-(tz - c.z), tx - c.x);
+    const aimX = tx - Math.cos(bearing) * standoff, aimZ = tz + Math.sin(bearing) * standoff;
+    const want = Math.atan2(-(aimZ - c.z), aimX - c.x);
+    const d = ((want - c.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+    c.yaw += Math.max(-2.2 * dt, Math.min(2.2 * dt, d));
+    const reach = Math.hypot(aimX - c.x, aimZ - c.z);
+    const target = reach < 8 ? reach * 1.1 : speedCap;
+    c.speed += Math.max(-14 * dt, Math.min(9 * dt, target - c.speed));
+    c.x += Math.cos(c.yaw) * c.speed * dt;
+    c.z -= Math.sin(c.yaw) * c.speed * dt;
+  }
+
   /** The civilian road machinery for a cruiser: follow the graph, keep distance, place. */
   #driveRoad(c, player, dt) {
     let guard = 0;
@@ -1018,12 +1032,41 @@ export class Traffic {
          the car, and it re-spawns nearby once you have left it behind. It is
          what makes crimeWitnessed bite -- a cruiser 80 m away saw that. */
       c.hunt = this.wanted >= 1;
+      if (c.hunt && c.chase) { const f = c.chase; if (f.baseCruise) { f.cruise = f.baseCruise; f.fleeT = 0; } c.chase = null; }   // you outrank the fugitive
       if (!c.hunt) {
         /* Street life: every so often the patrol 'takes a call' -- lights on,
            foot down for eight seconds, then back to a crawl. Nothing to do
            with you; a city where sirens pass is a city with other people in it. */
         c.respondT = (c.respondT ?? 0) - dt;
-        if (c.respondT < -30 && this.rand() < dt / 25) { c.respondT = 8; c.cruise = (c.baseCruise ??= c.cruise) * 1.7; }
+        if (c.respondT < -30 && this.rand() < dt / 25) {
+          c.respondT = 8; c.cruise = (c.baseCruise ??= c.cruise) * 1.7;
+          /* Two calls in five are a real one: a civilian within 160 m becomes
+             the fugitive. It runs (the flee boost), the patrol hunts it with
+             lights and siren, pulls it over when it gets alongside, and after
+             the stop -- or 25 s -- the cruiser is released and re-spawns on
+             the graph. None of it involves you; that is the point. */
+          if (this.rand() < 0.4) {
+            let best = null, bd = 160;
+            for (const v of this.cars) { if (!v.live || v.vhp === 0) continue; const d = Math.hypot(v.x - c.x, v.z - c.z); if (d < bd && d > 25) { bd = d; best = v; } }
+            if (best) { c.chase = best; c.chaseT = 25; c.stopT = 0; best.baseCruise ??= best.cruise; best.cruise = best.baseCruise * 1.8; best.fleeT = 25; c.respondT = 25; }
+          }
+        }
+        if (c.chase) {
+          const f = c.chase; c.chaseT -= dt;
+          const gapF = Math.hypot(f.x - c.x, f.z - c.z);
+          if (!f.live || c.chaseT <= 0 || gapF > 260) { c.chase = null; c.live = false; c.mesh.visible = false; c.respondT = 0; if (f.baseCruise) { f.cruise = f.baseCruise; f.fleeT = 0; } continue; }
+          if (gapF < 7 && (f.speed || 0) < 3) {
+            // pulled over: both sit with lights going for six seconds, then the fugitive drives off and the cruiser is released
+            c.stopT += dt; c.speed = Math.max(0, c.speed - 14 * dt);
+            if (c.stopT > 6) { c.chaseT = 0; }
+          } else if (gapF < 9) { f.fleeT = 0; f.cruise = 0; }                 // alongside: the fugitive gives up and stops
+          else this.#steerToward(c, f.x, f.z, dt, 4, (c.baseCruise ?? c.cruise) * 1.7);
+          c.mesh.position.set(c.x, groundHeightAt(c.x, c.z), c.z); c.mesh.rotation.y = c.yaw;
+          const lit = Math.floor(t * 6) % 2;
+          if (c.bar) { c.bar[0].emissiveIntensity = lit ? 5.5 : 0.15; c.bar[1].emissiveIntensity = lit ? 0.15 : 5.5; }
+          if (c.pool) { c.pool.visible = true; c.pool.material = poolMat(lit ? 0xff2a1c : 0x2f6dff); }
+          continue;
+        }
         if (c.respondT <= 0 && c.baseCruise && c.cruise > c.baseCruise) c.cruise = c.baseCruise;
         const lit = c.respondT > 0 && Math.floor(t * 6) % 2;
         if (c.bar) { c.bar[0].emissiveIntensity = lit ? 5.5 : 0.15; c.bar[1].emissiveIntensity = c.respondT > 0 && !lit ? 5.5 : 0.15; }
