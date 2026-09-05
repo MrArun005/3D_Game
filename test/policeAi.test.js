@@ -117,3 +117,15 @@ test('losing them: unseen for ten seconds with cruisers searching nearby drains 
   assert.equal(evasionDecay({ ...base, nearest: 400, coldFor: 0, cool: 10 }), 0.55, 'the old 240 m rule still applies');
   assert.ok(searchRadius(3) < searchRadius(20) && searchRadius(200) === 90, 'the ring grows and caps');
 });
+
+test('a crime needs a witness until you are wanted; hitting the police is always seen', async () => {
+  const { crimeWitnessed } = await import('../src/game/policeAi.js');
+  const far = [{ live: true, x: 500, z: 0 }], near = [{ live: true, x: 10, z: 0 }], two = [near[0], { live: true, x: -10, z: 5 }];
+  assert.equal(crimeWitnessed('traffic', 0, 0, far, []), false, 'an empty street');
+  assert.equal(crimeWitnessed('traffic', 0, 0, near, []), true, 'one bystander is enough for a shot or a crash');
+  assert.equal(crimeWitnessed('person', 0, 0, near, []), false, 'the victim alone does not call it in');
+  assert.equal(crimeWitnessed('person', 0, 0, two, []), true);
+  assert.equal(crimeWitnessed('traffic', 0, 0, [], [{ live: true, x: 60, z: 0 }]), true, 'a cruiser saw it');
+  assert.equal(crimeWitnessed('police', 0, 0, [], []), true);
+  assert.equal(crimeWitnessed('traffic', 0, 0, [], [], 2), true, 'already wanted: everything counts');
+});

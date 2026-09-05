@@ -130,6 +130,8 @@ export class ChatterEngine {
       blast: ['Explosion downtown! Suspect has explosives!', 'Detonation reported, escalate to code red.', 'That was a grenade. All units, extreme caution.'],
       lost: ['Lost visual on the suspect.', 'No eyes on the target, widening the search.', 'Suspect has evaded, last seen heading downtown.'],
       reload: ['Reloading! Cover me!', 'Changing mags!', 'I am out, cover!'],
+      search: ['Sweeping the block, no visual yet.', 'Check the alleys, suspect went to ground.', 'Units hold the perimeter, we are searching.', 'Last seen on foot, could be anywhere in here.'],
+      regained: ['Visual regained! Suspect sighted!', 'There! All units, we have the suspect!', 'Eyes on, eyes on, moving in!'],
     };
     const pool = POOLS[key]; if (!pool) return;
     this._poolIdx ??= {};

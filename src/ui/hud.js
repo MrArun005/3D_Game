@@ -711,6 +711,7 @@ export class Hud {
     }
     const n = Math.ceil(w - 0.001);
     if (n === this.lastWanted) return;
+    if (this.lastWanted !== undefined && n > this.lastWanted && n >= 2) this.flash?.(`WANTED LEVEL ${n}`);   // a new star is news; the first one the stars themselves announce
     this.lastWanted = n;
     this.wantedEl.textContent = n > 0 ? '★'.repeat(n) + '☆'.repeat(5 - n) : '';
   }

@@ -7,7 +7,7 @@ import { PAINT_COLOURS, BODY_KEYS, BODY_TYPES } from '../vehicle/config.js';
 import { groundHeightAt } from '../world/metrics.js';
 import { buildOfficer, poseOfficer, PoseBlender, lookAt, officerMaterial } from '../world/officer.js';
 import { buildWeaponMesh, ARSENAL } from './weapons.js';
-import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED, pickRooftops, coverSide, evasionDecay, searchRadius } from './policeAi.js';
+import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED, pickRooftops, coverSide, evasionDecay, searchRadius, crimeWitnessed } from './policeAi.js';
 import { roofsNear } from '../world/districtWorld.js';
 
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
@@ -65,9 +65,12 @@ export class Traffic {
                 : tag === 'traffic' ? 0.55
                 : 0;                                  // walls and parked cars: nobody cares
     if (!worth) return;
+    const px = this.player?.x ?? 0, pz = this.player?.z ?? 0;
+    if (!crimeWitnessed(tag, px, pz, this.crowd?.people ?? [], this.police, this.wanted)) return;   // nobody saw it (policeAi.crimeWitnessed)
     // one pedestrian is about two stars, not five: `force` is m/s, so the
     // multiplier has to be gentle or a single hit at speed maxes the meter
     const gain = worth * Math.min(1.4, 0.5 + force * 0.05);
+    if (this.wanted === 0) { this.seenX = px; this.seenZ = pz; this.coldFor = 0; }   // the report says where: that is where they head
     this.wanted = Math.min(5, this.wanted + gain);
     this.cool = 0;
   }
@@ -748,15 +751,23 @@ export class Traffic {
        every cruiser, or break line of sight and stay unseen for ten seconds
        while they search where they last had you. `hot` is THIS frame's
        answer: update() resets it, #updateWanted's loop sets it, then this runs. */
-    if (this.hot) { this.coldFor = 0; this.seenX = player.x; this.seenZ = player.z; }
-    else this.coldFor = (this.coldFor ?? 0) + dt;
+    if (this.hot) {
+      if (this.coldFor > 6 && this.wanted > 0) this.chatter?.radioPool?.('regained');
+      this.coldFor = 0; this.seenX = player.x; this.seenZ = player.z;
+    } else {
+      this.coldFor = (this.coldFor ?? 0) + dt;
+      if (this.wanted > 0 && this.coldFor > 5 && (this._nearest ?? Infinity) < 200) {
+        this._searchT = (this._searchT ?? 0) - dt;
+        if (this._searchT <= 0) { this._searchT = 9 + this.rand() * 5; this.chatter?.radioPool?.('search'); }
+      }
+    }
     if (this.wanted > 0) {
       this.cool = ((this._nearest ?? Infinity) > 240 && !this.eyesOn) ? this.cool + dt : 0;
       const rate = evasionDecay({ hot: this.hot, eyesOn: this.eyesOn, coldFor: this.coldFor, nearest: this._nearest ?? Infinity, wanted: this.wanted, cool: this.cool });
       if (rate > 0) {
         const before = this.wanted;
         this.wanted = Math.max(0, this.wanted - dt * rate);
-        if (before > 0 && this.wanted === 0 && this.coldFor > 5) this.chatter?.radioPool?.('lost');
+        if (before > 0 && this.wanted === 0 && this.coldFor > 5) { this.chatter?.radioPool?.('lost'); this.hud?.flash?.('YOU LOST THEM'); }
       }
     } else this.coldFor = 0;
 

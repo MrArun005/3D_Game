@@ -184,3 +184,17 @@ export function evasionDecay({ hot, eyesOn, coldFor, nearest, wanted, cool = 0 }
 export function searchRadius(coldFor) {
   return Math.min(90, 22 + Math.max(0, coldFor - 3) * 5);
 }
+
+/**
+ * Did anyone see that? With no stars yet, a crime needs a witness: a cruiser
+ * within 90 m, or pedestrians within 45 m -- two for an assault, since the
+ * victim alone is on the ground. Hitting the police is always seen. Once you
+ * are wanted everything counts. Pure; tested.
+ */
+export function crimeWitnessed(tag, px, pz, peds, police, wanted = 0) {
+  if (wanted > 0 || tag === 'police') return true;
+  for (const c of police) if (c.live && Math.hypot(c.x - px, c.z - pz) < 90) return true;
+  let n = 0;
+  for (const p of peds) if (p.live && !p.down && Math.hypot(p.x - px, p.z - pz) < 45 && ++n >= (tag === 'person' ? 2 : 1)) return true;
+  return false;
+}
