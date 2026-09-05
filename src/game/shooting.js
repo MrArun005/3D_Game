@@ -167,9 +167,10 @@ const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vect
 const _n = new THREE.Vector3(), _z = new THREE.Vector3(0, 0, 1);
 
 export class DecalPool {
-  constructor(scene) {
-    const geo = new THREE.CircleGeometry(0.06, 10);
-    const mat = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.95, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2 });
+  /** Defaults are a bullet hole; `{ color: 0x4a0709, radius: 0.32 }` is a blood pool. Same pool logic, second instance. */
+  constructor(scene, { color = 0x14161a, radius = 0.06, roughness = 0.95 } = {}) {
+    const geo = new THREE.CircleGeometry(radius, 10);
+    const mat = new THREE.MeshStandardMaterial({ color, roughness, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2 });
     this.mesh = new THREE.InstancedMesh(geo, mat, DECALS);
     this.mesh.frustumCulled = false;
     this.mesh.castShadow = false;

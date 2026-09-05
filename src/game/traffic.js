@@ -657,7 +657,7 @@ export class Traffic {
     c.hp -= damage;
     c.quietFor = 0;
     c.hitT = 0.35;                                     // stagger: torso snaps away from the round, then eases back
-    if (c.hp <= 0) { c.state = 'down'; c.down = 0.001; this.chatter?.radioPool?.('down'); this.#dropWeapon(c); return true; }
+    if (c.hp <= 0) { c.state = 'down'; c.down = 0.001; this.chatter?.radioPool?.('down'); this.#dropWeapon(c); this.blood?.stamp(c.officer.position.x, c.officer.position.y + 0.01, c.officer.position.z, 0, 1, 0, 1 + this.rand() * 0.6); return true; }
     return false;
   }
 
@@ -1068,7 +1068,7 @@ export class Traffic {
             const ang = Math.atan2(player.z - c.coverZ, player.x - c.coverX); const step = Math.min(8, Math.max(0, gap - 7));
             c.fromX = c.coverX; c.fromZ = c.coverZ; c.toX = c.coverX + Math.cos(ang) * step; c.toZ = c.coverZ + Math.sin(ang) * step;
           }
-          if (next === 'down') { c.down = 0.001; this.chatter?.radioPool?.('down'); this.#dropWeapon(c); }
+          if (next === 'down') { c.down = 0.001; this.chatter?.radioPool?.('down'); this.#dropWeapon(c); this.blood?.stamp(c.officer.position.x, c.officer.position.y + 0.01, c.officer.position.z, 0, 1, 0, 1 + this.rand() * 0.6); }
           else if (next === 'advance') this.chatter?.radioPool?.('advance');
           else if (next === 'arrest') this.chatter?.radioPool?.('arrest');
           else if (next === 'peek' && c.state === 'cover' && c.stateT > 3) this.chatter?.radioPool?.('pinned');

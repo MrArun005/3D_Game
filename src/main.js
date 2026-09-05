@@ -399,6 +399,7 @@ const decals = new DecalPool(scene);
 const tracers = new Tracers(scene);        // every round in the air, one draw
 weapon.tracers = tracers;                  // yours too: the one-frame line in weapon.js is the fallback
 const puffs = new Puffs(scene);            // smoke and dust: muzzles, blasts, dead engines
+const bloodDecals = new DecalPool(scene, { color: 0x4a0709, radius: 0.32, roughness: 0.55 });   // pools under the fallen
 /* Slot 5. In grenade mode E throws instead of firing; any digit 1-4 puts a gun
    back in your hand. The blast goes through the same debris system as the car
    and the tank, so a bin flies the same way whoever broke it. */
@@ -439,6 +440,7 @@ let aiming = false, ads = 0, burst = 0, sinceShot = 9, swayPhase = 0, crouch = f
 let lastFiredAt = -1e9;   // officers advance when you have been quiet for a while
 let lastHurtAt = -1e9;    // health regenerates to half once this is six seconds old
 let healTick = 0;
+let skidT = 0;            // tyre-smoke cadence
 let hurtPulse = 0;        // the red edge on the frame, decays each frame (grade.setHurt)
 let armour = 0;           // body armour 0..1, bought at Ammu-Nation, soaks 60% of a hit until gone
 /* The arsenal survives a reload of the page like cash and the garage do. */
@@ -625,7 +627,7 @@ function pullTrigger() {
   if (hit?.kind !== 'target' && modes?.active !== 'range') traffic.reportCrime(hit ? (hit.kind === 'person' ? 'person' : (hit.kind === 'police' || hit.kind === 'officer') ? 'police' : 'traffic') : 'traffic',
                       hit ? 9 : 1);
   if (hit && hit.kind === 'officer') { const dmg = weapon.spec.damage * (hit.head ? 3 : 1); if (hit.head) hud.flash('HEADSHOT'); const downed = traffic.hitAny?.(hit.ref, dmg) || roadblock?.hitPost?.(hit.ref, dmg); if (downed) { modes?.onOfficerDown(); story?.onOfficerDown?.(); hud.flash(modes?.active === 'holdout' ? 'OFFICER DOWN · +50' : 'OFFICER DOWN'); } crosshair.hit(hit.ref.down > 0); }
-  if (hit && hit.kind === 'person') hit.ref.down = 0.001;
+  if (hit && hit.kind === 'person') { hit.ref.down = 0.001; bloodDecals.stamp(hit.ref.x, groundHeightAt(hit.ref.x, hit.ref.z) + 0.01, hit.ref.z, 0, 1, 0, 0.8 + Math.random() * 0.5); }
   if (hit && (hit.kind === 'car' || hit.kind === 'police')) {   // vehicles only: boards, marksmen and posts have no .mesh
     hit.ref.speed *= 0.55;
     hit.ref.mesh?.material?.color?.offsetHSL(0, -0.05, -0.04);
@@ -1619,7 +1621,7 @@ function frameBody() {
     ? { x: onFoot.x, y: onFoot.y, z: onFoot.z, vx: onFoot.vx, vz: onFoot.vz,
         speed: Math.hypot(onFoot.vx, onFoot.vz), onFoot: true, crouch, firedAt: lastFiredAt }
     : currentVehicle;
-  traffic.world = world; traffic.chatter = chatter; traffic.decals = decals; traffic.tracers = tracers; traffic.flashLight = weapon.light; traffic.puffs = puffs; traffic.crowd = crowd; traffic.heli = heli; traffic.grenadeLook = grenades;
+  traffic.world = world; traffic.chatter = chatter; traffic.decals = decals; traffic.tracers = tracers; traffic.flashLight = weapon.light; traffic.puffs = puffs; traffic.blood = bloodDecals; traffic.crowd = crowd; traffic.heli = heli; traffic.grenadeLook = grenades;
   if (!onFoot.active) quarry.firedAt = lastFiredAt;   // the car object is the quarry in a car; officers read this for 'quiet'   // buildings for line of sight, the radio, the marks their misses leave, the street that scatters
   traffic.update(quarry, dt, worldTime);
   if (chatter) chatter.updateWanted(traffic.wanted);
@@ -1637,6 +1639,15 @@ function frameBody() {
   grenades.update(dt, groundHeightAt);
   tracers.update(dt);
   puffs.update(dt);
+  // tyre smoke: a sliding rear axle puts up pale puffs behind each wheel (car.slip is the dynamics' slip measure)
+  if (!onFoot.active && (car.slip || 0) > 0.3 && Math.abs(car.fwdSpeed || 0) > 4) {
+    skidT -= dt;
+    if (skidT <= 0) {
+      skidT = 0.07;
+      const fx = Math.cos(car.yaw), fz = -Math.sin(car.yaw), sx = Math.sin(car.yaw), sz = Math.cos(car.yaw);
+      for (const side of [-1, 1]) { const wx = car.x - fx * 1.3 + sx * side * 0.8, wz = car.z - fz * 1.3 + sz * side * 0.8; puffs.puff(wx, groundHeightAt(wx, wz) + 0.15, wz, { r: 0.30, g: 0.30, b: 0.31, life: 0.9, vy: 0.5, vx: -fx * 1.5, vz: -fz * 1.5 }); }
+    }
+  }
   if (punchCool > 0) punchCool -= dt;
   arsenalSaveT += dt; if (arsenalSaveT > 5) { arsenalSaveT = 0; saveArsenal(); }
   /* Hospitals heal: stand within 6 m of one on foot and health climbs at 15%/s. Free, like GTA's. */
