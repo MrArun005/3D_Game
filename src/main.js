@@ -802,6 +802,7 @@ function carjackSequence(best) {
     if (style && KENNEY_CARS[style]) garage?.wear(KENNEY_CARS[style]);
     else console.warn('carjack: no body for style', style);
     hero.visible = true;
+    if (traffic.wanted > 0 && !traffic.hot) traffic.coldFor = Math.max(traffic.coldFor || 0, 6);   // new wheels: the description they were working from is stale, the trail goes colder
     /* The wanted system only cares if somebody SAW it. A carjack in front of a
        pavement full of people is a crime; the same carjack on an empty street
        at the edge of the docks is just a car changing hands. Police are their
@@ -1066,6 +1067,11 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   mission.useAudio(audio);
   jobs = new Jobs(mission, traffic, hud, district, audio, navigation);
   garage = new Garage(jobs, assets, hero, damageModel, hud);
+  garage.heat = () => traffic.wanted;
+  garage.onRepair = () => {   // Pay 'n' Spray: a respray below three stars loses the police; at three or more they know the driver, not the car
+    if (traffic.wanted > 0 && traffic.wanted < 3) { traffic.standDown(); chatter?.radio?.('Suspect vehicle lost. Cancel the description.'); return true; }
+    return false;
+  };
   traffic.hud = hud;
   roadblock = new Roadblock(scene, assets, district, world, traffic, hero);
   metro = new Metro(scene, district, assets);   // two elevated lines and their trains (world/metro.js)
