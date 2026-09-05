@@ -1025,6 +1025,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   buildPlaces(scene, district, DAY);
   beach = buildBeach(scene, district, DAY);
   crowd = new Crowd(scene, district, isLite ? 160 : 320);
+  crowd.onNear = () => chatter?.civilian?.('near');   // a pedestrian you nearly hit shouts (chatter throttles to one per 6 s); set HERE, after the crowd exists
   people = new People(scene, +(new URLSearchParams(location.search).get('people') ?? (isLite ? 8 : 16)));
   heli = new Helicopter(scene, DAY);
   heli.district = district;
@@ -1688,7 +1689,6 @@ function frameBody() {
         speed: Math.hypot(onFoot.vx, onFoot.vz), onFoot: true, crouch, firedAt: lastFiredAt }
     : currentVehicle;
   traffic.world = world; traffic.chatter = chatter; traffic.decals = decals; traffic.tracers = tracers; traffic.flashLight = weapon.light; traffic.puffs = puffs; traffic.blood = bloodDecals; traffic.brass = (x, y, z, dx, dz) => weapon.eject?.(x, y, z, dx, dz);
-if (crowd) crowd.onNear = () => chatter?.civilian?.('near');   // a pedestrian you nearly hit shouts (chatter throttles to one per 6 s)
 traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from wherever you are
   const px = onFoot.active ? onFoot.x : car.x, pz = onFoot.active ? onFoot.z : car.z, d = Math.hypot(x - px, z - pz);
   if (d > 90) return;
