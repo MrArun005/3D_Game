@@ -1233,7 +1233,6 @@ export class DistrictWorld {
             const fw = swap ? g.w / 2 : g.d / 2, fhw = swap ? g.d / 2 : g.w / 2;   // the built building's half sizes
             const q = new THREE.Vector3(), r0 = hash(wz * 0.53, wx * 0.11);
             const put = (name, lx, lz) => { q.set(lx, 0, lz).applyMatrix4(M); tokyoProps.push({ name, x: q.x, z: q.z, yaw: rot - bl.angle }); };
-            put('props/junction_box', fhw + 1.5, fw - 1.0);
             if (r0 < 0.45) put('props/a_frame_sign', fhw + 1.3, -fw * 0.3);
             if (r0 > 0.7 && fw > 3) put('props/market_stall', fhw + 1.9, 0.6);
           }

@@ -156,6 +156,13 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
       for (let i = 0; i < n; i++) boards.push({ x: hw + 0.335, y: 4.6 + 0.1 + panelH / 2 + i * (panelH + 0.08), z: cz, yaw: front.yaw, w: 0.9, h: panelH });
     }
   }
+  // a vending machine by the door: the lit white box every Tokyo street has, glowing blue-white at night
+  {
+    const vz = -(hd - 0.9), [vx0, vz0] = onFace(front, vz, 0.55);
+    parts.push(at(box(0.85, 1.85, 1.0, 0xf4f4f6), vx0, 0.925, vz0));
+    const [px, pz] = onFace(front, vz, 0.98);
+    parts.push(at(quad(0.78, 1.25, 0x9fb7d8, [0.55, 0.75, 1.0], 0.9), px, 1.15, pz, front.yaw));
+  }
   // izakaya: a row of red paper lanterns under the awning, glowing
   if (rnd() < 0.35) {
     const n = 3 + Math.floor(rnd() * 3), span = front.w * 0.7;
