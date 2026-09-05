@@ -98,7 +98,13 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
   const rnd = mulberry32((seed * 2654435761) >>> 0);
   const pick = (a) => a[Math.floor(rnd() * a.length)];
   // back streets are 6-14 storeys; a tower block's tall footprints become the district's few landmark slabs (up to 24)
-  const floors = Math.max(2, Math.min(h > 50 ? 24 : 14, Math.round((h - GROUND_H) / FLOOR_H) + 1));
+  /* Height follows footprint the way a real block does: a slab wider than
+     ~30 m on either side is a low-rise (max 7 storeys) or it reads as a wall
+     of windows across the street; landmarks (up to 24) are the narrow tall
+     footprints. */
+  const wide = Math.max(hw, hd) > 15;
+  const cap = wide ? 7 : h > 50 ? 24 : 14;
+  const floors = Math.max(2, Math.min(cap, Math.round((h - GROUND_H) / FLOOR_H) + 1));
   const H = GROUND_H + (floors - 1) * FLOOR_H;
   const floorY = (f) => (f === 0 ? 0 : GROUND_H + (f - 1) * FLOOR_H);   // bottom of storey f
   const [wall, band] = pick(WALLS);

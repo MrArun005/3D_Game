@@ -893,9 +893,15 @@ export class DistrictWorld {
            top of the four approach crossings. Once per node. */
         if (node.kind === 'cross' && !scrambled.has(end) && this.district.districtAt?.(node.x, node.y) === 'LITTLE TOKYO') {
           scrambled.add(end);
-          const len = half * 2 * 1.1;
-          for (const da of [Math.PI / 4, -Math.PI / 4]) {
-            const yd = yaw + da, px2 = Math.sin(yd), pz2 = Math.cos(yd);   // perpendicular to the stripe's run
+          /* Same convention as the approach zebra: a stripe's run direction
+             (ddx, ddz) becomes yaw = atan2(-ddz, ddx) and the row steps along
+             its perpendicular (-ddz, ddx). Built from the approach direction
+             turned 45 degrees either way -- a yaw offset alone put the 26 m run
+             across the row and the stripes merged into two white wedges. */
+          const len = half * 2 * 1.1, c45 = Math.SQRT1_2;
+          for (const sgn of [1, -1]) {
+            const ddx = dx * c45 - sgn * dz * c45, ddz = dz * c45 + sgn * dx * c45;
+            const yd = Math.atan2(-ddz, ddx), px2 = -ddz, pz2 = ddx;
             for (let k = -half * 0.75; k <= half * 0.75; k += 1.45) zebra.push(flatRect(node.x + px2 * k, 0.022, node.y + pz2 * k, yd, len, 0.62));
           }
         }
