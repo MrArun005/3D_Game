@@ -11,7 +11,7 @@ import { PAINT_COLOURS, BODY_KEYS } from '../vehicle/config.js';
 import { signalState, LAMP_COLOURS } from './signals.js';
 import { BREAK_CLASS } from './breakables.js';
 import { ZEBRA_DEPTH } from '../game/traffic.js';
-import { buildTokyoBuilding, frontRotation, tokyoMaterial, buildTokyoStreet, wireMaterial } from './tokyo.js';
+import { buildTokyoBuilding, frontRotation, tokyoMaterial, buildTokyoStreet, wireMaterial, buildShrine } from './tokyo.js';
 import { tileUv, SIGN_TILES } from './signs.js';
 
 /**
@@ -1189,6 +1189,12 @@ export class DistrictWorld {
                  : bl.type === 'vacant' ? 'vacant' : 'block';
       slabs[kind].push(mat4(bl.x, 0, bl.y, bl.angle, bl.w, KERB_H, bl.h));
 
+      // Little Tokyo's park block carries a small shrine at its centre, in the Tokyo mesh
+      if (bl.district === 'LITTLE TOKYO' && bl.type === 'park' && !(typeof location !== 'undefined' && new URLSearchParams(location.search).has('notokyo'))) {
+        const sh = buildShrine(bl.id);
+        sh.geo.applyMatrix4(mat4(bl.x, KERB_H, bl.y, bl.angle, 1, 1, 1));
+        tokyoParts.push(sh.geo);
+      }
       const arch = ARCHETYPE[bl.type];
       if (!arch) continue;
       const range = HEIGHT[bl.type] || [10, 20];

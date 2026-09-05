@@ -93,7 +93,8 @@ function onFace(f, s, out) {
 export function buildTokyoBuilding(seed, hw, hd, h) {
   const rnd = mulberry32((seed * 2654435761) >>> 0);
   const pick = (a) => a[Math.floor(rnd() * a.length)];
-  const floors = Math.max(2, Math.min(14, Math.round((h - GROUND_H) / FLOOR_H) + 1));
+  // back streets are 6-14 storeys; a tower block's tall footprints become the district's few landmark slabs (up to 24)
+  const floors = Math.max(2, Math.min(h > 50 ? 24 : 14, Math.round((h - GROUND_H) / FLOOR_H) + 1));
   const H = GROUND_H + (floors - 1) * FLOOR_H;
   const floorY = (f) => (f === 0 ? 0 : GROUND_H + (f - 1) * FLOOR_H);   // bottom of storey f
   const [wall, band] = pick(WALLS);
@@ -259,6 +260,40 @@ export function buildTokyoStreet(segments, near, seed) {
     }
   }
   return { parts, lines: new Float32Array(lines) };
+}
+
+/**
+ * A neighbourhood shrine for the district's park block: a red torii (two
+ * pillars, the curved-looking kasagi lintel as a wider box over the nuki
+ * beam), two stone lanterns, a gravel-coloured apron and a pair of komainu
+ * plinths. Local frame, origin at the apron centre, gate facing +X. Merged
+ * like a building; ~200 triangles.
+ */
+export function buildShrine(seed = 1) {
+  const rnd = mulberry32((seed * 3266489917) >>> 0);
+  const red = 0xb5321c, stone = 0x9a9a94, dark = 0x2b2a28;
+  const parts = [];
+  parts.push(at(box(14, 0.12, 10, 0xb8b0a0), 0, 0.06, 0));                                  // gravel apron
+  for (const side of [-1, 1]) {
+    parts.push(at(cyl(0.22, 5.2, red, 10), 4.2, 2.6, side * 2.1));                           // pillars
+    parts.push(at(cyl(0.26, 0.3, dark, 10), 4.2, 0.15, side * 2.1));                         // pillar bases
+    parts.push(at(cyl(0.16, 2.3, stone, 8), -2.5 + rnd() * 0.4, 1.15, side * 3.6));         // lantern posts
+    parts.push(at(box(0.7, 0.55, 0.7, stone), -2.5, 2.55, side * 3.6));                       // lantern houses
+    parts.push(at(quad(0.4, 0.3, 0x2a2420, [1.0, 0.75, 0.4], 1.0), -2.5 + 0.36, 2.55, side * 3.6, Math.PI / 2));   // the lit window, facing the gate
+    parts.push(at(box(0.9, 0.12, 0.9, stone), -2.5, 2.9, side * 3.6));                        // lantern roofs
+    parts.push(at(box(0.8, 0.6, 0.8, stone), 3.0, 0.3, side * 3.3));                          // komainu plinths
+  }
+  parts.push(at(box(0.35, 0.28, 5.6, red), 4.2, 4.55, 0));                                   // nuki beam
+  parts.push(at(box(0.5, 0.42, 6.6, red), 4.2, 5.35, 0));                                    // kasagi lintel
+  parts.push(at(box(0.55, 0.22, 7.0, dark), 4.2, 5.68, 0));                                  // its dark cap
+  parts.push(at(box(0.3, 0.6, 0.5, red), 4.2, 4.95, 0));                                     // the gakuzuka tablet post
+  parts.push(at(box(3.2, 2.6, 3.6, 0x4a3a2c), -5.2, 1.3, 0));                                // the small hall
+  parts.push(at(box(4.2, 0.35, 4.6, dark), -5.2, 2.75, 0));                                  // its roof slab
+  parts.push(at(box(0.9, 1.4, 0.06, dark), -3.62, 0.7, 0));                                  // door shadow
+  const geo = mergeGeometries(parts, false);
+  for (const p of parts) p.dispose();
+  geo.computeBoundingSphere();
+  return { geo, tris: geo.index ? geo.index.count / 3 : geo.attributes.position.count / 3 };
 }
 
 let WIRE_MAT = null;

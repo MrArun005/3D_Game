@@ -37,3 +37,12 @@ test('the street builds poles and sagging wires only by Tokyo buildings, and is 
   let minY = Infinity; for (let i = 1; i < a.lines.length; i += 3) minY = Math.min(minY, a.lines[i]);
   assert.ok(minY > 6 && minY < POLE_H, `wires sag but stay above head height: ${minY.toFixed(2)}`);
 });
+
+test('the shrine is one small geometry with a lit lantern window', async () => {
+  const { buildShrine } = await import('../src/world/tokyo.js');
+  const s = buildShrine(3);
+  assert.ok(s.tris > 80 && s.tris < 600, `triangles ${s.tris}`);
+  for (const a of ['position', 'uv', 'color', 'emit']) assert.ok(s.geo.attributes[a], a);
+  const em = s.geo.attributes.emit.array; let lit = 0; for (let i = 0; i < em.length; i += 3) if (em[i] > 0) lit++;
+  assert.ok(lit > 0);
+});
