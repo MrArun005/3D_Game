@@ -344,6 +344,18 @@ export function createAudio() {
         }
       }
     },
+    /* A siren somewhere else in the city: three seconds of a faint wail with
+       a slow Doppler droop, panned to one side. Ambient, like the distant
+       gunfire; nothing to do with you. */
+    farSiren(pan = 0) {
+      if (!ready || !ctx || ctx.state !== 'running') return;
+      const now = ctx.currentTime, o = ctx.createOscillator(); o.type = 'triangle';
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1200;
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, now); g.gain.exponentialRampToValueAtTime(0.018, now + 1.0); g.gain.exponentialRampToValueAtTime(0.0001, now + 3.4);
+      const p = ctx.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan));
+      for (let t = 0; t < 3.4; t += 1.3) { const k = 1 - t / 8; o.frequency.setValueAtTime(620 * k, now + t); o.frequency.linearRampToValueAtTime(880 * k, now + t + 0.65); o.frequency.linearRampToValueAtTime(620 * k, now + t + 1.3); }
+      o.connect(lp); lp.connect(g); g.connect(p); p.connect(master); o.start(now); o.stop(now + 3.5);
+    },
     cash() {
       if (!ready || !ctx || ctx.state !== 'running') return;
       const now = ctx.currentTime;

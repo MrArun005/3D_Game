@@ -456,6 +456,7 @@ let lastHurtAt = -1e9;    // health regenerates to half once this is six seconds
 let healTick = 0;
 let skidT = 0;            // tyre-smoke cadence
 let farShotT = 25;        // distant gunfire cadence (ambient, night)
+let farSirenT = 70;       // distant siren cadence (ambient, any hour)
 let rainHeard = null;     // last rain amount handed to the audio
 let tokyoAmbT = 0;        // district-ambience poll cadence
 let vigilante = null;     // { f: fugitive car, t: seconds left } while a patrol chase near you is yours to finish
@@ -1718,6 +1719,8 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     farShotT -= dt;
     if (farShotT <= 0) { farShotT = 35 + Math.random() * 75; const n = 1 + Math.floor(Math.random() * 3); for (let i = 0; i < n; i++) setTimeout(() => audio.gunshot(0.10 + Math.random() * 0.06, Math.random() < 0.5 ? 'pistol' : 'smg'), i * (120 + Math.random() * 160)); }
   }
+  // a siren somewhere across the city every 60-180 s, when none is actually after you
+  farSirenT -= dt; if (farSirenT <= 0) { farSirenT = 60 + Math.random() * 120; if (traffic.wanted < 1) audio.farSiren?.(Math.random() < 0.5 ? -0.8 : 0.8); }
   // tyre smoke: a sliding rear axle puts up pale puffs behind each wheel (car.slip is the dynamics' slip measure)
   if (!onFoot.active && (car.slip || 0) > 0.3 && Math.abs(car.fwdSpeed || 0) > 4) {
     skidT -= dt;
