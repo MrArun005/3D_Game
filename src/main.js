@@ -614,6 +614,8 @@ function pullTrigger() {
       _rayHit.set(ox + dx * t, oy + dy * t, oz + dz * t);
       const onGround = wall2 === Infinity;
       decals.stamp(_rayHit.x, _rayHit.y, _rayHit.z, onGround ? 0 : -dx, onGround ? 1 : 0, onGround ? 0 : -dz, weapon.kind === 'shotgun' ? 1.8 : 1);
+      // a round into a bin, a cone or a meter knocks it over: Debris.breakNear was written as the bullet hook
+      debris?.breakNear?.(_rayHit.x, _rayHit.z, weapon.kind === 'shotgun' ? 1.1 : 0.6, car, 9);
     }
   }
   crowd?.panic(ox, oz, 24);                     // gunfire scatters the street
