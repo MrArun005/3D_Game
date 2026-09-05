@@ -150,6 +150,15 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   uHurt); officer head is a separate 3x target (`hit.head`); downed
   officers sink, pickups turn and blink. Gemini works in the same tree
   (reputation.js, intel.js): stage only your own hunks, never `git add -A`.
+  Late: pickup halos + cruiser light-pool discs (shared materials, listed by
+  `traffic.policeMaterials()` for the warm-up), grenade scorch + vehicle
+  blast damage, crash sparks/dust from `car.hitAt`, tyre smoke, stuck
+  drivers honk (`traffic.honk`), parked-car alarm (`audio.alarm`), hit
+  marker sound (`audio.hitmark`), hit-and-run blood, one-star officers hold
+  fire unless shot at (`policeAi.shouldFire`), and the pipeline warm-up in
+  main compiles each material on the object kind that draws it (Points /
+  LineSegments / InstancedMesh / Mesh) -- a Mesh-warmed PointsMaterial was
+  a first-use hitch. Play-test list: `docs/PLAYTEST-2026-09-05.md`.
 - **iCloud evicts `.git` (2026-09-05)**: the repo lives in `~/Desktop`, which
   iCloud syncs; it marked `.git/index` and 85+ objects `dataless`, so git
   timed out on mmap. `rm .git/index && git reset` rebuilt it once the files
