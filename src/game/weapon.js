@@ -270,11 +270,16 @@ export class Weapon {
     this.light.position.set(fx, fy, fz);
     this.light.intensity = 4.5;
 
-    const p = this.tracer.geometry.attributes.position;
-    p.setXYZ(0, ox + dx * 0.8, oy + dy * 0.8, oz + dz * 0.8);
-    p.setXYZ(1, ox + dx * end, oy + dy * end, oz + dz * end);
-    p.needsUpdate = true;
-    this.tracer.visible = true;
+    if (this.tracers) {
+      // the shared streak pool (game/tracers.js): your round travels like theirs do
+      this.tracers.add(ox + dx * 0.8, oy + dy * 0.8, oz + dz * 0.8, ox + dx * end, oy + dy * end, oz + dz * end, 'player');
+    } else {
+      const p = this.tracer.geometry.attributes.position;
+      p.setXYZ(0, ox + dx * 0.8, oy + dy * 0.8, oz + dz * 0.8);
+      p.setXYZ(1, ox + dx * end, oy + dy * end, oz + dz * end);
+      p.needsUpdate = true;
+      this.tracer.visible = true;
+    }
     this.flashFor = 0.055;
 
     // Spawn impact spark burst at hit point

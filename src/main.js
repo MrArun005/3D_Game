@@ -385,7 +385,8 @@ const weapon = new Weapon(scene);
    pattern; it resets after 0.4 s of not firing. */
 const crosshair = new Crosshair();
 const decals = new DecalPool(scene);
-const tracers = new Tracers(scene);        // incoming fire, one draw
+const tracers = new Tracers(scene);        // every round in the air, one draw
+weapon.tracers = tracers;                  // yours too: the one-frame line in weapon.js is the fallback
 /* Slot 5. In grenade mode E throws instead of firing; any digit 1-4 puts a gun
    back in your hand. The blast goes through the same debris system as the car
    and the tank, so a bin flies the same way whoever broke it. */
