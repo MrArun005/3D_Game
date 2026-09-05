@@ -17,6 +17,7 @@ import * as THREE from 'three';
  */
 export const PRESETS = {
   'kingsway-corner': { pos: [2350, 3, 1348],    look: [2430, 1.5, 1348] },
+  'little-tokyo':    { pos: [2300, 2.2, 1412],  look: [2380, 6, 1412] },     // the ramen alley, looking down the kanban
   'kingsway-down':   { pos: [2352, 1.7, 1345],  look: [2552, 12, 1345] },
   // the Kingsway tower at (2425, 1404); the noon sun sits at (-190, 250, 120)
   // so its shadow falls towards +X/-Z, across this camera's foreground
