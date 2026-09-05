@@ -1210,7 +1210,7 @@ hero.add(beamPool);
 
 const traffic = new Traffic(scene, assets, DAY ? 36 : 40, !DAY);   // Phase 5: denser, and lit at night
 const chase = new ChaseCamera(camera);
-const weather = DAY ? null : createWeather(scene);
+const weather = DAY ? null : createWeather(scene, { hemi, onStrike: (delay) => audio.thunder?.(delay) });   // storm nights: lightning on the hemisphere light, thunder by distance
 const hud = new Hud();
 let navigation = null;
 const clock = new GameClock({ startHour: +(new URLSearchParams(location.search).get('time') ?? (DAY ? 12.0 : 19.5)) });

@@ -47,7 +47,16 @@ const SPRAY_N = 220;
  * Rain that rides with the camera, plus a tyre-spray puff behind the car.
  * Cheap: two point clouds, no lights.
  */
-export function createWeather(scene) {
+import { newState as newLightning, step as lightningStep } from './lightning.js';
+
+/**
+ * `hemi` is the night rig's hemisphere light: a strike multiplies it for a
+ * few frames and the rain sheet brightens with it. `onStrike(delay)` is
+ * called once per strike for the thunder. Both optional.
+ */
+export function createWeather(scene, { hemi = null, onStrike = null } = {}) {
+  const storm = newLightning();
+  let hemiBase = null;
   const rainGeo = new THREE.BufferGeometry();
   const rainPos = new Float32Array(RAIN_N * 3);
   for (let i = 0; i < RAIN_N; i++) {
@@ -122,6 +131,15 @@ export function createWeather(scene) {
         sPos[i3 + 2] = car.z + fz * back + rz * side;
       }
       sprayGeo.attributes.position.needsUpdate = true;
+
+      // lightning (world/lightning.js): the sky goes white in stutters, the rain shows for a moment, thunder follows
+      const flash = lightningStep(storm, dt);
+      if (storm.strike && onStrike) onStrike(storm.strike.delay);
+      if (hemi) {
+        if (flash > 0) { if (hemiBase === null) hemiBase = hemi.intensity; hemi.intensity = hemiBase * (1 + 7 * flash) + 1.2 * flash; }
+        else if (hemiBase !== null) { hemi.intensity = hemiBase; hemiBase = null; }
+      }
+      rain.material.opacity = 0.55 + 0.4 * flash;
     },
   };
 }

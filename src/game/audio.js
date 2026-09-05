@@ -307,6 +307,17 @@ export function createAudio() {
         o.connect(g); g.connect(master); o.start(now + t0); o.stop(now + t0 + len + 0.01);
       }
     },
+    /* Thunder, `delay` seconds after the flash (distance): a low noise rumble
+       through a 140 Hz lowpass, 2.4 s, with a sharper crack up front when the
+       strike is close (delay under a second). */
+    thunder(delay = 1.2) {
+      if (!ready || !ctx || ctx.state !== 'running') return;
+      const t = ctx.currentTime + Math.max(0, delay);
+      const n = ctx.createBufferSource(); n.buffer = makeNoise(ctx, 2.6);
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(delay < 1 ? 900 : 140, t); lp.frequency.exponentialRampToValueAtTime(60, t + 2.2);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(delay < 1 ? 0.55 : 0.32, t + 0.08); g.gain.exponentialRampToValueAtTime(0.0005, t + 2.4);
+      n.connect(lp); lp.connect(g); g.connect(master); n.start(t); n.stop(t + 2.6);
+    },
     cash() {
       if (!ready || !ctx || ctx.state !== 'running') return;
       const now = ctx.currentTime;
