@@ -19,6 +19,7 @@ const _UP = new THREE.Vector3(0, 1, 0);
 /* Pickup halos: GTA's glowing disc under a thing you can take. One shared
    circle, one additive glow material per kind (gun / grenade / armour). */
 let _haloGeo = null; const _haloMat = {};
+let _poolGeo = null;   // the cruisers' light pool disc
 const HALO_TINT = { gun: 0xfff2c8, grenade: 0x7cff8a, armour: 0x6fb2ff };
 function haloMesh(kind) {
   _haloGeo ??= new THREE.CircleGeometry(0.55, 18).rotateX(-Math.PI / 2);
@@ -162,6 +163,14 @@ export class Traffic {
       bar.push(lens.material);
     }
     c.bar = bar;
+    /* The lightbar's pool on the road: an additive disc under the cruiser that
+       takes the lit lens's colour each frame. At night the red/blue wash on the
+       tarmac is most of what says 'police' from a distance; it is also what
+       you see of a cruiser behind you. One quad per cruiser, six at most. */
+    const pool = new THREE.Mesh(_poolGeo ??= new THREE.CircleGeometry(3.4, 20).rotateX(-Math.PI / 2),
+      glow(new THREE.MeshBasicMaterial({ color: 0xff2a1c, transparent: true, opacity: 0.20, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2 }), 0.7));
+    pool.position.set(0, 0.04, 0); pool.visible = false; pool.renderOrder = 3;
+    c.mesh.add(pool); c.pool = pool;
 
     /* The officer rides in the car and gets out when the chase stops being a
        chase. Kept in the scene rather than parented to the cruiser, because
@@ -974,6 +983,7 @@ export class Traffic {
         if (c.respondT <= 0 && c.baseCruise && c.cruise > c.baseCruise) c.cruise = c.baseCruise;
         const lit = c.respondT > 0 && Math.floor(t * 6) % 2;
         if (c.bar) { c.bar[0].emissiveIntensity = lit ? 5.5 : 0.15; c.bar[1].emissiveIntensity = c.respondT > 0 && !lit ? 5.5 : 0.15; }
+        if (c.pool) { c.pool.visible = c.respondT > 0; c.pool.material.color.setHex(lit ? 0xff2a1c : 0x2f6dff); }
         if (c.deployed) { c.deployed = false; c.officer.visible = false; }
         c.mode = 'road'; c.best = Infinity; c.stale = 0; c.deployT = 0;
         if (gap > 320) { c.live = false; c.mesh.visible = false; continue; }
@@ -986,6 +996,7 @@ export class Traffic {
         const flash = Math.floor(t * 6) % 2;
         c.bar[0].emissiveIntensity = flash ? 5.5 : 0.15;
         c.bar[1].emissiveIntensity = flash ? 0.15 : 5.5;
+        if (c.pool) { c.pool.visible = true; c.pool.material.color.setHex(flash ? 0xff2a1c : 0x2f6dff); }
       }
 
       /* ponytail: greedy descent, not A*. It closes on the player from
