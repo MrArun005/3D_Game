@@ -149,6 +149,23 @@ export class ChatterEngine {
     this._lastRadio = now;
     this.#playSquelch();
     this.chat?.post?.('DISPATCH', line);
+    this.#speak(line);
+  }
+
+  /* The dispatcher's voice: the browser's own speech synthesis, no assets, no
+     licence. Fast, low, a little quiet, through the squelch -- a radio, not a
+     narrator. One utterance at a time (a new call cancels the old). ?novoice
+     turns it off; so does a browser without the API. */
+  #speak(line) {
+    try {
+      if (typeof speechSynthesis === 'undefined' || typeof SpeechSynthesisUtterance === 'undefined') return;
+      if (this._novoice === undefined) this._novoice = typeof location !== 'undefined' && new URLSearchParams(location.search).has('novoice');
+      if (this._novoice) return;
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(line.replace(/[^\x00-\x7F]/g, ' '));   // the radio does not read emoji
+      u.rate = 1.18; u.pitch = 0.82; u.volume = 0.55; u.lang = 'en-US';
+      speechSynthesis.speak(u);
+    } catch { /* a browser that lists the API but refuses it */ }
   }
 
   updateWanted(wantedLevel) {
