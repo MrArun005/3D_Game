@@ -454,6 +454,7 @@ let lastFiredAt = -1e9;   // officers advance when you have been quiet for a whi
 let lastHurtAt = -1e9;    // health regenerates to half once this is six seconds old
 let healTick = 0;
 let skidT = 0;            // tyre-smoke cadence
+let farShotT = 25;        // distant gunfire cadence (ambient, night)
 let hurtPulse = 0;        // the red edge on the frame, decays each frame (grade.setHurt)
 let armour = 0;           // body armour 0..1, bought at Ammu-Nation, soaks 60% of a hit until gone
 /* The arsenal survives a reload of the page like cash and the garage do. */
@@ -1661,6 +1662,11 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   grenades.update(dt, groundHeightAt);
   tracers.update(dt);
   puffs.update(dt);
+  // distant gunfire: somewhere across the city, every 35-110 s at night, faint and dull -- the city has other trouble
+  if (!DAY || (clock.hour >= 21 || clock.hour < 5)) {
+    farShotT -= dt;
+    if (farShotT <= 0) { farShotT = 35 + Math.random() * 75; const n = 1 + Math.floor(Math.random() * 3); for (let i = 0; i < n; i++) setTimeout(() => audio.gunshot(0.10 + Math.random() * 0.06, Math.random() < 0.5 ? 'pistol' : 'smg'), i * (120 + Math.random() * 160)); }
+  }
   // tyre smoke: a sliding rear axle puts up pale puffs behind each wheel (car.slip is the dynamics' slip measure)
   if (!onFoot.active && (car.slip || 0) > 0.3 && Math.abs(car.fwdSpeed || 0) > 4) {
     skidT -= dt;
