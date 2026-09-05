@@ -197,7 +197,12 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   the player's horn is I. Time of day persists in `hb.clock`. Idle cinematic:
   20 s without input, stopped (car or foot) -> the camera orbits you and the
   HUD fades (`idleT`/`idleCam`, body class `idlecam`). Tokyo neon has a
-  per-vertex `flick` phase driven in TSL (one glowing part in seven buzzes). Draws and fps
+  per-vertex `flick` phase driven in TSL (one glowing part in seven buzzes).
+  Pay 'n' Spray: `garage.onRepair` / `garage.heat` -- a repair below three
+  stars calls `traffic.standDown()`; a completed carjack while unseen adds
+  6 s to `traffic.coldFor`. Pedestrians cross on `signalState` of their own
+  junction (`crowd.signalTime`), Tokyo junctions carry pedestrian lamps and
+  the crossing chime follows the nearest junction's phase. Draws and fps
   at kingsway-corner NOT re-measured since (no browser in this session).
   Also: `buildTokyoStreet` (poles + wires), `buildShrine` (park block),
   landmark slabs to 24 storeys on tower blocks, `District.districtAt` steers
