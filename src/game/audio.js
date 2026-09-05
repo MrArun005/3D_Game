@@ -29,7 +29,7 @@ function startLoop(ctx, buffer, dest, rate = 1) {
 }
 
 export function createAudio() {
-  let sirenNode = null, alarmNode = null;
+  let sirenNode = null, alarmNode = null, tokyoNode = null;
   let ctx = null;
   let master, engineBus;
   let layers = [];
@@ -317,6 +317,32 @@ export function createAudio() {
       const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(delay < 1 ? 900 : 140, t); lp.frequency.exponentialRampToValueAtTime(60, t + 2.2);
       const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(delay < 1 ? 0.55 : 0.32, t + 0.08); g.gain.exponentialRampToValueAtTime(0.0005, t + 2.4);
       n.connect(lp); lp.connect(g); g.connect(master); n.start(t); n.stop(t + 2.6);
+    },
+    /* Little Tokyo's ambience: a crowd murmur (band-passed noise, slow
+       wander) that fades in while you are in the district, and every ~9 s the
+       two-note pedestrian-crossing chime Japanese junctions play. Built once,
+       silent at gain 0. */
+    tokyo(on) {
+      if (!ready || !ctx || ctx.state !== 'running') return;
+      const now = ctx.currentTime;
+      if (!tokyoNode) {
+        const n = ctx.createBufferSource(); n.buffer = makeNoise(ctx, 2.0); n.loop = true;
+        const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 420; bp.Q.value = 0.6;
+        const g = ctx.createGain(); g.gain.value = 0;
+        n.connect(bp); bp.connect(g); g.connect(master); n.start(now);
+        tokyoNode = { g, bp, nextChime: now + 4 };
+      }
+      const t = tokyoNode;
+      t.g.gain.setTargetAtTime(on ? 0.05 : 0, now, 0.8);
+      t.bp.frequency.setTargetAtTime(380 + 90 * Math.sin(now * 0.37), now, 0.5);   // the murmur breathes
+      if (on && now >= t.nextChime) {
+        t.nextChime = now + 8 + Math.random() * 3;
+        for (const [f, at] of [[1046.5, 0], [880, 0.42]]) {   // C6 then A5: the crossing
+          const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+          const eg = ctx.createGain(); eg.gain.setValueAtTime(0.0001, now + at); eg.gain.exponentialRampToValueAtTime(0.028, now + at + 0.03); eg.gain.exponentialRampToValueAtTime(0.0001, now + at + 0.38);
+          o.connect(eg); eg.connect(master); o.start(now + at); o.stop(now + at + 0.4);
+        }
+      }
     },
     cash() {
       if (!ready || !ctx || ctx.state !== 'running') return;
