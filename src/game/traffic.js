@@ -1058,7 +1058,8 @@ export class Traffic {
           if (gapF < 7 && (f.speed || 0) < 3) {
             // pulled over: both sit with lights going for six seconds, then the fugitive drives off and the cruiser is released
             c.stopT += dt; c.speed = Math.max(0, c.speed - 14 * dt);
-            if (c.stopT > 6) { c.chaseT = 0; }
+            if (c.stopT > 2 && !c.bailed) { c.bailed = true; if (this.rand() < 0.3) this.crowd?.eject?.(f.x, f.z, f.yaw); }   // some make a run for it
+            if (c.stopT > 6) { c.chaseT = 0; c.bailed = false; }
           } else if (gapF < 9) { f.fleeT = 0; f.cruise = 0; }                 // alongside: the fugitive gives up and stops
           else this.#steerToward(c, f.x, f.z, dt, 4, (c.baseCruise ?? c.cruise) * 1.7);
           c.mesh.position.set(c.x, groundHeightAt(c.x, c.z), c.z); c.mesh.rotation.y = c.yaw;
