@@ -2001,6 +2001,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   performance.mark('render-start');
   const tRender0 = performance.now();
   hurtPulse = Math.max(0, hurtPulse - dt * 2.2);
+  if (onFoot.active) audio.heartbeat?.(health, dt);   // under 25% you hear your own heart, quickening toward the end
   grade.setHurt?.(Math.max(hurtPulse, onFoot.active && health < 0.4 ? (0.4 - health) * 1.6 : 0));   // a hit flashes it; under 40% it stays
   grade.render(renderer, now / 1000);
   const renderMs = performance.now() - tRender0;

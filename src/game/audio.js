@@ -29,7 +29,7 @@ function startLoop(ctx, buffer, dest, rate = 1) {
 }
 
 export function createAudio() {
-  let sirenNode = null, alarmNode = null, tokyoNode = null;
+  let sirenNode = null, alarmNode = null, tokyoNode = null, heartT = 0;
   let ctx = null;
   let master, engineBus;
   let layers = [];
@@ -355,6 +355,22 @@ export function createAudio() {
       const p = ctx.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan));
       for (let t = 0; t < 3.4; t += 1.3) { const k = 1 - t / 8; o.frequency.setValueAtTime(620 * k, now + t); o.frequency.linearRampToValueAtTime(880 * k, now + t + 0.65); o.frequency.linearRampToValueAtTime(620 * k, now + t + 1.3); }
       o.connect(lp); lp.connect(g); g.connect(p); p.connect(master); o.start(now); o.stop(now + 3.5);
+    },
+    /* Your heartbeat under a quarter health: a low double thump, 60 bpm at
+       25% rising to 110 bpm near death, quiet. Call every frame with the
+       health fraction; it schedules its own beats and is silent above 0.25. */
+    heartbeat(health, dt) {
+      if (!ready || !ctx || ctx.state !== 'running' || health > 0.25) { heartT = 0; return; }
+      heartT -= dt;
+      if (heartT > 0) return;
+      const k = 1 - health / 0.25;   // 0 at 25%, 1 at death
+      heartT = 60 / (60 + 50 * k);
+      const now = ctx.currentTime;
+      for (const [at, gain] of [[0, 0.16], [0.14, 0.11]]) {
+        const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(58, now + at); o.frequency.exponentialRampToValueAtTime(38, now + at + 0.12);
+        const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, now + at); g.gain.exponentialRampToValueAtTime(gain * (0.6 + 0.4 * k), now + at + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, now + at + 0.16);
+        o.connect(g); g.connect(master); o.start(now + at); o.stop(now + at + 0.2);
+      }
     },
     cash() {
       if (!ready || !ctx || ctx.state !== 'running') return;
