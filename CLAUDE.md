@@ -225,6 +225,14 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   tokyo emissive 1.8; wet tarmac envMapIntensity up to 3.7. Checked in the
   browser at the `little-tokyo` preset (on the road now; the old point was
   inside a building). Still to do: more magenta/cyan in the sign palettes.
+- **Draw budget, measured 2026-09-05 (browser, preview build, chunks
+  settled)**: kingsway-corner preset 1404 draws (793 bundled) / 3.56M tris;
+  the spawn CHASE view looking down the Tokyo road 1860-1900 draws (811
+  bundled, ~1090 direct) by day AND night (night adds ~22). The direct part
+  is not the facade/prop batches (bundling them changed nothing) -- it is
+  view-dependent: shadow-cascade and dynamic draws along a 500 m sightline.
+  Nobody has profiled which yet; the F3 overlay's per-pass breakdown is the
+  next step. Do not "fix" it by dropping bundles or shells.
 - **Recording (2026-09-05)**: `tools/record-tour.mjs` drives a headed
   Playwright Chrome against `vite preview` (never the dev server: an HMR
   reload mid-tour killed one take) with `recordVideo`, captions each scene,
