@@ -163,6 +163,14 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
     const konbini = rnd() < 0.35;
     parts.push(at(quad(front.w - 0.6, 2.7, konbini ? 0x2a3038 : 0x1c2430, konbini ? [0.9, 0.95, 1.0] : WARM, konbini ? 0.75 : 0.5), gx, 1.65, gz, front.yaw));
   }
+  // the door: a dark frame and a lit sliding-door panel at one end of the shopfront, so the ground floor reads as a shop you could enter
+  {
+    const ds = (rnd() < 0.5 ? -1 : 1) * (front.w / 2 - 1.3);
+    const [dx0, dz0] = onFace(front, ds, 0.06);
+    parts.push(at(box(0.06, 2.5, 1.25, 0x2a2d33), dx0, 1.25, dz0));
+    const [dx1, dz1] = onFace(front, ds, 0.09);
+    parts.push(at(quad(1.0, 2.2, 0x3c4a5a, [0.95, 0.9, 0.8], 0.35), dx1, 1.15, dz1, front.yaw));
+  }
   // projecting signs: a small box out from the wall at first-floor height with a board on each face, on three in five
   if (rnd() < 0.6) {
     const s = -front.w / 2 + 1.2 + rnd() * Math.max(0.5, front.w - 2.4);
