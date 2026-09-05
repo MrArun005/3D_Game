@@ -503,6 +503,8 @@ export class Traffic {
     car.live = true;
     car.mesh.visible = true;
     this.#place(car);
+    // Little Tokyo runs on taxis: two in five civilians spawning there take the classic liveries (black, yellow-green, deep green)
+    if (!car.hunt && this.world?.district?.districtAt?.(car.x, car.z) === 'LITTLE TOKYO' && this.rand() < 0.4) car.mesh.material?.color?.setHex([0x101214, 0xd8d24c, 0x1d5a3a][Math.floor(this.rand() * 3)]);
   }
 
   /** Append the next block plus the manoeuvre through the junction at its end. */
