@@ -57,6 +57,12 @@ export const ARSENAL = {
     pellets: 8, auto: false, restSpread: 0.085, maxSpread: 0.130, spreadGain: 0.010, spreadDecay: 0.30,
     recoil: 0.055, shake: 0.85, muzzle: 0.51, reserve: 18,
   },
+  // the long gun: one round, one kill on a body, two on a plate carrier; useless from the hip, a scope in ADS (shooting.js ADS.sniper)
+  sniper: {
+    name: 'SNIPER', damage: 95, cooldown: 1.15, mag: 5, reload: 2.9, range: 240,
+    pellets: 1, auto: false, restSpread: 0.0025, maxSpread: 0.045, spreadGain: 0.030, spreadDecay: 0.35,
+    recoil: 0.060, shake: 0.65, muzzle: 0.66, reserve: 20,
+  },
 };
 
 export const WEAPON_KINDS = Object.keys(ARSENAL);
@@ -136,7 +142,23 @@ function shotgunGeo() {
   return mergeGeometries(p, false);
 }
 
-const BUILDERS = { pistol: pistolGeo, smg: smgGeo, rifle: rifleGeo, shotgun: shotgunGeo };
+function sniperGeo() {
+  const p = [];
+  p.push(at(box(0.050, 0.120, 0.034, C.grip), -0.03, -0.058, 0, 0, 0, 0.16));
+  p.push(at(box(0.320, 0.060, 0.040, C.frame), 0.120, 0.022, 0));              // receiver
+  p.push(at(box(0.040, 0.110, 0.030, C.grip), 0.060, -0.060, 0, 0, 0, 0.04));  // magazine, short
+  p.push(at(box(0.160, 0.040, 0.034, C.frame), 0.330, 0.018, 0));              // fore-end
+  p.push(at(barrel(0.009, 0.360, C.metal), 0.440, 0.020, 0));                  // the long barrel, to x = 0.62
+  p.push(at(box(0.040, 0.026, 0.026, C.metal), 0.640, 0.020, 0));              // muzzle brake, to x = 0.66
+  p.push(at(box(0.200, 0.058, 0.032, C.frame), -0.150, 0.014, 0));             // stock
+  p.push(at(box(0.060, 0.050, 0.030, C.frame), -0.230, 0.030, 0));             // cheek riser
+  p.push(at(barrel(0.018, 0.200, C.slide, 8), 0.180, 0.082, 0));               // the scope tube
+  p.push(at(box(0.020, 0.030, 0.020, C.metal), 0.120, 0.058, 0), at(box(0.020, 0.030, 0.020, C.metal), 0.240, 0.058, 0));   // rings
+  p.push(at(box(0.012, 0.100, 0.010, C.metal), 0.300, -0.070, 0), at(box(0.012, 0.100, 0.010, C.metal), 0.300, -0.070, 0.03));   // bipod legs, folded
+  return mergeGeometries(p, false);
+}
+
+const BUILDERS = { pistol: pistolGeo, smg: smgGeo, rifle: rifleGeo, shotgun: shotgunGeo, sniper: sniperGeo };
 
 let GEO = null, MAT = null;
 function cache() {

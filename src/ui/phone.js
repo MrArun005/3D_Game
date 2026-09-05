@@ -349,6 +349,7 @@ export class Phone {
       modeCard('AMMU-NATION · GRENADES x3', '$600 · slot 5, E throws, 2.2 s fuse, 6 m blast', '#8e44ad', () => window.__buyGrenades?.(600));
       modeCard('AMMU-NATION · BODY ARMOUR', '$800 · soaks 60% of every hit until it is gone', '#8e44ad', () => window.__buyArmour?.(800));
       modeCard('AMMU-NATION · SHOTGUN', '$1,800 · 6 shells, eight pellets each', '#8e44ad', () => window.__buyWeapon?.('shotgun', 1800));
+      modeCard('AMMU-NATION · SNIPER RIFLE', '$4,500 · key 6, 5 rounds, 240 m, a scope on right-click', '#8e44ad', () => window.__buyWeapon?.('sniper', 4500));
       modeCard('HOLD OUT', '3 minutes · wanted climbs every 40 s · officers down x50', '#c0392b', () => { window.__modes?.startHoldout(); });
 
       // Pegasus Helicopter Dispatch

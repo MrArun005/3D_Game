@@ -1495,7 +1495,8 @@ const input = createInput((action) => {
   else if (action === 'weapon5') { held = 'grenade'; hud.flash(`GRENADES · ${grenades.count}`); if (heldGun) heldGun.visible = false; }
   else if (action.startsWith('weapon')) {
     held = 'gun';
-    const kind = WEAPON_KINDS[+action.slice(6) - 1];
+    const idx = +action.slice(6) - 1;
+    const kind = WEAPON_KINDS[idx === 5 ? 4 : idx];   // 1-4 the first four guns, 6 the sniper (5 is grenades)
     if (kind && weapon.switchTo(kind)) { refreshHeldGun(); audio.click?.(); hud.flash(`${ARSENAL[kind].name} · ${weapon.ammo}/${ARSENAL[kind].mag}`); }
   }
   if (action === 'reload' && weapon.reload()) { hud.flash('RELOADING…'); audio.reload?.(weapon.spec.reload); }
@@ -1873,7 +1874,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   const arsKey = onFoot.active ? `${held}|${weapon.kind}|${weapon.ammo}|${weapon.reserveNow}|${grenades.count}` : 'car';
   if (arsKey !== lastArsKey && onFoot.active) hud.setArsenal?.([
     { key: 0, name: 'FISTS', mag: '', reserve: '', current: held === 'fists' },
-    ...WEAPON_KINDS.map((k, i) => ({ key: i + 1, name: ARSENAL[k].name, mag: k === weapon.kind ? weapon.ammo : weapon.mags[k], reserve: weapon.reserve[k], current: held === 'gun' && k === weapon.kind })),
+    ...WEAPON_KINDS.map((k, i) => ({ key: i === 4 ? 6 : i + 1, name: ARSENAL[k].name, mag: k === weapon.kind ? weapon.ammo : weapon.mags[k], reserve: weapon.reserve[k], current: held === 'gun' && k === weapon.kind })),
     { key: 5, name: 'NADE', mag: grenades.count, reserve: '', current: held === 'grenade' },
   ]);
   else if (arsKey !== lastArsKey && hud.arsEl) { hud.arsEl.innerHTML = ''; hud._arsKey = ''; }
