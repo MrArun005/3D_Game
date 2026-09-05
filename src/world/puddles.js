@@ -92,6 +92,7 @@ export class PuddleSystem {
     puddleMesh.count = count;
     puddleMesh.instanceMatrix.needsUpdate = true;
     this.scene.add(puddleMesh);
+    this.mesh = puddleMesh;   // hidden on dry days: puddles come with the rain and dry out over ~3 min (update)
     console.info(`puddles: 2 draws (1 instanced puddle decal, 1 spray points; ${count} puddles)`);
   }
 
@@ -129,6 +130,9 @@ export class PuddleSystem {
 
   /** `rain` 0..1 is how hard it is raining now (weather.amount): the road-wide spray scales with it; a puddle sprays regardless. */
   update(dt, car, rain = 1) {
+    // wetness follows the rain up at once and dries at 1/180 per second; the puddles show while the ground is wet
+    this.wetness = rain > (this.wetness ?? 0) ? rain : Math.max(0, (this.wetness ?? 0) - dt / 180);
+    if (this.mesh) this.mesh.visible = this.wetness > 0.1;
     const speed = Math.abs(car.fwdSpeed || 0);
     const pos = this.sprayParticles?.geometry.attributes.position;
     if (!pos) return;
