@@ -220,9 +220,12 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
 - **Night look (2026-09-05, from Arun's cover art `assets/art/game_cover.jpg`
   and `splash_screen.jpg`: ink sky, saturated magenta/cyan neon, wet road,
   heavy bloom)**: grade.js `uSat` 1.32 + indigo/warm split tone `uSplit` at
-  night, bloom 1.35 / 0.72 / threshold 0.72 in `setNight`; clock.js night
-  dome tint (0.045, 0.05, 0.10), environment 0.24, sign emissive 2.46;
-  tokyo emissive 1.8; wet tarmac envMapIntensity up to 3.7. Checked in the
+  night, bloom 0.95 / 0.55 / threshold 0.85 in `setNight` (1.35/0.72/0.72
+  bloomed every lit window into haze -- checked in the browser); clock.js
+  night dome tint (0.045, 0.05, 0.10) and fog (0.035, 0.045, 0.09),
+  environment 0.24, sign emissive 2.46; tokyo emissive 1.3 (neon parts sit
+  at 1.4x so they bloom, windows do not); rain fog x1.5; wet tarmac
+  envMapIntensity up to 3.7. Checked in the
   browser at the `little-tokyo` preset (on the road now; the old point was
   inside a building). Still to do: more magenta/cyan in the sign palettes.
 - **Draw budget, measured 2026-09-05 (browser, preview build, chunks

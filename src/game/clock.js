@@ -72,7 +72,7 @@ export class GameClock {
       this.sunColor.setRGB(0.18, 0.28, 0.45);
       this.hemiSky.setRGB(0.08, 0.12, 0.20);
       this.hemiGround.setRGB(0.04, 0.06, 0.09);
-      this.fogColor.setRGB(0.06, 0.08, 0.14);
+      this.fogColor.setRGB(0.035, 0.045, 0.09);   // ink, like the dome: the old 0.14 blue read as a grey-blue haze in every night frame
       sunIntensity = 0.42; // Soft moon key
       hemiIntensity = 0.22;
     }
