@@ -1194,6 +1194,9 @@ export class DistrictWorld {
         const sh = buildShrine(bl.id);
         sh.geo.applyMatrix4(mat4(bl.x, KERB_H, bl.y, bl.angle, 1, 1, 1));
         tokyoParts.push(sh.geo);
+        // the hall is solid (the torii you may drive through, as in life): its centre is 5.2 m behind the apron centre, in the block's frame
+        const hca = Math.cos(bl.angle), hsa = Math.sin(bl.angle);
+        boxes.push({ x: bl.x + (-5.2) * hca, z: bl.y + (-5.2) * hsa, angle: bl.angle, hw: 1.6, hd: 1.8, height: 3.0, district: bl.district, tokyo: true });
       }
       const arch = ARCHETYPE[bl.type];
       if (!arch) continue;
