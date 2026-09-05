@@ -1254,6 +1254,20 @@ window.__buyWeapon = (kind, price) => {
   hud.flash(`${ARSENAL[kind].name} · ${weapon.ammo} / ${weapon.reserveNow}`);
   return true;
 };
+window.__warp = (x, z, yaw = 0) => {
+  resetCar(car);
+  car.x = x;
+  car.z = z;
+  car.yaw = yaw;
+  car.y = (world.district?.elevationAt?.(x, z) ?? groundHeightAt(x, z)) + 0.62;
+  if (hero) {
+    const gy = world.district?.elevationAt?.(x, z) ?? groundHeightAt(x, z);
+    hero.position.set(x, gy, z);
+    hero.rotation.set(0, yaw, 0);
+  }
+  chase.snap(car);
+  spawnSnap = true;
+};
 
 commands = new CommandEngine({
   car,
@@ -1615,10 +1629,9 @@ function frameBody() {
   if (hero.userData.steering) hero.userData.steering.rotation.z = -car.steer * 2.6;
   for (const w of hero.userData.wheels) {
     if (w.front) w.steer.rotation.y = car.steer;
-    const idx = (w.front ? 0 : 2) + (w.side > 0 ? 1 : 0);
-    if (car.flat) car.flat[idx] = w.flat || 0;   // the physics reads it: less grip, more drag on that corner
-    w.steer.position.y = (car.wheelGround ? car.wheelGround[idx] : 0)
-      + WHEEL_R * (1 - (w.flat || 0) * 0.3);
+    if (car.flat) car.flat[idx] = w.flat || 0;
+    const localWheelY = (car.wheelGround ? car.wheelGround[idx] - gy : 0);
+    w.steer.position.y = localWheelY + WHEEL_R * (1 - (w.flat || 0) * 0.3);
     w.spin.rotation.z += car.wheelW[idx] * dt;
   }
 

@@ -65,16 +65,16 @@ export class District {
        reject most of them without doing any geometry. */
     this.spans = [];
     for (const br of data.bridges) {
-      this.spans.push(makeSpan(br.points, br.width, 7.6, 62));
+      this.spans.push(makeSpan(br.points, br.width, 7.6, 62, false, 'bridge'));
     }
     for (const e of data.graph.edges) {
       if (e.class !== 'freeway') continue;
-      this.spans.push(makeSpan(e.points, e.width, 9.4, 90));
+      this.spans.push(makeSpan(e.points, e.width, 9.4, 90, false, 'freeway'));
     }
     for (const e of data.graph.edges) {
       // ramps meet the freeway at its deck and the street at the ground
       if (e.class !== 'ramp') continue;
-      this.spans.push(makeSpan(e.points, e.width, 9.4, 0, true));
+      this.spans.push(makeSpan(e.points, e.width, 9.4, 0, true, 'ramp'));
     }
 
     // buildings indexed by their block, so a chunk load is one lookup
@@ -253,12 +253,13 @@ export class District {
       const h = spanHeight(s, x, z);
       if (h > best) { best = h; bs = s; }
     }
-    /* Under a flyover, not on it. The span band is the deck's footprint, and
+    /* Under a freeway flyover, not on it. The span band is the deck's footprint, and
        a surface street crossing beneath the expressway lies inside it -- the
        car (and traffic) used to climb 9.4 m onto the deck the moment it drove
        under. If the point sits on the tarmac of a ground-level segment that
-       is not parallel to the span, it is underneath: no lift. */
-    if (best > 0 && bs) {
+       is not parallel to the span, it is underneath: no lift.
+       Only applies to freeway spans; bridges cross open water and must keep their continuous deck. */
+    if (best > 0 && bs && (bs.isFreeway || bs.height > 8.0)) {
       const d = spanDir(bs, x, z);
       for (const seg of this.segmentsNear(x, z, 30)) {
         if (seg.cls === 'freeway' || seg.cls === 'ramp') continue;
@@ -346,7 +347,7 @@ export class District {
  * Precompute a span: cumulative lengths, a bounding box padded by the ramps,
  * and the end tangents used to extrapolate the approaches.
  */
-function makeSpan(points, width, height, ramp, taper = false) {
+function makeSpan(points, width, height, ramp, taper = false, kind = 'bridge') {
   const pts = points.map((p) => [p[0], p[1]]);
   const cum = [0];
   for (let i = 1; i < pts.length; i++) {
@@ -359,7 +360,8 @@ function makeSpan(points, width, height, ramp, taper = false) {
     minZ = Math.min(minZ, pz); maxZ = Math.max(maxZ, pz);
   }
   return {
-    pts, cum, half: width / 2, height, ramp, taper,
+    pts, cum, half: width / 2, height, ramp, taper, kind,
+    isFreeway: kind === 'freeway', isBridge: kind === 'bridge',
     length: cum[cum.length - 1],
     minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad,
   };
@@ -382,7 +384,26 @@ function spanDir(s, x, z) {
 
 /** Height of one span at a point: 0 if the point is not over or approaching it. */
 function spanHeight(s, x, z) {
-  // nearest point on the polyline, as (distance along, distance across)
+  // 1. Check approach ramps first if not a continuous taper and ramp length > 0
+  if (!s.taper && s.ramp) {
+    for (const end of [0, 1]) {
+      const p0 = end ? s.pts[s.pts.length - 1] : s.pts[0];
+      const p1 = end ? s.pts[s.pts.length - 2] : s.pts[1];
+      let ux = p0[0] - p1[0], uz = p0[1] - p1[1];
+      const l = Math.hypot(ux, uz) || 1;
+      ux /= l; uz /= l;                       // points OUT of the span
+      const rx = x - p0[0], rz = z - p0[1];
+      const out = rx * ux + rz * uz;          // metres past the abutment
+      if (out > 0 && out <= s.ramp) {
+        const perp = Math.hypot(rx - ux * out, rz - uz * out);
+        if (perp <= s.half + 5.5) {           // same band as the span (covers pavement)
+          return s.height * smooth(1 - out / s.ramp);
+        }
+      }
+    }
+  }
+
+  // 2. Nearest point on the polyline, as (distance along, distance across)
   let bestD = Infinity, along = 0;
   for (let i = 0; i < s.pts.length - 1; i++) {
     const ax = s.pts[i][0], az = s.pts[i][1];
@@ -393,11 +414,8 @@ function spanHeight(s, x, z) {
     const d = Math.hypot(x - ax - vx * tc, z - az - vz * tc);
     if (d < bestD) { bestD = d; along = s.cum[i] + tc * Math.sqrt(l2); }
   }
+
   /* The lifted band covers the PAVEMENT, not just the carriageway.
-     At half + 1.5 the road climbed onto the bridge while its kerb wall,
-     pavement ribbon (centred at half + 2.4) and every kerbside prop (lamps at
-     half + 1.6) stayed on the ground beneath it -- a raised road with its own
-     footway seven metres below, and lamp posts sticking up through the deck.
      half + 5.5 clears the 4.8m pavement's outer edge with room for a railing. */
   if (bestD <= s.half + 5.5) {
     if (s.taper) {
@@ -405,26 +423,6 @@ function spanHeight(s, x, z) {
       return s.height * smooth(Math.max(0, Math.min(1, along / Math.max(1, s.length))));
     }
     return s.height;
-  }
-  if (s.taper || !s.ramp) return 0;
-
-  /* The approaches.
-     Projecting onto a polyline CLAMPS to its ends, so `along` can never leave
-     [0, length] and the ramps were unreachable -- the deck jumped straight
-     out of the water. They have to be measured along the end tangents,
-     extrapolated past the span. */
-  for (const end of [0, 1]) {
-    const p0 = end ? s.pts[s.pts.length - 1] : s.pts[0];
-    const p1 = end ? s.pts[s.pts.length - 2] : s.pts[1];
-    let ux = p0[0] - p1[0], uz = p0[1] - p1[1];
-    const l = Math.hypot(ux, uz) || 1;
-    ux /= l; uz /= l;                       // points OUT of the span
-    const rx = x - p0[0], rz = z - p0[1];
-    const out = rx * ux + rz * uz;          // metres past the abutment
-    if (out <= 0 || out > s.ramp) continue;
-    const perp = Math.hypot(rx - ux * out, rz - uz * out);
-    if (perp > s.half + 5.5) continue;      // same band as the span (see above)
-    return s.height * smooth(1 - out / s.ramp);
   }
   return 0;
 }

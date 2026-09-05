@@ -79,7 +79,7 @@ export class ChaseCamera {
     const oz = Math.sin(ly) * (-cy) + Math.cos(ly) * (sy);
     const tx = car.x + ox * back * flat;
     const tz = car.z + oz * back * flat;
-    const ty = targetY + rig.up + (car.heave || 0) + lift * back * 1.15;
+    const ty = targetY + rig.up + lift * back * 1.15;
     const k = 1 - Math.pow(0.0016, dt * (rig.lag / 3.4));
     this.pos.x += (tx - this.pos.x) * k;
     this.pos.y += (ty - this.pos.y) * k;
@@ -102,7 +102,7 @@ export class ChaseCamera {
     const aimD = (this.looking || this.lookBehind) ? 2.0 : rig.aim;
     this.aim.set(
       car.x - ox * aimD * flat + rx * look,
-      targetY + 0.95 + (car.heave || 0) - lift * aimD * 0.4,
+      targetY + 0.95 - lift * aimD * 0.4,
       car.z - oz * aimD * flat + rz * look,
     );
     this.camera.lookAt(this.aim);

@@ -1064,6 +1064,7 @@ export class DistrictWorld {
        Overlaps at junctions are coplanar and the same colour, so the depth
        fight they provoke is invisible — far cheaper than mitring every join. */
     const D = this.district;
+    const boxes = [];              // solid obstacles and footprints in this chunk
     const segs = this.segByChunk.get(k) ?? [];
     if (segs.length) {
       const pos = [], nor = [], uv = [];
@@ -1145,6 +1146,19 @@ export class DistrictWorld {
             top(pp, ppN, ppUv, a[0], ya + PARAPET_H, a[1], b[0], yb + PARAPET_H, b[1], ox, oz, PARAPET_T);
             const ix = -ox * PARAPET_T, iz = -oz * PARAPET_T;
             wall(pp, ppN, ppUv, b[0] + ix, yb + PARAPET_H, b[1] + iz, a[0] + ix, ya + PARAPET_H, a[1] + iz, yb, ya, -ox, -oz);
+
+            // solid barrier collision box along elevated parapet edge
+            const segDx = b[0] - a[0], segDz = b[1] - a[1];
+            const segL = Math.hypot(segDx, segDz);
+            if (segL > 0.5) {
+              boxes.push({
+                x: (a[0] + b[0]) / 2 + (ox * PARAPET_T * 0.5),
+                z: (a[1] + b[1]) / 2 + (oz * PARAPET_T * 0.5),
+                hw: segL / 2,
+                hd: PARAPET_T * 0.5 + 0.15,
+                angle: Math.atan2(segDz, segDx),
+              });
+            }
           }
         }
       }
@@ -1173,7 +1187,6 @@ export class DistrictWorld {
 
     /* --- blocks: a raised slab is its own kerb, and buildings stand on it --- */
     const blocks = this.blkByChunk.get(k) ?? [];
-    const boxes = [];              // solid building footprints in this chunk
     const kitPlaced = {};          // kit -> [geometry with matrix applied] (whole Kenney buildings)
     const tokyoParts = [], tokyoBoards = [], tokyoProps = [];   // Little Tokyo: our own buildings (world/tokyo.js), one mesh per chunk
     const slabs = { block: [], park: [], lot: [], vacant: [] };

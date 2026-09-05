@@ -284,6 +284,41 @@ export class Phone {
       };
       this.content.appendChild(tokyoCard);
 
+      // Halstead Lift Bridge GPS & Test Run
+      const bridgeCard = document.createElement('div');
+      bridgeCard.style.cssText = 'background: rgba(52, 152, 219, 0.12); border: 1px solid rgba(52, 152, 219, 0.45); border-radius: 12px; padding: 12px; display:flex; justify-content:space-between; align-items:center;';
+      bridgeCard.innerHTML = `
+        <div>
+          <div style="font-weight:800; font-size:13px; color:#3498db;">🌉 HALSTEAD LIFT BRIDGE</div>
+          <div style="font-size:11px; color:#ddd;">Smooth 7.6m River Span · Solid Parapet Walls · Ramped Approaches</div>
+        </div>
+        <div style="display:flex; gap:6px;">
+          <button id="warp-bridge-btn" style="padding:8px 10px; border-radius:8px; border:none; background:#2980b9; color:#fff; font-weight:800; font-size:11px; cursor:pointer;">
+            WARP
+          </button>
+          <button id="visit-bridge-btn" style="padding:8px 10px; border-radius:8px; border:none; background:linear-gradient(135deg, #3498db, #2980b9); color:#fff; font-weight:800; font-size:11px; cursor:pointer;">
+            GPS
+          </button>
+        </div>
+      `;
+      bridgeCard.querySelector('#warp-bridge-btn').onclick = (e) => {
+        e.stopPropagation();
+        if (typeof window !== 'undefined') {
+          if (window.__warp) window.__warp(1938, 2275, 0.06);
+          if (window.hud?.flash) window.hud.flash('WARPED TO HALSTEAD LIFT BRIDGE 🌉');
+        }
+        this.toggle(false);
+      };
+      bridgeCard.querySelector('#visit-bridge-btn').onclick = (e) => {
+        e.stopPropagation();
+        if (typeof window !== 'undefined') {
+          if (window.__setWaypoint) window.__setWaypoint(1938, 2275, 'HALSTEAD LIFT BRIDGE');
+          if (window.hud?.flash) window.hud.flash('GPS DESTINATION · HALSTEAD LIFT BRIDGE 🌉');
+        }
+        this.toggle(false);
+      };
+      this.content.appendChild(bridgeCard);
+
       // Shooting range and hold-out (game/modes.js). window.__modes is set by main
       // once the scene exists; the cards read the player's position from onFoot/car.
       const modeCard = (title, sub, colour, onclick) => {
