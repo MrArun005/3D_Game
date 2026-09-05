@@ -964,7 +964,16 @@ export class Traffic {
       }
 
       // a cruiser with a line on you inside 70 m has eyes on you as much as an officer on foot does
-      if (!c.deployed && gap < 70 && hasLineOfSight(c.x, 1.2, c.z, player.x, (player.y ?? 0) + 1.0, player.z, this._bldg, [], null)) this.hot = true;
+      c.seesYou = !c.deployed && gap < 70 && hasLineOfSight(c.x, 1.2, c.z, player.x, (player.y ?? 0) + 1.0, player.z, this._bldg, [], null);
+      if (c.seesYou) this.hot = true;
+      /* From three stars the passenger leans out and fires on the move: a
+         pistol from a swerving car, so the jitter is wide (1.6x). GTA's cops
+         do this and it is what makes a three-star chase feel different from
+         a two-star one before anyone has stepped out. */
+      if (c.seesYou && c.mode === 'free' && this.wanted >= 3 && gap < 42 && c.speed > 2) {
+        c.driveByT = (c.driveByT ?? 1.5) - dt;
+        if (c.driveByT <= 0) { c.driveByT = 1.4 + this.rand() * 1.2; this.fireAt(c.x, 1.3, c.z, player, 'pistol', Math.floor(this.wanted), 1.6); }
+      }
       if (c.mode === 'road' && gap < 70) c.mode = 'free';
       if (c.mode === 'free' && gap > 150) { c.lost += dt; } else { c.lost = 0; }
       if (c.lost > 3) { c.live = false; c.mesh.visible = false; c.mode = 'road'; c.lost = 0; this.chatter?.radioPool?.('lost'); continue; }
