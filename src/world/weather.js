@@ -63,7 +63,8 @@ export function rainSpell(t) {
   return Math.sin(t * 0.0021 + 1.0) > 0.2;
 }
 
-export function createWeather(scene, { hemi = null, onStrike = null } = {}) {
+export function createWeather(scene, { hemi = null, onStrike = null, dome = null } = {}) {
+  const domeOf = () => (typeof dome === 'function' ? dome() : dome);   // a getter, because the dome may be built after the weather
   const storm = newLightning();
   let hemiBase = null;
   /* The rain is not a constant. `amount` breathes 0.35..1.0 over about ten
@@ -164,6 +165,9 @@ export function createWeather(scene, { hemi = null, onStrike = null } = {}) {
         else if (hemiBase !== null) { hemi.intensity = hemiBase; hemiBase = null; }
       }
       rain.material.opacity = (0.25 + 0.30 * amount) + 0.4 * flash;
+      // the sky under rain: the dome (tinted per frame by the clock, so multiplying never accumulates) darkens with the rain and whites out with the flash
+      const d = domeOf();
+      if (d?.material?.color) d.material.color.multiplyScalar(1 - 0.45 * amount).addScalar(0.7 * flash);
     },
   });
   return api;
