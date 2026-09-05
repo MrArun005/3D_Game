@@ -236,9 +236,10 @@ export function createGrade(renderer, scene, camera, {
       uSplit.value = on ? 1.0 : 0.0;
       if (!bloomPass) return;
       // the neon night: more bloom, wider, from a lower floor (lit windows glow, as they do in the reference)
-      bloomPass.strength.value = on ? 1.35 : BLOOM_STRENGTH;
-      bloomPass.radius.value = on ? 0.72 : 0.35;
-      bloomPass.threshold.value = on ? 0.72 : 0.25;
+      // crisp neon on a dark street, not haze: 1.35 / 0.72 / 0.72 bloomed every lit window into fog (browser check, 2026-09-05)
+      bloomPass.strength.value = on ? 0.95 : BLOOM_STRENGTH;
+      bloomPass.radius.value = on ? 0.55 : 0.35;
+      bloomPass.threshold.value = on ? 0.85 : 0.25;
     },
 
     setDrops(amount) { lAmt.value = amount; },
