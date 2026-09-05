@@ -262,6 +262,16 @@ let dying = 0;
    pellets count once), a hard ram from your car one or two. At zero the
    cruise drops to 0 and it rolls to a stop; a cruiser's officers step out, a
    civilian's driver bails. One place, for the trigger and the collision. */
+/** The hero's paint as a word for the radio: nearest of a small palette, from whichever mesh carries the paint (Kenney skin body or the loft hull). */
+function paintName() {
+  const col = hero?.userData?.body?.material?.color ?? hero?.userData?.hull?.material?.color;
+  if (!col) return '';
+  const NAMES = [['black', 0.05, 0.05, 0.06], ['white', 0.9, 0.9, 0.9], ['silver', 0.6, 0.62, 0.66], ['red', 0.7, 0.08, 0.08], ['blue', 0.1, 0.2, 0.7], ['green', 0.1, 0.5, 0.2], ['yellow', 0.9, 0.75, 0.1], ['orange', 0.9, 0.4, 0.05], ['grey', 0.35, 0.36, 0.38]];
+  let best = '', bd = Infinity;
+  for (const [n, r, g, b] of NAMES) { const d = (col.r - r) ** 2 + (col.g - g) ** 2 + (col.b - b) ** 2; if (d < bd) { bd = d; best = n; } }
+  return best;
+}
+
 function damageVehicle(v, amount, isPolice) {
   if (!v || v.vhp === 0) return;
   v.vhp = Math.max(0, (v.vhp ?? 8) - amount);
@@ -1936,7 +1946,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     distT = 0.5;
     const here = districtRef.districtAt(onFoot.active ? onFoot.x : car.x, onFoot.active ? onFoot.z : car.z);
     // the first star: dispatch puts out the description -- on foot or in a vehicle, and where
-    if (traffic.wanted >= 1 && wantedWas < 1) chatter?.radio?.(`All units: suspect ${onFoot.active ? 'on foot' : 'in a vehicle'}${here ? ', ' + here.charAt(0) + here.slice(1).toLowerCase() : ''}. Respond.`);
+    if (traffic.wanted >= 1 && wantedWas < 1) chatter?.radio?.(`All units: suspect ${onFoot.active ? 'on foot' : 'in a ' + paintName() + ' vehicle'}${here ? ', ' + here.charAt(0) + here.slice(1).toLowerCase() : ''}. Respond.`);
     // three stars makes the news: the station you are listening to breaks in
     if (traffic.wanted >= 3 && wantedWas < 3) radio?.news?.(`Police are pursuing an armed suspect${here ? ' through ' + here.charAt(0) + here.slice(1).toLowerCase() : ' across the city'}. Residents are asked to stay indoors.`);
     wantedWas = traffic.wanted;

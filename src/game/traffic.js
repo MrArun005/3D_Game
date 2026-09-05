@@ -882,7 +882,12 @@ export class Traffic {
       this.coldFor = (this.coldFor ?? 0) + dt;
       if (this.wanted > 0 && this.coldFor > 5 && (this._nearest ?? Infinity) < 200) {
         this._searchT = (this._searchT ?? 0) - dt;
-        if (this._searchT <= 0) { this._searchT = 9 + this.rand() * 5; this.chatter?.radioPool?.('search'); }
+        if (this._searchT <= 0) {
+          this._searchT = 9 + this.rand() * 5;
+          // half the calls name the district they last had you in; the rest are the pool
+          const dn = this.seenX !== undefined && this.world?.district?.districtAt?.(this.seenX, this.seenZ);
+          if (dn && this.rand() < 0.5) this.chatter?.radio?.(`Last seen in ${dn.charAt(0) + dn.slice(1).toLowerCase()}. Units sweep the area.`); else this.chatter?.radioPool?.('search');
+        }
       }
     }
     if (this.wanted > 0) {
