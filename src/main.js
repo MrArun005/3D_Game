@@ -193,6 +193,8 @@ if (new URLSearchParams(location.search).has('debug')) {
   window.__aim = (v) => { aiming = !!v; };
   window.__police = () => traffic.police.filter((c) => c.live).map((c) => ({ deployed: !!c.deployed, state: c.state, gun: c.gunKind, hp: c.hp, down: +c.down.toFixed(1), pose: c.pose, d: Math.round(Math.hypot(c.x - (onFoot.active ? onFoot.x : car.x), c.z - (onFoot.active ? onFoot.z : car.z))) }));
   window.__wanted = (n) => { traffic.wanted = n; };
+  window.__time = (h) => { clock.hour = ((+h) % 24 + 24) % 24; };          // the recording harness sets the hour
+  window.__cmd = (line) => (commands ? commands.execute(line) : false);   // and runs chat commands ('/time 22', '/tp ...')
   window.__breakNear = (x, z, r = 3) => debris.breakNear(x, z, r, car, 12);
   // frame-time distribution + worst chunk-build slice, for the perf harness
   window.__perf = () => ({ frames: [...stats.samples], chunk: stats.worstChunkMs });
