@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { buildOfficer, PoseBlender, lookAt } from '../world/officer.js';
 import { buildWeaponMesh, ARSENAL } from './weapons.js';
-import { roadblockPosts, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile } from './policeAi.js';
+import { roadblockPosts, burstFor, hasLineOfSight, targetProfile } from './policeAi.js';
 
 /**
  * Roadblocks. At three stars and above the police stop chasing you and start
@@ -141,9 +141,7 @@ export class Roadblock {
         p.burst--;
         p.fireT = p.burst > 0 ? burstFor('rifle').gap : 1.2 + this.traffic.rand() * 1.0;   // seeded: same fight, same seed
         p.pose = 'peek';
-        const w = ARSENAL.rifle;
-        const landed = shotLands(gx, gy, gz, tgt.x, ty, tgt.z, prof.r, aimJitter(lvl, gap, tgt.speed ?? Math.abs(car.fwdSpeed ?? 0)) + w.restSpread, this.traffic.rand);
-        this.traffic.onShot?.(gap, landed, w.damage, p.group.position, 'rifle');
+        this.traffic.fireAt(gx, gy, gz, tgt, 'rifle', lvl);   // the one place a police round is rolled: profile, jitter, report, tracer
       } else if (p.burst <= 0 && p.fireT < 0.6) p.pose = 'crouch';
       p.blender.apply(p.joints, p.pose, p.poseT, dt, 0.15);
       lookAt(p.joints, face - (-p.group.rotation.y + Math.PI / 2));

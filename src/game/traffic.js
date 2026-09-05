@@ -78,7 +78,7 @@ export class Traffic {
   /** How many cars should be hunting at this wanted level. */
   #wantedCars() {
     // one cruiser is always out on patrol (a witness, and a city that looks policed); the hunt scales with the stars
-    return Math.max(this.patrol === false ? 0 : 1, Math.min(6, Math.floor(this.wanted)));
+    return Math.max(this.patrol === false || !this.E ? 0 : 1, Math.min(6, Math.floor(this.wanted)));   // the patrol needs the road graph
   }
 
   /** The civilian road machinery for a cruiser: follow the graph, keep distance, place. */
@@ -652,9 +652,10 @@ export class Traffic {
   /* One aimed police round at the player, whoever fires it: the target's
      profile (crouched is smaller), the shooter's skill at this star level on
      top of the weapon's own spread, the roll, and the report to main. The
-     door officers, the rooftop rifles and the door gunner all fire through
-     here, so a change to how the police shoot is one change. */
-  #fireAt(ox, oy, oz, player, kind, stars, jitterMul = 1, dmgMul = 1) {
+     door officers, the rooftop rifles, the door gunner and the roadblock's
+     posts all fire through here, so a change to how the police shoot is one
+     change. Public for roadblock.js. */
+  fireAt(ox, oy, oz, player, kind, stars, jitterMul = 1, dmgMul = 1) {
     const prof = targetProfile(!!player.onFoot, !!player.crouch);
     const ty = (player.y ?? 0) + prof.y;
     const gap = Math.hypot(player.x - ox, player.z - oz);
@@ -721,7 +722,7 @@ export class Traffic {
         if (m.burstLeft <= 0) m.burstLeft = burstFor('rifle').shots;
         m.burstLeft--;
         m.fireT = m.burstLeft > 0 ? burstFor('rifle').gap : 1.4 + this.rand() * 1.2;
-        this.#fireAt(gx, gy, gz, player, 'rifle', stars, 0.8);   // a braced rifle from height: steadier than the street
+        this.fireAt(gx, gy, gz, player, 'rifle', stars, 0.8);   // a braced rifle from height: steadier than the street
       }
     }
   }
@@ -741,7 +742,7 @@ export class Traffic {
     this._gunBurst = (this._gunBurst ?? 0) > 0 ? this._gunBurst - 1 : burstFor('smg').shots - 1;
     this._gunT = this._gunBurst > 0 ? burstFor('smg').gap : 2.5 + this.rand() * 1.5;
     if (!canSee) return;
-    this.#fireAt(h.pos.x, h.pos.y - 1, h.pos.z, player, 'smg', 5, 1.3);   // a moving platform: wide
+    this.fireAt(h.pos.x, h.pos.y - 1, h.pos.z, player, 'smg', 5, 1.3);   // a moving platform: wide
     this.crowd?.panic?.(player.x, player.z, 18);
   }
 
@@ -1075,7 +1076,7 @@ export class Traffic {
           c.burstLeft--;
           if (c.burstLeft === 0) c.fireT = b.pause;
           // a shotgun at street range is the whole spread of pellets, three pistol rounds' worth
-          const landed = canSee && this.#fireAt(c.officer.position.x, gunY, c.officer.position.z, player, c.gunKind, Math.floor(this.wanted), 1, c.gunKind === 'shotgun' ? 3 : 1);
+          const landed = canSee && this.fireAt(c.officer.position.x, gunY, c.officer.position.z, player, c.gunKind, Math.floor(this.wanted), 1, c.gunKind === 'shotgun' ? 3 : 1);
           this.crowd?.panic?.(c.officer.position.x, c.officer.position.z, 20);
           if (!landed && this.decals && player.onFoot) {
             // the round went somewhere: a mark in the road a stride from you says how close
