@@ -213,6 +213,14 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   'weapon6'; main maps index 5 -> WEAPON_KINDS[4]; HUD keys it 6); the first
   5-star marksman carries it. `test/actions.test.js` asserts every input
   action has a main.js handler (the 'camera' handler was lost once).
+- **Night look (2026-09-05, from Arun's cover art `assets/art/game_cover.jpg`
+  and `splash_screen.jpg`: ink sky, saturated magenta/cyan neon, wet road,
+  heavy bloom)**: grade.js `uSat` 1.32 + indigo/warm split tone `uSplit` at
+  night, bloom 1.35 / 0.72 / threshold 0.72 in `setNight`; clock.js night
+  dome tint (0.045, 0.05, 0.10), environment 0.24, sign emissive 2.46;
+  tokyo emissive 1.8; wet tarmac envMapIntensity up to 3.7. Checked in the
+  browser at the `little-tokyo` preset (on the road now; the old point was
+  inside a building). Still to do: more magenta/cyan in the sign palettes.
 - **Recording (2026-09-05)**: `tools/record-tour.mjs` drives a headed
   Playwright Chrome against `vite preview` (never the dev server: an HMR
   reload mid-tour killed one take) with `recordVideo`, captions each scene,
