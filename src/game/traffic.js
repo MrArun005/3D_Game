@@ -10,6 +10,12 @@ import { buildWeaponMesh, ARSENAL } from './weapons.js';
 import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED, pickRooftops, coverSide, evasionDecay, searchRadius, crimeWitnessed } from './policeAi.js';
 import { roofsNear } from '../world/districtWorld.js';
 
+/* Every officer's muzzle-flash sphere shares one geometry and one material;
+   a redeploy used to allocate both and never dispose them. */
+let _flashGeo = null, _flashMat = null;
+const flashGeo = () => (_flashGeo ??= new THREE.SphereGeometry(0.12, 8, 6));
+const flashMat = () => (_flashMat ??= new THREE.MeshBasicMaterial({ color: 0xfff0c0, toneMapped: false }));
+
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
 
 /** Free-flow speed by road class, m/s. A street is not a bypass. */
@@ -664,6 +670,10 @@ export class Traffic {
     this._from ??= { x: 0, y: 0, z: 0 };
     this._from.x = ox; this._from.y = oy; this._from.z = oz;
     this.onShot?.(gap, landed, w.damage * dmgMul, this._from, kind);
+    if (this.flashLight && gap < 35) {
+      // the muzzle lights the street for a frame: the player's flash light, borrowed (grenades borrow it too)
+      this.flashLight.position.set(ox, oy, oz); this.flashLight.intensity = 3.2; this._flashT = 0.06;
+    }
     if (this.tracers) {
       // a hit stops at you; a miss goes past, offset the way a miss is: a stride wide, on through
       const miss = landed ? 0 : 0.6 + this.rand() * 1.4, a = this.rand() * Math.PI * 2;
@@ -755,6 +765,7 @@ export class Traffic {
     this._deployed = 0; for (const q of this.police) if (q.deployed) this._deployed++;
     for (const v of this.cars) if (v.fleeT > 0) { v.fleeT -= dt; if (v.fleeT <= 0 && v.baseCruise) v.cruise = v.baseCruise; }
     this.#tickDrops(dt);
+    if (this._flashT > 0) { this._flashT -= dt; if (this._flashT <= 0) this.flashLight.intensity = 0; }
     this.#rooftops(player, dt);
     this.#airGunner(player, dt);
     this.hot = false;   // set true below by any officer who can see you this frame
@@ -980,7 +991,7 @@ export class Traffic {
         c.gunKind = weaponForWanted(Math.floor(this.wanted), c.slot);
         if (!c.gun) {   // his last one is lying in the road from the time he went down
           c.gun = buildWeaponMesh(c.gunKind); c.gun.position.set(0, -0.58, 0); c.gun.rotation.z = -Math.PI / 2; c.joints.armR.add(c.gun);
-          c.flash = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), new THREE.MeshBasicMaterial({ color: 0xfff0c0, toneMapped: false })); c.flash.visible = false; c.gun.add(c.flash);
+          c.flash = new THREE.Mesh(flashGeo(), flashMat()); c.flash.visible = false; c.gun.add(c.flash);   // shared: one sphere, one material for every muzzle
         }
         c.gun.geometry = buildWeaponMesh(c.gunKind).geometry;
         c.flash.position.x = ARSENAL[c.gunKind].muzzle;
