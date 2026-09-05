@@ -153,6 +153,14 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
       boards.push({ x: hw + 0.335, y: 4.6 + colH / 2, z: cz, yaw: front.yaw, w: 0.92, h: colH * 0.94 });
     }
   }
+  // izakaya: a row of red paper lanterns under the awning, glowing
+  if (rnd() < 0.35) {
+    const n = 3 + Math.floor(rnd() * 3), span = front.w * 0.7;
+    for (let i = 0; i < n; i++) {
+      const [lx, lz] = onFace(front, -span / 2 + span * (i / Math.max(1, n - 1)), 0.55);
+      parts.push(at(paint(new THREE.CylinderGeometry(0.17, 0.17, 0.32, 8), 0xc0392b, [1.0, 0.32, 0.12], 1.1), lx, 2.95, lz));
+    }
+  }
   if (neon) for (let s = 1; s < floors; s += 1 + Math.floor(rnd() * 2)) {
     const [nx, nz] = onFace(front, 0, 0.06);
     parts.push(at(box(0.06, 0.07, front.w * 0.96, 0x222222, neon, 1.4), nx, floorY(s) + 0.2, nz));
@@ -196,6 +204,55 @@ export function frontRotation(probe, toWorld, hw, hd) {
   }
   return best;
 }
+
+/**
+ * The street's overhead: utility poles along the kerb and sagging power lines
+ * between them, with a drop to each building. `segments` are
+ * { ax, az, bx, bz, half } in world metres; `near(x, z)` says whether a point
+ * is by a Tokyo building. Returns { parts } (pole geometry for the chunk's
+ * Tokyo mesh, world space) and { lines } (a Float32Array of segment pairs for
+ * one LineSegments). Poles every ~22 m, alternating sides; wires sag 0.9 m at
+ * mid-span in five pieces. Deterministic per chunk seed.
+ */
+export const POLE_H = 9.5;
+export function buildTokyoStreet(segments, near, seed) {
+  const rnd = mulberry32((seed * 2246822519) >>> 0);
+  const parts = [], lines = [];
+  const sag = (a, b, out) => {
+    const N = 5;
+    for (let i = 0; i < N; i++) {
+      const t0 = i / N, t1 = (i + 1) / N;
+      for (const t of [t0, t1]) {
+        const s = 4 * t * (1 - t);   // parabola, 1 at mid-span
+        out.push(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t - 0.9 * s, a[2] + (b[2] - a[2]) * t);
+      }
+    }
+  };
+  for (const s of segments) {
+    const dx = s.bx - s.ax, dz = s.bz - s.az, L = Math.hypot(dx, dz);
+    if (L < 20) continue;
+    const ux = dx / L, uz = dz / L, nx = -uz, nz = ux, off = s.half + 0.9;
+    let prev = null;
+    for (let t = 9 + rnd() * 6, i = 0; t < L - 6; t += 20 + rnd() * 5, i++) {
+      const side = i % 2 ? 1 : -1;
+      const px = s.ax + ux * t + nx * off * side, pz = s.az + uz * t + nz * off * side;
+      if (!near(px, pz)) { prev = null; continue; }
+      // the pole: a dark concrete cylinder with a cross-arm and two insulators
+      parts.push(at(paint(new THREE.CylinderGeometry(0.14, 0.18, POLE_H, 8), 0x6e6f72), px, POLE_H / 2, pz));
+      parts.push(at(box(1.6, 0.1, 0.1, 0x3a3d42), px, POLE_H - 0.6, pz, Math.atan2(-uz, ux)));
+      const top = [px, POLE_H - 0.55, pz];
+      if (prev) { sag(prev, top, lines); sag([prev[0], prev[1] - 0.35, prev[2]], [top[0], top[1] - 0.35, top[2]], lines); }   // two lines per span
+      // a drop to the nearest building face, roughly: back toward the block side at about 7 m
+      const bx = px + nx * side * 4.5, bz = pz + nz * side * 4.5;
+      lines.push(px, POLE_H - 0.9, pz, bx, 7.2 + rnd() * 1.5, bz);
+      prev = top;
+    }
+  }
+  return { parts, lines: new Float32Array(lines) };
+}
+
+let WIRE_MAT = null;
+export function wireMaterial() { return (WIRE_MAT ??= new THREE.LineBasicMaterial({ color: 0x0f1113 })); }
 
 /** One material for every Tokyo building: vertex colour albedo, `emit` attribute as emissive, dimmed by day through emissiveIntensity. */
 let MAT = null;

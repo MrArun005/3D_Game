@@ -11,7 +11,7 @@ import { PAINT_COLOURS, BODY_KEYS } from '../vehicle/config.js';
 import { signalState, LAMP_COLOURS } from './signals.js';
 import { BREAK_CLASS } from './breakables.js';
 import { ZEBRA_DEPTH } from '../game/traffic.js';
-import { buildTokyoBuilding, frontRotation, tokyoMaterial } from './tokyo.js';
+import { buildTokyoBuilding, frontRotation, tokyoMaterial, buildTokyoStreet, wireMaterial } from './tokyo.js';
 import { tileUv, SIGN_TILES } from './signs.js';
 
 /**
@@ -1175,7 +1175,7 @@ export class DistrictWorld {
     const blocks = this.blkByChunk.get(k) ?? [];
     const boxes = [];              // solid building footprints in this chunk
     const kitPlaced = {};          // kit -> [geometry with matrix applied] (whole Kenney buildings)
-    const tokyoParts = [], tokyoBoards = [];   // Little Tokyo: our own buildings (world/tokyo.js), one mesh per chunk
+    const tokyoParts = [], tokyoBoards = [], tokyoProps = [];   // Little Tokyo: our own buildings (world/tokyo.js), one mesh per chunk
     const slabs = { block: [], park: [], lot: [], vacant: [] };
     const facades = {}, bases = {};
     const roofs = [], glassRoofs = [], crowns = [], masts = [];
@@ -1228,6 +1228,15 @@ export class DistrictWorld {
             tokyoBoards.push({ m: mat4(_p.x, _p.y, _p.z, -yaw, bd.w, bd.h, 1), u, v });
           }
           boxes.push({ x: wx, z: wz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: b.height, district: bl.district, tokyo: true });
+          // kerbside life in front of it (kit props, placed by us): a vending machine at one corner, sometimes an A-frame or a stall
+          {
+            const fw = swap ? g.w / 2 : g.d / 2, fhw = swap ? g.d / 2 : g.w / 2;   // the built building's half sizes
+            const q = new THREE.Vector3(), r0 = hash(wz * 0.53, wx * 0.11);
+            const put = (name, lx, lz) => { q.set(lx, 0, lz).applyMatrix4(M); tokyoProps.push({ name, x: q.x, z: q.z, yaw: rot - bl.angle }); };
+            put('props/junction_box', fhw + 1.5, fw - 1.0);
+            if (r0 < 0.45) put('props/a_frame_sign', fhw + 1.3, -fw * 0.3);
+            if (r0 > 0.7 && fw > 3) put('props/market_stall', fhw + 1.9, 0.6);
+          }
           continue;
         }
         const noKit = typeof location !== 'undefined' && new URLSearchParams(location.search).has('nokit');
@@ -1387,6 +1396,7 @@ export class DistrictWorld {
       this.facadeGroups.set(k, faces);
       const fbatch = new InstanceBatch(this.catalogue);
       const signs = [...tokyoBoards], windows = [];   // Little Tokyo's kanban and fascias ride the same atlas quads
+      for (const p of tokyoProps) fbatch.add(p.name, placeAsset(p.x, KERB_H, p.z, p.yaw));   // and its kerbside props
       // sliced: the frontage walk (modules, signs, windows, side walls) was the worst step
       for (let i = 0; i < dressable.length; i += 10) { dressFacades(fbatch, dressable.slice(i, i + 10), this.district, roadDepth, signs, windows); yield; }
       /* Phase 1: the shop signs, one instanced draw per chunk. Per-instance
@@ -1434,6 +1444,19 @@ export class DistrictWorld {
 
     // Little Tokyo: every building in the chunk in one mesh, one material (tokyo.js)
     if (tokyoParts.length) {
+      // the street's overhead: poles join the building mesh, the wires are one LineSegments
+      const tBoxes = boxes.filter((b) => b.tokyo);
+      const near = (x, z) => tBoxes.some((b) => Math.hypot(b.x - x, b.z - z) < Math.max(b.hw, b.hd) + 14);
+      const street = buildTokyoStreet(segs.map((id) => this.district.segments[id]).filter((s) => s && s.cls !== 'freeway' && s.cls !== 'ramp'), near, Math.floor(hash(tBoxes[0].x * 0.13, tBoxes[0].z * 0.47) * 1e9));   // seeded by the chunk's first building, not a chunk coordinate this scope does not have
+      tokyoParts.push(...street.parts);
+      if (street.lines.length) {
+        const lg = new THREE.BufferGeometry();
+        lg.setAttribute('position', new THREE.BufferAttribute(street.lines, 3));
+        lg.userData.owned = true;
+        const wires = new THREE.LineSegments(lg, wireMaterial());
+        wires.frustumCulled = false;
+        group.add(wires);
+      }
       const merged = mergeGeometries(tokyoParts, false);
       for (const g of tokyoParts) g.dispose();
       if (merged) {
