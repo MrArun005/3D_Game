@@ -9,12 +9,13 @@ import { buildOfficer, poseOfficer, PoseBlender, lookAt, officerMaterial } from 
 import { buildWeaponMesh, ARSENAL } from './weapons.js';
 import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED, pickRooftops, coverSide, evasionDecay, searchRadius, crimeWitnessed } from './policeAi.js';
 import { roofsNear } from '../world/districtWorld.js';
+import { glow } from '../core/additive.js';
 
 /* Every officer's muzzle-flash sphere shares one geometry and one material;
    a redeploy used to allocate both and never dispose them. */
 let _flashGeo = null, _flashMat = null;
 const flashGeo = () => (_flashGeo ??= new THREE.SphereGeometry(0.12, 8, 6));
-const flashMat = () => (_flashMat ??= new THREE.MeshBasicMaterial({ color: 0xfff0c0, toneMapped: false }));
+const flashMat = () => (_flashMat ??= glow(new THREE.MeshBasicMaterial({ color: 0xfff0c0, toneMapped: false }), 2.5));
 
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
 

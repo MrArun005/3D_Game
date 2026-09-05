@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mrt, vec4 } from 'three/tsl';
+import { glow } from '../core/additive.js';
 
 /**
  * Incoming fire you can see. The player's weapon draws its own one-frame line
@@ -35,7 +35,7 @@ export class Tracers {
     g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
     g.setAttribute('color', new THREE.BufferAttribute(this.col, 3));
     const m = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: true });
-    m.mrtNode = mrt({ normal: vec4(0) });
+    glow(m, 1.6);   // a streak that blooms is a streak you see at 60 m
     this.mesh = new THREE.LineSegments(g, m);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 6;

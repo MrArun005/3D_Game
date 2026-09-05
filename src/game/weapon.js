@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mrt, vec4 } from 'three/tsl';
+import { glow } from '../core/additive.js';
 import { ARSENAL, spreadFor, heatAfterShot, heatAfterRest } from './weapons.js';
 
 /**
@@ -72,7 +72,7 @@ export class Weapon {
     });
     /* Additive: it must not write into the MRT normal target or GTAO reads
        every spark as occlusion (the rain speckle bug, CLAUDE.md 2026-08-31). */
-    sparkMat.mrtNode = mrt({ normal: vec4(0) });
+    glow(sparkMat, 1.3);
     this.sparks = new THREE.Points(sparkGeo, sparkMat);
     scene.add(this.sparks);
 
@@ -271,6 +271,7 @@ export class Weapon {
     const fx = ox + dx * 0.6, fy = oy + dy * 0.6, fz = oz + dz * 0.6;
     this.flash.position.set(fx, fy, fz);
     this.flash.visible = true;
+    if (!this.flash.material.mrtNode) glow(this.flash.material, 2.5);   // once: the flash blooms like the light it stands for
     this.light.position.set(fx, fy, fz);
     this.light.intensity = 4.5;
 
