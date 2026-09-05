@@ -1937,6 +1937,8 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     const here = districtRef.districtAt(onFoot.active ? onFoot.x : car.x, onFoot.active ? onFoot.z : car.z);
     // the first star: dispatch puts out the description -- on foot or in a vehicle, and where
     if (traffic.wanted >= 1 && wantedWas < 1) chatter?.radio?.(`All units: suspect ${onFoot.active ? 'on foot' : 'in a vehicle'}${here ? ', ' + here.charAt(0) + here.slice(1).toLowerCase() : ''}. Respond.`);
+    // three stars makes the news: the station you are listening to breaks in
+    if (traffic.wanted >= 3 && wantedWas < 3) radio?.news?.(`Police are pursuing an armed suspect${here ? ' through ' + here.charAt(0) + here.slice(1).toLowerCase() : ' across the city'}. Residents are asked to stay indoors.`);
     wantedWas = traffic.wanted;
     if (here && here !== lastDistrict) {
       if (lastDistrict !== null) { hud.flash(here); if (traffic.wanted >= 1) chatter?.radio?.(`Suspect heading into ${here.charAt(0) + here.slice(1).toLowerCase()}. Units in the area respond.`); }

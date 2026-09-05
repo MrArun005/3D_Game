@@ -80,6 +80,21 @@ export class Radio {
     this.timer = setInterval(() => this.#schedule(), 90);
   }
 
+  /** A newsflash on whatever station is playing: the DJ voice reads it, the music dips for a moment. Silent with the radio off. */
+  news(line) {
+    if (this.station < 0 || !this.bus || !line) return;
+    try {
+      if (typeof speechSynthesis === 'undefined' || new URLSearchParams(location.search).has('novoice')) return;
+      const now = this.ctx.currentTime;
+      this.bus.gain.setTargetAtTime(0.05, now, 0.2); this.bus.gain.setTargetAtTime(0.16, now + 4.5, 0.6);   // the duck
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(`Newsflash. ${line}`.replace(/[^\x00-\x7F]/g, ' '));
+      u.rate = 1.02; u.pitch = 1.0; u.volume = 0.65; u.lang = 'en-US';
+      speechSynthesis.speak(u);
+      this.hud.flash(`📻 NEWSFLASH · ${line}`);
+    } catch { /* no voice, no harm */ }
+  }
+
   #tone(type, f, t, dur, gain, dest = this.bus) {
     const o = this.ctx.createOscillator(), g = this.ctx.createGain();
     o.type = type; o.frequency.setValueAtTime(f, t);
