@@ -120,6 +120,13 @@ export class StoryManager {
     if (this.stepIdx >= this.active.steps.length) {
       // Completed!
       const reward = this.active.payout;
+      if (typeof window !== 'undefined' && window._reputation) {
+        if (this.active.type === 'heist') {
+          window._reputation.adjust(-85, 'HEIST MASTERMIND');
+        } else {
+          window._reputation.adjust(70, 'VIGILANTE BOUNTY SECURED');
+        }
+      }
       this.garage.addCash(reward, 'MISSION PASSED');
       if (this.hud?.showVictoryBanner) {
         this.hud.showVictoryBanner(this.active.title, this.active.subtitle, reward);

@@ -1721,7 +1721,6 @@ function frameBody() {
   clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: currentVehicle, dome, stars });
   if (weather) weather.update(camera, currentVehicle, dt);
   lightPool?.update(dt, currentVehicle.x, currentVehicle.z, traffic);
-  const playerTarget = onFoot.active ? { x: camera.position.x, y: camera.position.y, z: camera.position.z } : currentVehicle;
   reputation?.update(dt, playerTarget.x, playerTarget.z, traffic, car, damageModel);
   intelScanner?.update(dt, camera, playerTarget, traffic, reputation?.safehouses);
   grade.setDrops(DAY ? 0 : chase.mode >= 2 ? 1.2 : 0.68);
