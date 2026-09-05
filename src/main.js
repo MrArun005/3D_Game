@@ -459,6 +459,7 @@ let farShotT = 25;        // distant gunfire cadence (ambient, night)
 let farSirenT = 70;       // distant siren cadence (ambient, any hour)
 let rainHeard = null;     // last rain amount handed to the audio
 let tokyoAmbT = 0;        // district-ambience poll cadence
+let clockRestored = false;
 let lastDistrict = null, distT = 0;  // for the area toast and the dispatch call-out on a district change (polled twice a second)
 let vigilante = null;     // { f: fugitive car, t: seconds left } while a patrol chase near you is yours to finish
 let hurtPulse = 0;        // the red edge on the frame, decays each frame (grade.setHurt)
@@ -466,7 +467,7 @@ let armour = 0;           // body armour 0..1, bought at Ammu-Nation, soaks 60% 
 /* The arsenal survives a reload of the page like cash and the garage do. */
 try { const d = JSON.parse(localStorage.getItem('hb.arsenal') || 'null'); if (d) { weapon.restore(d); grenades.count = d.grenades ?? grenades.count; armour = d.armour ?? 0; } } catch { /* private mode */ }
 let arsenalSaveT = 0;
-addEventListener('pagehide', () => saveArsenal());
+addEventListener('pagehide', () => { saveArsenal(); try { localStorage.setItem('hb.clock', clock.hour.toFixed(3)); } catch { /* private mode */ } });
 let lastArsenalJson = '';
 function saveArsenal() { try { const j = JSON.stringify({ ...weapon.serialize(), grenades: grenades.count, armour }); if (j !== lastArsenalJson) { lastArsenalJson = j; localStorage.setItem('hb.arsenal', j); } } catch { /* private mode */ } }
 const _rayHit = new THREE.Vector3();
@@ -1732,7 +1733,14 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     }
   }
   if (punchCool > 0) punchCool -= dt;
-  arsenalSaveT += dt; if (arsenalSaveT > 5) { arsenalSaveT = 0; saveArsenal(); }
+  arsenalSaveT += dt; if (arsenalSaveT > 5) { arsenalSaveT = 0; saveArsenal(); try { localStorage.setItem('hb.clock', clock.hour.toFixed(3)); } catch { /* private mode */ } }
+  /* The time of day persists (GTA does not reset to noon when you come back).
+     Restored once, on the first frame, unless the URL pins a time (?night,
+     ?dusk) -- those are for looking at something in particular. */
+  if (!clockRestored) {
+    clockRestored = true;
+    try { const q = new URLSearchParams(location.search); const h = localStorage.getItem('hb.clock'); if (h !== null && !q.has('night') && !q.has('dusk') && !q.has('hour')) clock.hour = ((+h) % 24 + 24) % 24; } catch { /* private mode */ }
+  }
   /* Hospitals heal: stand within 6 m of one on foot and health climbs at 15%/s. Free, like GTA's. */
   healTick += dt;
   if (healTick > 0.5) {
