@@ -69,12 +69,12 @@ export class GameClock {
       hemiIntensity = 0.32 + t * 0.23;
     } else {
       // Deep Night (Moonlight)
-      this.sunColor.setRGB(0.18, 0.28, 0.45);
-      this.hemiSky.setRGB(0.08, 0.12, 0.20);
-      this.hemiGround.setRGB(0.04, 0.06, 0.09);
+      this.sunColor.setRGB(0.16, 0.24, 0.42);
+      this.hemiSky.setRGB(0.06, 0.09, 0.16);
+      this.hemiGround.setRGB(0.03, 0.045, 0.07);
       this.fogColor.setRGB(0.035, 0.045, 0.09);   // ink, like the dome: the old 0.14 blue read as a grey-blue haze in every night frame
-      sunIntensity = 0.42; // Soft moon key
-      hemiIntensity = 0.22;
+      sunIntensity = 0.30; // Soft moon key -- the pale far mountains were lit like dusk at 0.42
+      hemiIntensity = 0.17;
     }
 
     // Apply to scene lights if provided
@@ -113,7 +113,7 @@ export class GameClock {
           const t = (this.hour - 5.2) / 2.0;
           dome.material.color.setRGB(0.55 + t * 0.45, 0.45 + t * 0.55, 0.60 + t * 0.40);
         } else {
-          dome.material.color.setRGB(0.045, 0.05, 0.10);   // near-black indigo; the day dome tinted to 0.12 read as mid-blue
+          dome.material.color.setRGB(0.03, 0.035, 0.075);   // ink; the day dome tinted to 0.12 read as mid-blue, 0.045 still as evening
         }
       }
     }

@@ -168,7 +168,7 @@ export function createGrade(renderer, scene, camera, {
        neon and the sky as ink. Both uniforms sit at 0/1 by day: no change. */
     const lum = c.r.mul(0.2126).add(c.g.mul(0.7152)).add(c.b.mul(0.0722));
     c.assign(mix(vec3(lum), c, uSat));
-    const shadowTint = vec3(0.86, 0.90, 1.18), highTint = vec3(1.08, 0.97, 1.05);
+    const shadowTint = vec3(0.92, 0.93, 1.06), highTint = vec3(1.08, 0.97, 1.05);   // a hint of indigo in the darks; 1.18 turned the night sky mid-blue
     c.assign(c.mul(mix(shadowTint, highTint, smoothstep(0.05, 0.75, lum)).sub(1.0).mul(uSplit).add(1.0)));
 
     // hurt: blood at the edges of vision, GTA's way of saying the number without the number
