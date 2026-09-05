@@ -666,7 +666,13 @@ export class Traffic {
   hitMark(m, damage = 26) {
     if (!m || m.down) return false;
     m.hp = (m.hp ?? 60) - damage;
-    if (m.hp <= 0) { m.down = true; this.scene.remove(m.group); this.marks.splice(this.marks.indexOf(m), 1); this.chatter?.radioPool?.('down'); return true; }
+    if (m.hp <= 0) {
+      // he falls where he stood and lies on the roof for a while; #rooftops plays the fall and clears him
+      m.down = 0.001; m.gun && (m.gun.visible = false);
+      this.blood?.stamp(m.group.position.x, m.group.position.y + 0.01, m.group.position.z, 0, 1, 0, 1.1);
+      this.chatter?.radioPool?.('down');
+      return true;
+    }
     return false;
   }
 
@@ -760,19 +766,28 @@ export class Traffic {
         const built = buildOfficer(90 + i);
         built.group.position.set(r.x, r.h + 0.5, r.z);
         const gun = buildWeaponMesh('rifle'); gun.position.set(0, -0.58, 0); gun.rotation.z = -Math.PI / 2;
+        const flash = new THREE.Mesh(flashGeo(), flashMat()); flash.position.x = ARSENAL.rifle.muzzle; flash.visible = false; gun.add(flash);   // you see the rooftop shot before you hear it
         built.joints.armR.add(gun);
         this.scene.add(built.group);
-        this.marks.push({ group: built.group, joints: built.joints, blender: new PoseBlender(), roof: r, fireT: 1.5 + i, burstLeft: 0, poseT: 0 });
+        this.marks.push({ group: built.group, joints: built.joints, blender: new PoseBlender(), roof: r, fireT: 1.5 + i, burstLeft: 0, poseT: 0, gun, flash, flashT: 0, down: 0 });
         this.chatter?.radioPool?.('rooftops');
       }
     }
     const ty = (player.y ?? 0) + targetProfile(!!player.onFoot, !!player.crouch).y;
-    for (const m of this.marks) {
+    for (let mi = this.marks.length - 1; mi >= 0; mi--) {
+      const m = this.marks[mi];
+      if (m.down > 0) {   // down: the fall plays out, then he is cleared from the roof
+        m.down += dt;
+        m.blender.apply(m.joints, 'fall', Math.min(1, m.down / 0.6), dt, 0.1);
+        if (m.down > 9) { this.scene.remove(m.group); this.marks.splice(mi, 1); }
+        continue;
+      }
       const gx = m.group.position.x, gz = m.group.position.z, gy = m.group.position.y + 1.3;
       const face = Math.atan2(-(player.z - gz), player.x - gx);
       m.group.rotation.y = -face + Math.PI / 2;
       m.poseT += dt;
       m.blender.apply(m.joints, 'aim', m.poseT, dt, 0.3);
+      if (m.flash) { m.flashT -= dt; m.flash.visible = m.flashT > 0; }
       const bldg = (this._bldg || []).filter((b) => Math.hypot(b.x - m.roof.x, b.z - m.roof.z) > 1);   // his own roof cannot block him
       const canSee = hasLineOfSight(gx, gy, gz, player.x, ty, player.z, bldg, this.cars, null);
       m.fireT -= dt;
@@ -781,6 +796,7 @@ export class Traffic {
         m.burstLeft--;
         m.fireT = m.burstLeft > 0 ? burstFor('rifle').gap : 1.4 + this.rand() * 1.2;
         this.fireAt(gx, gy, gz, player, 'rifle', stars, 0.8);   // a braced rifle from height: steadier than the street
+        m.flashT = 0.07;
       }
     }
   }

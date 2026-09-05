@@ -54,7 +54,7 @@ export class Roadblock {
   hitPost(p, damage = 26) {
     if (!p || p.down > 0) return false;
     p.hp -= damage;
-    if (p.hp <= 0) { p.down = 0.001; this.traffic.chatter?.radioPool?.('down'); return true; }
+    if (p.hp <= 0) { p.down = 0.001; this.traffic.chatter?.radioPool?.('down'); this.traffic.blood?.stamp(p.group.position.x, p.group.position.y + 0.01, p.group.position.z, 0, 1, 0, 1.1); return true; }
     return false;
   }
 
