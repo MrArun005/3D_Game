@@ -892,6 +892,7 @@ export class Traffic {
         if (before > 0 && this.wanted === 0 && this.coldFor > 5) { this.chatter?.radioPool?.('lost'); this.hud?.flash?.('YOU LOST THEM'); }
       }
     } else this.coldFor = 0;
+    if (this.wanted < 4) this._swatShown = false;
 
     // Hoist police-active check out of per-car loop
     /* Which cruisers have their lights on -- hunting you, or a patrol on a
@@ -1150,7 +1151,10 @@ export class Traffic {
         c.gun.geometry = buildWeaponMesh(c.gunKind).geometry;
         c.flash.position.x = ARSENAL[c.gunKind].muzzle;
         { const cs = coverSide(c.x, c.z, c.yaw, player.x, player.z); c.coverX = cs.x; c.coverZ = cs.z; }   // the door away from you, car between
-        this.chatter?.radioPool?.(Math.floor(this.wanted) >= 3 ? 'deployHot' : 'deploy');
+        if (swat) {
+          this.chatter?.radioPool?.('swat');
+          if (!this._swatShown) { this._swatShown = true; this.hud?.flash?.('TACTICAL UNIT ON SCENE'); }   // once per four-star spell (reset below four)
+        } else this.chatter?.radioPool?.(Math.floor(this.wanted) >= 3 ? 'deployHot' : 'deploy');
       }
       if (c.deployed && (gap > (player.onFoot ? 65 : 30) || c.deployT <= 0)) {   // on foot they stay out and follow further
         c.deployed = false;
