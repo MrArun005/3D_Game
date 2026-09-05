@@ -550,6 +550,8 @@ function pullTrigger() {
     if (v.deployed && v.officer?.visible && !v.down) {
       const crouched = v.pose === 'crouch';
       _triggerTargets.push({ x: v.officer.position.x, z: v.officer.position.z, y: v.officer.position.y + (crouched ? 0.75 : 1.15), r: crouched ? 0.34 : 0.42, kind: 'officer', ref: v });
+      // the head is its own, smaller target: three times the damage, so a marksman's shot is a marksman's shot
+      _triggerTargets.push({ x: v.officer.position.x, z: v.officer.position.z, y: v.officer.position.y + (crouched ? 1.22 : 1.62), r: 0.13, kind: 'officer', head: true, ref: v });
     }
   }
 
@@ -618,7 +620,7 @@ function pullTrigger() {
   // firing at all is a crime; hitting something is a worse one
   if (hit?.kind !== 'target' && modes?.active !== 'range') traffic.reportCrime(hit ? (hit.kind === 'person' ? 'person' : (hit.kind === 'police' || hit.kind === 'officer') ? 'police' : 'traffic') : 'traffic',
                       hit ? 9 : 1);
-  if (hit && hit.kind === 'officer') { const downed = traffic.hitAny?.(hit.ref, weapon.spec.damage) || roadblock?.hitPost?.(hit.ref, weapon.spec.damage); if (downed) { modes?.onOfficerDown(); story?.onOfficerDown?.(); hud.flash(modes?.active === 'holdout' ? 'OFFICER DOWN · +50' : 'OFFICER DOWN'); } crosshair.hit(hit.ref.down > 0); }
+  if (hit && hit.kind === 'officer') { const dmg = weapon.spec.damage * (hit.head ? 3 : 1); if (hit.head) hud.flash('HEADSHOT'); const downed = traffic.hitAny?.(hit.ref, dmg) || roadblock?.hitPost?.(hit.ref, dmg); if (downed) { modes?.onOfficerDown(); story?.onOfficerDown?.(); hud.flash(modes?.active === 'holdout' ? 'OFFICER DOWN · +50' : 'OFFICER DOWN'); } crosshair.hit(hit.ref.down > 0); }
   if (hit && hit.kind === 'person') hit.ref.down = 0.001;
   if (hit && (hit.kind === 'car' || hit.kind === 'police')) {   // vehicles only: boards, marksmen and posts have no .mesh
     hit.ref.speed *= 0.55;
