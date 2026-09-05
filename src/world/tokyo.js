@@ -171,9 +171,12 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
       if (rnd() < 0.15) continue;
       const cz = side * (hd - 0.55);
       parts.push(at(box(0.28, colH, 0.95, 0xf2f2f2, [0.9, 0.9, 0.9], 0.5), hw + 0.18, 4.6 + colH / 2, cz));
-      // a kanban is a stack of tenants: one panel per floor of the column, each its own tile (the caller picks the tile by position)
-      const panelH = 1.15, n = Math.max(2, Math.floor((colH - 0.2) / (panelH + 0.08)));
-      for (let i = 0; i < n; i++) boards.push({ x: hw + 0.335, y: 4.6 + 0.1 + panelH / 2 + i * (panelH + 0.08), z: cz, yaw: front.yaw, w: 0.9, h: panelH });
+      /* A kanban is a stack of tenants. The atlas tiles are 4:1 landscape, so a
+         panel is `vertical`: the caller rolls the quad 90 degrees and the tile
+         runs UP the column (rotated lettering, as real kanban often carry).
+         2.6 m tall by 0.9 wide keeps the tile near its own aspect. */
+      const panelH = 2.6, n = Math.max(1, Math.floor((colH - 0.2) / (panelH + 0.1)));
+      for (let i = 0; i < n; i++) boards.push({ x: hw + 0.335, y: 4.6 + 0.1 + panelH / 2 + i * (panelH + 0.1), z: cz, yaw: front.yaw, w: 0.9, h: panelH, vertical: true });
     }
   }
   // a vending machine by the door: the lit white box every Tokyo street has, glowing blue-white at night

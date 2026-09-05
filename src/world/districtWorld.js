@@ -1231,7 +1231,11 @@ export class DistrictWorld {
             _p.set(bd.x, bd.y, bd.z).applyMatrix4(M);
             const yaw = bd.yaw + rot - bl.angle;   // the same two turns, applied to the board's facing
             const [u, v] = tileUv(Math.floor(hash(_p.x * 0.37 + bd.y, _p.z * 1.3) * SIGN_TILES), true);
-            tokyoBoards.push({ m: mat4(_p.x, _p.y, _p.z, -yaw, bd.w, bd.h, 1), u, v });
+            if (bd.vertical) {
+              // roll the quad a quarter turn about its normal: the tile's long axis runs up the column
+              const m = new THREE.Matrix4().compose(_p.clone(), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, Math.PI / 2, 'YXZ')), new THREE.Vector3(bd.h, bd.w, 1));
+              tokyoBoards.push({ m, u, v });
+            } else tokyoBoards.push({ m: mat4(_p.x, _p.y, _p.z, -yaw, bd.w, bd.h, 1), u, v });
           }
           boxes.push({ x: wx, z: wz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: b.height, district: bl.district, tokyo: true });
           // kerbside life in front of it (kit props, placed by us): a vending machine at one corner, sometimes an A-frame or a stall
