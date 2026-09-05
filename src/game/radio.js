@@ -13,6 +13,8 @@ const STATIONS = [
   { name: 'SYNTHWAVE 84',   bpm: 124, root: 146.8, scale: [0, 3, 5, 7, 8, 10], swing: 0.05, lead: 'sawtooth', bass: 'sawtooth' },
   { name: 'WEST COAST RAP', bpm: 92, root: 164.8, scale: [0, 3, 5, 7, 10], swing: 0.16, lead: 'triangle', bass: 'sine' },
   { name: 'HARBOUR DUB',    bpm: 70, root: 196, scale: [0, 3, 5, 7, 10], swing: 0.18, lead: 'triangle', bass: 'sine' },
+  // Little Tokyo's station: city-pop tempo on the yo scale (the Japanese major pentatonic), bright square lead
+  { name: 'SHIBUYA CITY POP', bpm: 108, root: 293.7, scale: [0, 2, 5, 7, 9], swing: 0.04, lead: 'square', bass: 'triangle' },
 ];
 
 const DJ_BUMPERS = {
@@ -35,6 +37,11 @@ const DJ_BUMPERS = {
     'Heavy 808s rolling through the Southside flats.',
     'Street level frequencies. Representing Halstead Bay.',
     'Drop the clutch, spin the block.'
+  ],
+  'SHIBUYA CITY POP': [
+    'Shibuya City Pop, 88.8 -- neon, rain and a two a.m. taxi home.',
+    'Little Tokyo after dark. Ramen at the counter, then the last train.',
+    'City pop for the scramble crossing. Mind the kanban.',
   ],
   'HARBOUR DUB': [
     'Echoes rolling off the quay. Deep sub-frequencies.',
