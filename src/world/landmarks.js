@@ -190,8 +190,7 @@ export class Landmarks {
     // South-facing panel (seen by cars approaching from South / spawn looking North)
     const southPanel = new THREE.Mesh(new THREE.PlaneGeometry(9.4, 1.65), signMat);
     southPanel.position.set(0, 8.8, -0.17);
-    southPanel.rotation.y = Math.PI;
-    southPanel.scale.x = -1; // Keep text reading left-to-right from perspective of approaching driver
+    southPanel.rotation.y = Math.PI;   // a half-turn about Y already reads left-to-right from the south; scale.x = -1 on top of it mirrored the lettering (seen in the browser)
     group.add(southPanel);
 
     // North-facing panel (seen by cars driving South)
