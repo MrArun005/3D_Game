@@ -258,6 +258,27 @@ export class Phone {
       };
       this.content.appendChild(fundCard);
 
+      // Feature Tour & Demo Video Recorder
+      const tourCard = document.createElement('div');
+      tourCard.style.cssText = 'background: rgba(255, 0, 85, 0.14); border: 1px solid rgba(255, 0, 85, 0.5); border-radius: 12px; padding: 12px; display:flex; justify-content:space-between; align-items:center;';
+      tourCard.innerHTML = `
+        <div>
+          <div style="font-weight:800; font-size:13px; color:#ff0055;">🎬 RECORD FULL FEATURE DEMO</div>
+          <div style="font-size:11px; color:#ddd;">Tokyo · Torii Arch · High Beams · Bridge · On-Foot · Arsenal · Tank</div>
+        </div>
+        <button id="start-tour-btn" style="padding:8px 14px; border-radius:8px; border:none; background:linear-gradient(135deg, #ff0055, #9b00e8); color:#fff; font-weight:800; font-size:11px; cursor:pointer; box-shadow:0 0 12px rgba(255,0,85,0.4);">
+          🔴 RECORD
+        </button>
+      `;
+      tourCard.querySelector('#start-tour-btn').onclick = (e) => {
+        e.stopPropagation();
+        this.toggle(false);
+        if (typeof window !== 'undefined' && window.startFeatureTour) {
+          window.startFeatureTour();
+        }
+      };
+      this.content.appendChild(tourCard);
+
       // Tokyo Street / Little Tokyo GPS Destination
       const tokyoCard = document.createElement('div');
       tokyoCard.style.cssText = 'background: rgba(255, 0, 127, 0.12); border: 1px solid rgba(255, 0, 127, 0.45); border-radius: 12px; padding: 12px; display:flex; justify-content:space-between; align-items:center;';

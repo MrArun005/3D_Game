@@ -77,6 +77,7 @@ import { Photo } from './game/photo.js';
 import { buildRoute, Autopilot, useGraphForRoutes } from './game/autopilot.js';
 import { Cinematic } from './game/cinematic.js';
 import { Recorder } from './game/recorder.js';
+import { FeatureTour } from './game/featureTour.js';
 import { createAudio } from './game/audio.js';
 import { createWeather, rainSpell } from './world/weather.js';
 import { buildHuman } from './world/human.js';
@@ -1434,6 +1435,99 @@ async function stopFilm({ download = true } = {}) {
   return blob;
 }
 
+// ---- automated feature tour & video recorder ----
+const featureTour = new FeatureTour({
+  car,
+  chase,
+  get onFoot() { return onFoot; },
+  get weapon() { return weapon; },
+  get hud() { return hud; },
+  get phone() { return phone; },
+  get activeVehicle() { return activeVehicle; },
+  get canvas() { return canvas; },
+  warp: (x, z, yaw) => {
+    if (onFoot.active) {
+      onFoot.enter();
+      if (hero) hero.visible = true;
+    }
+    if (activeVehicle && activeVehicle !== carVehicle) {
+      activeVehicle.exit();
+      activeVehicle = carVehicle;
+      window._activeVehicle = activeVehicle;
+      car.type = 'car';
+    }
+    window.__warp(x, z, yaw);
+  },
+  stepOutOfVehicle: () => {
+    if (activeVehicle && activeVehicle !== carVehicle) {
+      activeVehicle.exit();
+      activeVehicle = carVehicle;
+      window._activeVehicle = activeVehicle;
+      car.type = 'car';
+      if (hero) hero.visible = false;
+      onFoot.exit({
+        x: car.x,
+        z: car.z,
+        yaw: car.yaw || 0,
+      }, (x, z) => Math.max(world.district?.elevationAt?.(x, z) ?? 0, groundHeightAt(x, z)));
+      if (hero) hero.visible = true;
+    } else if (!onFoot.active) {
+      onFoot.exit(car, (x, z) => Math.max(world.district?.elevationAt?.(x, z) ?? 0, groundHeightAt(x, z)));
+      if (hero) hero.visible = true;
+      car.throttle = 0; car.brake = 1; car.hand = 1;
+    }
+  },
+  equipWeapon: (kind) => {
+    held = 'gun';
+    weapon.reserve[kind] = Math.max(weapon.reserve[kind] || 0, 120);
+    weapon.mags[kind] = ARSENAL[kind]?.mag || 30;
+    weapon.switchTo(kind);
+    refreshHeldGun();
+    if (heldGun) heldGun.visible = true;
+  },
+  fireWeapon: () => {
+    held = 'gun';
+    if (heldGun) heldGun.visible = true;
+    weapon.ammo = Math.max(weapon.ammo, 1);
+    fire();
+  },
+  throwGrenade: () => {
+    held = 'grenade';
+    grenades.count = Math.max(grenades.count, 5);
+    fire();
+  },
+  spawnAndEnterTank: () => {
+    if (onFoot.active) onFoot.enter();
+    if (activeVehicle && activeVehicle !== carVehicle) activeVehicle.exit();
+    const px = onFoot.active ? onFoot.x : car.x;
+    const pz = onFoot.active ? onFoot.z : car.z;
+    const tank = dispatch?.requestTank({ x: px, z: pz, yaw: car.yaw }, 0);
+    if (tank) {
+      tank.enter(hero);
+      activeVehicle = tank;
+      window._activeVehicle = activeVehicle;
+      car.type = 'tank';
+      if (hero) hero.visible = false;
+      car.throttle = 0; car.brake = 1; car.hand = 1; car.vx = 0; car.vz = 0;
+      chase.snap(tank);
+    }
+    return tank;
+  },
+});
+
+window.featureTour = featureTour;
+window.startFeatureTour = () => {
+  if (!started) start();
+  featureTour.start();
+};
+
+const tourParam = new URLSearchParams(location.search);
+if (tourParam.has('tour') || tourParam.get('record') === 'tour') {
+  setTimeout(() => {
+    window.startFeatureTour();
+  }, 2200);
+}
+
 function applyPerk(persona) {
   window._activePersona = persona;
   if (!persona) return;
@@ -1477,6 +1571,10 @@ const input = createInput((action) => {
     }
   }
   if (action === 'photo') photo.toggle();
+  if (action === 'tour') {
+    if (featureTour.active) featureTour.stop();
+    else window.startFeatureTour();
+  }
   if (action === 'phone') phone?.toggle();
   if (action === 'intel') intelScanner?.toggle();
   if (action === 'garage') garage?.browse();
@@ -1620,6 +1718,9 @@ function frameBody() {
     car.holdGear = false;
   } else {
   c = input.read();
+  if (featureTour?.active) {
+    featureTour.applyInput(c, dt);
+  }
   if (c && (c.throttle || c.brake || c.steer || c.handbrake || c.lookBack || c.hold)) idleT = 0; else idleT += dt;
   idleCam = false;   // the car and on-foot branches set it; anything else (heli, tank, film) is never idle-cam
   if (document.pointerLockElement !== canvas) idleT = Math.min(idleT, 0);   // no pointer lock means you are not playing: never orbit, never look 'locked'
@@ -1676,6 +1777,7 @@ function frameBody() {
 
   dispatch?.update(dt, activeVehicle, chase);
   flying = activeVehicle?.type === 'helicopter' ? activeVehicle : null;
+  featureTour?.update(dt);
 
   /* Breakables go BEFORE the physics step: a lamp post the car is about to
      fell must lose its collision solid before the tyre model resolves against
