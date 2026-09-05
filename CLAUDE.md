@@ -208,7 +208,11 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   main for bullets, rams and blasts), dispatch names your paint
   (`paintName`) and the last-seen district, a radio newsflash at 3 stars
   (`radio.news`), a heartbeat under 25% health, gunshots echo
-  (`audio.js echoBus`), the range's 60 m boards slide. Draws and fps
+  (`audio.js echoBus`), the range's 60 m boards slide. Fifth gun: `sniper`
+  (ARSENAL + `sniperGeo`, muzzle 0.66 measured, ADS 18 deg, Digit6 ->
+  'weapon6'; main maps index 5 -> WEAPON_KINDS[4]; HUD keys it 6); the first
+  5-star marksman carries it. `test/actions.test.js` asserts every input
+  action has a main.js handler (the 'camera' handler was lost once). Draws and fps
   at kingsway-corner NOT re-measured since (no browser in this session).
   Also: `buildTokyoStreet` (poles + wires), `buildShrine` (park block),
   landmark slabs to 24 storeys on tower blocks, `District.districtAt` steers
