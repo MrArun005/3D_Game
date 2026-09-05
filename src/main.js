@@ -1705,7 +1705,15 @@ function frameBody() {
   lastArsKey = arsKey;
   skids.update(car, car.wheelGround ? car.wheelGround[2] : 0);
   if (firing) pullTrigger();
-  if (crowd) crowd.update(car, dt, (speed) => traffic.reportCrime('person', speed));
+  if (crowd) crowd.update(car, dt, (speed, p) => {
+    traffic.reportCrime('person', speed);
+    if (p && speed > 3) {   // a pedestrian under the car: blood where they fell, a scuff of dust, and it hurts to watch
+      const gy = groundHeightAt(p.x, p.z);
+      bloodDecals.stamp(p.x, gy + 0.01, p.z, 0, 1, 0, 0.7 + Math.min(1, speed / 25));
+      weapon.bloodAt?.(p.x, gy + 0.9, p.z, Math.cos(car.yaw), -Math.sin(car.yaw));
+      puffs.puff(p.x, gy + 0.3, p.z, { r: 0.22, g: 0.20, b: 0.18, life: 0.9, vy: 0.7 });
+    }
+  });
   people?.update(dt, crowd, car, (x, z) => districtRef?.elevationAt?.(x, z) ?? 0, camera);
   /* Traffic reacts: a car you cut within 6 m of at speed blows its horn,
      panned to where it is, no more than once a second and a half. */

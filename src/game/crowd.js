@@ -136,7 +136,7 @@ export class Crowd {
         const push = Math.max(3.0, car.speed * 0.48);
         p.vx = Math.cos(car.yaw) * push;
         p.vz = -Math.sin(car.yaw) * push;
-        if (onHit) onHit(car.speed);
+        if (onHit) onHit(car.speed, p);   // who, as well as how hard: main marks the road where they fell
       }
       if (p.down) {
         p.down += dt;
