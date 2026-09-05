@@ -222,7 +222,9 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   heavy bloom)**: grade.js `uSat` 1.32 + indigo/warm split tone `uSplit` at
   night, bloom 0.95 / 0.55 / threshold 0.85 in `setNight` (1.35/0.72/0.72
   bloomed every lit window into haze -- checked in the browser); clock.js
-  night dome tint (0.03, 0.035, 0.075) and fog (0.035, 0.045, 0.09), moon
+  night dome tint (0.03, 0.035, 0.075) and fog (0.022, 0.028, 0.06) -- darker than the dome so fogged
+  mountains read as silhouettes, and weather.js darkens it with the rain like
+  the dome (fog measured #1f2437 at 21:55 in rain), moon
   sun 0.30 / hemisphere 0.17 (0.42/0.22 lit the far mountains like dusk),
   environment 0.24, sign emissive 2.46; split-tone shadow lift is a hint
   (1.06 blue) -- 1.18 made the sky mid-blue; tokyo emissive 1.3 (neon parts sit
