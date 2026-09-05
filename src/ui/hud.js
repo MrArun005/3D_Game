@@ -30,6 +30,19 @@ export class Hud {
       document.body.appendChild(b);
       this.flightBanner = b;
     }
+
+    // Purposeful gameplay guidance prompt bar
+    this.promptBar = document.getElementById('gameplay-prompt-bar');
+    if (!this.promptBar && typeof document !== 'undefined') {
+      const p = document.createElement('div');
+      p.id = 'gameplay-prompt-bar';
+      p.style.cssText = 'position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:50;'
+        + 'background:rgba(10,14,24,0.88);backdrop-filter:blur(10px);border:1px solid rgba(130,160,210,0.3);'
+        + 'border-radius:20px;padding:6px 18px;color:#cfe0f5;font:600 11px/1.4 system-ui,-apple-system,sans-serif;'
+        + 'letter-spacing:.04em;box-shadow:0 6px 24px rgba(0,0,0,0.65);display:flex;align-items:center;gap:12px;pointer-events:none;white-space:nowrap;';
+      document.body.appendChild(p);
+      this.promptBar = p;
+    }
   }
 
   /** Once Halstead Bay is loaded the minimap draws real streets. */
@@ -53,6 +66,22 @@ export class Hud {
 
     if (this.flightBanner) {
       this.flightBanner.style.display = vehicleType === 'helicopter' ? 'flex' : 'none';
+    }
+    if (this.promptBar) {
+      if (vehicleType === 'helicopter') {
+        this.promptBar.style.display = 'none';
+      } else {
+        this.promptBar.style.display = 'flex';
+        const onFootActive = (typeof window !== 'undefined' && window.onFoot) ? !!window.onFoot.active : false;
+        if (onFootActive) {
+          this.promptBar.innerHTML = '<span style="color:#39ffb0">🏃 ON FOOT</span> · <span><b>WASD</b> Move</span> · <span><b>SHIFT</b> Sprint</span> · <span><b>SPACE</b> Jump</span> · <span><b>F</b> Enter Vehicle</span> · <span><b>M</b> Phone Heists</span> · <span><b>K</b> Switch Hero</span>';
+        } else if (mission?.active || this.jobLine) {
+          const mText = this.jobLine || mission?.prompt || 'MISSION IN PROGRESS';
+          this.promptBar.innerHTML = `<span style="color:#ffd23f">🎯 OBJECTIVE</span> · <span>${mText}</span> · <span><b>M</b> Phone</span> · <span><b>G</b> Abort</span>`;
+        } else {
+          this.promptBar.innerHTML = '<span style="color:#5bc0be">📱 [M] iFruit Phone (Heists & Services)</span> · <span>💼 [G] Street Jobs</span> · <span>🏃 [F] Step Out On Foot</span> · <span>🗺️ [Tab] GPS Map</span>';
+        }
+      }
     }
     this.#drawWanted(traffic);
     this.#drawMission(mission);

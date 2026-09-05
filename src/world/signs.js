@@ -26,23 +26,32 @@ export function tileUv(tile) {
   return [(t % SIGN_COLS) / SIGN_COLS, 1 - (Math.floor(t / SIGN_COLS) + 1) / SIGN_ROWS];
 }
 
-const FIRST = ['Halstead', 'Kingsway', 'Marrow', 'Corvin', 'Ashmoor', 'Pike', 'Ferrier', 'Tarrow',
-  'Salter', 'Dunbar', 'Vellery', 'Steelgate', 'Northline', 'Harbour', 'Ellery', 'Wexford', 'Merrin', 'Kestrel'];
-const TRADE = ['Grocers', 'Pharmacy', 'Diner', 'Laundry', 'Records', 'Books', 'Barbers', 'Bakery',
+const FIRST = [
+  'Halstead', 'Kingsway', 'Marrow', 'Corvin', 'Ashmoor', 'Pike', 'Ferrier', 'Tarrow',
+  'Salter', 'Dunbar', 'Vellery', 'Steelgate', 'Northline', 'Harbour', 'Ellery', 'Wexford',
+  'Shinjuku', 'Shibuya', 'Roppongi', 'Akiba', 'Ginza', 'Neo-Tokyo', 'Kyoto', 'Cyber',
+];
+const TRADE = [
+  'Grocers', 'Pharmacy', 'Diner', 'Laundry', 'Records', 'Books', 'Barbers', 'Bakery',
   'Hardware', 'Tailors', 'Cafe', 'Noodles', 'Optics', 'Electrical', 'Florist', 'Butchers', 'Wines',
-  'Print Co', 'Motors', 'Dry Clean', 'Pawn', 'Liquor', 'Chemist', 'Bagels', 'Tattoo', 'Pizza', 'Locks & Keys'];
+  'Print Co', 'Motors', 'Dry Clean', 'Pawn', 'Liquor', 'Chemist', 'Bagels', 'Tattoo', 'Pizza', 'Locks & Keys',
+  'RAMEN · ラーメン', 'IZAKAYA · 居酒屋', 'KARAOKE · カラオケ', '24H CONVENIENCE', 'CYBER ARCADE',
+  'SUSHI BAR · 鮨', 'CAPSULE HOTEL', 'YAKITORI · 鳥', 'MATCHA CAFE', 'NEO TOKYO MOTORS',
+];
 // [board, text, accent]
 const PALETTE = [
   ['#8e1b1b', '#f6e7c8', '#f2c14e'], ['#12284a', '#f4f1e8', '#d94f30'], ['#1d4d2b', '#f1e9c9', '#e8b64a'],
   ['#111214', '#f5f5f0', '#e23b3b'], ['#efe6cf', '#1c1c1e', '#8e1b1b'], ['#d9a520', '#1a1a1a', '#8e1b1b'],
   ['#0f6b6b', '#f3f3ee', '#f2c14e'], ['#f4f2ec', '#12284a', '#d94f30'], ['#3b1f4f', '#f5e9ff', '#f2c14e'],
   ['#0d0d0f', '#39ffb0', '#ff4fd8'], ['#0d0d0f', '#ff4fd8', '#39ffb0'], ['#0d0d0f', '#ffd23f', '#3fd2ff'],
+  ['#080812', '#ff007f', '#00f0ff'], ['#060e0a', '#39ff14', '#ffe600'], ['#14080a', '#ff1a40', '#ffaa00'],
+  ['#0a0614', '#bd00ff', '#39ffb0'],
 ];
 const FONTS = [
+  '700 {s}px "Hiragino Kaku Gothic Pro", "Noto Sans JP", -apple-system, sans-serif',
+  '900 {s}px "Hiragino Sans", "Arial Black", Impact, sans-serif',
   '700 {s}px "Helvetica Neue", Arial, sans-serif',
-  '900 {s}px "Arial Black", Impact, sans-serif',
   '700 {s}px Georgia, "Times New Roman", serif',
-  'italic 700 {s}px Georgia, serif',
   '600 {s}px "Avenir Next Condensed", "Arial Narrow", sans-serif',
 ];
 
@@ -73,7 +82,12 @@ export function texSignAtlas() {
     if (w > maxW) { size = Math.floor(size * maxW / w); g.font = font.replace('{s}', size); }
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillText(name, tx + 3, y0 + TH / 2 + 3);
+    // Add subtle optical neon bloom to neon signs
+    if (board.startsWith('#0')) {
+      g.shadowColor = accent; g.shadowBlur = 10;
+    }
     g.fillStyle = ink; g.fillText(name, tx, y0 + TH / 2);
+    g.shadowBlur = 0;
   }
   return toTex(c);
 }

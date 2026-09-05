@@ -604,6 +604,16 @@ export function dressFacades(batch, boxes, district, roadNear, signs = null, win
         if (g.includes('cafe') && r < 0.6) {
           batch.add('props/a_frame_sign', place(mx + best.nx * 1.4 + ux * 0.9, base, mz + best.nz * 1.4 + uz * 0.9, yaw));
         }
+        // Vertical multi-storey neon banners (Tokyo street life aesthetic) on taller commercial/period facades:
+        if (height > 10 && (i === 0 || i === bays - 1) && r < 0.6) {
+          const [uVert, vVert] = tileUv(Math.floor(hash(mz * 1.7 + i, mx * 0.8) * SIGN_TILES));
+          const edgeOffset = (i === 0 ? -1 : 1) * 1.35;
+          signs.push({
+            m: placeBoard(mx + ux * edgeOffset + best.nx * 0.22, base + 7.6, mz + uz * edgeOffset + best.nz * 0.22, yaw, 0.95, 3.8),
+            u: uVert,
+            v: vVert,
+          });
+        }
       }
 
       /* Toppers only where the roofline is in shot. Above about 22m you are

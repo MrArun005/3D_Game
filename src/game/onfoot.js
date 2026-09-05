@@ -63,7 +63,7 @@ export class OnFoot {
     /* Which of the characters you are. ?me= picks one; default is Valerie Cross (index 9).
        K cycles in play. */
     const want = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('me') : null;
-    const defaultIdx = 9; // VALERIE CROSS (featured pretty hero face)
+    const defaultIdx = 2; // MAYA LIN (featured pretty street racer with native animations)
     const charIdx = (want !== null && Number.isFinite(Number(want)))
       ? (((Number(want) % CHARACTERS.length) + CHARACTERS.length) % CHARACTERS.length)
       : defaultIdx;

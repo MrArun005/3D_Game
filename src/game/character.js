@@ -38,8 +38,8 @@ export const CHARACTERS = [
 ];
 
 export const NAMED_CHARACTERS = [
-  { id: 'valerie', name: 'VALERIE CROSS', role: 'SHADOW OPERATIVE', perk: 'Agile athletics & silent footwork', index: 9 },
   { id: 'maya', name: 'MAYA LIN', role: 'STREET RACER', perk: 'Precision apex control & drift bonus', index: 2 },
+  { id: 'valerie', name: 'VALERIE CROSS', role: 'SHADOW OPERATIVE', perk: 'Agile athletics & silent footwork', index: 9 },
   { id: 'leo', name: 'LEO VANCE', role: 'GETAWAY SPECIALIST', perk: 'Sharper steering response', index: 0 },
   { id: 'marcus', name: 'MARCUS STERLING', role: 'MASTERMIND', perk: 'Cool heat & +20% payouts', index: 3 },
   { id: 'jax', name: 'JAX MILLER', role: 'ENFORCER', perk: 'Heavy ram force & NOS boost', index: 6 },
@@ -115,7 +115,7 @@ const CLIPS = {
 const TARGET_HEIGHT = 1.78;            // metres, so they match the cars
 
 export class Character {
-  constructor(scene, url = CHARACTERS[9]) {
+  constructor(scene, url = CHARACTERS[2]) {
     this.root = new THREE.Group();
     this.root.visible = false;
     scene.add(this.root);
@@ -221,15 +221,25 @@ export class Character {
           const mats = Array.isArray(o.material) ? o.material : [o.material];
           for (const m of mats) {
             if (!m) continue;
-            if (m.name === 'Wolf3D_Eye' || o.name.includes('Eye')) {
-              m.roughness = 0.12;
-              m.metalness = 0.05;
-              if (m.color) m.color.multiplyScalar(1.15); // glowing vivid iris
-            } else if (m.name === 'Wolf3D_Skin') {
-              m.roughness = 0.55;
+            const nm = (m.name || '').toLowerCase();
+            const onm = (o.name || '').toLowerCase();
+            if (nm.includes('eye') || onm.includes('eye')) {
+              m.roughness = 0.08;
+              m.metalness = 0.0;
+              if (m.color) m.color.multiplyScalar(1.2); // clear bright eyes
+            } else if (nm.includes('skin') || onm.includes('skin') || nm.includes('head') || nm.includes('face')) {
+              m.roughness = 0.52;
+              m.metalness = 0.0; // eliminate alien metallic skin shine
+            } else if (nm.includes('hair') || onm.includes('hair')) {
+              m.roughness = 0.58;
+              m.metalness = 0.04;
+            } else if (nm.includes('shoe') || onm.includes('shoe') || nm.includes('footwear')) {
+              m.roughness = 0.38;
+              m.metalness = 0.08;
+            } else {
+              // clothing, shirts, jackets, pants
+              m.roughness = 0.72;
               m.metalness = 0.02;
-            } else if (m.name === 'Wolf3D_Hair') {
-              m.roughness = 0.62;
             }
           }
         });
