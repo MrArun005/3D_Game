@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { glow } from '../core/additive.js';
 
 /**
  * Grenades: slot 5. A thrown body on a real arc, a 2.2 s fuse, a blast that
@@ -17,6 +18,7 @@ export const KILL_R = 5.0;       // officers go down
 export const HURT_R = 4.0;       // you
 export const MAX_LIVE = 3;
 export const START_COUNT = 3;
+export const BALL_S = 0.55;      // how long the fireball is on screen
 const G = 9.8;
 
 /** Launch velocity from a look direction: 14 m/s, pitched up 12 degrees beyond the look. */
@@ -61,6 +63,15 @@ export class Grenades {
     this.ownsFlash = !flashLight;
     if (!flashLight) { this.flash = new THREE.PointLight(0xffb060, 0, 22, 2); scene.add(this.flash); }
     this.flashT = 0;
+    /* The blast you SEE: one additive sphere that swells 0.6 -> 7 m and fades
+       over BALL_S, routed into the bloom channel. The point light was the
+       whole effect before; a grenade with no fireball read as a firecracker. */
+    this.ball = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), glow(new THREE.MeshBasicMaterial({
+      color: 0xffa040, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+    }), 1.2));
+    this.ball.visible = false;
+    scene.add(this.ball);
+    this.ballT = 0;
     this.onBlast = null;   // (x, y, z) => void, wired by main
   }
 
@@ -89,11 +100,19 @@ export class Grenades {
         this.live.splice(i, 1);
         this.flash.position.set(b.x, b.y + 0.6, b.z);
         this.flash.intensity = 60; this.flash.distance = 22; this.flashT = 0.18;
+        this.ball.position.set(b.x, b.y + 0.9, b.z); this.ball.visible = true; this.ballT = BALL_S;
         this.onBlast?.(b.x, b.y, b.z);
       }
+    }
+    if (this.ballT > 0) {
+      this.ballT -= dt;
+      const k = 1 - Math.max(0, this.ballT) / BALL_S;          // 0 at the bang, 1 when gone
+      this.ball.scale.setScalar(0.6 + 6.4 * Math.sqrt(k));      // fast out, then it hangs
+      this.ball.material.opacity = 0.95 * (1 - k) * (1 - k);
+      if (this.ballT <= 0) this.ball.visible = false;
     }
     if (this.flashT > 0) { this.flashT -= dt; this.flash.intensity = Math.max(0, 60 * (this.flashT / 0.18)); if (this.flashT <= 0) this.flash.distance = 16; }
   }
 
-  dispose() { for (const b of this.live) this.scene.remove(b.mesh); this.live.length = 0; this.geo.dispose(); this.mat.dispose(); if (this.ownsFlash) this.scene.remove(this.flash); }
+  dispose() { for (const b of this.live) this.scene.remove(b.mesh); this.live.length = 0; this.geo.dispose(); this.mat.dispose(); this.scene.remove(this.ball); this.ball.geometry.dispose(); this.ball.material.dispose(); if (this.ownsFlash) this.scene.remove(this.flash); }
 }
