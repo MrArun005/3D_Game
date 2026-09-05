@@ -1142,6 +1142,7 @@ export class Traffic {
         c.gunKind = weaponForWanted(Math.floor(this.wanted), c.slot);
         const swat = Math.floor(this.wanted) >= 4;   // four stars: the tactical unit steps out (geometry swap, same material)
         if (!!c.joints.swat !== swat) dressOfficer(c.joints, swat);
+        if (swat) c.hp = 150;   // plate carrier: half again as many rounds to put down
         if (!c.gun) {   // his last one is lying in the road from the time he went down
           c.gun = buildWeaponMesh(c.gunKind); c.gun.position.set(0, -0.58, 0); c.gun.rotation.z = -Math.PI / 2; c.joints.armR.add(c.gun);
           c.flash = new THREE.Mesh(flashGeo(), flashMat()); c.flash.visible = false; c.gun.add(c.flash);   // shared: one sphere, one material for every muzzle

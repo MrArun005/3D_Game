@@ -46,3 +46,18 @@ test('lookAt turns the head and cap together and clamps to a real neck', () => {
   lookAt(joints, 3.0);
   assert.ok(Math.abs(joints.head.rotation.y - h0 - 0.8) < 1e-9, 'clamped at 0.8 rad');
 });
+
+test('SWAT dress is a geometry swap on the shared set: different parts, same material, colours on every part', async () => {
+  const { buildOfficer, dressOfficer, officerMaterial } = await import('../src/world/officer.js');
+  const a = buildOfficer(5), b = buildOfficer(5, { swat: true });
+  assert.notEqual(a.joints.cap.geometry, b.joints.cap.geometry);
+  assert.notEqual(a.joints.torso.geometry, b.joints.torso.geometry);
+  assert.equal(a.joints.head.geometry, b.joints.head.geometry, 'same face');
+  for (const j of ['cap', 'torso', 'armL', 'legL']) {
+    assert.equal(b.joints[j].material, officerMaterial(), 'one material for all');
+    assert.ok(b.joints[j].geometry.attributes.color, `${j} carries vertex colour`);
+  }
+  dressOfficer(a.joints, true);
+  assert.equal(a.joints.torso.geometry, b.joints.torso.geometry, 'dressOfficer swaps to the same shared set');
+  assert.equal(a.joints.cap.visible, true, 'the helmet always shows');
+});
