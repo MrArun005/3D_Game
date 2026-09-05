@@ -460,7 +460,7 @@ let farSirenT = 70;       // distant siren cadence (ambient, any hour)
 let rainHeard = null;     // last rain amount handed to the audio
 let tokyoAmbT = 0;        // district-ambience poll cadence
 let clockRestored = false;
-let idleT = 0, idleCam = false;   // seconds since any input; the parked-car orbit camera
+let idleT = 0, idleCam = false, idleCamShown = false;   // seconds since any input; the parked-car orbit camera; whether the HUD is currently faded for it
 let lastDistrict = null, distT = 0;  // for the area toast and the dispatch call-out on a district change (polled twice a second)
 let vigilante = null;     // { f: fugitive car, t: seconds left } while a patrol chase near you is yours to finish
 let hurtPulse = 0;        // the red edge on the frame, decays each frame (grade.setHurt)
@@ -1858,6 +1858,12 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
         const a = (performance.now() / 1000) * 0.11, r = 7.5 + Math.sin(a * 0.7) * 1.5, gy = hero.position.y;
         camera.position.set(targetVehicle.x + Math.cos(a) * r, gy + 1.9 + Math.sin(a * 0.5) * 0.5, targetVehicle.z + Math.sin(a) * r);
         camera.lookAt(targetVehicle.x, gy + 0.9, targetVehicle.z);
+      }
+      // the HUD fades out with the orbit and back in with the first input (one injected rule, a body class)
+      if (idleCam !== idleCamShown) {
+        idleCamShown = idleCam;
+        if (!document.getElementById('idlecam-style')) { const st = document.createElement('style'); st.id = 'idlecam-style'; st.textContent = '#hud,#cluster,#minimap,#dials,#readout,#wanted,#crosshair,#stats,#gameplay-prompt-bar{transition:opacity .6s}.idlecam #hud,.idlecam #cluster,.idlecam #minimap,.idlecam #dials,.idlecam #readout,.idlecam #wanted,.idlecam #crosshair,.idlecam #stats,.idlecam #gameplay-prompt-bar{opacity:0 !important}'; document.head.appendChild(st); }
+        document.body.classList.toggle('idlecam', idleCam);
       }
     }
   }
