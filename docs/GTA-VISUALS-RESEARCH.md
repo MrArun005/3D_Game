@@ -81,7 +81,7 @@ Already matched (see CLAUDE.md for the knobs):
 
 Gaps, in the order they would change the frame most:
 
-1. **Glare billboards on every light** (two counter-rotating quads, size by
+1. **DONE 2026-09-05 (`world/glare.js`).** Glare billboards on every light (two counter-rotating quads, size by
    view angle, atlas texture with a painted streak pattern). We have
    `beamPool` cones and lamp caps, but no sprite glare, so distant lamps and
    headlights vanish instead of twinkling. One instanced quad pool per chunk;

@@ -13,6 +13,7 @@ import { BREAK_CLASS } from './breakables.js';
 import { ZEBRA_DEPTH } from '../game/traffic.js';
 import { buildTokyoBuilding, frontRotation, tokyoMaterial, buildTokyoStreet, wireMaterial, buildShrine } from './tokyo.js';
 import { tileUv, SIGN_TILES } from './signs.js';
+import { buildGlare } from './glare.js';
 
 /**
  * Halstead Bay in three dimensions.
@@ -1448,6 +1449,8 @@ export class DistrictWorld {
       for (const hd of dressHeads) heads.push(mat4(hd.x, hd.y, hd.z, -hd.yaw, 1, 1, 1));
       // lamp-head positions for game/lighting.js: the pool of real lights follows the nearest
       this.headsByChunk.set(k, [...dressHeads.map((hd) => ({ x: hd.x, y: hd.y, z: hd.z })), ...tokyoHeads]);
+      // glare sprites on every head (GTA-style; world/glare.js): one instanced Sprite per chunk, fades in with the night
+      { const gl = buildGlare([...dressHeads, ...tokyoHeads], ix * 31 + iz); if (gl) group.add(gl); }
       yield;
       // sliced: one big dressRoofs was a 10+ ms step against a 4 ms budget
       const dressable = boxes.filter((b) => !b.tokyo);   // Little Tokyo dresses itself (tokyo.js)

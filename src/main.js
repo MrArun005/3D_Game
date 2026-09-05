@@ -63,6 +63,7 @@ import { Crosshair, DecalPool, ADS, ADS_BLEND_S, spreadToPixels, spreadFor, reco
 import { Tracers } from './game/tracers.js';
 import { Puffs } from './world/puffs.js';
 import { tokyoMaterial, setTokyoNight } from './world/tokyo.js';
+import { setGlareNight } from './world/glare.js';
 import { glow } from './core/additive.js';
 import { absorb } from './game/policeAi.js';
 import { SkidMarks } from './world/skidmarks.js';
@@ -2104,7 +2105,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     }
   }
   // Little Tokyo's windows, neon and kanban come up with the night (tokyo.js emissive attribute)
-  { const hr = clock.hour; setTokyoNight(hr >= 20.5 || hr < 5.2 ? 1 : hr >= 18 ? (hr - 18) / 2.5 : hr < 7.2 ? (7.2 - hr) / 2 : 0); }
+  { const hr = clock.hour; const nk = hr >= 20.5 || hr < 5.2 ? 1 : hr >= 18 ? (hr - 18) / 2.5 : hr < 7.2 ? (7.2 - hr) / 2 : 0; setTokyoNight(nk); setGlareNight(nk); }
   if (weather) {
     // rain only at night (the clock's thresholds), in spells on the normal cycle, all night with ?night
     const nightNow = clock.hour >= 20.5 || clock.hour < 5.2;

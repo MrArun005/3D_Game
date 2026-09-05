@@ -171,6 +171,20 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   const-shadowing TypeError fixed + cruiser headlights + a red/blue beacon
   point light, marksmen fall on their roof, every shooter has a muzzle flash
   (`traffic.muzzleFlashMesh`).
+- **Glare sprites (2026-09-05, GTA-style, `world/glare.js`)**: one instanced
+  `THREE.Sprite` (`sprite.count = N`, positions/colours/phase as
+  `InstancedBufferAttribute` + `instancedBufferAttribute()` nodes) per chunk
+  on every lamp head and kanban, SpriteNodeMaterial, additive, streak texture
+  sampled twice at counter-rotating angles over a soft disc, pulled 0.8 m
+  toward the camera so its own head does not depth-occlude it, faded by the
+  `setGlareNight` uniform. Two traps, both hit: (1) **WebGPU draws
+  `THREE.Points` at ONE pixel** -- `size`/`sizeAttenuation` are ignored and
+  `pointUV` compiles to an unresolved `gl_PointCoord`; the rain/spray Points
+  are 1 px too. Sized sprites need `Sprite` + instancing. (2) the
+  zero-normal `mrtNode` (additive.js `NO_NORMAL`) on a sprite quad draws a
+  BLACK square (GTAO reads zero normal as occlusion) -- use `glow()` on
+  quads. Cost: +1 draw per chunk (sprites are not bundled), ~+40 at the
+  Tokyo interior (1471 -> 1520). Verified in the browser: glare6.jpg.
 - **Asphalt textures are real now (2026-09-05)**: the shipped `asphalt_*`
   set was the library's generic dot pattern; under the wet-road env boost
   every dot mirrored as a cobble. `tools/asphalt-textures.py` (numpy + PIL,
