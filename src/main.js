@@ -1725,8 +1725,9 @@ function frameBody() {
   if (hero.userData.steering) hero.userData.steering.rotation.z = -car.steer * 2.6;
   for (const w of hero.userData.wheels) {
     if (w.front) w.steer.rotation.y = car.steer;
+    const idx = (w.front ? 0 : 2) + (w.side > 0 ? 1 : 0);   // FL FR RL RR, the physics' wheel order (this line was lost in a rewrite: every frame threw, the camera froze)
     if (car.flat) car.flat[idx] = w.flat || 0;
-    const localWheelY = (car.wheelGround ? car.wheelGround[idx] - gy : 0);
+    const localWheelY = (car.wheelGround ? car.wheelGround[idx] - hero.position.y : 0);   // hero.position.y IS gy; gy itself is block-scoped above
     w.steer.position.y = localWheelY + WHEEL_R * (1 - (w.flat || 0) * 0.3);
     w.spin.rotation.z += car.wheelW[idx] * dt;
   }
