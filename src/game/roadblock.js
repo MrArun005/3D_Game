@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { buildOfficer, PoseBlender, lookAt } from '../world/officer.js';
 import { buildWeaponMesh } from './weapons.js';
+import { muzzleFlashMesh } from './traffic.js';
 import { roadblockPosts, burstFor, hasLineOfSight, targetProfile } from './policeAi.js';
 
 /**
@@ -39,8 +40,9 @@ export class Roadblock {
     this.posts = [0, 1].map((i) => {
       const b = buildOfficer(70 + i);
       const gun = buildWeaponMesh('rifle'); gun.position.set(0, -0.58, 0); gun.rotation.z = -Math.PI / 2; b.joints.armR.add(gun);
+      const flash = muzzleFlashMesh('rifle'); gun.add(flash);
       b.group.visible = false; scene.add(b.group);
-      return { group: b.group, joints: b.joints, blender: new PoseBlender(), gun, hp: 100, down: 0, fireT: 1 + i, burst: 0, poseT: 0, pose: 'crouch' };
+      return { group: b.group, joints: b.joints, blender: new PoseBlender(), gun, flash, flashT: 0, hp: 100, down: 0, fireT: 1 + i, burst: 0, poseT: 0, pose: 'crouch' };
     });
   }
 
@@ -142,8 +144,10 @@ export class Roadblock {
         p.fireT = p.burst > 0 ? burstFor('rifle').gap : 1.2 + this.traffic.rand() * 1.0;   // seeded: same fight, same seed
         p.pose = 'peek';
         this.traffic.fireAt(gx, gy, gz, tgt, 'rifle', lvl);   // the one place a police round is rolled: profile, jitter, report, tracer
+        p.flashT = 0.07;
       } else if (p.burst <= 0 && p.fireT < 0.6) p.pose = 'crouch';
       p.blender.apply(p.joints, p.pose, p.poseT, dt, 0.15);
+      p.flashT -= dt; p.flash.visible = p.flashT > 0;
       lookAt(p.joints, face - (-p.group.rotation.y + Math.PI / 2));
     }
     const past = along > 60 || Math.hypot(rx, rz) > 250;

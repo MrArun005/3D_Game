@@ -26,6 +26,13 @@ let _poolGeo = null;   // the cruisers' light pool disc
 const _poolMat = {};
 const poolMat = (hex) => (_poolMat[hex] ??= glow(new THREE.MeshBasicMaterial({ color: hex, transparent: true, opacity: 0.20, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2 }), 0.7));
 
+/** The shared muzzle-flash sphere on a gun, placed at that weapon's muzzle. roadblock.js uses it too. */
+export function muzzleFlashMesh(kind = 'rifle') {
+  const m = new THREE.Mesh(flashGeo(), flashMat());
+  m.position.x = ARSENAL[kind].muzzle; m.visible = false;
+  return m;
+}
+
 /** Every material the police layer creates lazily, built now so main can pre-compile their pipelines (a first-use compile is a 30-80 ms hitch). */
 export function policeMaterials() {
   return [flashMat(), poolMat(0xff2a1c), poolMat(0x2f6dff), haloMesh('gun').material, haloMesh('grenade').material, haloMesh('armour').material];
@@ -766,7 +773,7 @@ export class Traffic {
         const built = buildOfficer(90 + i);
         built.group.position.set(r.x, r.h + 0.5, r.z);
         const gun = buildWeaponMesh('rifle'); gun.position.set(0, -0.58, 0); gun.rotation.z = -Math.PI / 2;
-        const flash = new THREE.Mesh(flashGeo(), flashMat()); flash.position.x = ARSENAL.rifle.muzzle; flash.visible = false; gun.add(flash);   // you see the rooftop shot before you hear it
+        const flash = muzzleFlashMesh('rifle'); gun.add(flash);   // you see the rooftop shot before you hear it
         built.joints.armR.add(gun);
         this.scene.add(built.group);
         this.marks.push({ group: built.group, joints: built.joints, blender: new PoseBlender(), roof: r, fireT: 1.5 + i, burstLeft: 0, poseT: 0, gun, flash, flashT: 0, down: 0 });
