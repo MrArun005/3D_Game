@@ -1015,7 +1015,7 @@ export class DistrictWorld {
       pg.computeBoundingSphere();
       group.add(new THREE.Mesh(pg, A.mat.paint));
     }
-    if (sigBatch) sigBatch.emit(group, { shadow: false, lod: 1 })
+    if (sigBatch) sigBatch.emit(group, { shadow: false, lod: 1 }).then(() => { group.traverse((o) => { if (o.isMesh) o.frustumCulled = false; }); group.needsUpdate = true; })   // late-landing signal masts join the bundle too
       .catch((e) => console.warn('signals failed:', e.message));
     inst(posts, A.mat.pole);
     inst(arms, A.mat.pole);
@@ -1493,7 +1493,13 @@ export class DistrictWorld {
         wm.computeBoundingSphere();
         faces.add(wm);
       }
-      fbatch.emit(faces, { shadow: false, lod: 1 })
+      /* The batches land AFTER the chunk's bundle was recorded, and nothing
+         re-recorded it until a ring change -- so at the spawn every facade and
+         prop mesh was a direct draw (~450 of them at kingsway). Each landing
+         now applies the bundle rule (no per-object culling inside a recording)
+         and bumps the bundle once. */
+      const landed = (g) => { g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; }); group.needsUpdate = true; };
+      fbatch.emit(faces, { shadow: false, lod: 1 }).then(() => landed(faces))
         .catch((e) => console.warn('facades failed:', e.message));
       // fire and forget: the chunk is usable now, the props land a frame later
       /* lod1 throughout. The re-ingested kit is 5.7x heavier at lod0 (31k triangles
@@ -1502,6 +1508,7 @@ export class DistrictWorld {
          at the old cost with better geometry. A 3.6m bay's lod0 detail is sub-pixel
          past fifteen metres anyway. */
       batch.emit(props, { lod: 1 }).then(() => {
+        landed(props);
         if (batch.tracked.length) {
           this.onBreakables?.(k, batch.tracked, solidParked, this.poolsByChunk.get(k));
         }
