@@ -258,6 +258,32 @@ export class Phone {
       };
       this.content.appendChild(fundCard);
 
+      // Tokyo Street / Little Tokyo GPS Destination
+      const tokyoCard = document.createElement('div');
+      tokyoCard.style.cssText = 'background: rgba(255, 0, 127, 0.12); border: 1px solid rgba(255, 0, 127, 0.45); border-radius: 12px; padding: 12px; display:flex; justify-content:space-between; align-items:center;';
+      tokyoCard.innerHTML = `
+        <div>
+          <div style="font-weight:800; font-size:13px; color:#ff007f;">🏮 LITTLE TOKYO · 新宿通り</div>
+          <div style="font-size:11px; color:#ddd;">Tokyo Street Life · Ramen · Izakaya · Neon Torii</div>
+        </div>
+        <button id="visit-tokyo-btn" style="padding:8px 14px; border-radius:8px; border:none; background:linear-gradient(135deg, #ff007f, #bd00ff); color:#fff; font-weight:800; font-size:11px; cursor:pointer;">
+          GPS ROUTE
+        </button>
+      `;
+      tokyoCard.querySelector('#visit-tokyo-btn').onclick = (e) => {
+        e.stopPropagation();
+        if (typeof window !== 'undefined') {
+          if (window.__setWaypoint) {
+            window.__setWaypoint(2320, 1400, 'LITTLE TOKYO · 新宿通り');
+          } else if (window.ROUTE) {
+            // point GPS route
+          }
+          if (window.hud?.flash) window.hud.flash('GPS DESTINATION · LITTLE TOKYO 🏮');
+        }
+        this.toggle(false);
+      };
+      this.content.appendChild(tokyoCard);
+
       // Shooting range and hold-out (game/modes.js). window.__modes is set by main
       // once the scene exists; the cards read the player's position from onFoot/car.
       const modeCard = (title, sub, colour, onclick) => {

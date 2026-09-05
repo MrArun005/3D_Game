@@ -23,6 +23,7 @@ export class SkidMarks {
   constructor(scene) {
     const geo = new THREE.BufferGeometry();
     this.pos = new Float32Array(MAX * 6 * 3);
+    for (let i = 0; i < MAX * 6; i++) this.pos[i * 3 + 1] = -999;
     this.alpha = new Float32Array(MAX * 6);
     geo.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
     geo.setAttribute('aAlpha', new THREE.BufferAttribute(this.alpha, 1));

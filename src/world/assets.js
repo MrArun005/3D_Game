@@ -75,15 +75,18 @@ export function createAssets() {
     road: new THREE.MeshStandardMaterial({
       map: road, roughness: 0.36, metalness: 0.08, envMapIntensity: 1.05,
     }),
-    // Scanned PBR tarmac with aggregate, wet surface sheen, and normal relief
+    // Scanned PBR tarmac with aggregate, clean uniform surface and normal relief (zero black patches)
     tarmac: (() => {
+      const orm = loadPBR('/textures/asphalt_orm.png', false, 2);
       const m = new THREE.MeshStandardMaterial({
-        map: loadPBR('/textures/asphalt_wet_albedo.png', true, 2),
-        normalMap: loadPBR('/textures/asphalt_wet_normal.png', false, 2),
-        normalScale: new THREE.Vector2(1.1, 1.1),
-        roughness: 0.52, metalness: 0.06, envMapIntensity: 1.15,
+        map: loadPBR('/textures/asphalt_albedo.png', true, 2),
+        normalMap: loadPBR('/textures/asphalt_normal.png', false, 2),
+        normalScale: new THREE.Vector2(0.8, 0.8),
+        roughnessMap: orm,
+        metalnessMap: orm,
+        roughness: 0.48, metalness: 0.04, envMapIntensity: 1.1,
       });
-      setORM(m, loadPBR('/textures/asphalt_wet_orm.png', false, 2));
+      orm.channel = 0;
       return m;
     })(),
     // road paint, drawn as geometry a hair above the tarmac

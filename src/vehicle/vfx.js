@@ -22,6 +22,7 @@ export class VehicleVFX {
     this.neonLight = null;
     this.discs = [];
     this.brakeHeat = 0;
+    this.headlightMats = [];
 
     this.backfireT = 0;
     this.lastRpm = 0;
@@ -209,6 +210,8 @@ export class VehicleVFX {
       depthWrite: false,
       side: THREE.DoubleSide,
     }));
+
+    this.headlightMats.push(coneMat);
 
     for (const z of [-0.62, 0.62]) {
       const beam = new THREE.Mesh(coneGeo, coneMat);
@@ -409,6 +412,17 @@ export class VehicleVFX {
         }
       } else {
         this.speedCanvas.style.opacity = '0';
+      }
+    }
+
+    // --- 6. Volumetric Headlight Cones Sync ---
+    if (this.headlightMats.length > 0) {
+      const on = !!car.headlights;
+      const isHigh = car.headlightMode === 'high';
+      const targetOp = on ? (isHigh ? 0.28 : 0.16) : 0;
+      for (const m of this.headlightMats) {
+        m.opacity = targetOp;
+        m.color.setHex(isHigh ? 0xffffff : 0xeef6ff);
       }
     }
   }

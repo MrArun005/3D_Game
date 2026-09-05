@@ -37,6 +37,7 @@ const DISTRICT_SCALE = {
   KINGSWAY: 1.7, NORTHLINE: 0.8, STEELGATE: 0.9, 'HARBOUR POINT': 0.85,
   'OLD QUARTER': 0.8, 'VELLERY ROW': 1.0, ASHMOOR: 0.85,
   'MARROW HILL': 0.8, 'THE FLATS': 0.95, 'GREENFELL PARK': 0.6,
+  'LITTLE TOKYO': 1.15,
 };
 const hash = (x, z) => {
   const n = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
@@ -83,6 +84,7 @@ const DISTRICT_FORM = {
   'MARROW HILL':   { forms: { terrace: 0.4, slab: 0.4, wing: 0.2 }, style: 'period' },
   'THE FLATS':     { forms: { terrace: 0.5, slab: 0.3, setback: 0.2 }, style: 'modern' },
   'GREENFELL PARK': { forms: { slab: 0.6, wing: 0.4 }, style: 'period' },
+  'LITTLE TOKYO':   { forms: { tokyo_walkup: 0.55, setback: 0.25, slab: 0.20 }, style: 'tokyo' },
 };
 const pickForm = (forms, r) => { let acc = 0; for (const [k, w] of Object.entries(forms)) { acc += w; if (r < acc) return k; } return 'slab'; };
 /* Foliage is never one green. These multiply the leaf material, so they read
@@ -582,6 +584,14 @@ export class DistrictWorld {
       stage(y0, podH, 1);
       cap(y0 + podH - SINK, 0.5 + SINK, 1, 0.1);
       stageAt(y0 + podH - SINK, shaft - podH + SINK, w * k, d * k, side * w * (0.5 - k / 2) * 0.8, 0);
+      topK = k;
+    } else if (form === 'tokyo_walkup' && shaft > 8) {
+      // Tokyo commercial street walk-up: narrow multi-tiered street building with stacked shops and setback upper floors
+      const podH = Math.min(shaft * 0.45, 12.0);
+      const k = 0.82 + rand() * 0.10;
+      stage(y0, podH, 1);
+      cap(y0 + podH - SINK, 0.5 + SINK, 1, 0.1);
+      stageAt(y0 + podH - SINK, shaft - podH + SINK, w * k, d * k, (rand() - 0.5) * w * 0.08, 0);
       topK = k;
     } else if (form === 'terrace' && w > 12 && shaft > 9) {
       // stepped: three bands of the frontage at falling heights

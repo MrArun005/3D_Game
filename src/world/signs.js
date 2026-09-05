@@ -21,8 +21,13 @@ export const SIGN_COLS = 4, SIGN_ROWS = 16, SIGN_TILES = SIGN_COLS * SIGN_ROWS;
 const TW = 512, TH = 128;
 
 /** Atlas offset for a tile index, in UV. Canvas row 0 is the top, so v is flipped. */
-export function tileUv(tile) {
-  const t = ((tile % SIGN_TILES) + SIGN_TILES) % SIGN_TILES;
+export function tileUv(tile, isTokyo = false) {
+  let t;
+  if (isTokyo) {
+    t = 32 + (((tile % 32) + 32) % 32);
+  } else {
+    t = ((tile % 32) + 32) % 32;
+  }
   return [(t % SIGN_COLS) / SIGN_COLS, 1 - (Math.floor(t / SIGN_COLS) + 1) / SIGN_ROWS];
 }
 
@@ -38,6 +43,40 @@ const TRADE = [
   'RAMEN · ラーメン', 'IZAKAYA · 居酒屋', 'KARAOKE · カラオケ', '24H CONVENIENCE', 'CYBER ARCADE',
   'SUSHI BAR · 鮨', 'CAPSULE HOTEL', 'YAKITORI · 鳥', 'MATCHA CAFE', 'NEO TOKYO MOTORS',
 ];
+const TOKYO_SIGNS = [
+  'ラーメン 一番 · RAMEN',
+  '居酒屋 🏮 赤ちょうちん',
+  'カラオケ 館 · KARAOKE',
+  '24H CONVENIENCE · コンビニ',
+  '秋葉原 CYBER ARCADE',
+  'すし処 鮨 · SUSHI BAR',
+  'カプセルホテル · SHINJUKU',
+  '炭火焼鳥 · YAKITORI',
+  '宇治抹茶 · MATCHA CAFE',
+  'パチンコ · PACHINKO NEO',
+  'ネオ東京 · NEO-TOKYO MOTORS',
+  '新宿 歌舞伎町 · KABUKICHO',
+  '渋谷 センター街 · SHIBUYA',
+  '六本木 · ROPPONGI NIGHT',
+  'ドン・キホーテ · DISCOUNT',
+  'セガ ゲームセンター · ARCADE',
+  '大衆酒場 · SAKE & BEER',
+  'とんかつ · TONKATSU',
+  '牛丼 · BEEF BOWL 24H',
+  'アニメイト · ANIME & MANGA',
+  '銀座 クラブ · GINZA CLUB',
+  '東京タワー · TOKYO VIEW',
+  '原宿 ファッション · HARAJUKU',
+  '築地海鮮 · TSUKIJI FISH',
+  '珈琲 喫茶 · KISSATEN',
+  'インターネットカフェ · NET CAFE',
+  'カクテルバー · BAR TOKYO',
+  '立ち飲み · STANDING BAR',
+  'おでん · ODEN NOREN',
+  '夜市 · NIGHT MARKET',
+  '電脳街 · CYBER DISTRICT',
+  '浅草 雷門 · ASAKUSA',
+];
 // [board, text, accent]
 const PALETTE = [
   ['#8e1b1b', '#f6e7c8', '#f2c14e'], ['#12284a', '#f4f1e8', '#d94f30'], ['#1d4d2b', '#f1e9c9', '#e8b64a'],
@@ -46,6 +85,16 @@ const PALETTE = [
   ['#0d0d0f', '#39ffb0', '#ff4fd8'], ['#0d0d0f', '#ff4fd8', '#39ffb0'], ['#0d0d0f', '#ffd23f', '#3fd2ff'],
   ['#080812', '#ff007f', '#00f0ff'], ['#060e0a', '#39ff14', '#ffe600'], ['#14080a', '#ff1a40', '#ffaa00'],
   ['#0a0614', '#bd00ff', '#39ffb0'],
+];
+const TOKYO_PALETTES = [
+  ['#06070e', '#ff007f', '#00f0ff'],
+  ['#080512', '#00f0ff', '#ff007f'],
+  ['#120406', '#ff2200', '#ffd23f'],
+  ['#040e08', '#39ff14', '#ffea00'],
+  ['#060614', '#ffd23f', '#00f0ff'],
+  ['#0e0516', '#bd00ff', '#39ffb0'],
+  ['#180608', '#ff3344', '#ffbb00'],
+  ['#050d12', '#00e5ff', '#ff007f'],
 ];
 const FONTS = [
   '700 {s}px "Hiragino Kaku Gothic Pro", "Noto Sans JP", -apple-system, sans-serif',
@@ -61,10 +110,13 @@ export function texSignAtlas() {
   const pick = (a) => a[Math.floor(rnd() * a.length)];
   for (let t = 0; t < SIGN_TILES; t++) {
     const x0 = (t % SIGN_COLS) * TW, y0 = Math.floor(t / SIGN_COLS) * TH;
-    const [board, ink, accent] = pick(PALETTE);
+    const isTokyoTile = t >= 32;
+    const [board, ink, accent] = isTokyoTile ? TOKYO_PALETTES[(t - 32) % TOKYO_PALETTES.length] : pick(PALETTE);
     g.fillStyle = board; g.fillRect(x0, y0, TW, TH);
     // frame
-    g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 6; g.strokeRect(x0 + 3, y0 + 3, TW - 6, TH - 6);
+    g.strokeStyle = isTokyoTile ? accent : 'rgba(0,0,0,0.35)';
+    g.lineWidth = isTokyoTile ? 4 : 6;
+    g.strokeRect(x0 + 3, y0 + 3, TW - 6, TH - 6);
     // an accent device: stripe, or a disc logo on the left
     const r = rnd();
     let tx = x0 + TW / 2, maxW = TW - 60;
@@ -74,17 +126,21 @@ export function texSignAtlas() {
       g.fillStyle = board; g.beginPath(); g.arc(x0 + 64, y0 + TH / 2, 22, 0, 7); g.fill();
       tx = x0 + 110 + (TW - 120) / 2; maxW = TW - 140;
     }
-    const name = rnd() < 0.7 ? `${pick(FIRST)} ${pick(TRADE)}` : pick(TRADE).toUpperCase();
-    const font = pick(FONTS);
-    let size = 64;
+    const name = isTokyoTile
+      ? TOKYO_SIGNS[t - 32]
+      : (rnd() < 0.7 ? `${pick(FIRST)} ${pick(TRADE)}` : pick(TRADE).toUpperCase());
+    const font = isTokyoTile
+      ? '800 {s}px "Hiragino Kaku Gothic Pro", "Noto Sans JP", sans-serif'
+      : pick(FONTS);
+    let size = isTokyoTile ? 58 : 64;
     g.font = font.replace('{s}', size);
     const w = g.measureText(name).width;
     if (w > maxW) { size = Math.floor(size * maxW / w); g.font = font.replace('{s}', size); }
     g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillText(name, tx + 3, y0 + TH / 2 + 3);
-    // Add subtle optical neon bloom to neon signs
-    if (board.startsWith('#0')) {
-      g.shadowColor = accent; g.shadowBlur = 10;
+    g.fillStyle = 'rgba(0,0,0,0.45)'; g.fillText(name, tx + 3, y0 + TH / 2 + 3);
+    // Optical neon glow bloom
+    if (isTokyoTile || board.startsWith('#0')) {
+      g.shadowColor = accent; g.shadowBlur = 14;
     }
     g.fillStyle = ink; g.fillText(name, tx, y0 + TH / 2);
     g.shadowBlur = 0;

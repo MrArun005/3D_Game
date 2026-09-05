@@ -29,10 +29,10 @@ const KITS = {
 };
 /** Which kit a district builds with, and how many of its footprints (0..1). */
 export const KIT_DISTRICT = {
-  NORTHLINE: ['suburban', 0.85], 'GREENFELL PARK': ['suburban', 0.90], 'MARROW HILL': ['suburban', 0.75],
-  STEELGATE: ['industrial', 0.85], 'HARBOUR POINT': ['industrial', 0.75],
-  'OLD QUARTER': ['commercial', 0.80], 'VELLERY ROW': ['commercial', 0.80], ASHMOOR: ['commercial', 0.75],
-  KINGSWAY: ['commercial', 0.80], 'THE FLATS': ['commercial', 0.75],
+  NORTHLINE: ['suburban', 0.20], 'GREENFELL PARK': ['suburban', 0.25], 'MARROW HILL': ['suburban', 0.15],
+  STEELGATE: ['industrial', 0.25], 'HARBOUR POINT': ['industrial', 0.20],
+  'OLD QUARTER': ['commercial', 0.0], 'VELLERY ROW': ['commercial', 0.0], ASHMOOR: ['commercial', 0.0],
+  KINGSWAY: ['commercial', 0.0], 'THE FLATS': ['commercial', 0.0], 'LITTLE TOKYO': ['commercial', 0.0],
 };
 
 const loader = new GLTFLoader();

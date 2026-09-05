@@ -1085,10 +1085,10 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
 // ---- the car ----
 const car = createCarState();
 car.type = 'car';
-/* Headlights are automatic: on at night, off at noon. H still overrides —
-   the toggle in the input handler flips whatever this set. In daylight the
-   two real spotlights were burning cost while being visually invisible. */
-car.headlights = !DAY;
+/* Headlights are active by default from spawn (crisp modern LED low beam).
+   H toggles High-Beam Rally Projectors. */
+car.headlights = true;
+car.headlightMode = 'low';
 const hero = buildCar(assets.carMats, 0x5b636d);
 scene.add(hero);
 // the damage model marks the real bodywork, so it needs the real meshes
@@ -1375,8 +1375,17 @@ function applyPerk(persona) {
 applyPerk(NAMED_CHARACTERS[0]);
 
 const input = createInput((action) => {
-  if (action === 'camera') { if (onFoot.active) { crouch = !crouch; onFoot.crouch = crouch; hud.flash(crouch ? 'CROUCH' : 'STAND'); } else chase.cycle(); }
-  if (action === 'lights') car.headlights = !car.headlights;
+  if (action === 'lights') {
+    if (!car.headlights || car.headlightMode === 'low') {
+      car.headlights = true;
+      car.headlightMode = 'high';
+      hud.flash('HEADLIGHTS · HIGH BEAM 🔆');
+    } else {
+      car.headlights = true;
+      car.headlightMode = 'low';
+      hud.flash('HEADLIGHTS · LOW BEAM 💡');
+    }
+  }
   if (action === 'photo') photo.toggle();
   if (action === 'phone') phone?.toggle();
   if (action === 'intel') intelScanner?.toggle();
@@ -1615,19 +1624,27 @@ function frameBody() {
     0.5 + car.brake * 3.0 + (car.hand > 0.3 ? 1.2 : 0);
   // gear 0 is reverse (the HUD prints it as R)
   if (hero.userData.reverseMat) hero.userData.reverseMat.emissiveIntensity = car.gear === 0 ? 2.4 : 0;
+  const isHighBeam = car.headlights && car.headlightMode === 'high';
   const headMat = hero.userData.headMat;
   if (headMat) {
-    headMat.emissiveIntensity = car.headlights ? 5.5 : 0;
-    headMat.emissive.setHex(car.headlights ? 0xeef6ff : 0x000000);
+    headMat.emissiveIntensity = car.headlights ? (isHighBeam ? 8.8 : 4.8) : 0;
+    headMat.emissive.setHex(car.headlights ? (isHighBeam ? 0xffffff : 0xeef6ff) : 0x000000);
   }
   for (const b of headlightBeams) {
-    b.intensity = car.headlights ? 1800 : 0;
+    b.intensity = car.headlights ? (isHighBeam ? 3600 : 1800) : 0;
+    b.distance = isHighBeam ? 150 : 95;
   }
   for (const sp of lensSprites) {
     sp.visible = car.headlights;
+    const scl = isHighBeam ? 1.35 : 0.95;
+    sp.scale.set(scl, scl, 1);
   }
 
   beamPool.visible = car.headlights;
+  if (car.headlights) {
+    beamPool.scale.set(isHighBeam ? 19 : 15, isHighBeam ? 70 : 46, 1);
+    beamPool.material.opacity = isHighBeam ? 0.92 : 0.72;
+  }
 
   worldTime += dt;
   /* Who the police are actually after.

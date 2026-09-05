@@ -40,6 +40,7 @@ const LANDMARKS = [
 export class Landmarks {
   constructor(scene, district) {
     this.scene = scene; this.district = district; this.placed = [];
+    this.#buildTokyoArch();
     this.#place();
   }
 
@@ -95,5 +96,111 @@ export class Landmarks {
         console.warn('street walker', sp.file, e.message);
       }
     }
+  }
+
+  #buildTokyoArch() {
+    const group = new THREE.Group();
+    const vermilionMat = new THREE.MeshStandardMaterial({
+      color: 0xcc1a24,
+      roughness: 0.42,
+      metalness: 0.1,
+    });
+    const darkWoodMat = new THREE.MeshStandardMaterial({
+      color: 0x1c1816,
+      roughness: 0.65,
+      metalness: 0.05,
+    });
+    const goldMat = new THREE.MeshStandardMaterial({
+      color: 0xf5b722,
+      roughness: 0.28,
+      metalness: 0.8,
+    });
+
+    // Two main vertical Torii columns spanning the street (16m clear span)
+    const span = 16.0;
+    for (const s of [-span / 2, span / 2]) {
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.68, 10.5, 12), vermilionMat);
+      col.position.set(s, 5.25, 0);
+      col.castShadow = true; col.receiveShadow = true;
+
+      // Base stone footings
+      const baseStone = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.95, 1.2, 12), darkWoodMat);
+      baseStone.position.set(s, 0.6, 0);
+      baseStone.receiveShadow = true;
+
+      // Gold capital ring
+      const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.22, 12), goldMat);
+      ring.position.set(s, 8.8, 0);
+
+      group.add(col, baseStone, ring);
+    }
+
+    // Lower crossbeam (Nuki)
+    const nuki = new THREE.Mesh(new THREE.BoxGeometry(span + 2.2, 0.6, 0.8), vermilionMat);
+    nuki.position.set(0, 7.8, 0);
+    nuki.castShadow = true;
+    group.add(nuki);
+
+    // Upper crossbeam (Kasagi) with curved tips
+    const kasagi = new THREE.Mesh(new THREE.BoxGeometry(span + 4.5, 0.85, 1.1), vermilionMat);
+    kasagi.position.set(0, 9.8, 0);
+    kasagi.castShadow = true;
+    group.add(kasagi);
+
+    // Top lintel cap
+    const capRoof = new THREE.Mesh(new THREE.BoxGeometry(span + 5.2, 0.22, 1.35), darkWoodMat);
+    capRoof.position.set(0, 10.3, 0);
+    group.add(capRoof);
+
+    // Center illuminated Tokyo Street neon sign
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024; canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#0a0812';
+    ctx.fillRect(0, 0, 1024, 256);
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 12;
+    ctx.strokeRect(8, 8, 1008, 240);
+    ctx.fillStyle = '#ff007f';
+    ctx.fillRect(20, 20, 984, 12);
+    ctx.font = '900 86px "Hiragino Kaku Gothic Pro", "Noto Sans JP", -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 24;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('新宿通り · TOKYO STREET · 歌舞伎町', 512, 142);
+    const signTex = new THREE.CanvasTexture(canvas);
+    signTex.colorSpace = THREE.SRGBColorSpace;
+
+    const signMat = new THREE.MeshStandardMaterial({
+      map: signTex,
+      emissiveMap: signTex,
+      emissive: 0xffffff,
+      emissiveIntensity: 2.8,
+      roughness: 0.2,
+    });
+    const signBoard = new THREE.Mesh(new THREE.BoxGeometry(7.2, 1.55, 0.28), signMat);
+    signBoard.position.set(0, 8.8, 0);
+    group.add(signBoard);
+
+    // Hanging lanterns with warm golden glow
+    const lanternMat = new THREE.MeshStandardMaterial({
+      color: 0xdd2211,
+      emissive: 0xff4411,
+      emissiveIntensity: 2.2,
+      roughness: 0.35,
+    });
+    for (const lx of [-4.5, -1.8, 1.8, 4.5]) {
+      const lantern = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.28, 0.65, 10), lanternMat);
+      lantern.position.set(lx, 7.1, 0);
+      group.add(lantern);
+    }
+
+    // Place across the main avenue at Tokyo Street boundary
+    group.position.set(2285, 0, 1378);
+    group.rotation.y = 0.05;
+    this.scene.add(group);
+    console.info('Tokyo Gateway Arch placed at 2285, 1378');
   }
 }

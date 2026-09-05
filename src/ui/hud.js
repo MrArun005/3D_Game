@@ -79,7 +79,7 @@ export class Hud {
           const mText = this.jobLine || mission?.prompt || 'MISSION IN PROGRESS';
           this.promptBar.innerHTML = `<span style="color:#ffd23f">🎯 OBJECTIVE</span> · <span>${mText}</span> · <span><b>M</b> Phone</span> · <span><b>G</b> Abort</span>`;
         } else {
-          this.promptBar.innerHTML = '<span style="color:#5bc0be">📱 [M] iFruit Phone (Heists & Services)</span> · <span>💼 [G] Street Jobs</span> · <span>🏃 [F] Step Out On Foot</span> · <span>🗺️ [Tab] GPS Map</span>';
+          this.promptBar.innerHTML = '<span style="color:#5bc0be">📱 [M] iFruit Phone (Heists & Little Tokyo GPS)</span> · <span>💡 [H] High Beams</span> · <span>💼 [G] Street Jobs</span> · <span>🏃 [F] Step Out</span> · <span>🗺️ [Tab] GPS Map</span>';
         }
       }
     }

@@ -78,12 +78,10 @@ const KERB_ROWS = [
   { asset: 'props/hedge_run',     every: 10, chance: 0.10, on: ['street'],   offset: 4.6, align: true },
 ];
 
-/** Flat things that belong ON the carriageway, not the pavement. */
+/** Things in the kerb gutter, away from vehicle tyre paths (no black road patches). */
 const ROAD_ROWS = [
-  { asset: 'props/manhole',     every: 41, chance: 0.55, lateral: 0.35 },   // lateral is a FRACTION of the half-width
-  { asset: 'props/drain_grate', every: 23, chance: 0.6,  lateral: 0.90 },   // in the gutter, by the kerb
-  { asset: 'props/manhole',     every: 44, chance: 0.40, lateral: 0.35 },
-  { asset: 'props/drain_grate', every: 30, chance: 0.45, lateral: 0.92 },
+  { asset: 'props/drain_grate', every: 32, chance: 0.45, lateral: 0.94 },   // in the gutter, by the kerb
+  { asset: 'props/drain_grate', every: 48, chance: 0.40, lateral: 0.95 },
 ];
 
 /* Roadworks: they cluster, so one seeded site owns a run of the kerb rather
@@ -483,15 +481,25 @@ const STYLES = {
     vertical: 'facade/downpipe',
     escape: 'facade/fire_escape',
   },
+  tokyo: {
+    ground: ['facade/ground_retail', 'facade/ground_cafe'],
+    bay: ['facade/bay_modern', 'facade/bay_residential'],
+    topper: 'facade/parapet',
+    vertical: 'facade/downpipe',
+    band: 'facade/string_course',
+    balcony: 'facade/balcony',
+    escape: 'facade/fire_escape',
+  },
 };
 
 /** Which kit a building wears. Height is the honest proxy for what it is. */
 const DISTRICT_STYLE = {
   KINGSWAY: 'modern', 'THE FLATS': 'modern', STEELGATE: 'industrial', 'HARBOUR POINT': 'industrial',
   'OLD QUARTER': 'period', 'VELLERY ROW': 'period', ASHMOOR: 'period', 'MARROW HILL': 'period',
-  NORTHLINE: 'period', 'GREENFELL PARK': 'period',
+  NORTHLINE: 'period', 'GREENFELL PARK': 'period', 'LITTLE TOKYO': 'tokyo',
 };
 function styleFor(box, r) {
+  if (box.district === 'LITTLE TOKYO') return 'tokyo';
   // the district sets the character; two in three buildings follow it, the rest keep the height rule
   const bias = DISTRICT_STYLE[box.district];
   if (bias && r < 0.66) return box.height > 30 && bias !== 'modern' ? 'modern' : bias;
@@ -593,26 +601,42 @@ export function dressFacades(batch, boxes, district, roadNear, signs = null, win
          projecting sign on every second module and an A-frame on the
          pavement outside the cafes -- the kit already has both, they were
          just never placed. This is the layer Shibuya sells on. */
-      if (signs && (style !== STYLES.industrial || r < 0.5)) {
-        const [u, v] = tileUv(Math.floor(hash(mx * 0.37, mz * 1.3) * SIGN_TILES));
+      const isTokyo = box.district === 'LITTLE TOKYO';
+      if (signs && (style !== STYLES.industrial || r < 0.5 || isTokyo)) {
+        const [u, v] = tileUv(Math.floor(hash(mx * 0.37, mz * 1.3) * SIGN_TILES), isTokyo);
         signs.push({
           m: placeBoard(mx + best.nx * 0.14, base + 3.55, mz + best.nz * 0.14, yaw, 3.3, 0.85), u, v,
         });
-        if (i % 2 === 1 && r < 0.7) {
+        if ((i % 2 === 1 || isTokyo) && (isTokyo ? r < 0.85 : r < 0.7)) {
           batch.add('props/sign_projecting', place(mx + ux * 1.55, base + 3.0, mz + uz * 1.55, yaw));
         }
-        if (g.includes('cafe') && r < 0.6) {
+        if ((g.includes('cafe') || isTokyo) && (isTokyo ? r < 0.75 : r < 0.6)) {
           batch.add('props/a_frame_sign', place(mx + best.nx * 1.4 + ux * 0.9, base, mz + best.nz * 1.4 + uz * 0.9, yaw));
         }
-        // Vertical multi-storey neon banners (Tokyo street life aesthetic) on taller commercial/period facades:
-        if (height > 10 && (i === 0 || i === bays - 1) && r < 0.6) {
-          const [uVert, vVert] = tileUv(Math.floor(hash(mz * 1.7 + i, mx * 0.8) * SIGN_TILES));
+        // Vertical multi-storey neon banners (Tokyo street life aesthetic) on taller commercial/period/tokyo facades:
+        if ((height > 8 || isTokyo) && (i === 0 || i === bays - 1) && (isTokyo ? r < 0.94 : r < 0.6)) {
+          const [uVert, vVert] = tileUv(Math.floor(hash(mz * 1.7 + i, mx * 0.8) * SIGN_TILES), isTokyo);
           const edgeOffset = (i === 0 ? -1 : 1) * 1.35;
+          const bannerH = isTokyo ? 4.8 : 3.8;
           signs.push({
-            m: placeBoard(mx + ux * edgeOffset + best.nx * 0.22, base + 7.6, mz + uz * edgeOffset + best.nz * 0.22, yaw, 0.95, 3.8),
+            m: placeBoard(mx + ux * edgeOffset + best.nx * 0.22, base + (isTokyo ? 6.2 : 7.6), mz + uz * edgeOffset + best.nz * 0.22, yaw, 1.05, bannerH),
             u: uVert,
             v: vVert,
           });
+        }
+        // Tokyo street-level Japanese details: sidewalk vending machines & illuminated boxes
+        if (isTokyo) {
+          if (r < 0.55) {
+            batch.add('props/sign_wall_box', place(mx + best.nx * 0.25, base + 2.3, mz + best.nz * 0.25, yaw));
+          }
+          if (i === 0 && r < 0.65) {
+            // Sidewalk vending machine / utility fixture
+            batch.add('props/junction_box', place(mx + best.nx * 1.6 - ux * 0.5, base, mz + best.nz * 1.6 - uz * 0.5, yaw));
+          }
+          if (bays >= 3 && i === 1 && r < 0.45) {
+            // Outdoor Izakaya / Ramen street stall
+            batch.add('props/market_stall', place(mx + best.nx * 1.9, base, mz + best.nz * 1.9, yaw));
+          }
         }
       }
 

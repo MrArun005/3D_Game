@@ -16,8 +16,25 @@ export class District {
     this.bounds = data.bounds;
     this.grid = new Map();             // hash cell -> segment list
     this.segments = [];
+    // Designate Little Tokyo / Neo-Tokyo district in the central street corridor around spawn
+    const TOKYO_BLOCKS = new Set([299, 300, 301, 304, 305, 306, 307, 310, 311, 312, 313]);
+    for (const b of data.blocks) {
+      if (TOKYO_BLOCKS.has(b.id)) {
+        b.district = 'LITTLE TOKYO';
+      }
+    }
     this.blocks = data.blocks;
     this.places = data.places;
+    if (!this.places.some((p) => p.district === 'LITTLE TOKYO')) {
+      this.places.push(
+        { type: 'diner', name: 'Ramen Yokocho · ラーメン横丁', district: 'LITTLE TOKYO', x: 2320, y: 1410 },
+        { type: 'club', name: 'Kabukicho Neon Lounge · 歌舞伎町', district: 'LITTLE TOKYO', x: 2450, y: 1405 },
+        { type: 'store', name: '24H Lawson Convenience · コンビニ', district: 'LITTLE TOKYO', x: 2280, y: 1395 },
+        { type: 'arcade', name: 'Akiba Cyber Arcade · 秋葉原', district: 'LITTLE TOKYO', x: 2415, y: 1515 },
+        { type: 'hotel', name: 'Shinjuku Capsule Hotel · カプセル', district: 'LITTLE TOKYO', x: 2285, y: 1510 },
+        { type: 'pub', name: 'Shibuya Izakaya Alley · 居酒屋', district: 'LITTLE TOKYO', x: 2560, y: 1410 }
+      );
+    }
     this.graph = data.graph;
 
     // flatten every road into segments once; the hash points at these
