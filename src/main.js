@@ -620,7 +620,7 @@ function pullTrigger() {
     const along = (hit.x - ox) * dx + ((hit.y ?? 0.9) - oy) * dy + (hit.z - oz) * dz;
     weapon.bloodAt(ox + dx * along, oy + dy * along, oz + dz * along, dx, dz);
   }
-  if (hit) crosshair.hit(hit.kind === 'person');
+  if (hit) { crosshair.hit(hit.kind === 'person'); if (hit.kind !== 'target' && hit.kind !== 'car') audio.hitmark?.(!!hit.head); }   // the marker you hear
   else {
     let t = wall2;
     if (t === Infinity && dy < -1e-4) t = Math.min(weapon.spec.range, (oy - groundHeightAt(ox, oz)) / -dy);

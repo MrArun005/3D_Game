@@ -296,6 +296,17 @@ export function createAudio() {
       o.start(now); o.stop(now + seconds);
       alarmNode = { o };
     },
+    /* The hit marker's sound: a short tick for a body hit, a higher two-note
+       ding for a headshot. Quiet -- it confirms, it does not celebrate. */
+    hitmark(head = false) {
+      if (!ready || !ctx || ctx.state !== 'running') return;
+      const now = ctx.currentTime;
+      for (const [f, t0, len] of head ? [[1560, 0, 0.05], [2340, 0.05, 0.09]] : [[980, 0, 0.035]]) {
+        const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = f;
+        const g = ctx.createGain(); g.gain.setValueAtTime(head ? 0.06 : 0.04, now + t0); g.gain.exponentialRampToValueAtTime(0.0005, now + t0 + len);
+        o.connect(g); g.connect(master); o.start(now + t0); o.stop(now + t0 + len + 0.01);
+      }
+    },
     cash() {
       if (!ready || !ctx || ctx.state !== 'running') return;
       const now = ctx.currentTime;
