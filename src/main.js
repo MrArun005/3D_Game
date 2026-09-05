@@ -1569,6 +1569,13 @@ function frameBody() {
   } else if (onFoot.active) {
     onFoot.update(c, dt, camera, walkSolid, (x, z) => Math.max(world.district?.elevationAt?.(x, z) ?? 0, groundHeightAt(x, z)));
     car.throttle = 0; car.brake = 1; car.steerTarget = 0;
+    // on foot too: stand still for twenty seconds and the camera circles you; any input, aiming or firing ends it
+    idleCam = idleT > 20 && (onFoot.speed || 0) < 0.2 && !photo.on && !aiming && !firing;
+    if (idleCam) {
+      const a = (performance.now() / 1000) * 0.11, r = 4.5 + Math.sin(a * 0.7) * 1.0, gy = onFoot.y || 0;
+      camera.position.set(onFoot.x + Math.cos(a) * r, gy + 1.7 + Math.sin(a * 0.5) * 0.3, onFoot.z + Math.sin(a) * r);
+      camera.lookAt(onFoot.x, gy + 1.1, onFoot.z);
+    }
   } else {
   car.holdGear = c.hold;
   /* While a carjack beat is playing the pedals are dead: you are not in the
@@ -1859,13 +1866,13 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
         camera.position.set(targetVehicle.x + Math.cos(a) * r, gy + 1.9 + Math.sin(a * 0.5) * 0.5, targetVehicle.z + Math.sin(a) * r);
         camera.lookAt(targetVehicle.x, gy + 0.9, targetVehicle.z);
       }
-      // the HUD fades out with the orbit and back in with the first input (one injected rule, a body class)
-      if (idleCam !== idleCamShown) {
-        idleCamShown = idleCam;
-        if (!document.getElementById('idlecam-style')) { const st = document.createElement('style'); st.id = 'idlecam-style'; st.textContent = '#hud,#cluster,#minimap,#dials,#readout,#wanted,#crosshair,#stats,#gameplay-prompt-bar{transition:opacity .6s}.idlecam #hud,.idlecam #cluster,.idlecam #minimap,.idlecam #dials,.idlecam #readout,.idlecam #wanted,.idlecam #crosshair,.idlecam #stats,.idlecam #gameplay-prompt-bar{opacity:0 !important}'; document.head.appendChild(st); }
-        document.body.classList.toggle('idlecam', idleCam);
-      }
     }
+  }
+  // the HUD fades out with an idle orbit (car or foot) and back in with the first input: one injected rule, a body class
+  if (idleCam !== idleCamShown) {
+    idleCamShown = idleCam;
+    if (!document.getElementById('idlecam-style')) { const st = document.createElement('style'); st.id = 'idlecam-style'; st.textContent = '#hud,#cluster,#minimap,#dials,#readout,#wanted,#crosshair,#stats,#gameplay-prompt-bar{transition:opacity .6s}.idlecam #hud,.idlecam #cluster,.idlecam #minimap,.idlecam #dials,.idlecam #readout,.idlecam #wanted,.idlecam #crosshair,.idlecam #stats,.idlecam #gameplay-prompt-bar{opacity:0 !important}'; document.head.appendChild(st); }
+    document.body.classList.toggle('idlecam', idleCam);
   }
   clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: currentVehicle, dome, stars });
   // the rain audio follows the weather's breathing, and rain is grip: the physics reads car.wet
