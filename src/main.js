@@ -195,6 +195,7 @@ if (new URLSearchParams(location.search).has('debug')) {
   window.__wanted = (n) => { traffic.wanted = n; };
   window.__time = (h) => { clock.hour = ((+h) % 24 + 24) % 24; };          // the recording harness sets the hour
   window.__cmd = (line) => (commands ? commands.execute(line) : false);   // and runs chat commands ('/time 22', '/tp ...')
+  window.__rain = (v) => { rainForce = v; };   // true/false forces the weather on/off; null returns it to the spells
   window.__breakNear = (x, z, r = 3) => debris.breakNear(x, z, r, car, 12);
   // frame-time distribution + worst chunk-build slice, for the perf harness
   window.__perf = () => ({ frames: [...stats.samples], chunk: stats.worstChunkMs });
@@ -511,6 +512,7 @@ let skidT = 0, exhaustT = 0;   // tyre-smoke and exhaust cadences
 let farShotT = 25;        // distant gunfire cadence (ambient, night)
 let farSirenT = 70;       // distant siren cadence (ambient, any hour)
 let rainHeard = null;     // last rain amount handed to the audio
+let rainForce = null;     // ?debug __rain(): force the weather on or off
 let tokyoAmbT = 0, tokyoNodes = null, chimeT = 0;   // district-ambience poll cadence; the district's junctions; crossing-chime cadence
 let clockRestored = false;
 let idleT = 0, idleCam = false, idleCamShown = false;   // seconds since any input; the parked-car orbit camera; whether the HUD is currently faded for it
@@ -2003,7 +2005,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   if (weather) {
     // rain only at night (the clock's thresholds), in spells on the normal cycle, all night with ?night
     const nightNow = clock.hour >= 20.5 || clock.hour < 5.2;
-    weather.setEnabled(nightNow && (!DAY || rainSpell(now / 1000)));
+    weather.setEnabled(rainForce ?? (nightNow && (!DAY || rainSpell(now / 1000))));
     weather.update(camera, currentVehicle, dt); car.wet = weather.amount ?? 1; traffic.wet = car.wet; if (crowd) crowd.rain = car.wet;
     if (Math.abs((weather.amount ?? 1) - (rainHeard ?? -1)) > 0.05) { rainHeard = weather.amount; audio.setRain(rainHeard); }
     // the road LOOKS wet: tarmac roughness drops and its reflection rises with the rain (uniforms only, no recompile; bundles carry uniform changes)
