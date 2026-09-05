@@ -894,12 +894,16 @@ export class Traffic {
     } else this.coldFor = 0;
 
     // Hoist police-active check out of per-car loop
-    let policeActive = false;
-    if (this.wanted >= 1) {
-      for (let i = 0; i < this.police.length; i++) {
-        if (this.police[i].live) { policeActive = true; break; }
-      }
+    /* Which cruisers have their lights on -- hunting you, or a patrol on a
+       call / chase. Civilians pull over for any of them, not only for yours. */
+    const lit = this._lit ??= [];
+    lit.length = 0;
+    for (let i = 0; i < this.police.length; i++) {
+      const q = this.police[i];
+      if (q.live && ((this.wanted >= 1 && q.hunt) || q.respondT > 0)) lit.push(q);
     }
+    const policeActive = lit.length > 0;
+    const nearLit = (x, z, r) => { for (let i = 0; i < lit.length; i++) { const q = lit[i]; if (Math.hypot(q.x - x, q.z - z) < r) return true; } return false; };
 
     for (const car of this.cars) {
       if (!car.live) { this.spawn(car, player, false); continue; }
@@ -946,7 +950,7 @@ export class Traffic {
       } else if ((car.stuckT ?? 0) > 0) car.stuckT = 0;
       /* Sirens: civilians within 70 m of a pursuit slow to a crawl and drift
          to the kerb lane, so a chase runs through parting traffic. */
-      if (!car.hunt && policeActive && Math.hypot(car.x - player.x, car.z - player.z) < 70) {
+      if (!car.hunt && policeActive && car.fleeT <= 0 && nearLit(car.x, car.z, 70)) {   // (a fleeing fugitive does not pull over for its own pursuer)
         limit = Math.min(limit, 2.5);
         car.lane = Math.max(car.lane, Math.max(1, car.edge?.lanes || 1) - 1);
       }
@@ -1048,7 +1052,7 @@ export class Traffic {
           if (this.rand() < 0.4) {
             let best = null, bd = 160;
             for (const v of this.cars) { if (!v.live || v.vhp === 0) continue; const d = Math.hypot(v.x - c.x, v.z - c.z); if (d < bd && d > 25) { bd = d; best = v; } }
-            if (best) { c.chase = best; c.chaseT = 25; c.stopT = 0; best.baseCruise ??= best.cruise; best.cruise = best.baseCruise * 1.8; best.fleeT = 25; c.respondT = 25; }
+            if (best) { c.chase = best; c.chaseT = 25; c.stopT = 0; best.baseCruise ??= best.cruise; best.cruise = best.baseCruise * 1.8; best.fleeT = 25; c.respondT = 25; this.chatter?.radioPool?.('npcChase'); }
           }
         }
         if (c.chase) {
@@ -1099,6 +1103,8 @@ export class Traffic {
         if (c.stale > 11) { c.live = false; c.mesh.visible = false; c.best = Infinity; c.stale = 0; continue; }
       }
 
+      // a cruiser at speed scatters the pavement it passes: pedestrians within 10 m break into a run
+      if (c.speed > 8) { c.panicT = (c.panicT ?? 0) - dt; if (c.panicT <= 0) { c.panicT = 0.5; this.crowd?.panic?.(c.x, c.z, 10); } }
       // a cruiser with a line on you inside 70 m has eyes on you as much as an officer on foot does
       c.seesYou = !c.deployed && gap < 70 && hasLineOfSight(c.x, 1.2, c.z, player.x, (player.y ?? 0) + 1.0, player.z, this._bldg, [], null);
       if (c.seesYou) this.hot = true;

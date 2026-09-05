@@ -132,6 +132,7 @@ export class ChatterEngine {
       reload: ['Reloading! Cover me!', 'Changing mags!', 'I am out, cover!'],
       search: ['Sweeping the block, no visual yet.', 'Check the alleys, suspect went to ground.', 'Units hold the perimeter, we are searching.', 'Last seen on foot, could be anywhere in here.'],
       regained: ['Visual regained! Suspect sighted!', 'There! All units, we have the suspect!', 'Eyes on, eyes on, moving in!'],
+      npcChase: ['In pursuit of a vehicle failing to stop, requesting a unit.', 'Traffic stop refused, suspect vehicle fleeing, in pursuit.', 'Unit 12 in pursuit, northbound, lights and siren.'],
     };
     const pool = POOLS[key]; if (!pool) return;
     this._poolIdx ??= {};
