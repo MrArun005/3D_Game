@@ -159,6 +159,14 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   main compiles each material on the object kind that draws it (Points /
   LineSegments / InstancedMesh / Mesh) -- a Mesh-warmed PointsMaterial was
   a first-use hitch. Play-test list: `docs/PLAYTEST-2026-09-05.md`.
+  Morning after: storm lightning (`world/lightning.js` pure + tested,
+  weather.js flashes the hemisphere light, `audio.thunder`), the zero-star
+  patrol runs its own NPC pursuits (`c.chase`, `#steerToward`, pull-over,
+  30% bail), civilians pull over for ANY lit cruiser (`traffic._lit`),
+  cruisers at speed panic the pavement, distant night gunfire, LightPool
+  const-shadowing TypeError fixed + cruiser headlights + a red/blue beacon
+  point light, marksmen fall on their roof, every shooter has a muzzle flash
+  (`traffic.muzzleFlashMesh`).
 - **iCloud evicts `.git` (2026-09-05)**: the repo lives in `~/Desktop`, which
   iCloud syncs; it marked `.git/index` and 85+ objects `dataless`, so git
   timed out on mmap. `rm .git/index && git reset` rebuilt it once the files
