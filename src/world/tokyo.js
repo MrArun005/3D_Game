@@ -110,7 +110,8 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
 
   // windows on every face above the ground storey; a fraction lit, warm or cool
   for (const f of F) {
-    const bays = Math.max(1, Math.floor((f.w - 0.8) / 2.4));
+    // the street face is dense (a window every 2.4 m); backs and sides are sparser (3.4 m) -- half the triangles where nobody looks up
+    const bays = Math.max(1, Math.floor((f.w - 0.8) / (f.name === 'front' ? 2.4 : 3.4)));
     const pitch = f.w / bays;
     for (let s = 1; s < floors; s++) {
       for (let b = 0; b < bays; b++) {

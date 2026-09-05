@@ -25,3 +25,15 @@ test('the front is the side deepest into tarmac', () => {
   const probe2 = (x, z) => (x < -6 ? 2 : 0);
   assert.equal(frontRotation(probe2, toWorld, 5, 5), Math.PI, '-X side');
 });
+
+test('the street builds poles and sagging wires only by Tokyo buildings, and is deterministic', async () => {
+  const { buildTokyoStreet, POLE_H } = await import('../src/world/tokyo.js');
+  const seg = { ax: 0, az: 0, bx: 120, bz: 0, half: 6 };
+  const a = buildTokyoStreet([seg], () => true, 5), b = buildTokyoStreet([seg], () => true, 5), none = buildTokyoStreet([seg], () => false, 5);
+  assert.ok(a.parts.length >= 8, `poles + arms: ${a.parts.length}`);
+  assert.ok(a.lines.length > 0 && a.lines.length % 6 === 0, 'segment pairs');
+  assert.equal(a.lines.length, b.lines.length, 'same seed, same street');
+  assert.equal(none.parts.length, 0, 'no Tokyo buildings, no poles');
+  let minY = Infinity; for (let i = 1; i < a.lines.length; i += 3) minY = Math.min(minY, a.lines[i]);
+  assert.ok(minY > 6 && minY < POLE_H, `wires sag but stay above head height: ${minY.toFixed(2)}`);
+});
