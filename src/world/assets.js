@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { additive } from '../core/additive.js';
 import { texAsphalt, texWalk, texPool, toTex, cv, normalFromCanvas } from './textures.js';
 import { buildFacadeMaterials, buildBaseMaterials, BASE_H } from './facades.js';
 import { makeTileable } from './city.js';
@@ -149,21 +150,21 @@ export function createAssets() {
     signalLamp: new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
     plant: new THREE.MeshStandardMaterial({ color: 0x4b4f55, roughness: 0.78, metalness: 0.4 }),
     // additive cone under each lamp head: haze doing what a real light would
-    lampCone: new THREE.MeshBasicMaterial({
+    lampCone: additive(new THREE.MeshBasicMaterial({
       color: 0xffd499, transparent: true, opacity: 0.12,
       blending: THREE.AdditiveBlending, depthWrite: false,
       side: THREE.DoubleSide, fog: true,
-    }),
+    })),
     bark: new THREE.MeshLambertMaterial({ color: 0x312b25 }),
     leaf: new THREE.MeshLambertMaterial({ color: 0x283126 }),
     bin: new THREE.MeshStandardMaterial({ color: 0x282c31, roughness: 0.7, metalness: 0.4 }),
     tailDim: new THREE.MeshStandardMaterial({
       color: 0x4a1013, emissive: 0xa8181c, emissiveIntensity: 0.7, roughness: 0.3,
     }),
-    pool: new THREE.MeshBasicMaterial({
+    pool: additive(new THREE.MeshBasicMaterial({
       map: pool, transparent: true, blending: THREE.AdditiveBlending,
       depthWrite: false, opacity: 1.0, fog: true,
-    }),
+    })),
     // one white material for every parked car; colour comes per instance, so a
     // whole street of mixed cars is one draw call per silhouette
     parked: carMats.stunt,

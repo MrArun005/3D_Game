@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { additive } from '../core/additive.js';
 import { roofsNear } from './districtWorld.js';
 
 /**
@@ -226,13 +227,13 @@ export class BillboardSystem {
       ctx.fillText(r.text, 256, 76);
 
       const tex = new THREE.CanvasTexture(canvas);
-      const mat = new THREE.MeshBasicMaterial({
+      const mat = additive(new THREE.MeshBasicMaterial({
         map: tex,
         transparent: true,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
         side: THREE.DoubleSide,
-      });
+      }));
 
       const sign = new THREE.Mesh(new THREE.PlaneGeometry(24, 6), mat);
       sign.position.set(r.x, r.y, r.z);

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { additive } from '../core/additive.js';
 
 /**
  * Crazy City Airspace:
@@ -29,14 +30,14 @@ export class Airspace {
     const beamGeo = new THREE.CylinderGeometry(0.4, 6.5, 120, 16, 1, true);
     beamGeo.translate(0, 60, 0);
 
-    const beamMat = new THREE.MeshBasicMaterial({
+    const beamMat = additive(new THREE.MeshBasicMaterial({
       color: 0x90d5ff,
       transparent: true,
       opacity: 0.22,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
-    });
+    }));
 
     for (let i = 0; i < ROOF_SPOTS.length; i++) {
       const p = ROOF_SPOTS[i];
@@ -99,12 +100,12 @@ export class Airspace {
     this.tickerCtx = ctx;
     this.tickerTex = tex;
 
-    const tickerMat = new THREE.MeshBasicMaterial({
+    const tickerMat = additive(new THREE.MeshBasicMaterial({
       map: tex,
       transparent: true,
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide,
-    });
+    }));
 
     const tickerGeo = new THREE.PlaneGeometry(42, 6);
     const tickerLeft = new THREE.Mesh(tickerGeo, tickerMat);

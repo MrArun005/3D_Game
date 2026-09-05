@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { additive } from '../core/additive.js';
 
 /**
  * Master Vehicle Visual Effects Suite:
@@ -42,27 +43,27 @@ export class VehicleVFX {
     flameGeo.rotateX(Math.PI / 2);
     flameGeo.translate(0, 0, -0.36);
 
-    const flameMat = new THREE.MeshBasicMaterial({
+    const flameMat = additive(new THREE.MeshBasicMaterial({
       color: 0x00d4ff,
       transparent: true,
       opacity: 0,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
-    });
+    }));
 
     const innerGeo = new THREE.ConeGeometry(0.045, 0.48, 8, 1, true);
     innerGeo.rotateX(Math.PI / 2);
     innerGeo.translate(0, 0, -0.24);
 
-    const innerMat = new THREE.MeshBasicMaterial({
+    const innerMat = additive(new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
       opacity: 0,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
-    });
+    }));
 
     const makeFlame = (z) => {
       const g = new THREE.Group();
@@ -98,14 +99,14 @@ export class VehicleVFX {
     this.sparkVel = vel;
     this.sparkLife = life;
 
-    const mat = new THREE.PointsMaterial({
+    const mat = additive(new THREE.PointsMaterial({
       color: 0xffea78,
       size: 0.12,
       transparent: true,
       opacity: 0.95,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
-    });
+    }));
     this.sparks = new THREE.Points(geo, mat);
     this.scene.add(this.sparks);
   }
@@ -173,13 +174,13 @@ export class VehicleVFX {
     ctx.fillRect(0, 0, 128, 128);
 
     const tex = new THREE.CanvasTexture(canvas);
-    const neonMat = new THREE.MeshBasicMaterial({
+    const neonMat = additive(new THREE.MeshBasicMaterial({
       map: tex,
       transparent: true,
       opacity: 0.75,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
-    });
+    }));
 
     const neonMesh = new THREE.Mesh(neonGeo, neonMat);
     neonMesh.position.set(0, 0.08, 0);
@@ -200,14 +201,14 @@ export class VehicleVFX {
     coneGeo.rotateZ(Math.PI / 2);
     coneGeo.translate(-6.0, 0, 0);
 
-    const coneMat = new THREE.MeshBasicMaterial({
+    const coneMat = additive(new THREE.MeshBasicMaterial({
       color: 0xfff2cc,
       transparent: true,
       opacity: 0.14,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
-    });
+    }));
 
     for (const z of [-0.62, 0.62]) {
       const beam = new THREE.Mesh(coneGeo, coneMat);

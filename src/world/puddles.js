@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { additive } from '../core/additive.js';
 
 /**
  * Realistic wet road puddles and water splashes.
@@ -113,14 +114,14 @@ export class PuddleSystem {
     this.sprayVels = vels;
     this.sprayLife = life;
 
-    const mat = new THREE.PointsMaterial({
+    const mat = additive(new THREE.PointsMaterial({
       color: 0xd8eafc,
       size: 0.18,
       transparent: true,
       opacity: 0.65,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
-    });
+    }));
 
     this.sprayParticles = new THREE.Points(geo, mat);
     this.scene.add(this.sprayParticles);

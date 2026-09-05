@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { additive } from '../core/additive.js';
 import { M4, mergeGeos } from '../core/geometry.js';
 import { hasLineOfSight } from './policeAi.js';
 
@@ -101,9 +102,9 @@ export class Helicopter {
 
     const cone = new THREE.Mesh(
       new THREE.ConeGeometry(1, 1, 20, 1, true),
-      new THREE.MeshBasicMaterial({ color: 0xdfe9ff, transparent: true,
+      additive(new THREE.MeshBasicMaterial({ color: 0xdfe9ff, transparent: true,
         opacity: day ? 0.05 : 0.14, blending: THREE.AdditiveBlending,
-        depthWrite: false, side: THREE.DoubleSide }),
+        depthWrite: false, side: THREE.DoubleSide })),
     );
     this.cone = cone;
     scene.add(cone);
@@ -112,8 +113,8 @@ export class Helicopter {
        so in daylight it has to be strong enough to read against tarmac. */
     const pool = new THREE.Mesh(
       new THREE.CircleGeometry(1, 24),
-      new THREE.MeshBasicMaterial({ color: 0xe8f0ff, transparent: true,
-        opacity: day ? 0.30 : 0.42, blending: THREE.AdditiveBlending, depthWrite: false }),
+      additive(new THREE.MeshBasicMaterial({ color: 0xe8f0ff, transparent: true,
+        opacity: day ? 0.30 : 0.42, blending: THREE.AdditiveBlending, depthWrite: false })),
     );
     pool.rotation.x = -Math.PI / 2;
     this.pool = pool;

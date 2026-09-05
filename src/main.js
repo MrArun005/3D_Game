@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { additive } from './core/additive.js';
 import './style.css';
 
 import { autoResolution, createRenderer, createScene, createLights, DAY_SUN } from './core/renderer.js';
@@ -1129,14 +1130,14 @@ for (const s of [-1, 1]) {
   headlightBeams.push(spot);
 
   // Front projector lens glare sprite
-  const spriteMat = new THREE.SpriteMaterial({
+  const spriteMat = additive(new THREE.SpriteMaterial({
     map: lensGlowTex,
     color: 0xffffff,
     transparent: true,
     opacity: 0.95,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
-  });
+  }));
   const sprite = new THREE.Sprite(spriteMat);
   sprite.scale.set(0.9, 0.9, 1);
   sprite.position.set(NOSE_X - 0.05, 0.74, s * 0.55);
@@ -1147,14 +1148,14 @@ for (const s of [-1, 1]) {
 // Photorealistic asphalt road projection decal
 const beamPool = new THREE.Mesh(
   new THREE.PlaneGeometry(1, 1),
-  new THREE.MeshBasicMaterial({
+  additive(new THREE.MeshBasicMaterial({
     map: headlightDecalTex,
     transparent: true,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     opacity: 0.58,
     side: THREE.DoubleSide,
-  })
+  }))
 );
 /* No mrtNode override here: on a quad (unlike the weather's point sprites) a
    zero normal reads as full occlusion to GTAO and the whole decal goes black. */

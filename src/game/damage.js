@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { additive } from '../core/additive.js';
 
 const FIRE_AT = Infinity;   // damage fraction at which the car catches fire; Infinity = never (ponytail: no blast)
 const _dentScratch = new THREE.Vector3();
@@ -132,9 +133,9 @@ export class Damage {
     // the fireball, reused
     const ball = new THREE.Mesh(
       new THREE.SphereGeometry(1, 16, 12),
-      new THREE.MeshBasicMaterial({ color: 0xffb03a, transparent: true,
+      additive(new THREE.MeshBasicMaterial({ color: 0xffb03a, transparent: true,
         opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false,
-        toneMapped: false }),
+        toneMapped: false })),
     );
     ball.visible = false;
     scene.add(ball);
@@ -150,11 +151,11 @@ export class Damage {
     const col = new Float32Array(n * 3);
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    const m = new THREE.PointsMaterial({
+    const m = additive(new THREE.PointsMaterial({
       size, sizeAttenuation: true, map: this.tex, vertexColors: true,
       blending: THREE.AdditiveBlending, transparent: true, depthWrite: false,
       toneMapped: false,
-    });
+    }));
     const p = new THREE.Points(g, m);
     p.frustumCulled = false;
     p.visible = false;

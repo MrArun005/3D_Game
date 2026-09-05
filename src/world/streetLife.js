@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { additive } from '../core/additive.js';
 
 /**
  * Street-level urban atmosphere & chaos:
@@ -142,14 +143,14 @@ export class StreetLife {
     this.geyserVel = gVel;
     this.geyserLife = gLife;
 
-    const gMat = new THREE.PointsMaterial({
+    const gMat = additive(new THREE.PointsMaterial({
       color: 0xcee7ff,
       size: 0.35,
       transparent: true,
       opacity: 0.85,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
-    });
+    }));
     this.geyserMesh = new THREE.Points(gGeo, gMat);
     this.scene.add(this.geyserMesh);
   }
