@@ -77,7 +77,21 @@ export class Traffic {
 
   /** How many cars should be hunting at this wanted level. */
   #wantedCars() {
-    return Math.min(6, Math.floor(this.wanted));
+    // one cruiser is always out on patrol (a witness, and a city that looks policed); the hunt scales with the stars
+    return Math.max(this.patrol === false ? 0 : 1, Math.min(6, Math.floor(this.wanted)));
+  }
+
+  /** The civilian road machinery for a cruiser: follow the graph, keep distance, place. */
+  #driveRoad(c, player, dt) {
+    let guard = 0;
+    while (c.pathLen - c.s < LOOKAHEAD && guard++ < 40) this.#extendGraph(c);
+    while (c.gates.length && c.gates[0].s < c.s - 2) c.gates.shift();
+    const limit = Math.min(c.cruise, this.#leaderLimit(c, player));
+    const accel = limit > c.speed ? 6.5 : 11;
+    c.speed += Math.max(-accel, Math.min(accel, limit - c.speed)) * dt * 2.4;
+    c.speed = Math.max(0, Math.min(c.cruise, c.speed));
+    c.s += c.speed * dt;
+    this.#place(c);
   }
 
   #makePolice() {
@@ -897,6 +911,20 @@ export class Traffic {
       const dx = player.x - c.x, dz = player.z - c.z;
       const gap = Math.hypot(dx, dz);
 
+      /* No stars: this is a PATROL. Lights off, no pursuit steering
+         (#pickExit routes toward the player only for a hunter), officers in
+         the car, and it re-spawns nearby once you have left it behind. It is
+         what makes crimeWitnessed bite -- a cruiser 80 m away saw that. */
+      c.hunt = this.wanted >= 1;
+      if (!c.hunt) {
+        if (c.bar) { c.bar[0].emissiveIntensity = 0.15; c.bar[1].emissiveIntensity = 0.15; }
+        if (c.deployed) { c.deployed = false; c.officer.visible = false; }
+        c.mode = 'road'; c.best = Infinity; c.stale = 0; c.deployT = 0;
+        if (gap > 320) { c.live = false; c.mesh.visible = false; continue; }
+        this.#driveRoad(c, player, dt);
+        continue;
+      }
+
       // lightbar: alternating, and fast enough to read as urgent
       if (c.bar) {
         const flash = Math.floor(t * 6) % 2;
@@ -1114,15 +1142,7 @@ export class Traffic {
       }
 
       // road mode: the civilian machinery, minus any respect for signals
-      let guard = 0;
-      while (c.pathLen - c.s < LOOKAHEAD && guard++ < 40) this.#extendGraph(c);
-      while (c.gates.length && c.gates[0].s < c.s - 2) c.gates.shift();
-      const limit = Math.min(c.cruise, this.#leaderLimit(c, player));
-      const accel = limit > c.speed ? 6.5 : 11;
-      c.speed += Math.max(-accel, Math.min(accel, limit - c.speed)) * dt * 2.4;
-      c.speed = Math.max(0, Math.min(c.cruise, c.speed));
-      c.s += c.speed * dt;
-      this.#place(c);
+      this.#driveRoad(c, player, dt);
     }
   }
 

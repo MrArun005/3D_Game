@@ -259,7 +259,7 @@ function onShot(gap, landed = null, damage = 26, from = null, kind = 'pistol') {
     const px = onFoot.active ? onFoot.x : car.x, pz = onFoot.active ? onFoot.z : car.z; const look = onFoot.active ? onFoot.camYaw : car.yaw;
     const bearing = Math.atan2(-(from.z - pz), from.x - px) - look;
     if (landed) hud.hitFrom?.(bearing);
-    else if (gap < 32 && Math.random() < 0.6) audio.whiz?.(-Math.sin(bearing));   // a near miss you hear go past, on the side it came from (if it sounds mirrored, the sign here is the fix)
+    else if (gap < 32 && Math.random() < 0.6) { audio.whiz?.(-Math.sin(bearing)); if (onFoot.active) onFoot.camYaw += (Math.random() - 0.5) * 0.012; }   // and you flinch a hair   // a near miss you hear go past, on the side it came from (if it sounds mirrored, the sign here is the fix)
   }
   /* Aimed fire (game/policeAi.js): `landed` says whether THIS shot connected,
      and `damage` is the weapon's. The old distance-only field is kept as the
