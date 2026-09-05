@@ -116,40 +116,40 @@ export class Landmarks {
       metalness: 0.8,
     });
 
-    // Two main vertical Torii columns spanning the street (16m clear span)
-    const span = 16.0;
+    // Two main vertical Torii columns spanning the street (27m clear span across Road 168)
+    const span = 27.0;
     for (const s of [-span / 2, span / 2]) {
-      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.68, 10.5, 12), vermilionMat);
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.82, 10.5, 14), vermilionMat);
       col.position.set(s, 5.25, 0);
       col.castShadow = true; col.receiveShadow = true;
 
-      // Base stone footings
-      const baseStone = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.95, 1.2, 12), darkWoodMat);
+      // Base stone footings on sidewalk
+      const baseStone = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.2, 1.2, 14), darkWoodMat);
       baseStone.position.set(s, 0.6, 0);
       baseStone.receiveShadow = true;
 
       // Gold capital ring
-      const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.22, 12), goldMat);
+      const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 0.25, 14), goldMat);
       ring.position.set(s, 8.8, 0);
 
       group.add(col, baseStone, ring);
     }
 
     // Lower crossbeam (Nuki)
-    const nuki = new THREE.Mesh(new THREE.BoxGeometry(span + 2.2, 0.6, 0.8), vermilionMat);
+    const nuki = new THREE.Mesh(new THREE.BoxGeometry(span + 2.4, 0.68, 0.85), vermilionMat);
     nuki.position.set(0, 7.8, 0);
     nuki.castShadow = true;
     group.add(nuki);
 
     // Upper crossbeam (Kasagi) with curved tips
-    const kasagi = new THREE.Mesh(new THREE.BoxGeometry(span + 4.5, 0.85, 1.1), vermilionMat);
+    const kasagi = new THREE.Mesh(new THREE.BoxGeometry(span + 4.8, 0.95, 1.15), vermilionMat);
     kasagi.position.set(0, 9.8, 0);
     kasagi.castShadow = true;
     group.add(kasagi);
 
     // Top lintel cap
-    const capRoof = new THREE.Mesh(new THREE.BoxGeometry(span + 5.2, 0.22, 1.35), darkWoodMat);
-    capRoof.position.set(0, 10.3, 0);
+    const capRoof = new THREE.Mesh(new THREE.BoxGeometry(span + 5.5, 0.26, 1.45), darkWoodMat);
+    capRoof.position.set(0, 10.35, 0);
     group.add(capRoof);
 
     // Center illuminated Tokyo Street neon sign
@@ -177,30 +177,44 @@ export class Landmarks {
       map: signTex,
       emissiveMap: signTex,
       emissive: 0xffffff,
-      emissiveIntensity: 2.8,
+      emissiveIntensity: 3.2,
       roughness: 0.2,
     });
-    const signBoard = new THREE.Mesh(new THREE.BoxGeometry(7.2, 1.55, 0.28), signMat);
+
+    // Core board backing
+    const signBoard = new THREE.Mesh(new THREE.BoxGeometry(9.6, 1.85, 0.32), darkWoodMat);
     signBoard.position.set(0, 8.8, 0);
     group.add(signBoard);
 
-    // Hanging lanterns with warm golden glow
+    // South-facing panel (seen by cars approaching from South / spawn looking North)
+    const southPanel = new THREE.Mesh(new THREE.PlaneGeometry(9.4, 1.65), signMat);
+    southPanel.position.set(0, 8.8, -0.17);
+    southPanel.rotation.y = Math.PI;
+    southPanel.scale.x = -1; // Keep text reading left-to-right from perspective of approaching driver
+    group.add(southPanel);
+
+    // North-facing panel (seen by cars driving South)
+    const northPanel = new THREE.Mesh(new THREE.PlaneGeometry(9.4, 1.65), signMat);
+    northPanel.position.set(0, 8.8, 0.17);
+    group.add(northPanel);
+
+    // Hanging lanterns with warm golden glow spaced across the avenue
     const lanternMat = new THREE.MeshStandardMaterial({
       color: 0xdd2211,
       emissive: 0xff4411,
-      emissiveIntensity: 2.2,
+      emissiveIntensity: 2.4,
       roughness: 0.35,
     });
-    for (const lx of [-4.5, -1.8, 1.8, 4.5]) {
-      const lantern = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.28, 0.65, 10), lanternMat);
-      lantern.position.set(lx, 7.1, 0);
+    for (const lx of [-10.5, -6.5, -2.5, 2.5, 6.5, 10.5]) {
+      const lantern = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.32, 0.72, 12), lanternMat);
+      lantern.position.set(lx, 7.0, 0);
       group.add(lantern);
     }
 
-    // Place across the main avenue at Tokyo Street boundary
-    group.position.set(2285, 0, 1378);
-    group.rotation.y = 0.05;
+    // Place across the main avenue (Road 168) at the entrance to Little Tokyo
+    group.position.set(2356.5, 0, 1378.0);
+    group.rotation.y = -0.03;
     this.scene.add(group);
-    console.info('Tokyo Gateway Arch placed at 2285, 1378');
+    console.info('Tokyo Gateway Arch placed at 2356.5, 1378.0 across Tokyo Street (Road 168)');
   }
 }

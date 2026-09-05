@@ -323,11 +323,40 @@ function respawnCar(nearX = car.x, nearZ = car.z, kinds = null) {
       const d = Math.hypot(n.x - nearX, n.y - nearZ);
       if (d < bestD) { bestD = d; best = n; }
     }
-    if (best) { car.x = best.x; car.z = best.y; }
+    if (best) {
+      // Align with connected road segment and place in driving lane rather than dead intersection center
+      const edges = districtRef?.graph?.edges?.filter((e) => e.a === best.id || e.b === best.id);
+      if (edges && edges.length > 0) {
+        const edge = edges[0];
+        const otherId = edge.a === best.id ? edge.b : edge.a;
+        const otherNode = nodes.find((q) => q.id === otherId);
+        if (otherNode) {
+          const dx = otherNode.x - best.x, dz = otherNode.y - best.y;
+          const len = Math.hypot(dx, dz) || 1;
+          const yaw = Math.atan2(-dz, dx);
+          const off = Math.min(6.5, (edge.width || 26) * 0.22);
+          car.x = best.x + (dx / len) * 8.0 - (dz / len) * off;
+          car.z = best.y + (dz / len) * 8.0 + (dx / len) * off;
+          car.yaw = yaw;
+        } else {
+          car.x = best.x; car.z = best.y;
+        }
+      } else {
+        car.x = best.x; car.z = best.y;
+      }
+    }
+  } else {
+    car.x = 2351.5; car.z = 1356.0; car.yaw = -Math.PI / 2 - 0.03;
   }
-  car.y = groundHeightAt(car.x, car.z) + 0.62;
+  const gy = groundHeightAt(car.x, car.z);
+  car.y = gy + 0.62;
+  if (hero) {
+    hero.position.set(car.x, gy, car.z);
+    hero.rotation.set(0, car.yaw, 0);
+  }
   damageModel.repair();
   spawnSnap = true;
+  chase.snap(car);
 }
 
 /**
@@ -1069,24 +1098,33 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   traffic.onBust = onBust;
   window.district = district;
   districtRef = district;
-  // put the car on a real road: the Kingsway node nearest the district centre
-  // ...next to the metro platform nearest downtown, so the viaduct and a
-  // train are in the first frame (Arun, 2026-09-03)
-  const anchor = metro?.nearestStation(CITY_CENTRE.x, CITY_CENTRE.z) ?? { x: CITY_CENTRE.x, z: CITY_CENTRE.z };
-  const n = district.graph.nodes.reduce((best, q) =>
-    Math.hypot(q.x - anchor.x, q.y - anchor.z)
-      < Math.hypot(best.x - anchor.x, best.y - anchor.z) ? q : best);
+  // Put the car in Little Tokyo on the northbound lane of Tokyo Street (Road 168)
+  // Perfectly aligned with the road heading north directly under the illuminated Grand Torii Arch
+  const spawnX = 2351.5;
+  const spawnZ = 1356.0;
+  const spawnYaw = -Math.PI / 2 - 0.03;
   resetCar(car);
-  car.x = n.x; car.z = n.y; car.y = 0.62;
+  car.x = spawnX;
+  car.z = spawnZ;
+  car.yaw = spawnYaw;
+  car.y = (world.district?.elevationAt?.(spawnX, spawnZ) ?? groundHeightAt(spawnX, spawnZ)) + 0.62;
+  car.vx = 0; car.vz = 0; car.speed = 0; car.yawRate = 0;
   world.update(car.x, car.z);
+  if (hero) {
+    const gy = world.district?.elevationAt?.(spawnX, spawnZ) ?? groundHeightAt(spawnX, spawnZ);
+    hero.position.set(spawnX, gy, spawnZ);
+    hero.rotation.set(0, spawnYaw, 0);
+  }
   spawnSnap = true;
+  chase.snap(car);
   {
-    const rx = Math.sin(car.yaw), rz = Math.cos(car.yaw);
-    person.place(car.x + rx * 7.5, car.z + rz * 7.5, car.yaw + Math.PI);
+    // Place person safely on the pedestrian sidewalk
+    person.place(spawnX - 7.5, spawnZ, spawnYaw + Math.PI / 2);
   }
   // now the car is on its spawn node, lay the film route from where it stands
   ROUTE = buildRoute(null, car.x, car.z);
-  console.info(`Halstead Bay loaded — spawn at node ${n.id} (${n.x}, ${n.y})`);
+  console.info(`Halstead Bay loaded — spawn at Little Tokyo (${car.x}, ${car.z})`);
+  setTimeout(() => { if (window.hud?.flash) window.hud.flash('🏮 LITTLE TOKYO · 新宿通り'); }, 600);
 }).catch((e) => { districtFailed = true; console.warn('district not loaded, staying on the grid:', e.message); });
 
 // ---- the car ----

@@ -266,17 +266,28 @@ export class Phone {
           <div style="font-weight:800; font-size:13px; color:#ff007f;">🏮 LITTLE TOKYO · 新宿通り</div>
           <div style="font-size:11px; color:#ddd;">Tokyo Street Life · Ramen · Izakaya · Neon Torii</div>
         </div>
-        <button id="visit-tokyo-btn" style="padding:8px 14px; border-radius:8px; border:none; background:linear-gradient(135deg, #ff007f, #bd00ff); color:#fff; font-weight:800; font-size:11px; cursor:pointer;">
-          GPS ROUTE
-        </button>
+        <div style="display:flex; gap:6px;">
+          <button id="warp-tokyo-btn" style="padding:8px 10px; border-radius:8px; border:none; background:#c2185b; color:#fff; font-weight:800; font-size:11px; cursor:pointer;">
+            WARP
+          </button>
+          <button id="visit-tokyo-btn" style="padding:8px 10px; border-radius:8px; border:none; background:linear-gradient(135deg, #ff007f, #bd00ff); color:#fff; font-weight:800; font-size:11px; cursor:pointer;">
+            GPS
+          </button>
+        </div>
       `;
+      tokyoCard.querySelector('#warp-tokyo-btn').onclick = (e) => {
+        e.stopPropagation();
+        if (typeof window !== 'undefined') {
+          if (window.__warp) window.__warp(2351.5, 1356.0, -Math.PI / 2 - 0.03);
+          if (window.hud?.flash) window.hud.flash('WARPED TO LITTLE TOKYO 🏮');
+        }
+        this.toggle(false);
+      };
       tokyoCard.querySelector('#visit-tokyo-btn').onclick = (e) => {
         e.stopPropagation();
         if (typeof window !== 'undefined') {
           if (window.__setWaypoint) {
-            window.__setWaypoint(2320, 1400, 'LITTLE TOKYO · 新宿通り');
-          } else if (window.ROUTE) {
-            // point GPS route
+            window.__setWaypoint(2356, 1400, 'LITTLE TOKYO · 新宿通り');
           }
           if (window.hud?.flash) window.hud.flash('GPS DESTINATION · LITTLE TOKYO 🏮');
         }

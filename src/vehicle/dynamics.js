@@ -50,7 +50,7 @@ export function createCarState() {
 }
 
 export function resetCar(car) {
-  const ox = car.x ?? 24, oz = car.z ?? (LANE * 1.5), oyaw = car.yaw ?? 0;
+  const ox = car.x ?? 2351.5, oz = car.z ?? 1356.0, oyaw = car.yaw ?? (-Math.PI / 2 - 0.03);
   Object.assign(car, {
     x: ox, z: oz, yaw: oyaw, vx: 0, vz: 0, yawRate: 0,
     rpm: V.idle, gear: 2, gearTimer: 0, steer: 0, pitch: 0, roll: 0, heave: 0,
