@@ -455,6 +455,7 @@ let lastHurtAt = -1e9;    // health regenerates to half once this is six seconds
 let healTick = 0;
 let skidT = 0;            // tyre-smoke cadence
 let farShotT = 25;        // distant gunfire cadence (ambient, night)
+let vigilante = null;     // { f: fugitive car, t: seconds left } while a patrol chase near you is yours to finish
 let hurtPulse = 0;        // the red edge on the frame, decays each frame (grade.setHurt)
 let armour = 0;           // body armour 0..1, bought at Ammu-Nation, soaks 60% of a hit until gone
 /* The arsenal survives a reload of the page like cash and the garage do. */
@@ -1662,6 +1663,23 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   grenades.update(dt, groundHeightAt);
   tracers.update(dt);
   puffs.update(dt);
+  /* Vigilante: a patrol chase starting within 150 m of you is an offer. Stop
+     the fleeing car -- shoot its engine out or pin it until it stops -- before
+     the patrol does and the city pays $400. GTA's vigilante missions, sized to
+     the chase the patrol already runs (traffic.js c.chase). */
+  {
+    const chaser = traffic.police.find((c) => c.live && c.chase);
+    const f = chaser?.chase ?? null;
+    const px = onFoot.active ? onFoot.x : car.x, pz = onFoot.active ? onFoot.z : car.z;
+    if (f && !vigilante && traffic.wanted < 1 && Math.hypot(f.x - px, f.z - pz) < 150) { vigilante = { f, t: 30 }; hud.flash('VIGILANTE · STOP THE FLEEING CAR · $400'); hud.setJob?.('VIGILANTE · stop the fleeing car'); }
+    if (vigilante) {
+      vigilante.t -= dt;
+      const v = vigilante.f, near = Math.hypot(v.x - px, v.z - pz) < 16;
+      const stopped = v.vhp === 0 || (near && (v.speed || 0) < 1 && v.fleeT > 0);
+      if (stopped && near) { garage?.addCash(400, 'VIGILANTE'); audio.cash?.(); hud.flash('SUSPECT STOPPED · +$400'); vigilante = null; hud.setJob?.(null); }
+      else if (vigilante.t <= 0 || !v.live || v.fleeT <= 0 || traffic.wanted >= 1) { vigilante = null; hud.setJob?.(null); }
+    }
+  }
   // distant gunfire: somewhere across the city, every 35-110 s at night, faint and dull -- the city has other trouble
   if (!DAY || (clock.hour >= 21 || clock.hour < 5)) {
     farShotT -= dt;
