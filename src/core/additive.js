@@ -8,7 +8,11 @@ import { mrt, vec4, output } from 'three/tsl';
  * identity: the pixels keep their real normals. One shared node.
  */
 export const NO_NORMAL = mrt({ normal: vec4(0) });
-export function additive(material) { material.mrtNode = NO_NORMAL; return material; }
+/* Point sprites ONLY. main.js measured the other case: on a quad or a mesh a
+   zero normal reads as full occlusion to GTAO and the whole thing goes black
+   (the headlight road decal). Sprites are tiny and additive, so their normal
+   contribution is what smears; a mesh's real normal is the right one. */
+export function additive(material) { if (material.isPointsMaterial) material.mrtNode = NO_NORMAL; return material; }
 
 /**
  * A material that BLOOMS. Bloom reads the emissive MRT target, and a Basic,
@@ -19,6 +23,7 @@ export function additive(material) { material.mrtNode = NO_NORMAL; return materi
  * pass's (NodeMaterial.setup: mrt.merge(materialMRT)), so colour still lands.
  */
 export function glow(material, strength = 1) {
-  material.mrtNode = mrt({ normal: vec4(0), emissive: output.mul(strength) });
+  // meshes and lines keep their real normal (see additive); only point sprites zero it
+  material.mrtNode = material.isPointsMaterial ? mrt({ normal: vec4(0), emissive: output.mul(strength) }) : mrt({ emissive: output.mul(strength) });
   return material;
 }

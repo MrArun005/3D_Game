@@ -1860,8 +1860,9 @@ function frameBody() {
 
   beamPool.visible = car.headlights;
   if (car.headlights) {
-    beamPool.scale.set(isHighBeam ? 19 : 15, isHighBeam ? 70 : 46, 1);
-    beamPool.material.opacity = isHighBeam ? 0.92 : 0.72;
+    // a pool, not a floodlit stadium: 0.72 over 15 x 46 m read as one white blob in the recording, day or night
+    beamPool.scale.set(isHighBeam ? 12 : 9, isHighBeam ? 42 : 28, 1);
+    beamPool.material.opacity = isHighBeam ? 0.34 : 0.22;
   }
 
   worldTime += dt;
