@@ -212,7 +212,14 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   (ARSENAL + `sniperGeo`, muzzle 0.66 measured, ADS 18 deg, Digit6 ->
   'weapon6'; main maps index 5 -> WEAPON_KINDS[4]; HUD keys it 6); the first
   5-star marksman carries it. `test/actions.test.js` asserts every input
-  action has a main.js handler (the 'camera' handler was lost once). Draws and fps
+  action has a main.js handler (the 'camera' handler was lost once).
+- **Recording (2026-09-05)**: `tools/record-tour.mjs` drives a headed
+  Playwright Chrome against `vite preview` (never the dev server: an HMR
+  reload mid-tour killed one take) with `recordVideo`, captions each scene,
+  and writes `report.json` with per-scene console errors. Headless stalls on
+  the WebGPU canvas (frames repeat, black shards). Two takes today: 19
+  scenes, 0 errors. It found the frozen camera (`idx` lost from the wheel
+  loop), the phone crash (`pay` vs `payout`) and the headlight blob. Draws and fps
   at kingsway-corner NOT re-measured since (no browser in this session).
   Also: `buildTokyoStreet` (poles + wires), `buildShrine` (park block),
   landmark slabs to 24 storeys on tower blocks, `District.districtAt` steers
