@@ -15,6 +15,19 @@ import { glow } from '../core/additive.js';
    a redeploy used to allocate both and never dispose them. */
 let _flashGeo = null, _flashMat = null;
 const _UP = new THREE.Vector3(0, 1, 0);
+
+/* Pickup halos: GTA's glowing disc under a thing you can take. One shared
+   circle, one additive glow material per kind (gun / grenade / armour). */
+let _haloGeo = null; const _haloMat = {};
+const HALO_TINT = { gun: 0xfff2c8, grenade: 0x7cff8a, armour: 0x6fb2ff };
+function haloMesh(kind) {
+  _haloGeo ??= new THREE.CircleGeometry(0.55, 18).rotateX(-Math.PI / 2);
+  const key = HALO_TINT[kind] ? kind : 'gun';
+  _haloMat[key] ??= glow(new THREE.MeshBasicMaterial({ color: HALO_TINT[key], transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }), 0.9);
+  const m = new THREE.Mesh(_haloGeo, _haloMat[key]);
+  m.renderOrder = 3;
+  return m;
+}
 const flashGeo = () => (_flashGeo ??= new THREE.SphereGeometry(0.12, 8, 6));
 const flashMat = () => (_flashMat ??= glow(new THREE.MeshBasicMaterial({ color: 0xfff0c0, toneMapped: false }), 2.5));
 
@@ -584,7 +597,7 @@ export class Traffic {
     g.rotation.set(Math.PI / 2, 0, this.rand() * Math.PI * 2);
     g.visible = true;
     this.scene.add(g);
-    this.drops.push({ kind: c.gunKind, mesh: g, t: 40, x: g.position.x, z: g.position.z });
+    this.drops.push({ kind: c.gunKind, mesh: g, t: 40, x: g.position.x, z: g.position.z, halo: this.#halo('gun', g.position.x, g.position.z) });
     c.gun = null;
     if (this.rand() < 0.15) {   // some wore a vest worth having: half your armour back (main handles 'armour')
       /* ponytail: a vertex-coloured box in the officers' material, shared geometry. A transient pickup, not city detail (rule 3's range-board exception). */
@@ -598,7 +611,7 @@ export class Traffic {
       v.position.set(c.officer.position.x - 0.3, groundHeightAt(c.officer.position.x, c.officer.position.z) + 0.05, c.officer.position.z + 0.5);
       v.rotation.y = this.rand() * Math.PI;
       this.scene.add(v);
-      this.drops.push({ kind: 'armour', mesh: v, t: 40, x: v.position.x, z: v.position.z });
+      this.drops.push({ kind: 'armour', mesh: v, t: 40, x: v.position.x, z: v.position.z, halo: this.#halo('armour', v.position.x, v.position.z) });
     }
     if (this.rand() < 0.2) {   // one in five carried a grenade
       const look = this.grenadeLook;   // the thrown grenade's own geometry and material, so a dropped one is the same object
@@ -606,8 +619,16 @@ export class Traffic {
       const n = new THREE.Mesh(look.geo, look.mat);
       n.position.set(c.officer.position.x - 0.5, groundHeightAt(c.officer.position.x, c.officer.position.z) + 0.08, c.officer.position.z - 0.2);
       this.scene.add(n);
-      this.drops.push({ kind: 'grenade', mesh: n, t: 40, x: n.position.x, z: n.position.z });
+      this.drops.push({ kind: 'grenade', mesh: n, t: 40, x: n.position.x, z: n.position.z, halo: this.#halo('grenade', n.position.x, n.position.z) });
     }
+  }
+
+  /** The glowing disc under a drop, a hair above the ground. */
+  #halo(kind, x, z) {
+    const h = haloMesh(kind);
+    h.position.set(x, groundHeightAt(x, z) + 0.02, z);
+    this.scene.add(h);
+    return h;
   }
 
   /** One entry point for 'a player round hit an officer-shaped thing': door officer or rooftop marksman. Posts belong to the roadblock. */
@@ -636,7 +657,7 @@ export class Traffic {
     if (!this.drops) return null;
     for (let i = this.drops.length - 1; i >= 0; i--) {
       const d = this.drops[i];
-      if (Math.hypot(d.x - x, d.z - z) < 1.2) { this.scene.remove(d.mesh); this.drops.splice(i, 1); return d.kind; }
+      if (Math.hypot(d.x - x, d.z - z) < 1.2) { this.scene.remove(d.mesh); if (d.halo) this.scene.remove(d.halo); this.drops.splice(i, 1); return d.kind; }
     }
     return null;
   }
@@ -647,7 +668,8 @@ export class Traffic {
       const d = this.drops[i]; d.t -= dt;
       d.mesh.rotateOnWorldAxis(_UP, dt * 1.4);                        // a pickup turns slowly: it reads as something to take, not litter
       if (d.t < 6) d.mesh.visible = Math.floor(d.t * 5) % 2 === 0;   // the last six seconds blink, the way GTA's pickups say 'last chance'
-      if (d.t <= 0) { this.scene.remove(d.mesh); this.drops.splice(i, 1); }
+      if (d.halo) { d.halo.visible = d.mesh.visible; d.halo.scale.setScalar(1 + 0.12 * Math.sin(d.t * 4)); }   // the halo breathes
+      if (d.t <= 0) { this.scene.remove(d.mesh); if (d.halo) this.scene.remove(d.halo); this.drops.splice(i, 1); }
     }
   }
 
