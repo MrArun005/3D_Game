@@ -45,7 +45,7 @@ import { groundHeightAt } from './world/metrics.js';
 import { CG_X, WHEEL_R } from './vehicle/config.js';
 import { ChaseCamera } from './game/camera.js';
 import { createInput, padConnected, rumble } from './game/input.js';
-import { Traffic } from './game/traffic.js';
+import { Traffic, policeMaterials } from './game/traffic.js';
 import { Crowd } from './game/crowd.js';
 import { Helicopter } from './game/helicopter.js';
 import { OnFoot, makeSolver } from './game/onfoot.js';
@@ -62,6 +62,7 @@ import { Grenades, BLAST_R, KILL_R, HURT_R, blastFalloff } from './game/grenade.
 import { Crosshair, DecalPool, ADS, ADS_BLEND_S, spreadToPixels, spreadFor, recoilFor, firstBuildingHit, swayFor, swayPhaseStep, reloadPose, movementSpread, aimAssist } from './game/shooting.js';
 import { Tracers } from './game/tracers.js';
 import { Puffs } from './world/puffs.js';
+import { glow } from './core/additive.js';
 import { absorb } from './game/policeAi.js';
 import { SkidMarks } from './world/skidmarks.js';
 import { Damage } from './game/damage.js';
@@ -1829,11 +1830,30 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
        and each first meeting is a 30-80 ms pipeline compile. Meet them here. */
     compileMats.add(officerMaterial());
     compileMats.add(weaponMaterial());
-    if (weapon?.flash?.material) compileMats.add(weapon.flash.material);
+    if (weapon?.flash?.material) { if (!weapon.flash.material.mrtNode) glow(weapon.flash.material, 2.5); compileMats.add(weapon.flash.material); }   // glow it NOW, or the glowed variant compiles on the first shot
     if (weapon?.tracer?.material) compileMats.add(weapon.tracer.material);
     compileMats.add(tracers.material);
     if (weapon?.sparks?.material) compileMats.add(weapon.sparks.material);
-    for (const mat of compileMats) dummyGroup.add(new THREE.Mesh(testBox, mat));
+    if (weapon?.blood?.material) compileMats.add(weapon.blood.material);
+    if (weapon?.casings?.material) compileMats.add(weapon.casings.material);
+    compileMats.add(puffs.mesh.material);
+    compileMats.add(decals.mesh.material);
+    compileMats.add(bloodDecals.mesh.material);
+    compileMats.add(grenades.ball.material); compileMats.add(grenades.mat);
+    for (const m of policeMaterials()) compileMats.add(m);
+    /* The pipeline is keyed on the material AND the object kind: a
+       PointsMaterial warmed on a Mesh compiles the wrong program, and an
+       InstancedMesh's vertex stage differs from a Mesh's. Warm each on what
+       will draw it. */
+    const pointsGeo = new THREE.BufferGeometry(); pointsGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, -50, 0, 1, -50, 0]), 3));
+    pointsGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(6), 3));
+    const instanced = new Set([weapon?.casings?.material, decals.mesh.material, bloodDecals.mesh.material]);
+    for (const mat of compileMats) {
+      if (mat.isPointsMaterial) dummyGroup.add(new THREE.Points(pointsGeo, mat));
+      else if (mat.isLineBasicMaterial) dummyGroup.add(new THREE.LineSegments(pointsGeo, mat));
+      else if (instanced.has(mat)) { const im = new THREE.InstancedMesh(testBox, mat, 1); im.setMatrixAt(0, new THREE.Matrix4().makeTranslation(0, -50, 0)); dummyGroup.add(im); }
+      else dummyGroup.add(new THREE.Mesh(testBox, mat));
+    }
     scene.add(dummyGroup);
 
     const hidden = [];

@@ -20,6 +20,16 @@ const _UP = new THREE.Vector3(0, 1, 0);
    circle, one additive glow material per kind (gun / grenade / armour). */
 let _haloGeo = null; const _haloMat = {};
 let _poolGeo = null;   // the cruisers' light pool disc
+/* Two shared pool materials (red, blue) swapped per frame, not a material per
+   cruiser: two pipelines to compile up front instead of one per cruiser on
+   the first frame it lights up mid-chase. */
+const _poolMat = {};
+const poolMat = (hex) => (_poolMat[hex] ??= glow(new THREE.MeshBasicMaterial({ color: hex, transparent: true, opacity: 0.20, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2 }), 0.7));
+
+/** Every material the police layer creates lazily, built now so main can pre-compile their pipelines (a first-use compile is a 30-80 ms hitch). */
+export function policeMaterials() {
+  return [flashMat(), poolMat(0xff2a1c), poolMat(0x2f6dff), haloMesh('gun').material, haloMesh('grenade').material, haloMesh('armour').material];
+}
 const HALO_TINT = { gun: 0xfff2c8, grenade: 0x7cff8a, armour: 0x6fb2ff };
 function haloMesh(kind) {
   _haloGeo ??= new THREE.CircleGeometry(0.55, 18).rotateX(-Math.PI / 2);
@@ -167,8 +177,7 @@ export class Traffic {
        takes the lit lens's colour each frame. At night the red/blue wash on the
        tarmac is most of what says 'police' from a distance; it is also what
        you see of a cruiser behind you. One quad per cruiser, six at most. */
-    const pool = new THREE.Mesh(_poolGeo ??= new THREE.CircleGeometry(3.4, 20).rotateX(-Math.PI / 2),
-      glow(new THREE.MeshBasicMaterial({ color: 0xff2a1c, transparent: true, opacity: 0.20, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2 }), 0.7));
+    const pool = new THREE.Mesh(_poolGeo ??= new THREE.CircleGeometry(3.4, 20).rotateX(-Math.PI / 2), poolMat(0xff2a1c));
     pool.position.set(0, 0.04, 0); pool.visible = false; pool.renderOrder = 3;
     c.mesh.add(pool); c.pool = pool;
 
@@ -992,7 +1001,7 @@ export class Traffic {
         if (c.respondT <= 0 && c.baseCruise && c.cruise > c.baseCruise) c.cruise = c.baseCruise;
         const lit = c.respondT > 0 && Math.floor(t * 6) % 2;
         if (c.bar) { c.bar[0].emissiveIntensity = lit ? 5.5 : 0.15; c.bar[1].emissiveIntensity = c.respondT > 0 && !lit ? 5.5 : 0.15; }
-        if (c.pool) { c.pool.visible = c.respondT > 0; c.pool.material.color.setHex(lit ? 0xff2a1c : 0x2f6dff); }
+        if (c.pool) { c.pool.visible = c.respondT > 0; c.pool.material = poolMat(lit ? 0xff2a1c : 0x2f6dff); }
         if (c.deployed) { c.deployed = false; c.officer.visible = false; }
         c.mode = 'road'; c.best = Infinity; c.stale = 0; c.deployT = 0;
         if (gap > 320) { c.live = false; c.mesh.visible = false; continue; }
@@ -1005,7 +1014,7 @@ export class Traffic {
         const flash = Math.floor(t * 6) % 2;
         c.bar[0].emissiveIntensity = flash ? 5.5 : 0.15;
         c.bar[1].emissiveIntensity = flash ? 0.15 : 5.5;
-        if (c.pool) { c.pool.visible = true; c.pool.material.color.setHex(flash ? 0xff2a1c : 0x2f6dff); }
+        if (c.pool) { c.pool.visible = true; c.pool.material = poolMat(flash ? 0xff2a1c : 0x2f6dff); }
       }
 
       /* ponytail: greedy descent, not A*. It closes on the player from
