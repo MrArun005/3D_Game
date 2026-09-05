@@ -95,6 +95,10 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   are `NoColorSpace`. Route every texture through `world/textures.js:toTex()` so
   it inherits anisotropy. Four files currently bypass it — that is a bug, not a pattern.
 - Seeded randomness only, via `core/rng.js`. Same seed, same city, every reload.
+- `district.tarmacDepth(x, z)` and `roadDepth` are SIGNED distances to the
+  nearest road edge: negative on tarmac, positive on the pavement, 60 far
+  off the plan. "Deepest into the road" is the MINIMUM. (tokyo.js's front
+  probe maximised it for a day and put every kanban on the back wall.)
 
 ## Current state
 
