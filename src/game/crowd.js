@@ -162,6 +162,7 @@ export class Crowd {
            the crowd holds on the kerb during the red half of the signal cycle
            and moves off together on the green half. */
         let speed = p.speed;
+        if ((this.rain || 0) > 0.4 && speed > 0.15) speed *= 1 + 0.35 * this.rain;   // in the rain people hurry (main sets crowd.rain from the weather)
         if (p.panic > 0) { p.panic -= dt; speed = 2.8; }   // running
         const atKerb = p.j && Math.hypot(p.j.x - p.x, p.j.y - p.z) < 7;
         if (atKerb && !p.cross) {

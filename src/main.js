@@ -1836,7 +1836,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     // rain only at night (the clock's thresholds), in spells on the normal cycle, all night with ?night
     const nightNow = clock.hour >= 20.5 || clock.hour < 5.2;
     weather.setEnabled(nightNow && (!DAY || rainSpell(now / 1000)));
-    weather.update(camera, currentVehicle, dt); car.wet = weather.amount ?? 1; traffic.wet = car.wet;
+    weather.update(camera, currentVehicle, dt); car.wet = weather.amount ?? 1; traffic.wet = car.wet; if (crowd) crowd.rain = car.wet;
     if (Math.abs((weather.amount ?? 1) - (rainHeard ?? -1)) > 0.05) { rainHeard = weather.amount; audio.setRain(rainHeard); }
     // the road LOOKS wet: tarmac roughness drops and its reflection rises with the rain (uniforms only, no recompile; bundles carry uniform changes)
     const tm = assets?.mat?.tarmac; if (tm) { tm.roughness = 0.48 - 0.30 * car.wet; tm.envMapIntensity = 1.1 + 0.9 * car.wet; }
