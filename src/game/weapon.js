@@ -287,8 +287,12 @@ export class Weapon {
     }
     this.flashFor = 0.055;
 
-    // Spawn impact spark burst at hit point
-    const hx = ox + dx * end, hy = oy + dy * end, hz = oz + dz * end;
+    this.sparksAt(ox + dx * end, oy + dy * end, oz + dz * end, dx, dz);
+    return hit;
+  }
+
+  /** An impact spark burst at a point, thrown back against the round's direction. Police rounds on your car use it too (main.onShot). */
+  sparksAt(hx, hy, hz, dx, dz) {
     const spos = this.sparkGeo.attributes.position.array;
     for (let i = 0; i < this.sparkLife.length; i++) {
       spos[i * 3] = hx;

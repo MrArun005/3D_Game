@@ -270,6 +270,13 @@ function onShot(gap, landed = null, damage = 26, from = null, kind = 'pistol') {
   const hit = landed === null ? Math.max(0, 1 - gap / 18) : (landed ? damage / 26 : 0);
   if (hit > 0) { lastHurtAt = performance.now(); hurtPulse = Math.min(1, 0.45 + hit * 0.5); }
   if (landed === false) return;                    // a miss: the shot is heard, nothing else
+  if (landed && from) {
+    // where it landed, you see it: blood off you on foot, sparks off the bodywork in the car
+    const px = onFoot.active ? onFoot.x : car.x, pz = onFoot.active ? onFoot.z : car.z;
+    const dl = Math.hypot(px - from.x, pz - from.z) || 1, ddx = (px - from.x) / dl, ddz = (pz - from.z) / dl;
+    if (onFoot.active) weapon.bloodAt?.(px - ddx * 0.2, (onFoot.y || 0) + 1.1, pz - ddz * 0.2, ddx, ddz);
+    else weapon.sparksAt?.(px - ddx * 1.2 + (Math.random() - 0.5) * 1.4, 0.9 + Math.random() * 0.5, pz - ddz * 1.2 + (Math.random() - 0.5) * 1.4, ddx, ddz);
+  }
   if (onFoot.active && landed) {
     onFoot.character?.flinch?.();   // the body reacts before the number does
     // and so does the camera: a pitch kick scaled by the round, recovering with the usual look damping
