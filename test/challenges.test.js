@@ -91,8 +91,12 @@ test('Jobs dispatches contracts, handles pickup boarding, and rewards completion
   };
 
   const jobs = new Jobs(mockMission, mockTraffic, mockHud, mockDistrict, mockAudio);
-  jobs.toggle({ x: 0, z: 0 });
-  assert.notEqual(jobs.job, null);
+  // the kind is rolled with Math.random; pin it to a FARE (KINDS[1]) -- a getaway
+  // starts at 2 stars and correctly refuses to pay out while still hot
+  const realRandom = Math.random; let first = true;
+  Math.random = () => (first ? (first = false, 0.5) : realRandom());   // only the kind roll is pinned; #pick keeps real randomness
+  try { jobs.toggle({ x: 0, z: 0 }); } finally { Math.random = realRandom; }
+  assert.equal(jobs.job?.kind, 'fare');
 
   // Pick up fare at point A
   mockMission.index = 1;

@@ -37,6 +37,7 @@ import { buildBeach } from './world/beach.js';
 import { useDistrict } from './world/metrics.js';
 import { buildCar } from './vehicle/model.js';
 import { createCarState, resetCar, stepVehicle } from './vehicle/dynamics.js';
+import { lerpPose, copyPose } from './vehicle/interp.js';
 import { Vehicle, CarVehicle } from './game/vehicle.js';
 import { HelicopterVehicle } from './game/flight.js';
 import { TankVehicle } from './game/tank.js';
@@ -1703,6 +1704,15 @@ let lastTime = performance.now();
 let worldTime = 0;      // shared by the signals and the cars that obey them
 const STEP = 1 / 120;
 let physicsAccumulator = 0;
+/* Render interpolation (vehicle/interp.js). `posePrev` is the car BEFORE the
+   last physics step, `poseView` the pose the frame draws; `viewCar` is a
+   prototype-chained view of `car` whose own x/y/z/yaw/heave/roll/pitch are
+   the interpolated ones, so the chase camera can read speed/steer/impact/
+   yawRate/customRig straight through to the real car. Read-only: nothing
+   that writes car state (physics, collision, traffic AI) ever sees it. */
+const posePrev = {}, poseView = {};
+let poseHas = false;
+const viewCar = Object.create(car);
 let frames = 0, elapsed = 0;
 
 /* A persistent corner badge while the frame loop is failing. hud.flash() lasts
@@ -1828,21 +1838,29 @@ function frameBody() {
   // fixed-step physics keeps the tyre model stable
   performance.mark('physics-start');
   const tPhys0 = performance.now();
+  /* dt is already capped at 0.05 above, so the old `if (dt > 0.05)` clamp
+     never ran: a 50 ms stall queued 6 steps, the guard ran 4, and the two
+     left over were run as EXTRA steps over the next frames -- a visible
+     fast-forward after every hitch. Drop what the guard could not run
+     instead; the sim loses 16 ms of time on a stall, which nobody sees. */
   physicsAccumulator += dt;
   let guard = 0;
   if (!activeVehicle || activeVehicle === carVehicle) {
     while (physicsAccumulator >= STEP && guard++ < 4) {
+      copyPose(posePrev, car); poseHas = true;   // the pose before this step: the frame draws between it and the result
       stepVehicle(car, STEP);
       physicsAccumulator -= STEP;
     }
-    /* dt is capped at 0.05 above, so the old `if (dt > 0.05)` clamp never ran,
-       and four steps a frame consume 33 ms: below 30 fps the accumulator grew
-       without bound and then fast-forwarded the car. Clamp AFTER the loop:
-       a slow frame now costs slow motion, never a teleport. */
-    physicsAccumulator = Math.min(physicsAccumulator, STEP * 6);
+    /* Drop what the guard could not run so the interpolation alpha below stays
+       in 0..1: a slow frame costs slow motion, never a teleport or a catch-up. */
+    if (physicsAccumulator >= STEP) physicsAccumulator = STEP * 0.999;
   } else {
     physicsAccumulator = 0;
   }
+  // the draw pose: prev -> cur at the accumulator's fraction of a step (0..1)
+  lerpPose(poseHas ? posePrev : car, car, physicsAccumulator / STEP, poseView);
+  viewCar.x = poseView.x; viewCar.y = poseView.y; viewCar.z = poseView.z; viewCar.yaw = poseView.yaw;
+  viewCar.heave = poseView.heave; viewCar.roll = poseView.roll; viewCar.pitch = poseView.pitch;
   const physMs = performance.now() - tPhys0;
   performance.mark('physics-end');
 
@@ -1850,9 +1868,9 @@ function frameBody() {
   // group carries x/y/z and yaw; the body carries the sprung motion; the wheels ride the road
   if (!activeVehicle || activeVehicle === carVehicle) {
     hero.visible = !onFoot.active;
-    const gy = (world.district?.elevationAt?.(car.x, car.z) ?? groundHeightAt(car.x, car.z));
-    hero.position.set(car.x, gy, car.z);
-    hero.rotation.set(0, car.yaw, 0);
+    const gy = (world.district?.elevationAt?.(poseView.x, poseView.z) ?? groundHeightAt(poseView.x, poseView.z));
+    hero.position.set(poseView.x, gy, poseView.z);   // the interpolated pose, not the raw step (see viewCar)
+    hero.rotation.set(0, poseView.yaw, 0);
   } else {
     hero.visible = false;
   }
@@ -1862,11 +1880,13 @@ function frameBody() {
      height, so the sag has to land on the sprung mass too. */
   let sag = 0;
   for (const w of hero.userData.wheels) sag += (w.flat || 0);
-  body.position.y = car.heave - (sag / 4) * WHEEL_R * 0.3;
+  body.position.y = poseView.heave - (sag / 4) * WHEEL_R * 0.3;
   // local x is forward and local z is lateral, so roll goes on x and pitch on z
-  body.rotation.set(car.roll, 0, car.pitch);
+  body.rotation.set(poseView.roll, 0, poseView.pitch);
   // doors ease toward their target; a slam is a fast ease, not a snap
-  for (const d of Object.values(hero.userData.doors || {})) {
+  // (the list is cached: Object.values allocated an array every frame)
+  if (hero.userData.doorList?.src !== hero.userData.doors) { hero.userData.doorList = Object.values(hero.userData.doors || {}); hero.userData.doorList.src = hero.userData.doors; }
+  for (const d of hero.userData.doorList) {
     d.pivot.rotation.y += (d.target - d.pivot.rotation.y) * Math.min(1, dt * d.speed);
   }
   /* Steering ratio ~2.6: a real car turns the wheel about 2.5 times more
@@ -2091,7 +2111,8 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
       chase.setLookBack(!!c?.lookBack && !flying);   // Q is the helicopter's strafe (flight.js), not look-back
       if ((targetVehicle.impact || 0) > 6.0) rumble(Math.min(1.0, targetVehicle.impact / 18.0), 120);
       if (spawnSnap) { spawnSnap = false; chase.snap(targetVehicle); }
-      targetVehicle.camera ? targetVehicle.camera(chase, dt) : chase.update(targetVehicle, dt);
+      // the chase camera follows the DRAWN pose: the hero and the camera alias the same step fraction, or the car swims in frame
+      targetVehicle.camera ? targetVehicle.camera(chase, dt) : chase.update(targetVehicle === car ? viewCar : targetVehicle, dt);
       /* Parked and idle for twenty seconds: the camera drifts into a slow orbit
          of the car, GTA's idle cinematic. Any input ends it and the chase
          camera picks up from wherever the orbit left it. */

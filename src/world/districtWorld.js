@@ -687,8 +687,14 @@ export class DistrictWorld {
    * real lane pitch, a kerb face, and a pavement behind it. Built per graph
    * edge and trimmed back from both junctions, so nothing is ever painted
    * across a crossroads.
+   *
+   * A generator, driven with `yield*` from #buildSteps: it yields through the
+   * caller's `tick` once per edge, so a chunk on an arterial (~40 edges,
+   * ~2,000 ribbons) no longer lands as one un-yielded step. Nothing touches
+   * `group` until the loop is over -- the four meshes are added together at
+   * the end, so an abandoned build never leaves a half-painted street.
    */
-  #streetFurniture(edgeIds, group) {
+  *#streetFurniture(edgeIds, group, tick) {
     const A = this.assets;
     const white = [], warm = [], kerb = [], kerbN = [], walk = [], walkUv = [], walkN = [];
 
@@ -722,6 +728,7 @@ export class DistrictWorld {
     };
 
     for (const ei of edgeIds) {
+      yield* tick();
       const e = this.district.graph.edges[ei];
       if (e.class === 'freeway' || e.class === 'ramp') continue;
       const half = e.width / 2;
@@ -814,8 +821,13 @@ export class DistrictWorld {
    * A signal head on every approach to every signalised junction, wired to the
    * same pure phase function the traffic reads. Lenses are one instanced mesh
    * per chunk whose colours are rewritten each frame.
+   *
+   * A generator like #streetFurniture: yields through `tick` per approach.
+   * Every mesh is added to `group` after the loop (the paint, the zebra,
+   * the lenses, and the authored masts when their async emit lands), so the
+   * chunk is never visible with half its junctions signed.
    */
-  #signals(edgeIds, group, key) {
+  *#signals(edgeIds, group, key, tick) {
     const A = this.assets;
     const posts = [], arms = [], lens = [], meta = [], zebra = [];
     const seen = new Set(), scrambled = new Set();
@@ -884,6 +896,7 @@ export class DistrictWorld {
       const e = this.district.graph.edges[ei];
       if (e.class === 'freeway' || e.class === 'ramp') continue;
       for (const end of [e.a, e.b]) {
+        yield* tick();
         const node = this.nodeById.get(end);   // 1789 nodes; a scan per approach is not free
         if (!node || (node.kind !== 'cross' && node.kind !== 'tee')) continue;
         const tag = `${ei}:${end}`;
@@ -1343,9 +1356,9 @@ export class DistrictWorld {
     }
 
     yield;
-    this.#streetFurniture(this.edgeByChunk.get(k) ?? [], group);
+    yield* this.#streetFurniture(this.edgeByChunk.get(k) ?? [], group, tick);
     yield;
-    this.#signals(this.edgeByChunk.get(k) ?? [], group, k);
+    yield* this.#signals(this.edgeByChunk.get(k) ?? [], group, k, tick);
     yield;
 
     /* Lamps every 30m down each segment, alternating sides. The old procedural
