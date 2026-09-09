@@ -161,9 +161,11 @@ export class IntelScanner {
 
     // 2. Scan police & traffic vehicles
     if (traffic?.cars && slot < MAX_TARGETS) {
-      for (let i = 0; i < traffic.cars.length && slot < MAX_TARGETS; i++) {
-        const c = traffic.cars[i];
-        if (!c || !c.active) continue;
+      // cruisers live in traffic.police, not traffic.cars; a car in play is `live` (there is no `active`)
+      const fleet = traffic.police ? traffic.cars.concat(traffic.police) : traffic.cars;
+      for (let i = 0; i < fleet.length && slot < MAX_TARGETS; i++) {
+        const c = fleet[i];
+        if (!c || !c.live) continue;
         const d = Math.hypot(c.x - playerPos.x, c.z - playerPos.z);
         if (d > SCAN_RANGE) continue;
 
@@ -178,8 +180,8 @@ export class IntelScanner {
           b.el.style.left = `${sx}px`;
           b.el.style.top = `${sy}px`;
 
-          const isPolice = c.isPolice || c.role === 'police';
-          const speedKmh = Math.round(Math.hypot(c.vx || 0, c.vz || 0) * 3.6);
+          const isPolice = !!traffic.police?.includes(c);
+          const speedKmh = Math.round((c.speed || 0) * 3.6);   // traffic cars carry a scalar `speed` along their path, no vx/vz
 
           if (isPolice) {
             b.el.style.borderColor = '#ff3344';

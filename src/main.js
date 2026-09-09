@@ -281,6 +281,7 @@ function paintName() {
 function damageVehicle(v, amount, isPolice) {
   if (!v || v.vhp === 0) return;
   v.vhp = Math.max(0, (v.vhp ?? 8) - amount);
+  v.stoppedBy = 'player';   // every player-inflicted engine hit (bullet, ram, blast) comes through here; the vigilante payout asks for it
   if (v.vhp === 0) {
     v.cruise = 0; v.baseCruise = 0; v.fleeT = 0; hud.flash(isPolice ? 'CRUISER DISABLED' : 'ENGINE OUT'); audio.thud?.(8);
     if (!isPolice) crowd?.eject(v.x, v.z, v.yaw);
@@ -406,6 +407,7 @@ function onDeath() {
      when the ammo comes back with you. Never more than you have. */
   if (garage && garage.cash > 0) { const fee = Math.min(garage.cash, 500); garage.addCash(-fee, 'HOSPITAL'); hud.flash(`HOSPITAL FEE · -$${fee}`); }
   jobs?.fail('WASTED · JOB LOST');
+  if (story?.active) { story.abandon(); hud.flash('MISSION FAILED'); }   // a story mission does not survive the hospital
   hud.setDead(true);
   traffic.standDown();
   if (mission && mission.active) mission.stop('WASTED');
@@ -431,6 +433,7 @@ function onBust() {
   grenades.count = 0; armour = 0; refreshHeldGun(); saveArsenal();
   hud.flash('BUSTED · WEAPONS CONFISCATED');
   jobs?.fail('BUSTED · JOB LOST');
+  if (story?.active) { story.abandon(); hud.flash('MISSION FAILED'); }   // nor the station
   bustFlash = 2.6;
   traffic.standDown();
   if (heli) heli.update(car, traffic, 0);
@@ -709,7 +712,7 @@ function pullTrigger() {
   // firing at all is a crime; hitting something is a worse one
   if (hit?.kind !== 'target' && modes?.active !== 'range') traffic.reportCrime(hit ? (hit.kind === 'person' ? 'person' : (hit.kind === 'police' || hit.kind === 'officer') ? 'police' : 'traffic') : 'traffic',
                       hit ? 9 : 1);
-  if (hit && hit.kind === 'officer') { const dmg = weapon.spec.damage * (hit.head ? 3 : 1); if (hit.head) hud.flash('HEADSHOT'); const downed = traffic.hitAny?.(hit.ref, dmg) || roadblock?.hitPost?.(hit.ref, dmg); if (downed) { modes?.onOfficerDown(); story?.onOfficerDown?.(); hud.flash(modes?.active === 'holdout' ? 'OFFICER DOWN · +50' : 'OFFICER DOWN'); } crosshair.hit(hit.ref.down > 0); }
+  if (hit && hit.kind === 'officer') { const dmg = weapon.spec.damage * (hit.head ? 3 : 1); if (hit.head) hud.flash('HEADSHOT'); const downed = (hit.ref.mesh || hit.ref.roof) ? traffic.hitAny?.(hit.ref, dmg) : roadblock?.hitPost?.(hit.ref, dmg); if (downed) { modes?.onOfficerDown(); story?.onOfficerDown?.(hit.x, hit.z); hud.flash(modes?.active === 'holdout' ? 'OFFICER DOWN · +50' : 'OFFICER DOWN'); } crosshair.hit(hit.ref.down > 0); }
   if (hit && hit.kind === 'person') { hit.ref.down = 0.001; bloodDecals.stamp(hit.ref.x, groundHeightAt(hit.ref.x, hit.ref.z) + 0.01, hit.ref.z, 0, 1, 0, 0.8 + Math.random() * 0.5); }
   if (hit && (hit.kind === 'car' || hit.kind === 'police')) {   // vehicles only: boards, marksmen and posts have no .mesh
     hit.ref.speed *= 0.55;
@@ -1951,7 +1954,8 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
       vigilante.t -= dt;
       const v = vigilante.f, near = Math.hypot(v.x - px, v.z - pz) < 16;
       const stopped = v.vhp === 0 || (near && (v.speed || 0) < 1 && v.fleeT > 0);
-      if (stopped && near) { garage?.addCash(400, 'VIGILANTE'); audio.cash?.(); hud.flash('SUSPECT STOPPED · +$400'); vigilante = null; hud.setJob?.(null); }
+      // stoppedBy: your round or your bumper stopped it (damageVehicle), not a traffic jam or the patrol pulling alongside
+      if (stopped && near && v.stoppedBy === 'player') { garage?.addCash(400, 'VIGILANTE'); audio.cash?.(); hud.flash('SUSPECT STOPPED · +$400'); vigilante = null; hud.setJob?.(null); }
       else if (vigilante.t <= 0 || !v.live || v.fleeT <= 0 || traffic.wanted >= 1) { vigilante = null; hud.setJob?.(null); }
     }
   }

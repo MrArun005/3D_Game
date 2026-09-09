@@ -174,7 +174,13 @@ export class StoryManager {
   }
 
   /** main calls this when an officer goes down; only firefight steps care. */
-  onOfficerDown() { if (this.active) this.downed = (this.downed || 0) + 1; }
+  onOfficerDown(x, z) {
+    if (!this.active) return;
+    // only officers dropped in or around the zone count; a fight three blocks away is not holding the depot
+    const step = this.active.steps?.[this.stepIdx];
+    if (x !== undefined && step?.target && Math.hypot(x - step.target.x, z - step.target.z) > (step.radius || 24) + 60) return;
+    this.downed = (this.downed || 0) + 1;
+  }
 
   update(car, dt) {
     if (!this.active) return;

@@ -30,7 +30,11 @@ export class Jobs {
       if (typeof localStorage !== 'undefined') {
         savedCash = Number(localStorage.getItem('hb.cash') || 0);
         savedDone = Number(localStorage.getItem('hb.jobs') || 0);
-        if (!localStorage.getItem('hb.grant_50k')) {
+        if (!Number.isFinite(savedCash)) savedCash = 0;   // a corrupt value read as NaN, and NaN < price is false: spendCash never failed
+        if (!Number.isFinite(savedDone)) savedDone = 0;
+        // the test-funds grant is a dev convenience: only under ?debug (the flag semantics are unchanged)
+        const debug = typeof location !== 'undefined' && /[?&]debug/.test(location.search);
+        if (debug && !localStorage.getItem('hb.grant_50k')) {
           savedCash += 50000;
           grantedBonus = true;
           localStorage.setItem('hb.grant_50k', '1');
@@ -94,12 +98,13 @@ export class Jobs {
     const pay = Math.round((60 + dist * 0.45) * (0.8 + tier * 0.35));
     const limit = kind === 'courier' ? dist / 12 + 20 : Infinity;          // 12 m/s average is honest city pace
     this.job = { kind, pay, limit, tier, a, b, pickedUp: false, t: 0 };
-    this.mission.route([a, b], kind === 'fare' ? 'PICK UP THE FARE · COME TO A STOP AT MARKER' : kind === 'getaway' ? 'LOSE THE HEAT · REACH THE DROP' : 'COLLECT THE PACKAGE');
+    // fares board and packages load only at a standstill: the ring holds until you stop (mission.js requireStop); a getaway is a fly-through
+    this.mission.route([a, b], kind === 'fare' ? 'PICK UP THE FARE · COME TO A STOP AT MARKER' : kind === 'getaway' ? 'LOSE THE HEAT · REACH THE DROP' : 'COLLECT THE PACKAGE', false, { requireStop: kind !== 'getaway' });
     if (this.navigation) {
       this.navigation.setWaypoint(a.x, a.z !== undefined ? a.z : a.y);
       this.navigation.lastTarget = null;
     }
-    if (kind === 'getaway') this.traffic.reportCrime('police', 6);
+    if (kind === 'getaway') { this.traffic.wanted = Math.max(this.traffic.wanted, 2); this.traffic.cool = 0; }   // 'you start hot (2 stars)': reportCrime('police', 6) gave 1.04 and needed a witness
     this.hud.flash(`${kind.toUpperCase()} · $${pay}${limit < Infinity ? ` · ${Math.round(limit)}s` : ''}`);
     this.#show();
   }

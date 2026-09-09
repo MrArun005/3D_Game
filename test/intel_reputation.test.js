@@ -70,8 +70,8 @@ test('ReputationSystem safehouse purchasing and proximity refuge healing', () =>
   assert.equal(rep.isOwned(house.id), true);
   assert.equal(cashSpent, house.cost);
 
-  // Test proximity refuge (clears heat, repairs car)
-  const fakeTraffic = { wanted: 4 };
+  // Test proximity refuge (clears heat below three stars once unseen, repairs car)
+  const fakeTraffic = { wanted: 4, coldFor: 30 };
   const fakeCar = { hp: 20 };
   let repaired = false;
   const fakeDamageModel = { repair() { repaired = true; } };
@@ -81,12 +81,24 @@ test('ReputationSystem safehouse purchasing and proximity refuge healing', () =>
   assert.equal(fakeTraffic.wanted, 4);
   assert.equal(repaired, false);
 
-  // Inside safehouse radius (within 22m)
+  // Inside safehouse radius (within 22m) at four stars: the car is fixed but they know the driver -- the heat stays
+  rep.lastSafehouseCooldown = 0;
+  rep.update(0.016, house.x + 5, house.z + 5, fakeTraffic, fakeCar, fakeDamageModel);
+  assert.equal(fakeTraffic.wanted, 4, 'a 3+ star pursuit follows you to the door');
+  assert.equal(fakeCar.hp, 100);
+  assert.equal(repaired, true);
+
+  // Two stars but a cruiser had a line on you 2 s ago: not yet
+  fakeTraffic.wanted = 2; fakeTraffic.coldFor = 2;
+  rep.lastSafehouseCooldown = 0;
+  rep.update(0.016, house.x + 5, house.z + 5, fakeTraffic, fakeCar, fakeDamageModel);
+  assert.equal(fakeTraffic.wanted, 2, 'still seen: the safehouse does not hide you');
+
+  // Two stars, unseen for 10 s: the heat is gone
+  fakeTraffic.coldFor = 10;
   rep.lastSafehouseCooldown = 0;
   rep.update(0.016, house.x + 5, house.z + 5, fakeTraffic, fakeCar, fakeDamageModel);
   assert.equal(fakeTraffic.wanted, 0);
-  assert.equal(fakeCar.hp, 100);
-  assert.equal(repaired, true);
 });
 
 test('IntelScanner instantiates safely in headless environment and toggles state', () => {

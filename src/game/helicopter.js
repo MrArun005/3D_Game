@@ -269,6 +269,8 @@ export class Helicopter {
       this.landing = true;
       this.pad = this.#findPad(car);
     }
+    // the heat came back while it sat on the pad: lift off again (it stayed `live`, so the arrival branch below never re-fired and air support was gone for good)
+    if (want && this.live && this.landing) { this.landing = false; this.landed = false; this.pad = null; }
     if (this.landing) {
       this.t += dt;
       // fly to the pad first, then put down; descending wherever it happened

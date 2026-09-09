@@ -194,6 +194,7 @@ test('Jobs grants one-time $50,000 test funds to player and persists flag', () =
   };
 
   const origStorage = globalThis.localStorage;
+  const origLocation = globalThis.location;
   globalThis.localStorage = mockStorage;
 
   try {
@@ -202,9 +203,23 @@ test('Jobs grants one-time $50,000 test funds to player and persists flag', () =
     const mockHud = { setJob: () => {}, flash: () => {} };
     const mockDistrict = { blocks: [], graph: { nodes: [] } };
 
-    // First initialization: grants $50,000
+    // A normal load: no grant, cash is whatever was saved (nothing -> $0)
+    globalThis.location = { search: '' };
+    const jobs0 = new Jobs(mockMission, mockTraffic, mockHud, mockDistrict);
+    assert.equal(jobs0.cash, 0, 'a fresh player starts with nothing');
+    assert.equal(store['hb.grant_50k'], undefined, 'the test-funds flag is not touched outside ?debug');
+
+    // Corrupt saves read as NaN before; now they fall back to 0
+    store['hb.cash'] = 'garbage'; store['hb.jobs'] = 'NaN';
+    const jobsBad = new Jobs(mockMission, mockTraffic, mockHud, mockDistrict);
+    assert.equal(jobsBad.cash, 0);
+    assert.equal(jobsBad.done, 0);
+    delete store['hb.cash']; delete store['hb.jobs'];
+
+    // ?debug, first initialization: grants $50,000
+    globalThis.location = { search: '?debug' };
     const jobs1 = new Jobs(mockMission, mockTraffic, mockHud, mockDistrict);
-    assert.equal(jobs1.cash, 50000, 'First startup should grant $50,000 test funds');
+    assert.equal(jobs1.cash, 50000, 'First debug startup should grant $50,000 test funds');
     assert.equal(store['hb.grant_50k'], '1', 'Should set one-time grant flag');
     assert.equal(store['hb.cash'], '50000', 'Should persist $50,000 cash balance');
 
@@ -214,6 +229,8 @@ test('Jobs grants one-time $50,000 test funds to player and persists flag', () =
   } finally {
     if (origStorage) globalThis.localStorage = origStorage;
     else delete globalThis.localStorage;
+    if (origLocation) globalThis.location = origLocation;
+    else delete globalThis.location;
   }
 });
 

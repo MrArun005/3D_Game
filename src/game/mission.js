@@ -136,9 +136,10 @@ export class Mission {
   }
 
   /** Route to a given list of graph nodes (jobs.js) or story mission steps. No best-time bookkeeping. */
-  route(points, label, isStory = false) {
+  route(points, label, isStory = false, { requireStop = false } = {}) {
     this.points = points; this.index = 0; this.time = 0; this.active = true; this.isJob = true;
     this.isStory = !!isStory;
+    this.requireStop = requireStop;   // jobs: a checkpoint takes only below 1.5 m/s (a fare boards, a package loads)
     this._radiusScale = 1.0;
     this.#say(label); this.#place();
   }
@@ -190,6 +191,7 @@ export class Mission {
     if (!p) return;
     const pz = p.z !== undefined ? p.z : p.y;
     if (Math.hypot(car.x - p.x, car.z - pz) > RING_R) return;
+    if (this.requireStop && (Math.hypot(car.vx || 0, car.vz || 0) || Math.abs(car.fwdSpeed ?? car.speed ?? 0)) > 1.5) return;   // inside the ring but still rolling: wait
 
     this.index++;
     if (this.index >= this.points.length) {

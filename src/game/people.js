@@ -106,7 +106,7 @@ export class People {
       s.obj.scale.set(sc, sc, sc);
       if (p.down) this.#play(s, 'die');
       else if (p.panic > 0) this.#play(s, 'sprint', 1.1);
-      else if (p.cross || (p.speed > 0.15 && !(p.j && Math.hypot(p.j.x - p.x, p.j.y - p.z) < 7 && p.waitingNow))) this.#play(s, 'walk', 0.9 + (p.speed || 1) * 0.3);
+      else if (p.cross || (p.speed > 0.15 && !(p.j && Math.hypot(p.j.x - p.x, p.j.y - p.z) < 7 && p.kerbWait))) this.#play(s, 'walk', 0.9 + (p.speed || 1) * 0.3);
       else this.#play(s, 'idle');
       if (s.person !== p) { s.person = p; s.mixer.setTime(Math.random() * 2); }
 

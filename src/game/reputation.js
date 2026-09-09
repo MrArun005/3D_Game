@@ -238,7 +238,8 @@ export class ReputationSystem {
           this.lastSafehouseCooldown = now + 8000; // 8s cooldown before re-triggering
 
           let healed = false;
-          if (traffic && traffic.wanted > 0) {
+          // the safehouse hides you only below three stars and once nobody has had eyes on you for 5 s (traffic.coldFor); a hot 3-star pursuit follows you to the door
+          if (traffic && traffic.wanted > 0 && traffic.wanted < 3 && (traffic.coldFor ?? 0) > 5) {
             traffic.wanted = 0;
             healed = true;
           }

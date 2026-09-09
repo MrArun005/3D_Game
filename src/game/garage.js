@@ -20,7 +20,7 @@ export const CATALOGUE = [
   { file: 's-corvette-zr1',  name: 'CORVETTE ZR1',      price: 14000 },
   { file: 's-monza',         name: 'MONZA',             price: 12000 },
 ];
-const REPAIR = 150;
+export const REPAIR = 150;
 
 export class Garage {
   constructor(jobs, assets, hero, damage, hud) {
@@ -30,7 +30,9 @@ export class Garage {
     this.damage = damage;
     this.hud = hud;
 
-    this.owned = new Set(JSON.parse(localStorage.getItem('hb.garage') || '["q-sports"]'));
+    let owned = ['q-sports'];
+    try { const v = JSON.parse(localStorage.getItem('hb.garage') || '["q-sports"]'); if (Array.isArray(v)) owned = v; } catch { /* corrupt or private mode: the default car */ }
+    this.owned = new Set(owned);
     this.fitted = localStorage.getItem('hb.body') || 'q-sports';
     if (!CATALOGUE.some((c) => c.file === this.fitted)) this.fitted = 'q-sports';
     this.cursor = CATALOGUE.findIndex((c) => c.file === this.fitted);
@@ -164,19 +166,20 @@ export class Garage {
     }
   }
 
-  /** Pay'n'Spray: Respray car and wipe police heat immediately */
-  payAndSpray(traffic) {
-    if (!this.spendCash(500)) {
-      this.hud.flash('NEED $500 FOR RESPLAY');
-      return false;
-    }
-    if (traffic) traffic.standDown();
+  /** Pay 'n' Spray from the phone: the same price and the same three-star gate as the garage repair (main wires onRepair), plus a new coat. */
+  payAndSpray() {
+    const heat = this.heat?.() ?? 0;
+    if (heat >= 3) { this.hud.flash('PAY \'N\' SPRAY · THEY KNOW THE DRIVER · LOSE A STAR FIRST'); return false; }
+    if (this.damage?.value <= 0.02 && heat <= 0) { this.hud.flash('NOTHING TO REPAIR'); return false; }
+    if (!this.spendCash(REPAIR)) { this.hud.flash(`PAY 'N' SPRAY · $${REPAIR} · NOT ENOUGH CASH`); return false; }
+    this.damage?.repair();
+    const cleared = this.onRepair?.();
     const colors = [0x991111, 0x113399, 0x111111, 0xd0c020, 0x157733, 0xee5500, 0x882288];
     const newColor = colors[Math.floor(Math.random() * colors.length)];
     if (this.hero?.userData?.hull?.material) {
       this.hero.userData.hull.material.color.setHex(newColor);
     }
-    this.hud.flash('PAY\'N\'SPRAY: POLICE HEAT WIPED! -$500');
+    this.hud.flash(cleared ? `RESPRAYED · HEAT GONE · -$${REPAIR}` : `RESPRAYED · -$${REPAIR}`);
     return true;
   }
 

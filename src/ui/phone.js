@@ -1,4 +1,5 @@
 import { STORY_MISSIONS } from '../game/storyMissions.js';
+import { REPAIR } from '../game/garage.js';
 
 export class Phone {
   constructor(storyManager, garage, hero, traffic, dispatchService = null, car = null, reputation = null, intel = null, navigation = null) {
@@ -416,7 +417,7 @@ export class Phone {
       sprayCard.innerHTML = `
         <div>
           <div style="font-weight:800; font-size:13px; color:#e74c3c;">PAY 'N' SPRAY HOTLINE</div>
-          <div style="font-size:11px; color:#aaa;">$500 · Repaint chassis & wipe all wanted heat</div>
+          <div style="font-size:11px; color:#aaa;">$${REPAIR} · Repaint chassis & lose the heat (below 3★)</div>
         </div>
         <button id="spray-btn" style="padding:8px 14px; border-radius:8px; border:none; background:#c0392b; color:#fff; font-weight:800; font-size:11px; cursor:pointer;">
           WIPE HEAT
@@ -424,7 +425,7 @@ export class Phone {
       `;
       sprayCard.querySelector('#spray-btn').onclick = (e) => {
         e.stopPropagation();
-        this.garage.payAndSpray(this.hero);
+        this.garage.payAndSpray();   // (it used to be handed `this.hero` as the traffic object and called .standDown() on a Group)
         this.#render();
       };
       this.content.appendChild(sprayCard);

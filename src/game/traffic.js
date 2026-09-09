@@ -165,6 +165,7 @@ export class Traffic {
     c.best = Infinity;
     c.stale = 0;
     c.cruise = 26 + this.rand() * 5;
+    c.pursuitCruise = c.cruise;   // kept across re-spawns: #spawnGraph hands civilians road-class speed, a hunter keeps this
 
     // the doors and the bar are what make it read as police in one glance
     const decal = liveryTexture();
@@ -240,7 +241,7 @@ export class Traffic {
     c.holdT = 0;
     c.fireT = 0;
     // firefight state (policeAi.js): hp, cover state, weapon, burst bookkeeping
-    c.hp = 100; c.down = 0; c.state = 'cover'; c.stateT = 0; c.gunKind = 'pistol'; c.burstLeft = 0; c.quietFor = 0; c.coverX = 0; c.coverZ = 0; c.slot = this.police.length;
+    c.hp = 100; c.down = 0; c.state = 'cover'; c.stateT = 0; c.gunKind = 'pistol'; c.burstLeft = 0; c.quietFor = 999; c.coverX = 0; c.coverZ = 0; c.slot = this.police.length;
     c.deployed = false;
     return c;
   }
@@ -523,8 +524,9 @@ export class Traffic {
     car.edge = pick;
     car.node = e.a;
     car.lane = this.rand() < 0.65 ? 0 : 1;
-    car.cruise = (CLASS_SPEED[e.class] ?? 11) * (0.85 + this.rand() * 0.3);
-    car.baseCruise = undefined; car.fleeT = 0; car.vhp = undefined;   // a new incarnation: a new base for the flee boost, a whole engine
+    const road = (CLASS_SPEED[e.class] ?? 11) * (0.85 + this.rand() * 0.3);
+    car.cruise = car.hunt ? (car.pursuitCruise ?? road) : road;   // a hunting cruiser keeps its own pace; the zero-star patrol drives at road speed like everyone else
+    car.baseCruise = undefined; car.fleeT = 0; car.vhp = undefined; car.stoppedBy = undefined;   // a new incarnation: a new base for the flee boost, a whole engine
     car.path = []; car.gates = []; car.pathLen = 0; car.s = 0;
     const line = this.#shift(this.#oriented(e, e.a), this.#laneOffset(e, car.lane));
     this.#push(car, line[0]);
@@ -995,7 +997,7 @@ export class Traffic {
          to the kerb lane, so a chase runs through parting traffic. */
       if (!car.hunt && policeActive && car.fleeT <= 0 && nearLit(car.x, car.z, 70)) {   // (a fleeing fugitive does not pull over for its own pursuer)
         limit = Math.min(limit, 2.5);
-        car.lane = Math.max(car.lane, Math.max(1, car.edge?.lanes || 1) - 1);
+        car.lane = Math.max(car.lane, Math.max(1, this.E[car.edge]?.lanes || 1) - 1);   // car.edge is an INDEX into E
       }
 
       const accel = limit > car.speed ? 4.5 : 9.0;
@@ -1079,6 +1081,7 @@ export class Traffic {
          the car, and it re-spawns nearby once you have left it behind. It is
          what makes crimeWitnessed bite -- a cruiser 80 m away saw that. */
       c.hunt = this.wanted >= 1;
+      if (c.hunt !== c._wasHunt && c.vhp !== 0) { c._wasHunt = c.hunt; c.cruise = c.hunt ? (c.pursuitCruise ?? c.cruise) : (c.baseCruise ?? (CLASS_SPEED[this.E?.[c.edge]?.class] ?? 11)); }   // the stars flipped mid-life: patrol pace <-> pursuit pace
       if (c.hunt && c.chase) { const f = c.chase; if (f.baseCruise) { f.cruise = f.baseCruise; f.fleeT = 0; } c.chase = null; }   // you outrank the fugitive
       if (!c.hunt) {
         /* Street life: every so often the patrol 'takes a call' -- lights on,
@@ -1180,7 +1183,7 @@ export class Traffic {
       if ((c.mode === 'free' && stopped && close) || footContact || disabled) c.deployT += dt * (footContact ? 1.6 : 1);
       else c.deployT = Math.max(0, c.deployT - dt * 0.8);
       if (!c.deployed && c.deployT > 1.0 && this._deployed < MAX_DEPLOYED) {
-        c.deployed = true; this._deployed++; c.fireT = 0.5; c.state = 'cover'; c.stateT = 0; c.hp = 100; c.down = 0;
+        c.deployed = true; this._deployed++; c.fireT = 0.5; c.state = 'cover'; c.stateT = 0; c.hp = 100; c.down = 0; c.quietFor = 999;   // fresh out of the car: nobody has shot at him, so a one-star officer holds fire (policeAi.shouldFire)
         // the response draws heavier guns as the stars climb; the mesh swaps geometry, not material
         c.gunKind = weaponForWanted(Math.floor(this.wanted), c.slot);
         const swat = Math.floor(this.wanted) >= 4;   // four stars: the tactical unit steps out (geometry swap, same material)
