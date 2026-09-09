@@ -27,7 +27,7 @@ import { BillboardSystem } from './world/billboards.js';
 import { StreetLife } from './world/streetLife.js';
 import { Airspace } from './world/airspace.js';
 import { Catalogue, dressCarMaterials } from './world/catalogue.js';
-import { City } from './world/city.js';
+import { City, releaseCell } from './world/city.js';
 import { DistrictWorld } from './world/districtWorld.js';
 import { loadDistrict } from './world/district.js';
 import { buildSurrounds } from './world/surrounds.js';
@@ -1048,7 +1048,8 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   hud.useDistrict(district);              // minimap draws real streets, not a lattice
   navigation = new Navigation(district);
   hud.useNavigation(navigation);
-  for (const g of city.cells.values()) scene.remove(g);
+  // the boot grid is scenery until the district lands; free its buffers, not just its scene nodes
+  for (const g of city.cells.values()) { scene.remove(g); releaseCell(g); }
   city.cells.clear();
   setBootProgress(70, 'Building the streets…');
   world = new DistrictWorld(scene, assets, district, { day: true, catalogue });
@@ -1077,7 +1078,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
     console.info(`car materials dressed: ${n}`);
   }
   world.onChunkBuilt = (ms) => stats.reportChunkBuild(ms);
-  world.onChunkDone = (ms) => stats.reportChunkTotal(ms);
+  world.onChunkDone = (ms, worstStep) => stats.reportChunkTotal(ms, worstStep);
   water = buildWater(scene, district, true);
   buildSurrounds(scene, district.bounds, true);
   buildPlaces(scene, district, true);
@@ -1701,17 +1702,38 @@ const STEP = 1 / 120;
 let physicsAccumulator = 0;
 let frames = 0, elapsed = 0;
 
+/* A persistent corner badge while the frame loop is failing. hud.flash() lasts
+   3.2 s; a throw before world.update() freezes streaming while the last good
+   state keeps rendering, and after those 3.2 s there was no sign anything was
+   wrong. Plain DOM so it survives whatever broke the HUD. */
+const frameErrors = new Map();   // message -> count, so a per-frame throw is logged once, not 60 times a second
+let frameBadge = null;
+function showFrameBadge(msg) {
+  if (!frameBadge) {
+    frameBadge = document.createElement('div');
+    frameBadge.id = 'framebadge';
+    frameBadge.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99;padding:4px 8px;font:11px/1.3 monospace;color:#fff;background:rgba(160,20,20,.85);border-radius:3px;max-width:60vw;pointer-events:none;white-space:pre-wrap';
+    document.body.appendChild(frameBadge);
+  }
+  const distinct = frameErrors.size, total = [...frameErrors.values()].reduce((a, b) => a + b, 0);
+  frameBadge.textContent = `FRAME ERROR (${total}x, ${distinct} distinct) -- game continues\n${msg.slice(0, 100)}\nsee console`;
+}
+
 function frame() {
   requestAnimationFrame(frame);
   try { frameBody(); } catch (e) {
+    const msg = String(e && e.message || e);
+    const seen = frameErrors.get(msg) || 0;
+    frameErrors.set(msg, seen + 1);
+    if (!seen) console.error('frame error (game continues):', e);   // each distinct message once; the badge carries the count
     if (!frame.failed) {
       frame.failed = true;
-      console.error('frame error (game continues):', e);
       // a stuck loading screen used to be the only symptom: say what broke, then let the game in
-      if (bootMsg) bootMsg.textContent = 'frame error: ' + String(e && e.message || e).slice(0, 120);
+      if (bootMsg) bootMsg.textContent = 'frame error: ' + msg.slice(0, 120);
       setTimeout(() => { if (boot) { boot.remove(); boot = null; } }, 2500);
-      try { hud?.flash?.('FRAME ERROR · ' + String(e && e.message || e).slice(0, 60)); } catch { /* the HUD may be what broke */ }
+      try { hud?.flash?.('FRAME ERROR · ' + msg.slice(0, 60)); } catch { /* the HUD may be what broke */ }
     }
+    try { showFrameBadge(msg); } catch { /* no DOM, no badge */ }
     /* The render sits at the END of frameBody, so a throw anywhere before it
        used to mean no render at all: a black screen every frame while the
        counters kept counting. Draw the last good state anyway; the game is

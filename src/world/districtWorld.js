@@ -14,6 +14,7 @@ import { ZEBRA_DEPTH } from '../game/traffic.js';
 import { buildTokyoBuilding, frontRotation, tokyoMaterial, buildTokyoStreet, wireMaterial, buildShrine } from './tokyo.js';
 import { tileUv, SIGN_TILES } from './signs.js';
 import { buildGlare, setGlareRing } from './glare.js';
+import { BUILD_MS } from '../core/budgets.js';
 
 /**
  * Halstead Bay in three dimensions.
@@ -24,7 +25,7 @@ import { buildGlare, setGlareRing } from './glare.js';
  * and a chunk can be thrown away without consulting its neighbours.
  */
 const CHUNK = 256;
-const BUILD_MS = 2.0;      // 2.0ms budget prevents micro-stutters and drops below 60fps
+// BUILD_MS (the per-frame build budget) lives in core/budgets.js so the stats overlay reads the same number
 const ck = (ix, iz) => `${ix},${iz}`;
 
 /* The file carries footprints, not heights — the 2D planner has no opinion on
@@ -105,6 +106,7 @@ export class DistrictWorld {
     // it, which is why kerbside cars went back to being scenery you drive
     // through.
     this.parkedByChunk = new Map();
+    this.parkedVersion = 0;            // bumped whenever any parkedByChunk list changes; nearbyParked() caches on it
     /* Signal heads, per chunk. The traffic has been obeying lights at every
        cross and tee since it moved onto the graph -- there was simply nothing
        to see, so a queue of stopped cars looked like a jam rather than a red. */
@@ -395,9 +397,12 @@ export class DistrictWorld {
       const b = this.building;
       const t1 = performance.now();
       const done = b.gen.next().done;
-      b.ms = (b.ms || 0) + performance.now() - t1;   // whole-chunk cost, across frames
+      const stepMs = performance.now() - t1;
+      b.ms = (b.ms || 0) + stepMs;   // whole-chunk cost, across frames
+      // the longest un-yielded step: tick() yields at 1.8 ms, so anything well above that is a merge that needs a yield point
+      b.worstStepMs = Math.max(b.worstStepMs || 0, stepMs);
       if (done) {
-        if (wasPrimed && this.onChunkDone) this.onChunkDone(b.ms);
+        if (wasPrimed && this.onChunkDone) this.onChunkDone(b.ms, b.worstStepMs);
         // bundle rule: nothing inside a bundle is culled per object
         b.group.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
         b.group.needsUpdate = true;
@@ -421,6 +426,8 @@ export class DistrictWorld {
       const b = this.building;
       const maxAbandonR = (wasPrimed && speed < 1.0) ? this.radius + 1 : this.radius;
       if (Math.abs(b.cx - ix) > maxAbandonR || Math.abs(b.cz - iz) > maxAbandonR) {
+        // the async InstanceBatch.emit()s already fired for this group check this and tear down what they built
+        b.group.userData.dead = true;
         b.group.traverse((o) => {
           if (o.userData?.batched) this.catalogue.releaseBatched(o.userData.batched);
           if (!o.isMesh) return;
@@ -429,7 +436,8 @@ export class DistrictWorld {
         });
         for (const m of [this.propGroups, this.facadeGroups, this.parkedLod,
                          this.parkedByChunk, this.signalsByChunk,
-                         this.solidsByChunk, this.poolsByChunk]) m.delete(b.k);
+                         this.solidsByChunk, this.poolsByChunk, this.headsByChunk]) m.delete(b.k);
+        this.parkedVersion++;
         this.pending.delete(b.k);
         this.building = null;
         this.#rerecordAll();
@@ -505,6 +513,7 @@ export class DistrictWorld {
       const [a, b] = k.split(',').map(Number);
       if (Math.abs(a - ix) > maxReleaseR || Math.abs(b - iz) > maxReleaseR) {
         this.scene.remove(g);
+        g.userData.dead = true;   // a prop batch still merging for this chunk must not land in it (catalogue.js:emit)
         /* Only geometry this chunk built. The old sweep disposed shared
            assets.geo.* buffers that 24 other live chunks were still drawing
            from, forcing a silent GPU re-upload at every chunk boundary. */
@@ -524,6 +533,7 @@ export class DistrictWorld {
         this.solidsByChunk.delete(k);
         this.poolsByChunk.delete(k);
         this.headsByChunk.delete(k);
+        this.parkedVersion++;
         this.onBreakablesGone?.(k);
         this.#rerecordAll();
       }
@@ -1247,7 +1257,7 @@ export class DistrictWorld {
       slabs[kind].push(mat4(bl.x, 0, bl.y, bl.angle, bl.w, KERB_H, bl.h));
 
       // Little Tokyo's park block carries a small shrine at its centre, in the Tokyo mesh
-      if (bl.district === 'LITTLE TOKYO' && bl.type === 'park' && !(typeof location !== 'undefined' && new URLSearchParams(location.search).has('notokyo'))) {
+      if (bl.district === 'LITTLE TOKYO' && bl.type === 'park' && !NO_TOKYO) {
         const sh = buildShrine(bl.id);
         const shM = mat4(bl.x, KERB_H, bl.y, bl.angle, 1, 1, 1);
         sh.geo.applyMatrix4(shM);
@@ -1278,8 +1288,7 @@ export class DistrictWorld {
            by probing tarmac depth around it; the building is built facing +X and
            turned onto that side, then through the block's transform. Its sign
            boards join the chunk's atlas quads. ?notokyo restores the old massing. */
-        const noTokyo = typeof location !== 'undefined' && new URLSearchParams(location.search).has('notokyo');
-        if (bl.district === 'LITTLE TOKYO' && !noTokyo && g.w >= 4 && g.d >= 4) {
+        if (bl.district === 'LITTLE TOKYO' && !NO_TOKYO && g.w >= 4 && g.d >= 4) {
           const toWorld = (lx, lz) => [wx + lx * ca - lz * sa, wz + lx * sa + lz * ca];
           const rot = frontRotation((x, z) => this.district.tarmacDepth(x, z), toWorld, g.w / 2, g.d / 2);
           const swap = Math.abs(rot) > Math.PI / 4 && Math.abs(Math.abs(rot) - Math.PI) > 1e-6;   // a +/-90 turn swaps the footprint axes
@@ -1312,8 +1321,7 @@ export class DistrictWorld {
           }
           continue;
         }
-        const noKit = typeof location !== 'undefined' && new URLSearchParams(location.search).has('nokit');
-        const kd = noKit ? null : KIT_DISTRICT[bl.district];
+        const kd = NO_KIT ? null : KIT_DISTRICT[bl.district];
         const kits = this.assets.kitBuildings;
         const kit = kd && kits?.[kd[0]];
         if (kit && hash(wx * 0.37, wz * 0.61) < kd[1] && g.w > 6 && g.d > 6) {
@@ -1516,7 +1524,8 @@ export class DistrictWorld {
         props.userData.shadowRing = undefined;
         group.needsUpdate = true;
       };
-      fbatch.emit(faces, { shadow: false, lod: 1 }).then(() => landed(faces))
+      // emit resolves null when the chunk died (released or abandoned) before the merge landed
+      fbatch.emit(faces, { shadow: false, lod: 1 }).then((g) => { if (g) landed(faces); })
         .catch((e) => console.warn('facades failed:', e.message));
       // fire and forget: the chunk is usable now, the props land a frame later
       /* lod1 throughout. The re-ingested kit is 5.7x heavier at lod0 (31k triangles
@@ -1524,7 +1533,8 @@ export class DistrictWorld {
          LOD chains are finally real -- tree 964/280/272 -- so lod1 lands the kit back
          at the old cost with better geometry. A 3.6m bay's lod0 detail is sub-pixel
          past fifteen metres anyway. */
-      batch.emit(props, { lod: 1 }).then(() => {
+      batch.emit(props, { lod: 1 }).then((g) => {
+        if (!g) return;   // dead chunk: breakables.dropChunk already ran, do not re-register a phantom key
         landed(props);
         if (batch.tracked.length) {
           this.onBreakables?.(k, batch.tracked, solidParked, this.poolsByChunk.get(k));
@@ -1548,6 +1558,7 @@ export class DistrictWorld {
         wires.frustumCulled = false;
         group.add(wires);
       }
+      yield* tick();   // the Tokyo merge is one un-yielded step; start it on a fresh slice
       const merged = mergeGeometries(tokyoParts, false);
       for (const g of tokyoParts) g.dispose();
       if (merged) {
@@ -1562,6 +1573,7 @@ export class DistrictWorld {
     }
     // one merged mesh per kit per chunk: the whole Kenney buildings placed above
     for (const [kitName, geos] of Object.entries(kitPlaced)) {
+      yield* tick();   // one kit merge per slice at most
       const merged = mergeGeometries(geos, false);
       for (const g of geos) g.dispose();
       if (!merged) continue;
@@ -1596,10 +1608,11 @@ export class DistrictWorld {
        rounded rectangle (3.5m kerb return, or a third of the short side on a
        small block) extruded to KERB_H, merged per kind per chunk, so the draw
        count is unchanged and the top carries UVs in metres for the slabs. */
-    const roundedSlab = (list) => {
+    const roundedSlab = function* (list) {
       if (!list.length) return null;
       const geos = [];
       for (const m of list) {
+        yield* tick();   // an ExtrudeGeometry per block; a dense chunk has a dozen
         const e = m.elements;
         const w = Math.hypot(e[0], e[2]), d = Math.hypot(e[8], e[10]);   // scale x, z
         const r = Math.min(3.5, Math.min(w, d) / 3);
@@ -1630,20 +1643,20 @@ export class DistrictWorld {
       merged.computeBoundingSphere();
       return merged;
     };
-    const slabMesh = (list, mat) => {
-      const g = roundedSlab(list);
+    const slabMesh = function* (list, mat) {
+      const g = yield* roundedSlab(list);
       if (!g) return;
       const m = new THREE.Mesh(g, mat);
       m.receiveShadow = true;
       group.add(m);
     };
-    slabMesh(slabs.block, A.mat.walkDistrict ?? A.mat.walk);
+    yield* slabMesh(slabs.block, A.mat.walkDistrict ?? A.mat.walk);
     yield* tick();
-    slabMesh(slabs.park, A.mat.parkGround ?? A.mat.leaf);
+    yield* slabMesh(slabs.park, A.mat.parkGround ?? A.mat.leaf);
     yield* tick();
-    slabMesh(slabs.lot, A.mat.kerb);
+    yield* slabMesh(slabs.lot, A.mat.kerb);
     yield* tick();
-    slabMesh(slabs.vacant, A.mat.kerb);
+    yield* slabMesh(slabs.vacant, A.mat.kerb);
     yield;
     inst(A.geo.lamp, A.mat.pole, lamps, true);
     /* Two head geometries share one list: the legacy lamp's head is offset to
@@ -1742,17 +1755,11 @@ export class DistrictWorld {
     inst(A.geo.hut, A.mat.plant, plant.hut, true);
 
     this.parkedByChunk.set(k, solidParked);
+    this.parkedVersion++;    // nearbyParked() caches by chunk + version
     this.solidsByChunk.set(k, boxes);
     this.scene.add(group);   // the last step: the chunk appears whole
   }
 
-  /**
-   * A parked car gets stolen: hide its instance on both LOD meshes and drop
-   * its collision body, so the space it stood in is empty and nothing else
-   * changes. The chunk still owns the buffers; the instance is just scaled to
-   * nothing, which is how #cullFar hides the far stand-ins too. Returns the
-   * paint so the hero can take it.
-   */
   /**
    * Re-record every live chunk's render bundle.
    *
@@ -1793,6 +1800,13 @@ export class DistrictWorld {
     return { draws, tris };
   }
 
+  /**
+   * A parked car gets stolen: hide its instance on both LOD meshes and drop
+   * its collision body, so the space it stood in is empty and nothing else
+   * changes. The chunk still owns the buffers; the instance is just scaled to
+   * nothing, which is how #cullFar hides the far stand-ins too. Returns the
+   * paint so the hero can take it.
+   */
   takeParked(solid) {
     const lod = this.parkedLod.get(solid.chunk);
     const meshes = lod?.byBody?.[solid.body];
@@ -1804,7 +1818,7 @@ export class DistrictWorld {
       }
     }
     const list = this.parkedByChunk.get(solid.chunk);
-    if (list) { const i = list.indexOf(solid); if (i >= 0) list.splice(i, 1); }
+    if (list) { const i = list.indexOf(solid); if (i >= 0) { list.splice(i, 1); this.parkedVersion++; } }
     return solid.colour;
   }
 
@@ -1826,7 +1840,11 @@ export class DistrictWorld {
   /** Collision bodies for the parked cars and street furniture nearby. */
   nearbyParked(x, z, target = null) {
     const ix = Math.floor(x / CHUNK), iz = Math.floor(z / CHUNK);
-    if (!target && this._parkedCache && this._lastParkedIx === ix && this._lastParkedIz === iz) {
+    /* Keyed on the player's chunk AND parkedVersion: the version bumps when a
+       chunk's parked cars land, when a chunk is released or abandoned and in
+       takeParked, so a stale list never hands traffic.js a stolen car for LOS. */
+    if (!target && this._parkedCache && this._lastParkedIx === ix && this._lastParkedIz === iz
+        && this._parkedCacheVersion === this.parkedVersion) {
       return this._parkedCache;
     }
     const out = target || [];
@@ -1843,6 +1861,7 @@ export class DistrictWorld {
       this._parkedCache = out;
       this._lastParkedIx = ix;
       this._lastParkedIz = iz;
+      this._parkedCacheVersion = this.parkedVersion;
     }
     return out;
   }
@@ -1858,6 +1877,11 @@ const _frustum = new THREE.Frustum(), _pv = new THREE.Matrix4(), _box = new THRE
    recording held 1 of 81 objects. Fixed at the renderer; verified 76/76
    recorded afterwards. ?nobundles turns them off for A/B. */
 const USE_BUNDLES = typeof location !== 'undefined' ? !new URLSearchParams(location.search).has('nobundles') : false;
+/* Escape hatches read once at load. These used to be `new URLSearchParams(location.search)`
+   inside the per-footprint loop -- a parse per building, ~1,300 of them per ring. */
+const _flags = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
+const NO_TOKYO = !!_flags?.has('notokyo');   // Little Tokyo falls back to the generic massing
+const NO_KIT = !!_flags?.has('nokit');       // no whole-kit buildings
 const _zero = new THREE.Matrix4().makeScale(0, 0, 0);   // hides an instance in place
 const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
 /** a ground-plane quad, laid flat and scaled — light pools, decals */

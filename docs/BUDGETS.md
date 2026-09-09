@@ -65,11 +65,16 @@ Blender assets still go through the simplifier, which is correct for them.
 
 | Metric | Budget |
 | --- | --- |
-| Chunk build time | 4 ms (must not hitch a frame) |
+| Chunk build time | 2.0 ms per frame (`core/budgets.js:BUILD_MS`) |
 | Live chunks | 25 |
 | Assets resident | 400 |
 | Per-chunk draw calls | 40 |
 
-Chunk building is currently fully synchronous inside `districtWorld.update()`,
-and crossing a boundary can build up to five 256 m chunks in one frame. That is
-already over budget. Fixing it is Tier 1 of the roadmap.
+Chunk building is a resumable generator (`districtWorld.js:#buildSteps`) pumped
+by `update()` while the frame has spent less than `BUILD_MS` = 2.0 ms on it;
+inside the generator `tick()` yields once 1.8 ms have passed. Worst case per
+frame is therefore one slice that ran to ~1.8 ms plus the step that overran it,
+then one more `next()` because the pump checks `< 2.0` -- about 3.8 ms plus one
+un-yielded step. The F3 overlay judges the per-frame slice ("chunk build") and
+the longest single step ("chunk step") against the same constant; `photo.line()`
+prints both. A step well above 1.8 ms is a merge that needs a yield point.

@@ -131,7 +131,7 @@ export function makeTileable(material) {
  * geometry. Only geometry we cloned is ours -- the shared assets.geo.* is
  * still being drawn by every other live cell.
  */
-function releaseCell(group) {
+export function releaseCell(group) {   // exported: main.js frees the boot grid with it when the district lands
   group.traverse((o) => {
     if (!o.isMesh) return;
     if (o.isInstancedMesh) o.dispose();

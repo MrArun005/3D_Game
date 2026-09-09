@@ -412,8 +412,17 @@ export class InstanceBatch {
    * been fetched yet -- chunks therefore populate a frame or two after they
    * appear, which is invisible next to the streaming itself and much better
    * than blocking the build on a network round trip.
+   *
+   * That asynchrony is also a race: the chunk can be released or abandoned
+   * (districtWorld sets `group.userData.dead = true`) while a merge is still
+   * pending, and the merged mesh then landed in a group nobody would ever
+   * dispose, and its break-tracking re-registered a chunk key breakables had
+   * already dropped. So every await is followed by a dead check; a dead
+   * group gets nothing added, anything already merged is disposed, and the
+   * call resolves `null` so the caller skips its landing work.
    */
   async emit(group, { shadow = true, lod = 0 } = {}) {
+    const dead = () => !!group.userData?.dead;
     const jobs = [];
     /* Bucket by MATERIAL, not by asset.
        One InstancedMesh per (asset, material) is the obvious shape and it cost
@@ -442,6 +451,7 @@ export class InstanceBatch {
       }));
     }
     await Promise.all(jobs);
+    if (dead()) return null;
 
     /* City-wide batches (Catalogue.attach): every placement becomes an
        instance in its material's BatchedMesh, and the chunk group only
@@ -470,6 +480,7 @@ export class InstanceBatch {
     const nextTask = () => new Promise((r) => setTimeout(r, 0));
     for (const [material, items] of byMaterial) {
       await nextTask();
+      if (dead()) return null;   // released mid-merge: nothing built yet for this material
       const geos = [];
       const pending = [];               // break-tracking: ranges awaiting the mesh
       let offset = 0;
@@ -502,6 +513,7 @@ export class InstanceBatch {
       const merged = mergeGeometries(geos, false);
       for (const g of geos) g.dispose();
       if (!merged) continue;
+      if (dead()) { merged.dispose(); return null; }   // a merge is synchronous, but check again before it joins the group
       merged.userData.owned = true;     // built for this chunk, dies with it
       merged.computeBoundingSphere();
       const mesh = new THREE.Mesh(merged, material);

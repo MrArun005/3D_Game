@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { BUILD_MS } from '../core/budgets.js';
 
 /**
  * The dev overlay. F3.
@@ -19,7 +20,7 @@ const BUDGET = {
   tris: 4.0e6,
   textureMB: 512,
   chunks: 25,
-  chunkBuildMs: 3,
+  chunkBuildMs: BUILD_MS,   // the streamer's own per-frame budget (core/budgets.js), not a second opinion
 };
 
 const PERF = typeof location !== 'undefined' && new URLSearchParams(location.search).has('perf');
@@ -38,6 +39,7 @@ export class Stats {
     this.chunkMs = 0;
     this.worstChunkMs = 0;
     this.chunkTotals = [];      // whole-chunk build cost, last ten, for photo.line()
+    this.worstStepMs = 0;       // longest single un-yielded generator step of any chunk since load
     this.el = null;
     this.snapshot = { draws: 0, tris: 0, bundledDraws: 0, bundledTris: 0 };
 
@@ -76,9 +78,10 @@ export class Stats {
   }
 
   /** Called by the world when it builds a chunk, in milliseconds. */
-  reportChunkTotal(ms) {
+  reportChunkTotal(ms, worstStep = 0) {
     this.chunkTotals.push(ms);
     if (this.chunkTotals.length > 10) this.chunkTotals.shift();
+    if (worstStep > this.worstStepMs) this.worstStepMs = worstStep;
   }
 
   reportChunkBuild(ms) {
@@ -201,6 +204,7 @@ export class Stats {
     out += row('texture mem', texMB, BUDGET.textureMB, ' MB');
     out += row('live chunks', live, BUDGET.chunks);
     out += row('chunk build', this.worstChunkMs, BUDGET.chunkBuildMs, ' ms', (v) => v.toFixed(1));
+    out += row('chunk step', this.worstStepMs, BUDGET.chunkBuildMs, ' ms', (v) => v.toFixed(1));   // longest un-yielded generator step
     out += `  geometries  ${String(this.snapshot.geometries).padStart(7)}\n`;
     out += `  textures    ${String(this.snapshot.textures).padStart(7)}\n`;
     out += `  programs    ${String(this.snapshot.programs).padStart(7)}\n`;

@@ -136,7 +136,7 @@ export class Photo {
     const worstCause = s.worstCause ? ` (${s.worstCause})` : '';
     const p = this.camera.position;
     const chunk = s.chunkTotals.length
-      ? `chunk ${Math.max(...s.chunkTotals).toFixed(1)}ms worst total, ${s.worstChunkMs.toFixed(1)}ms worst slice (last ${s.chunkTotals.length})`
+      ? `chunk ${Math.max(...s.chunkTotals).toFixed(1)}ms worst total, ${s.worstChunkMs.toFixed(1)}ms worst slice, ${(s.worstStepMs || 0).toFixed(1)}ms worst step (last ${s.chunkTotals.length})`
       : 'chunk: none built since load';
     const draws = s.snapshot.draws + (s.snapshot.bundledDraws || 0), tris = s.snapshot.tris + (s.snapshot.bundledTris || 0);
     return `${this.preset || 'free'} @ ${p.x.toFixed(0)},${p.y.toFixed(1)},${p.z.toFixed(0)}`
@@ -149,7 +149,7 @@ export class Photo {
     this.#say(line, 6000);
     console.log('[photo] ' + line);
     return { preset: this.preset, line, ...this.stats.snapshot,
-             chunkTotals: [...this.stats.chunkTotals], worstSliceMs: this.stats.worstChunkMs };
+             chunkTotals: [...this.stats.chunkTotals], worstSliceMs: this.stats.worstChunkMs, worstStepMs: this.stats.worstStepMs };
   }
 
   #say(text, ms = 3000) {
