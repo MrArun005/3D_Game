@@ -102,6 +102,38 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
 
 ## Current state
 
+- **2026-09-09 review + fix pass** (`docs/REVIEW-2026-09-09-GTA.md`, ranked
+  top-12 with file:line). Landed the same day, all unverified visually:
+  - **Night is the clock's.** `clock.js:nightFactor(hour)` (pure, tested)
+    drives grade.setNight, exposure 1.0+0.15k, LightPool.night,
+    traffic.setNight, window-quad + podium emissives. `?night`/`?dusk` only
+    pick the start hour; the two-light night rig is gone (one CSM day rig).
+    Traffic headlamps are one merged geometry per car, hidden by day.
+  - **Driving**: two physics bugs fixed in `dynamics.js` -- free wheels
+    chattered at the step rate (implicit tyre reaction now) and spurious
+    Coriolis terms welded velocity to heading (removed; u,v are re-projected
+    from world velocity each step). Result: peak lateral 0.6 -> 0.95 g, coast
+    + full lock at 80 km/h drifts 55 deg instead of spinning, handbrake slides,
+    brakes capped at 0.95 muFz (1% front lock, was 49%). 0-100 is 7.24 s now
+    (the old 6.77 was partly chatter). Walls scrape (`collision.js:scrape`)
+    instead of stopping. Regression harness: `tools/sim/handling.mjs` +
+    `test/handling.test.js` -- run it before touching config/dynamics.
+  - **Streaming**: `InstanceBatch.emit` honours `group.userData.dead` (late
+    merges no longer land in released chunks), `parkedVersion` keys the
+    parked cache, boot grid released, `core/budgets.js:BUILD_MS` is the one
+    build budget, per-step worst cost in F3 / photo.line().
+  - **Gameplay**: pursuit cruise speed kept on respawn, kerb-lane pull-over
+    works, 1-star officers hold fire until shot at, heli relaunches, story
+    fails on WASTED/BUSTED, one Pay 'n' Spray price and gate, $50k grant is
+    `?debug` only, getaway = 2 stars, fare/courier need a stop.
+  - **UI**: `window.hud`/`__setWaypoint` assigned (phone GPS worked never),
+    mute silences voices and persists, O/T and phone dev cards `?debug`
+    only, stars/health above the minimap, one name (Halstead Bay),
+    `hud.area()` toast. `THIRD_PARTY.md` lists every vendor licence; the
+    Sketchfab props have none recorded. A `.vercelignore` for the NC assets
+    was drafted but NOT added -- it changes the live garage; Arun decides.
+  - Heli bindings still clash on C (descend/camera) and E (strafe/fire).
+
 - Tests: `npm test` — 20/20 passing. Node's built-in runner, no framework.
 - Deploy (2026-09-03): Vercel project `halstead-bay`, public at
   https://halstead-bay.vercel.app. Git-triggered builds never leave UNKNOWN;

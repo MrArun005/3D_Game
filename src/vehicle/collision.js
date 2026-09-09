@@ -34,6 +34,26 @@ function absorb(car, nx, nz, bite = 1.0, px = 0, pz = 0) {
   return into;
 }
 
+/**
+ * Wall friction on the TANGENTIAL velocity, sized by how hard the hull was
+ * pressed into the surface this step. A dry-friction impulse: the normal
+ * impulse `absorb` just removed was m*into, so the tangential speed can lose
+ * at most MU_WALL*into (plus a little for the depth of the overlap being
+ * corrected). A 6 deg scrape presses in at ~0.07 m/s a step and loses a few
+ * km/h a second; a head-on has no tangential speed left to lose and stops on
+ * the normal alone. This replaces `vx *= 0.88` per probe hit per 120 Hz step,
+ * which took a glancing scrape at 60 km/h to a standstill in 0.05 s and made
+ * every wall sticky (review 2026-09-09, top-12 #3).
+ */
+const MU_WALL = 0.35;
+function scrape(car, into, pen) {
+  const sp = Math.hypot(car.vx, car.vz);
+  if (sp < 1e-6 || into <= 0) return;
+  const loss = Math.min(sp, MU_WALL * into + pen * 0.5);
+  const k = 1 - loss / sp;
+  car.vx *= k; car.vz *= k;
+}
+
 /** Push the car off the building line, testing the whole hull, not one point. */
 export function resolveBuildings(car) {
   const cy = Math.cos(car.yaw), sy = Math.sin(car.yaw);
@@ -59,9 +79,9 @@ export function resolveBuildings(car) {
     const push = (worst - BUILD_LINE) * 1.02;
     car.x -= nx * push;
     car.z -= nz * push;
-    absorb(car, nx, nz, 1.0, wpx, wpz);
+    const into = absorb(car, nx, nz, 1.0, wpx, wpz);   // masonry does not give anything back
     car.yawRate *= 0.55;
-    car.vx *= 0.86; car.vz *= 0.86;      // masonry does not give anything back
+    scrape(car, into, push);
   }
 }
 
@@ -109,9 +129,9 @@ export function resolveBoxes(car, boxes) {
 
         car.x += nx * pen;
         car.z += nz * pen;
-        absorb(car, -nx, -nz, 1.0, px, pz);
+        const into = absorb(car, -nx, -nz, 1.0, px, pz);
         car.yawRate *= 0.6;
-        car.vx *= 0.88; car.vz *= 0.88;
+        scrape(car, into, pen);
         hit = true;
         break;                          // one correction per box per pass
       }

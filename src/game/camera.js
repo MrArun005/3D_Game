@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { roadDepth, WALK_W } from '../world/metrics.js';
 
 const RIGS = [
-  { back: 7.6, up: 2.85, aim: 8.0, fov: 60, lag: 3.4, tilt: 1 },
+  { back: 7.6, up: 2.85, aim: 8.0, fov: 60, lag: 2.4, tilt: 1 },   // lag 3.4 -> 2.4 (2026-09-09): looser follow, GTA's
   { back: 5.4, up: 2.05, aim: 9.0, fov: 66, lag: 6.0, tilt: 1 },
   { back: -1.3, up: 1.28, aim: 14.0, fov: 62, lag: 22.0, tilt: 0 },
   { back: -0.55, up: 1.3, aim: 16.0, fov: 55, lag: 26.0, tilt: 0 },
@@ -46,7 +46,21 @@ export class ChaseCamera {
 
   update(car, dt) {
     const rig = car.customRig ?? RIGS[this.mode];
-    const cy = Math.cos(car.yaw), sy = Math.sin(car.yaw);
+    /* Follow the VELOCITY heading part-way, not just the nose. Welded to
+       car.yaw, a slide swung the whole road out of frame; GTA's camera hangs
+       back toward where the car is going. Up to 50% of the difference,
+       earned by forward speed (nothing below 3 m/s, full by 15 m/s) and only
+       going forward, or reversing would flip the view. Look-back and free
+       look orbit this blended yaw exactly as they did the raw one. */
+    let followYaw = car.yaw;
+    const fwdSp = car.fwdSpeed ?? 0;
+    if (fwdSp > 3 && Number.isFinite(car.vx) && Number.isFinite(car.vz)) {
+      const velYaw = Math.atan2(-car.vz, car.vx);
+      let d = velYaw - car.yaw;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      followYaw += d * 0.5 * Math.min(1, (fwdSp - 3) / 12);
+    }
+    const cy = Math.cos(followYaw), sy = Math.sin(followYaw);
     const rx = sy, rz = cy;
     const speedK = Math.min(1, (car.speed || 0) / 42);
     let back = rig.back * (1 + speedK * 0.18);
@@ -109,8 +123,8 @@ export class ChaseCamera {
     if (rig.tilt) this.camera.rotation.z += (car.roll || 0) * 0.35 - (car.yawRate || 0) * 0.018;
 
     const nosBoost = car.nosActive ? 11 : 0;
-    // FOV 62 at rest to 74 at ~150 km/h (speedK reaches 1.0)
-    const baseFov = 62;
+    // rig FOV at rest, +12 at ~150 km/h (speedK reaches 1.0). Every rig declared a fov; a hard-coded 62 ignored them.
+    const baseFov = rig.fov ?? 62;
     const fov = baseFov + speedK * 12 + nosBoost;
     if (Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 5.5);

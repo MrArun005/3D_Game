@@ -207,16 +207,26 @@ export const V = {
   track: TRACK,
   wheelI: 1.35,
   engI: 0.21,                 // engine + flywheel, reflected through ratio^2
-  muPeak: 1.42,
-  Cf: 12.5, Cr: 14.0, Cx: 16.0,
+  /* Per-axle peak friction. Equal mu front and rear with the rear only 12%
+     stiffer let the rear axle saturate first and the car spun under steering
+     alone; the rear now carries ~9% more mu (GTA's cars understeer, then
+     drift on the handbrake or throttle). Cr 15.5 sharpens the rear response
+     for the same reason. `muPeak` stays as the average for anything that
+     wants one number. */
+  muPeak: 1.42, muPeakF: 1.36, muPeakR: 1.48,
+  Cf: 12.5, Cr: 15.5, Cx: 16.0,
   dragC: 0.62, rollC: 12.0, downF: 0.45,
   /* The handbrake has to actually lock the rears. At 3400Nm through the 0.5
      scaling in the brake loop it only slowed them to within 10% of rolling,
      so the tail never stepped out and the car left almost no rubber. */
   /* Measured from 110km/h: 68.8m and 5.67s at 5200 -- 0.53g, torque-limited,
      with the tyres good for 1.42g. A road car stops from 110 in ~45m at ~1g,
-     and a GTA car stops harder than that. 10500 lands at ~1.05g, still under
-     the grip cap so ABS-free braking does not just lock the fronts. */
+     and a GTA car stops harder than that. 10500 lands at ~1.0g. NOTE it is
+     NOT under the grip cap per wheel: the 62% front split puts 3255 Nm on
+     each front tyre against a ~1600-2200 Nm cap (mu*Fz*R), so the fronts
+     locked for half of every hard stop. dynamics.js clamps the per-wheel
+     foot-brake torque to 1.1x that cap; this number now sets how hard the
+     pedal CAN ask, not what the tyre does. */
   brakeMax: 10500, handbrake: 9000,
   // converter flare above idle at full throttle from rest (see dynamics.js)
   launchRpm: 1900,

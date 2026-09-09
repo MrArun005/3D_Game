@@ -1766,7 +1766,7 @@ function frameBody() {
   idleCam = false;   // the car and on-foot branches set it; anything else (heli, tank, film) is never idle-cam
   if (document.pointerLockElement !== canvas) idleT = Math.min(idleT, 0);   // no pointer lock means you are not playing: never orbit, never look 'locked'
   if (garage) {
-    garage.setNos(c.nos);
+    garage.setNos(c.nos && activeVehicle?.type !== 'helicopter');   // Shift is the helicopter's descend (flight.js); no NOS in the air
     garage.update(dt, car);
   }
   if (vehicleVFX) vehicleVFX.update(dt, car, garage);
@@ -1825,10 +1825,9 @@ function frameBody() {
      it, or the car eats a dead stop on the frame it breaks through. */
   debris.update(car, dt, traffic.cars, traffic.police);
 
-  // fixed-step physics keeps the tyre model stable; clamp accumulator to prevent death spirals on dt spikes
+  // fixed-step physics keeps the tyre model stable
   performance.mark('physics-start');
   const tPhys0 = performance.now();
-  if (dt > 0.05) physicsAccumulator = Math.min(physicsAccumulator, STEP * 4);
   physicsAccumulator += dt;
   let guard = 0;
   if (!activeVehicle || activeVehicle === carVehicle) {
@@ -1836,6 +1835,11 @@ function frameBody() {
       stepVehicle(car, STEP);
       physicsAccumulator -= STEP;
     }
+    /* dt is capped at 0.05 above, so the old `if (dt > 0.05)` clamp never ran,
+       and four steps a frame consume 33 ms: below 30 fps the accumulator grew
+       without bound and then fast-forwarded the car. Clamp AFTER the loop:
+       a slow frame now costs slow motion, never a teleport. */
+    physicsAccumulator = Math.min(physicsAccumulator, STEP * 6);
   } else {
     physicsAccumulator = 0;
   }
@@ -2084,7 +2088,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
         chase.lookPitch -= chase.lookPitch * d;
         if (Math.abs(chase.lookYaw) < 0.01 && Math.abs(chase.lookPitch) < 0.01) chase.recentre();
       }
-      chase.setLookBack(!!c?.lookBack);
+      chase.setLookBack(!!c?.lookBack && !flying);   // Q is the helicopter's strafe (flight.js), not look-back
       if ((targetVehicle.impact || 0) > 6.0) rumble(Math.min(1.0, targetVehicle.impact / 18.0), 120);
       if (spawnSnap) { spawnSnap = false; chase.snap(targetVehicle); }
       targetVehicle.camera ? targetVehicle.camera(chase, dt) : chase.update(targetVehicle, dt);

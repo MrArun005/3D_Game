@@ -61,7 +61,9 @@ function readPad() {
                   use: false, fire: false, run: false };
   for (const p of pads) {
     if (!p) continue;
-    steer += axisToSteer(p.axes[0] ?? 0);
+    // two pads must not sum: the larger deflection wins (a resting second pad adds nothing either way)
+    const s = axisToSteer(p.axes[0] ?? 0);
+    if (Math.abs(s) > Math.abs(steer)) steer = s;
     const rt = trigger(p.buttons[7], p.axes[5], p.axes[7]);
     const lt = trigger(p.buttons[6], p.axes[4], p.axes[6]);
     throttle = Math.max(throttle, rt);

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Vehicle } from './vehicle.js';
 import { M4, mergeGeos } from '../core/geometry.js';
+import { resolveBoxes } from '../vehicle/collision.js';
 
 /**
  * 55-tonne Rhino Heavy Tank.
@@ -196,6 +197,17 @@ export class TankVehicle extends Vehicle {
 
     this.x += this.vx * dt;
     this.z += this.vz * dt;
+
+    /* Buildings. The car's hull collider (8 probes vs oriented footprints)
+       reads x/z/yaw/vx/vz/yawRate and writes them back, which is all this
+       body has; it had no building collision at all before (review
+       2026-09-09). The velocity it hands back is re-projected onto the
+       tracks so the next frame's drive picks up from the wall, not through it. */
+    const boxes = this.world?.nearbyBuildings?.(this.x, this.z);
+    if (boxes && boxes.length) {
+      resolveBoxes(this, boxes);
+      this.fwdSpeed = this.vx * fwdX + this.vz * fwdZ;
+    }
 
     // Ground elevation
     const groundY = this.world?.district?.elevationAt?.(this.x, this.z) ?? 0;

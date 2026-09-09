@@ -17,14 +17,19 @@ export function engineTorque(rpm) {
  * Simplified Pacejka.
  * The 2B/(1+B^2) rise peaks at B=1 but then decays to zero, which would let a
  * spinning wheel escape for ever. Real rubber keeps sliding friction, so past
- * the peak this blends into a plateau at 72% of available grip.
+ * the peak this blends into a plateau at 82% of available grip.
+ * 2026-09-09: the plateau was 0.72 with the blend over B 1..5. That is a
+ * 28% cliff the moment a tyre passes its peak; with the rear axle no
+ * stiffer than the front, the rear fell off it first and a coast at 80 km/h
+ * with full lock spun 179 deg in 2 s (node sim). 0.82 over B 1..7 is the
+ * gentler post-peak curve of a road tyre and lets the car drift instead.
  */
 export function tyreForce(slip, stiffness, load, mu) {
   const B = stiffness * slip;
   const aB = Math.abs(B);
   const peak = (2 * B) / (1 + B * B);
-  const slide = (B < 0 ? -1 : 1) * 0.72;
-  const k = Math.max(0, Math.min(1, (aB - 1) / 4));
+  const slide = (B < 0 ? -1 : 1) * 0.82;
+  const k = Math.max(0, Math.min(1, (aB - 1) / 6));
   return (peak * (1 - k) + slide * k) * mu * load;
 }
 
@@ -176,13 +181,21 @@ export function stepVehicle(car, dt) {
   }
 
   // a damaged engine will not pull; scale sits at 1 until something hits us
-  const engT = engineTorque(car.rpm) * car.throttle * (car.damageTorqueScale ?? 1);
+  let engT = engineTorque(car.rpm) * car.throttle * (car.damageTorqueScale ?? 1);
+  /* Shift torque cut. gearTimer is set to 0.45 (up) / 0.4 (down) on a change
+     and counts DOWN, so `> 0.2` is the first 0.25 s / 0.2 s after the shift:
+     the box is between ratios and the engine cannot push through it. Without
+     it every upshift was a seamless CVT. Costs ~0.1 s on 0-100 (measured). */
+  if (car.gearTimer > 0.2) engT *= 0.15;
   // Coast brake scales down in the low gears so a 1st-gear lift is not a wall.
   const gearAbs = Math.abs(V.gears[car.gear] || 0);
   const engBrake = (car.rpm / V.redline) * 18 + (car.throttle < 0.02 ? 10 : 0);
   const wSignD = Math.sign(wAvg);   // 0 at rest, so no phantom drive off the line
+  // the handbrake owns the rear axle: no drive torque fights the locked wheels
+  // while it is pulled, or the throttle keeps them rolling (and gripping)
+  const driveT = car.hand > 0.5 ? 0 : engT * ratio * 0.92;
   const axleT = car.gear === 1 ? 0
-    : engT * ratio * 0.92 - engBrake * Math.min(6.5, Math.abs(ratio)) * wSignD * (0.45 + 0.55 * Math.min(1, gearAbs / 3.6));
+    : driveT - engBrake * Math.min(6.5, Math.abs(ratio)) * wSignD * (0.45 + 0.55 * Math.min(1, gearAbs / 3.6));
   const Iref = V.engI * ratio * ratio;
 
   // --- per-wheel tyre forces ---
@@ -193,30 +206,69 @@ export function stepVehicle(car, dt) {
     const [ax, az] = offsets[i];
     const uw = u - r * az;
     const vw = v + r * ax;
-    const delta = front ? car.steer * (1 + az * 0.1) : 0;    // mild Ackermann
+    /* Mild Ackermann: the INNER wheel steers more. Positive steer turns toward
+       -z (suspension.test.js 'left'), and offsets[][1] is the corner's z, so
+       the inner wheel is the one whose az has the opposite sign to the steer.
+       The old `1 + az*0.1` did that for one direction and the reverse for the
+       other; the |steer| form is right both ways. */
+    const delta = front ? car.steer - Math.abs(car.steer) * az * 0.1 : 0;
     const cd = Math.cos(delta), sd = Math.sin(delta);
     const uL = uw * cd + vw * sd;
     const vL = -uw * sd + vw * cd;
 
-    const mu = V.muPeak * grip[i];
+    const mu = (front ? V.muPeakF : V.muPeakR) * grip[i];   // rear grips more so the FRONT saturates first (understeer, not a spin)
     const denom = Math.max(1.2, Math.abs(uL));
     const slipRatio = (car.wheelW[i] * WHEEL_R - uL) / denom;
     const slipAngle = Math.atan2(-vL, denom);
 
     let Fl = tyreForce(slipRatio, V.Cx, Fz[i], mu);
     let Fc = tyreForce(slipAngle, front ? V.Cf : V.Cr, Fz[i], mu);
+    /* A locked or spinning tyre's force follows its slip VECTOR, so the more
+       it slides longitudinally the less it can still push sideways. The two
+       1-D models above do not know about each other, and the ellipse below
+       only caps the total, so a handbrake-locked rear kept nearly its full
+       cornering force and the tail never stepped out (15 deg of body slip
+       with the handbrake vs 54 without, node sim). A locked wheel sits at
+       |slipRatio| = 1 exactly (wheelW = 0), so the ramp starts at 0.4 and
+       reaches the 1/(1+|slipRatio|) = 0.5 of a locked wheel at 1. */
+    const sliding = Math.max(0, Math.abs(slipRatio) - 0.4);
+    if (sliding > 0) Fc /= 1 + sliding * 1.67;
     // friction ellipse — you cannot brake and corner at full grip
     const total = Math.hypot(Fl, Fc), max = mu * Fz[i];
     if (total > max) { const k = max / total; Fl *= k; Fc *= k; }
 
     const isDriven = DRIVEN.includes(i);
     let T = (isDriven ? axleT * 0.5 : 0) - Fl * WHEEL_R;
-    const bt = brakeT * (front ? 0.62 : 0.38) * 0.5 + (i >= 2 ? car.hand * V.handbrake * 0.5 : 0);
+    /* Foot brake torque is capped just under what the tyre can react
+       (0.95 * mu*Fz*R), a cheap ABS: 10500 Nm split 62/38 put 3255 Nm on each
+       front against a ~1600-2200 Nm grip cap and locked the fronts for 49% of
+       a 100-0 stop. The review asked for 1.1x, but anything above 1.0x still
+       exceeds the curve's peak so the wheel inevitably winds down to lock
+       (measured: 1.1x -> 47% locked, 1.0x -> 1% at 39.4 m, 0.95x -> 1% at
+       42.1 m, 0.9x -> 44.8 m). 0.95x keeps the stop within 3 m of the old
+       44.2 m with the fronts rolling. The handbrake is added AFTER the cap --
+       it exists to lock the rears. */
+    const footBt = Math.min(brakeT * (front ? 0.62 : 0.38) * 0.5, max * WHEEL_R * 0.95);
+    const bt = footBt + (i >= 2 ? car.hand * V.handbrake * 0.5 : 0);
     T -= Math.sign(car.wheelW[i] || uL || 1) * bt;
 
     const I = V.wheelI + (isDriven && car.gear !== 1 ? Iref * 0.5 : 0);
     const before = car.wheelW[i];
-    car.wheelW[i] += (T / I) * dt;
+    /* Semi-implicit wheel update. A free wheel (I = 1.35, no engine behind
+       it) against Cx = 16 has a ~5 ms time constant, shorter than the 8.3 ms
+       step, so the plain explicit update overshot the road speed every step:
+       the fronts chattered at +-7% slip, +-3.7 kN, at the Nyquist rate, and
+       the friction ellipse took half their cornering force at all times.
+       That, not the axle balance, is why the car spun under steering
+       (measured 2026-09-09, tools/sim/trace3.mjs). The rears never showed it
+       because they carry the reflected engine inertia.
+       Implicit Euler on the LINEARISED tyre reaction: divide the step by
+       1 + dt*k*R/I with k = dFl/dw on the rising side of the curve. Same
+       fixed point, stable at any dt, and k is 0 past the peak so a wheel
+       that really is locking or spinning up keeps its live dynamics. */
+    const slope = Math.max(0, tyreForce(slipRatio + 1e-3, V.Cx, Fz[i], mu) - Fl) / 1e-3;   // dFl/dslipRatio
+    const damp = 1 + (dt * slope * WHEEL_R * WHEEL_R) / (denom * I);
+    car.wheelW[i] += ((T / I) * dt) / damp;
     if (bt > 1 && before !== 0 && Math.sign(car.wheelW[i]) !== Math.sign(before)) car.wheelW[i] = 0;
     car.wheelW[i] -= car.wheelW[i] * drags[i] * 0.02 * dt;
 
@@ -258,8 +310,18 @@ export function stepVehicle(car, dt) {
 
   const ax = Fx / V.mass, ay = Fy / V.mass;
   car.lastAx = ax; car.lastAy = ay;
-  u += (ax + v * r) * dt;
-  v += (ay - u * r) * dt;
+  /* No Coriolis terms here, deliberately. u and v are re-projected from the
+     WORLD velocity with this step's yaw at the top of stepVehicle and written
+     back through the same fwd/rgt below, before `yaw` advances, so the body
+     frame does not rotate within a step and there is nothing for `-u*r` /
+     `+v*r` to correct. With them, a yaw rate rotated the world velocity by
+     r*dt per step for free (tools/sim/kin.mjs: velocity turned 1.04x as far
+     as the heading with 0.17 g of tyre force present; ~0.2x is physical).
+     The velocity was welded to the heading: body slip could not develop until
+     the yaw ran away, the rear never slid, the handbrake could not step the
+     tail out and the car spun 179 deg on a coast at 80 km/h. 2026-09-09. */
+  u += ax * dt;
+  v += ay * dt;
   car.yawRate += (Mz / V.inertia) * dt;
   car.yawRate -= car.yawRate * 1.6 * dt;
 
