@@ -38,6 +38,9 @@ import { useDistrict } from './world/metrics.js';
 import { buildCar } from './vehicle/model.js';
 import { createCarState, resetCar, stepVehicle } from './vehicle/dynamics.js';
 import { lerpPose, copyPose } from './vehicle/interp.js';
+import { isTouchDevice, isMobile } from './core/device.js';
+import { createTouch } from './game/touch.js';
+import { mergeDrive } from './game/input.js';
 import { Vehicle, CarVehicle } from './game/vehicle.js';
 import { HelicopterVehicle } from './game/flight.js';
 import { TankVehicle } from './game/tank.js';
@@ -122,7 +125,14 @@ const { sun, hemi } = createLights(scene);
 const { dome, stars } = createSky(scene, renderer, true);
 
 setBootProgress(60, 'Initializing TSL post-processing pipeline…');
-const isLite = typeof location !== 'undefined' && new URLSearchParams(location.search).has('lite');
+/* Mobile tier: a phone gets the lite build (no GTAO, half the crowd, 4 lights,
+   8 near pedestrians) -- every knob that exists is a draw or a fill cost, and
+   nothing about a phone GPU has been measured; this is the first knob, not
+   the last. ?desktop / ?mobile override detection (core/device.js). */
+const TOUCH = isTouchDevice();
+const MOBILE = isMobile();
+const isLite = MOBILE || (typeof location !== 'undefined' && new URLSearchParams(location.search).has('lite'));
+if (TOUCH) document.body.classList.add('touch');
 const grade = createGrade(renderer, scene, camera, {
   ao: !isLite && !new URLSearchParams(location.search).has('noao'),
   bloom: !new URLSearchParams(location.search).has('nobloom'),
@@ -1410,6 +1420,7 @@ const start = () => {
   audio.resume();
 };
 hud.overlay.addEventListener('click', start);
+hud.overlay.addEventListener('pointerdown', start);   // a tap fires click late or not at all when the finger moves
 canvas.addEventListener('click', start);
 if (boot) boot.addEventListener('click', start);
 addEventListener('keydown', start, { once: true });   // registered before createInput, so it runs first; the input handler also calls start() and the radio waits for ctx.resume()
@@ -1572,7 +1583,7 @@ function applyPerk(persona) {
 }
 applyPerk(NAMED_CHARACTERS[0]);
 
-const input = createInput((action) => {
+const onInputAction = (action) => {
   idleT = 0;
   start();   // any first key boots the audio before its action runs
   // C: cycle the chase camera; on foot it is the crouch toggle. (The handler was lost in a headlight edit; the key still sent 'camera'.)
@@ -1651,11 +1662,26 @@ const input = createInput((action) => {
     chat?.close();
   }
   if (action === 'film') { if (film) stopFilm(); else { started = true; hud.dismiss(); startFilm(); } }
-}, { chatAllowed: () => !photo.on });
+};
+const input = createInput(onInputAction, { chatAllowed: () => !photo.on });
+input.dispatch = onInputAction;
+
+/* Touch controls (game/touch.js): the phone's keyboard and mouse. Built only
+   on a touch screen; read each frame and merged over keyboard+pad exactly the
+   way the pad merges over the keyboard. Look deltas go straight to the same
+   look() the pointer-lock mousemove feeds. */
+const touch = TOUCH ? createTouch((action) => input.dispatch(action), {
+  onLook: (dx, dy) => { idleT = 0; if (photo.on) photo.look(dx, dy); else if (onFoot.active) onFoot.look(dx, dy); else chase.look(dx, dy); },
+  onFire: (down) => { firing = down; },
+  onAim: (on) => { aiming = on; },
+  onInput: () => { idleT = 0; start(); },
+}) : null;
+window.__touch = touch;
 
 /* Mouse look. Pointer lock so the view keeps turning past the screen edge;
    click to grab, Escape to let go, and the rig recentres when you drive on. */
 canvas.addEventListener('click', () => {
+  if (TOUCH) return;   // touch looks by dragging the right half of the screen (game/touch.js); a phone has no pointer to lock
   if (document.pointerLockElement !== canvas) canvas.requestPointerLock();
 });
 addEventListener('mousedown', (e) => {
@@ -1681,12 +1707,15 @@ addEventListener('mousemove', (e) => {
   else chase.look(e.movementX, e.movementY);
 });
 
-addEventListener('resize', () => {
+const onResize = () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight, false);
   grade.resize(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio());
-});
+};
+addEventListener('resize', onResize);
+addEventListener('orientationchange', () => setTimeout(onResize, 60));   // iOS reports the old size on the event itself
+window.visualViewport?.addEventListener('resize', onResize);   // the URL bar sliding away changes the viewport without a window resize
 
 // the physics step asks for solid things near the car each tick
 /* Pedestrians are deliberately NOT in here. Making a person a solid obstacle
@@ -1769,6 +1798,12 @@ function frameBody() {
     car.holdGear = false;
   } else {
   c = input.read();
+  if (touch) {
+    const t = touch.read();
+    if (t.active) c = mergeDrive(c, t);   // a finger down wins over keys, like a live pad does
+    touch.setMode(onFoot.active ? 'foot' : 'drive');
+    touch.setWeapon(held !== 'fists');
+  }
   if (featureTour?.active) {
     featureTour.applyInput(c, dt);
   }

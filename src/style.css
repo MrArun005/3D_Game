@@ -39,3 +39,71 @@ body.filming #wanted, body.filming #mission, body.filming #gta-chat, body.filmin
 kbd{border:1px solid #39414f;border-radius:4px;padding:3px 8px;font-family:inherit;
   font-size:11px;color:#b3bfd0;background:rgba(255,255,255,.035)}
 #hud .go{margin-top:30px;color:#e6c489;letter-spacing:.20em;font-size:13px}
+
+/* ---------------------------------------------------------------------------
+   Touch layout (body.touch, set by main.js when core/device.js sees a touch
+   screen). The overlay is game/touch.js; these rules only place it and shrink
+   the instruments so a phone screen is not all HUD. Nothing here is verified
+   on a device yet -- see docs/MOBILE.md.
+   --------------------------------------------------------------------------- */
+body.touch{touch-action:none;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+body.touch{--hud-scale:.62;--sa-b:env(safe-area-inset-bottom,0px);--sa-l:env(safe-area-inset-left,0px);--sa-r:env(safe-area-inset-right,0px);--sa-t:env(safe-area-inset-top,0px)}
+body.touch #minimap{transform:scale(var(--hud-scale));transform-origin:bottom left;left:calc(12px + var(--sa-l));bottom:calc(12px + var(--sa-b))}
+body.touch #dials{display:none}
+body.touch #cluster{right:auto;left:calc(160px + var(--sa-l));bottom:calc(14px + var(--sa-b));pointer-events:none}
+body.touch #kph{font-size:30px}
+body.touch #gear{margin-top:4px;font-size:11px}
+body.touch #stats{top:calc(8px + var(--sa-t))}
+body.touch #hud .keys{display:none}
+body.touch #hud .touchkeys{display:block;margin-top:22px;font-size:13px;letter-spacing:.14em;color:#78859a;line-height:2}
+#hud .touchkeys{display:none}
+body.touch #hud .go .mouse{display:none}
+#hud .go .tap{display:none}
+body.touch #hud .go .tap{display:inline}
+
+#touch{position:fixed;inset:0;z-index:25;pointer-events:none;font-family:inherit;color:#dbe4f0;
+  padding:var(--sa-t) var(--sa-r) var(--sa-b) var(--sa-l)}
+#touch[hidden]{display:none}
+#touch .tb,#touch [data-zone]{pointer-events:auto}
+#touch .drive,#touch .foot{display:none}
+#touch.mode-drive .drive{display:flex}
+#touch.mode-foot .foot{display:flex}
+#touch .t-top{position:absolute;top:calc(10px + var(--sa-t));left:50%;transform:translateX(-50%);display:flex;gap:8px;pointer-events:none}
+#touch .tb{appearance:none;border:1px solid rgba(160,180,210,.28);border-radius:12px;background:rgba(8,11,18,.55);
+  color:#dbe4f0;font:600 12px/1.15 inherit;letter-spacing:.12em;padding:0 12px;min-width:56px;height:38px;
+  backdrop-filter:blur(3px);box-shadow:0 4px 14px rgba(0,0,0,.35);touch-action:none}
+#touch .tb.on{background:rgba(57,255,176,.28);border-color:rgba(57,255,176,.7);color:#fff}
+#touch .tb.on-toggle{border-color:#e6c489;color:#e6c489}
+#touch .tb small{display:block;font-size:9px;opacity:.7;letter-spacing:.1em}
+/* steering strip: the lower-left third of the screen, above the minimap */
+#touch .t-steer{position:absolute;left:calc(8px + var(--sa-l));right:55%;bottom:calc(150px + var(--sa-b));height:110px;
+  align-items:center;justify-content:center;flex-direction:column;gap:6px;border-radius:16px;
+  background:rgba(8,11,18,.18);border:1px dashed rgba(160,180,210,.18)}
+#touch .t-steer.on{background:rgba(8,11,18,.32);border-style:solid}
+#touch .t-steer span{font-size:10px;letter-spacing:.3em;color:#7d8a9c}
+#touch .t-steer-track{width:260px;max-width:90%;height:6px;border-radius:3px;background:rgba(150,170,200,.25);position:relative}
+#touch .t-steer-knob{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;
+  background:rgba(57,255,176,.55);border:2px solid rgba(255,255,255,.7);box-shadow:0 0 18px rgba(57,255,176,.5)}
+/* on foot: stick zone left half, look zone right half (buttons sit on top of it) */
+#touch .t-stick{position:absolute;left:0;right:55%;top:25%;bottom:0}
+#touch .t-stick-base{position:absolute;left:30%;top:60%;width:120px;height:120px;margin:-60px 0 0 -60px;border-radius:50%;
+  border:2px solid rgba(160,180,210,.35);background:rgba(8,11,18,.35);opacity:.6}
+#touch .t-stick.on .t-stick-base{opacity:1}
+#touch .t-stick-knob{position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;
+  background:rgba(63,210,255,.55);border:2px solid rgba(255,255,255,.7)}
+#touch .t-look{position:absolute;left:45%;right:0;top:15%;bottom:0}
+/* right-hand button column: pedals biggest, nearest the thumb */
+#touch .t-right{position:absolute;right:calc(10px + var(--sa-r));bottom:calc(14px + var(--sa-b));flex-direction:column-reverse;align-items:flex-end;gap:10px}
+#touch .t-right .tb{min-width:84px;height:54px;font-size:13px}
+#touch .t-right .tb.pedal{min-width:120px;height:74px;font-size:15px}
+#touch .t-right .tb.big{width:84px;height:84px;border-radius:50%;background:rgba(255,80,80,.28);border-color:rgba(255,120,120,.6)}
+#touch.mode-drive .tb.fire{display:none}
+#touch.mode-drive.armed .tb.fire{display:flex}
+#touch .tb{display:flex;align-items:center;justify-content:center;text-align:center}
+/* portrait: the game is landscape */
+#rotate{display:none}
+body.touch #rotate{position:fixed;inset:0;z-index:98;display:none;align-items:center;justify-content:center;
+  background:#080b11;color:#cfe0f5;font:600 16px/1.6 inherit;letter-spacing:.22em;text-align:center;padding:32px}
+@media (orientation: portrait){body.touch #rotate{display:flex}}
+/* photo / film / idle hide the overlay too */
+body.photo #touch,body.filming #touch,body.idlecam #touch{opacity:0;pointer-events:none}

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>&#128663;</text></svg>" />
   <title>Halstead Bay</title>
   <style>
@@ -31,6 +31,7 @@ body.photo #wanted, body.photo #mission, body.photo #gta-chat, body.photo #gamep
   </div>
 
   <canvas id="gl"></canvas>
+  <div id="rotate">ROTATE YOUR PHONE<br /><span style="font-weight:300;font-size:12px;letter-spacing:.14em;color:#94a3b8">Halstead Bay plays in landscape</span></div>
 
   <div id="stats"></div>
   <canvas id="minimap" width="210" height="210"></canvas>
@@ -59,7 +60,12 @@ body.photo #wanted, body.photo #mission, body.photo #gta-chat, body.photo #gamep
         Pad: RT throttle · LT brake · left stick steer · A handbrake · LB hold gear<br />
         Y camera · X lights · B enter/exit · RT+RB fire · View reset · Start run
       </div>
-      <div class="go">click once, then drive</div>
+      <div class="touchkeys">
+        Drag the left strip to steer &nbsp;·&nbsp; GAS / BRAKE pedals on the right &nbsp;·&nbsp; HANDBRAKE, CAM, HORN, LIGHTS, EXIT up top<br />
+        On foot: left thumb stick to walk, drag the right half to look, RUN / JUMP / USE / FIRE / AIM on the right<br />
+        PHONE and MAP buttons replace M and Tab &nbsp;·&nbsp; landscape only
+      </div>
+      <div class="go"><span class="mouse">click once, then drive</span><span class="tap">tap to start</span></div>
     </div>
   </div>
 

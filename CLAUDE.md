@@ -133,6 +133,14 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
     Sketchfab props have none recorded. A `.vercelignore` for the NC assets
     was drafted but NOT added -- it changes the live garage; Arun decides.
   - Heli bindings still clash on C (descend/camera) and E (strafe/fire).
+  - **Smoothness**: `vehicle/interp.js` interpolates the 1/120 step for the
+    hero and chase camera (alpha = accumulator/STEP; leftover beyond the
+    4-step guard is dropped); `#streetFurniture`/`#signals` are generators.
+  - **Mobile / touch** (`docs/MOBILE.md`, unverified on a device):
+    `core/device.js` detection (`?mobile`/`?desktop`), `game/touch.js` overlay
+    whose `read()` matches `createInput().read()` and merges via
+    `mergeDrive`; mobile forces the lite tier; `body.touch` CSS in style.css;
+    no pointer lock on touch, TAP TO START, rotate card in portrait.
 
 - Tests: `npm test` — 20/20 passing. Node's built-in runner, no framework.
 - Deploy (2026-09-03): Vercel project `halstead-bay`, public at
