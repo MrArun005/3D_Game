@@ -2,10 +2,10 @@ import * as THREE from 'three';
 import { additive } from './core/additive.js';
 import './style.css';
 
-import { autoResolution, createRenderer, createScene, createLights, DAY_SUN } from './core/renderer.js';
+import { createRenderer, createScene, createLights, DAY_SUN } from './core/renderer.js';
 import { createSky } from './core/sky.js';
 import { createGrade } from './core/grade.js';
-import { setAnisotropy } from './world/textures.js';
+import { setAnisotropy, toTex } from './world/textures.js';
 import { createAssets } from './world/assets.js';
 import { loadVendorCars, loadHeroSkin, KENNEY_CARS } from './world/vendorCars.js';
 import { LightPool } from './game/lighting.js';
@@ -84,9 +84,13 @@ import { createWeather, rainSpell } from './world/weather.js';
 import { buildHuman } from './world/human.js';
 import { Debris } from './world/breakables.js';
 
-/* Day first. Night is still fully built -- ?night in the URL brings it back --
-   but daylight is the honest view: nothing hides behind a lamp glow. */
-const DAY = !new URLSearchParams(location.search).has('night');
+/* ONE rig. The scene, sky, water, far city and lights are always built in
+   their daylight form and game/clock.js runs the day into the night: sun,
+   hemisphere, fog, dome tint, emissive stagger, exposure, grade, the lamp
+   light pool and the fleet's headlamps all follow clock.nightFactor. `?night`
+   and `?dusk` only pick the start hour (19.5 / 18.4); `?time=H` picks any. */
+const START_NIGHT = new URLSearchParams(location.search).has('night');
+const START_DUSK = new URLSearchParams(location.search).has('dusk');
 
 const canvas = document.getElementById('gl');
 /* The boot overlay is static HTML in index.html so it paints before this
@@ -108,14 +112,13 @@ const renderer = createRenderer(canvas);
 setBootProgress(25, 'Starting the renderer…');
 await renderer.init();
 setBootProgress(45, 'Building the scene & lights…');
-const resolution = autoResolution(renderer);
 setAnisotropy(renderer.capabilities?.getMaxAnisotropy?.() ?? 16);
 
-const scene = createScene(DAY);
+const scene = createScene(true);
 window.scene = scene;
 const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.5, 14000);
-const { sun, hemi } = createLights(scene, DAY);
-const { dome, stars } = createSky(scene, renderer, DAY);
+const { sun, hemi } = createLights(scene);
+const { dome, stars } = createSky(scene, renderer, true);
 
 setBootProgress(60, 'Initializing TSL post-processing pipeline…');
 const isLite = typeof location !== 'undefined' && new URLSearchParams(location.search).has('lite');
@@ -134,23 +137,19 @@ grade.resize(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPi
 /* Bloom needs no day/night switch: it reads the emissive MRT channel, and
    daylightAssets() below dims facade emissive to 0.04 — under the bloom
    threshold — so at noon only signal lenses and brake lights carry a halo
-   while at night the baked-emissive windows and lamps bleed as designed. */
-if (DAY) {
-  daylightAssets(assets);
-  grade.vignette.uniforms.uStrength.value = 0.26;   // noon is not a film noir
-  grade.grain.uniforms.uAmount.value = 0.012;
-} else {
-  /* Night ran genuinely too dark away from lit facades — silhouettes on a
-     horizon glow. A nudged exposure lifts the mid-tones without touching the
-     look of the emissive windows (they are already past the bloom knee). */
-  renderer.toneMappingExposure = 1.15;
-}
+   while at night the clock's stagger lifts windows and lamps back up and they
+   bleed as designed. Exposure (1.0 -> 1.15) is the clock's too. */
+daylightAssets(assets);
+grade.vignette.uniforms.uStrength.value = 0.26;   // noon is not a film noir
+grade.grain.uniforms.uAmount.value = 0.012;
 /* `world` is whatever is currently building geometry. It starts as the old
    procedural grid so the game runs immediately, and is swapped for Halstead
    Bay the moment the district file arrives. Both answer update(x,z). */
 /* Every facade bakes its lit windows into an emissive map. At night that IS
    the lighting; at noon a glowing window is the single loudest tell that a
-   scene is a night scene with the sun turned up, so it goes away. */
+   scene is a night scene with the sun turned up, so it goes away. This is the
+   BOOT palette: every emissive it touches (facades, base, pool, lampGlow,
+   sign, windowQuad, beacon) is re-driven per frame by clock.js's stagger. */
 function daylightAssets(A) {
   for (const k of Object.keys(A.facades)) {
     for (const m of A.facades[k]) { m.emissiveIntensity = 0.04; m.envMapIntensity = 0.85; }
@@ -1052,13 +1051,15 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   for (const g of city.cells.values()) scene.remove(g);
   city.cells.clear();
   setBootProgress(70, 'Building the streets…');
-  world = new DistrictWorld(scene, assets, district, { day: DAY, catalogue });
+  world = new DistrictWorld(scene, assets, district, { day: true, catalogue });
   window._world = world;
   world.camera = camera;                  // chunk-level frustum culling for the render bundles
-  if (!DAY) {
+  /* Always: the pool's intensities follow clock.nightFactor (zero by day).
+     Cost by day is the 11 zero-intensity lights in the forward light loop --
+     the price of one shader variant and no recompile hitch at dusk. */
+  {
     const n = +(new URLSearchParams(location.search).get('lights') ?? (isLite ? 4 : 6));
-    lightPool = new LightPool(scene, world, { count: n });
-    grade.setNight?.(true);
+    lightPool = new LightPool(scene, world, { count: n });   // .night is set by clock.update before the pool's first update
   }
   debris.catalogue = catalogue;
   world.onBreakables = (k, tracked, solids, pools) => debris.registerChunk(k, tracked, solids, pools);
@@ -1077,14 +1078,14 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   }
   world.onChunkBuilt = (ms) => stats.reportChunkBuild(ms);
   world.onChunkDone = (ms) => stats.reportChunkTotal(ms);
-  water = buildWater(scene, district, DAY);
-  buildSurrounds(scene, district.bounds, DAY);
-  buildPlaces(scene, district, DAY);
-  beach = buildBeach(scene, district, DAY);
+  water = buildWater(scene, district, true);
+  buildSurrounds(scene, district.bounds, true);
+  buildPlaces(scene, district, true);
+  beach = buildBeach(scene, district, true);
   crowd = new Crowd(scene, district, isLite ? 160 : 320);
   crowd.onNear = () => chatter?.civilian?.('near');   // a pedestrian you nearly hit shouts (chatter throttles to one per 6 s); set HERE, after the crowd exists
   people = new People(scene, +(new URLSearchParams(location.search).get('people') ?? (isLite ? 8 : 16)));
-  heli = new Helicopter(scene, DAY);
+  heli = new Helicopter(scene, true);
   heli.district = district;
   heli.nearbyBuildings = (x, z) => (world.nearbyBuildings ? world.nearbyBuildings(x, z) : []);
   heli.onArrive = () => hud.flash('AIR SUPPORT INBOUND');
@@ -1212,8 +1213,8 @@ const headlightDecalTex = (() => {
   ctx.ellipse(256, 270, 85, 140, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
+  const tex = toTex(canvas, true);   // colour map: sRGB, anisotropy from the renderer
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;   // a decal, not a tile
   return tex;
 })();
 
@@ -1229,7 +1230,8 @@ const lensGlowTex = (() => {
   grad.addColorStop(1, 'rgba(120, 180, 255, 0)');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 128, 128);
-  const tex = new THREE.CanvasTexture(canvas);
+  const tex = toTex(canvas, true);   // a colour map (it was defaulting to NoColorSpace: the glow read linear-dim)
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
   return tex;
 })();
 
@@ -1247,15 +1249,18 @@ for (const s of [-1, 1]) {
   hero.add(spot, spot.target);
   headlightBeams.push(spot);
 
-  // Front projector lens glare sprite
-  const spriteMat = additive(new THREE.SpriteMaterial({
+  /* Front projector lens glare sprite. glow(), not additive(): additive() only
+     guards PointsMaterial (a no-op here), and glow routes the sprite into the
+     emissive target so the lens BLOOMS like the other flashes (never the
+     zero-normal mrt on a quad -- it draws black, CLAUDE.md glare notes). */
+  const spriteMat = glow(new THREE.SpriteMaterial({
     map: lensGlowTex,
     color: 0xffffff,
     transparent: true,
     opacity: 0.95,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
-  }));
+  }), 0.8);
   const sprite = new THREE.Sprite(spriteMat);
   sprite.scale.set(0.9, 0.9, 1);
   sprite.position.set(NOSE_X - 0.05, 0.74, s * 0.55);
@@ -1288,12 +1293,13 @@ beamPool.position.set(NOSE_X + 17, 0.05, 0);
 beamPool.renderOrder = 2;
 hero.add(beamPool);
 
-const traffic = new Traffic(scene, assets, DAY ? 36 : 40, !DAY);   // Phase 5: denser, and lit at night
+const traffic = new Traffic(scene, assets, START_NIGHT ? 40 : 36, 0);   // Phase 5: denser with ?night; the clock lights the headlamps (traffic.setNight)
 const chase = new ChaseCamera(camera);
 const weather = createWeather(scene, { hemi, dome: () => dome, onStrike: (delay) => audio.thunder?.(delay) });   // always built: rain comes in night spells (rainSpell) on the day cycle, and all night with ?night
 const hud = new Hud();
 let navigation = null;
-const clock = new GameClock({ startHour: +(new URLSearchParams(location.search).get('time') ?? (DAY ? 12.0 : 19.5)) });
+const clock = new GameClock({ startHour: +(new URLSearchParams(location.search).get('time') ?? (START_NIGHT ? 19.5 : START_DUSK ? 18.4 : 12.0)) });
+traffic.setNight(clock.nightFactor);
 hud.useClock(clock);
 const stats = new Stats();
 window.stats = stats;
@@ -1928,7 +1934,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     }
   }
   // distant gunfire: somewhere across the city, every 35-110 s at night, faint and dull -- the city has other trouble
-  if (!DAY || (clock.hour >= 21 || clock.hour < 5)) {
+  if (clock.hour >= 21 || clock.hour < 5) {
     farShotT -= dt;
     if (farShotT <= 0) { farShotT = 35 + Math.random() * 75; const n = 1 + Math.floor(Math.random() * 3); for (let i = 0; i < n; i++) setTimeout(() => audio.gunshot(0.10 + Math.random() * 0.06, Math.random() < 0.5 ? 'pistol' : 'smg'), i * (120 + Math.random() * 160)); }
   }
@@ -2073,7 +2079,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     if (!document.getElementById('idlecam-style')) { const st = document.createElement('style'); st.id = 'idlecam-style'; const ids = ['#hud', '#cluster', '#minimap', '#dials', '#readout', '#wanted', '#crosshair', '#stats', '#gameplay-prompt-bar', '#mission', '#gta-chat', '#ammo', '#arsenal', '#health', '#flight-banner']; st.textContent = `${ids.join(',')}{transition:opacity .6s}${ids.map((i) => '.idlecam ' + i).join(',')}{opacity:0 !important}`; document.head.appendChild(st); }
     document.body.classList.toggle('idlecam', idleCam);
   }
-  clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: currentVehicle, dome, stars });
+  clock.update(dt, { sun, hemi, scene, grade, renderer, lightPool, traffic, assets, player: currentVehicle, dome, stars });
   // the rain audio follows the weather's breathing, and rain is grip: the physics reads car.wet
   // crossing into a district: the area name, GTA-style, and dispatch tracks you if you are wanted
   distT -= dt;
@@ -2114,11 +2120,11 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     }
   }
   // Little Tokyo's windows, neon and kanban come up with the night (tokyo.js emissive attribute)
-  { const hr = clock.hour; const nk = hr >= 20.5 || hr < 5.2 ? 1 : hr >= 18 ? (hr - 18) / 2.5 : hr < 7.2 ? (7.2 - hr) / 2 : 0; setTokyoNight(nk); setGlareNight(nk); }
+  setTokyoNight(clock.nightFactor); setGlareNight(clock.nightFactor);
   if (weather) {
     // rain only at night (the clock's thresholds), in spells on the normal cycle, all night with ?night
-    const nightNow = clock.hour >= 20.5 || clock.hour < 5.2;
-    weather.setEnabled(rainForce ?? (nightNow && (!DAY || rainSpell(now / 1000))));
+    const nightNow = clock.nightFactor >= 1;
+    weather.setEnabled(rainForce ?? (nightNow && (START_NIGHT || rainSpell(now / 1000))));
     weather.update(camera, currentVehicle, dt); car.wet = weather.amount ?? 1; traffic.wet = car.wet; if (crowd) crowd.rain = car.wet;
     if (Math.abs((weather.amount ?? 1) - (rainHeard ?? -1)) > 0.05) { rainHeard = weather.amount; audio.setRain(rainHeard); }
     // the road LOOKS wet: tarmac roughness drops and its reflection rises with the rain (uniforms only, no recompile; bundles carry uniform changes)
@@ -2129,7 +2135,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   lightPool?.update(dt, currentVehicle.x, currentVehicle.z, traffic);
   reputation?.update(dt, playerTarget.x, playerTarget.z, traffic, car, damageModel);
   intelScanner?.update(dt, camera, playerTarget, traffic, reputation?.safehouses);
-  grade.setDrops(DAY ? 0 : chase.mode >= 2 ? 1.2 : 0.68);
+  grade.setDrops((weather?.amount ?? 0) * (chase.mode >= 2 ? 1.2 : 0.68));   // lens rain follows the real rain, not the boot flag
   const speedRatio = Math.min(1, (Math.abs(car.fwdSpeed || 0) / 42)) * (car.nosActive ? 1.35 : 0.85);
   grade.setSpeed?.(speedRatio);
   const streamX = photo?.on ? camera.position.x : currentVehicle.x;
@@ -2139,7 +2145,6 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   performance.mark('stream-start');
   world.update(streamX, streamZ, streamVx, streamVz);
   performance.mark('stream-end');
-  resolution(dt);
   /* One render: the pipeline owns the frame (scene MRT pass, GTAO, bloom,
      tone map, grade — core/grade.js). renderer.info accumulates across a
      frame's internal passes and resets once per rAF by the renderer's own
@@ -2270,7 +2275,6 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     if (sd < 260) { const look = onFoot.active ? onFoot.camYaw : car.yaw; const b = Math.atan2(-(sz - car.z), sx - car.x) - look; audio.siren(-Math.sin(b), Math.min(1, sd / 260)); }
     else audio.siren(0, 1);
   }
-  audio.setRain(DAY ? 0 : 1);
   /* Halstead Bay is a harbour city and the car's ground plane is y=0
      everywhere, so without this you simply drive out to sea. Sink, then put
      the car back on the nearest quay -- the map already tags 79 of them. */

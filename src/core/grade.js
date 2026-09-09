@@ -16,7 +16,7 @@ import { smaa } from 'three/examples/jsm/tsl/display/SMAANode.js';
  *   scene pass (MRT: colour + view normals + emissive)
  *     -> GTAO from depth+normals, bilateral-denoised, multiplied into colour
  *     -> bloom fed by the emissive MRT channel only
- *     -> renderOutput()  (ACES + sRGB — the pipeline's own transform is off)
+ *     -> renderOutput()  (the renderer's tone map -- AgX, renderer.js -- + sRGB; the pipeline's own transform is off)
  *     -> vignette * grain + lens rain, in display space
  *
  * Architecture notes, learned the expensive way (see the parked spike this
@@ -230,16 +230,19 @@ export function createGrade(renderer, scene, camera, {
     setBloom(on) { if (bloomPass) bloomPass.strength.value = on ? BLOOM_STRENGTH : 0; },
     /* Night mood: signs and lamps glow harder and softer (radius up), the
        threshold stays where windows (emissive ~1.0 * tint <= 1) do not bloom
-       but sign boards (1.4) and lamp caps (3.2) do. */
+       but sign boards (1.4) and lamp caps (3.2) do. Takes the clock's
+       nightFactor 0..1 (a boolean still works: true -> 1) and lerps, so dusk
+       slides into the night grade instead of switching at one minute. */
     setNight(on) {
-      uSat.value = on ? 1.32 : 1.0;
-      uSplit.value = on ? 1.0 : 0.0;
+      const k = Math.max(0, Math.min(1, +on));
+      uSat.value = 1.0 + 0.32 * k;
+      uSplit.value = k;
       if (!bloomPass) return;
       // the neon night: more bloom, wider, from a lower floor (lit windows glow, as they do in the reference)
       // crisp neon on a dark street, not haze: 1.35 / 0.72 / 0.72 bloomed every lit window into fog (browser check, 2026-09-05)
-      bloomPass.strength.value = on ? 0.95 : BLOOM_STRENGTH;
-      bloomPass.radius.value = on ? 0.55 : 0.35;
-      bloomPass.threshold.value = on ? 0.85 : 0.25;
+      bloomPass.strength.value = BLOOM_STRENGTH + (0.95 - BLOOM_STRENGTH) * k;
+      bloomPass.radius.value = 0.35 + 0.20 * k;
+      bloomPass.threshold.value = 0.25 + 0.60 * k;
     },
 
     setDrops(amount) { lAmt.value = amount; },

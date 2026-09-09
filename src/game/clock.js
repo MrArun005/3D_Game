@@ -1,16 +1,38 @@
 import * as THREE from 'three';
 
+
+/** Phase edges, in hours. Night 20.5-5.2, dusk 18-20.5, dawn 5.2-7.2, day otherwise. */
+export const NIGHT_FROM = 20.5, NIGHT_TO = 5.2, DUSK_FROM = 18.0, DAWN_TO = 7.2;
+
+/**
+ * How far into the night the hour is, 0 (day) .. 1 (deep night). Pure, so it
+ * is testable and so every consumer -- the lamp stagger, LightPool, traffic
+ * headlamps, Tokyo neon, glare, exposure, the grade -- reads the SAME curve.
+ * Dusk climbs 18.0 -> 19.8 and holds 1 through the night; dawn falls 5.4 -> 7.0.
+ */
+export function nightFactor(hour) {
+  const h = ((hour % 24) + 24) % 24;
+  if (h >= NIGHT_FROM || h < NIGHT_TO) return 1;
+  if (h >= DUSK_FROM) return Math.max(0, Math.min(1, (h - DUSK_FROM) / 1.8));
+  if (h < DAWN_TO) return Math.max(0, Math.min(1, 1 - (h - 5.4) / 1.6));
+  return 0;
+}
+// update() names its local `nightFactor` after the curve; this alias keeps the call unshadowed
+const nightFactorFn = nightFactor;
+
 /**
  * 24-minute real-world day-night clock with smooth dynamic celestial cycle,
- * dynamic solar vector, lighting states (Day, Sunset, Night, Dawn),
- * and weather transitions.
+ * dynamic solar vector and lighting states (Day, Sunset, Night, Dawn).
+ * ONE rig: the day sun + CSM, the hemisphere, the day dome and the day asset
+ * palette (main.js daylightAssets) are what exist, and this drives every
+ * night-only quantity from `nightFactor` -- `?night` is just a start hour.
+ * Weather is world/weather.js's business (rainSpell); the clock does not roll it.
  */
 export class GameClock {
   constructor({ startHour = 19.5, speed = 1.0 } = {}) {
     this.hour = startHour; // 0.0 - 24.0
     this.timeScale = speed; // 1 real min = 1 game hr (1 sec = 1 game min)
-    this.weather = 'CLEAR'; // CLEAR, OVERCAST, RAIN, STORM
-    this.weatherTimer = 0;
+    this.nightFactor = nightFactor(startHour);
 
     this.sunPosition = new THREE.Vector3();
     this.sunColor = new THREE.Color();
@@ -19,7 +41,7 @@ export class GameClock {
     this.fogColor = new THREE.Color();
   }
 
-  update(dt, { sun, hemi, scene, grade, lightPool, heroLights, weatherSystem, assets, player, dome, stars } = {}) {
+  update(dt, { sun, hemi, scene, grade, renderer, lightPool, traffic, assets, player, dome, stars } = {}) {
     // 24 minutes real time = 24 game hours => dt / 60 hours per second
     this.hour = (this.hour + (dt / 60) * this.timeScale) % 24;
 
@@ -35,9 +57,9 @@ export class GameClock {
     this.sunPosition.set(px - cosH * sunDist, Math.max(30, sinH * sunDist), pz + 120 * Math.cos(sunAngle * 0.5));
 
     // Determine diurnal phase weights
-    const isNight = this.hour >= 20.5 || this.hour < 5.2;
-    const isDusk = this.hour >= 18.0 && this.hour < 20.5;
-    const isDawn = this.hour >= 5.2 && this.hour < 7.2;
+    const isNight = this.hour >= NIGHT_FROM || this.hour < NIGHT_TO;
+    const isDusk = this.hour >= DUSK_FROM && this.hour < NIGHT_FROM;
+    const isDawn = this.hour >= NIGHT_TO && this.hour < DAWN_TO;
     const isDay = !isNight && !isDusk && !isDawn;
 
     let sunIntensity = 0;
@@ -122,10 +144,8 @@ export class GameClock {
       stars.visible = stars.material.opacity > 0.02;
     }
 
-    // Task 2.3: Staggered dusk switch-on for streetlamps, signs, windows (18.2 - 19.8)
-    const duskProgress = Math.max(0, Math.min(1, (this.hour - 18.0) / 1.8));
-    const dawnProgress = Math.max(0, Math.min(1, 1 - (this.hour - 5.4) / 1.6));
-    const nightFactor = isNight ? 1 : isDusk ? duskProgress : isDawn ? dawnProgress : 0;
+    // Task 2.3: Staggered dusk switch-on for streetlamps, signs, windows (18.0 - 19.8)
+    const nightFactor = this.nightFactor = nightFactorFn(this.hour);
 
     if (assets) {
       // Stagger 1: Street lamps & sodium pools turn on at 35% dusk
@@ -137,6 +157,14 @@ export class GameClock {
       const signOn = nightFactor > 0.20;
       if (assets.mat?.sign) assets.mat.sign.emissiveIntensity = signOn ? 0.06 + 2.4 * nightFactor : 0.06;   // neon that blooms (grade.setNight threshold 0.72)
       if (assets.mat?.beacon) assets.mat.beacon.emissiveIntensity = signOn ? 0.6 + 1.8 * nightFactor : 0.6;
+
+      /* Window quads (signs.js buildWindowMaterial, emissiveIntensity through a
+         materialReference so this write reaches the shader) and the podium
+         bases (facades.js buildBaseMaterials, classic material: a uniform, no
+         bake). daylightAssets() zeroes both at boot; nothing restored them
+         until now, so a day boot that ran into the night had dark windows. */
+      if (assets.mat?.windowQuad) assets.mat.windowQuad.emissiveIntensity = nightFactor > 0.45 ? 0.9 * Math.min(1, (nightFactor - 0.45) / 0.3) : 0;
+      if (assets.base?.materials) for (const m of assets.base.materials) m.emissiveIntensity = 0.05 + 0.85 * (nightFactor > 0.5 ? Math.min(1, (nightFactor - 0.5) / 0.3) : 0);
 
       // Stagger 3: Tower & residential window illumination staggers between 40% and 85% dusk
       if (assets.facades) {
@@ -163,21 +191,15 @@ export class GameClock {
       }
     }
 
-    // Night lighting state: headlights default active at night & dusk if not manually toggled
-    const lightsActive = this.hour >= 18.2 || this.hour < 6.4;
-
-    // Tune post bloom per hour (Task 2.5): subtle during the day, radiant at dusk/night
-    if (grade?.setNight) {
-      grade.setNight(lightsActive);
-    }
-
-    // Dynamic weather cycle (Task 2.6)
-    this.weatherTimer += dt;
-    if (this.weatherTimer > 360) {
-      this.weatherTimer = 0;
-      const weathers = ['CLEAR', 'OVERCAST', 'RAIN', 'STORM'];
-      this.weather = weathers[Math.floor(Math.random() * weathers.length)];
-    }
+    // Tune post bloom per hour (Task 2.5): subtle during the day, radiant at dusk/night (grade.setNight lerps on a 0..1)
+    if (grade?.setNight) grade.setNight(nightFactor);
+    /* Night ran too dark away from lit facades -- silhouettes on a horizon
+       glow. 1.15 at night lifts the mid-tones without touching the emissive
+       windows (already past the bloom knee); noon stays at 1.0. */
+    if (renderer) renderer.toneMappingExposure = 1.0 + 0.15 * nightFactor;
+    // the real lamp lights and the fleet's headlamps come up with the same curve
+    if (lightPool) lightPool.night = nightFactor;
+    if (traffic?.setNight) traffic.setNight(nightFactor);
   }
 
   get formattedTime() {

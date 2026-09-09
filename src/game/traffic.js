@@ -78,8 +78,13 @@ function lanePoint(i, j, d, lane) {
  * driving through streams out behind it.
  */
 export class Traffic {
-  constructor(scene, assets, count = 18, night = false) {
-    this.night = night;
+  constructor(scene, assets, count = 18, night = 0) {
+    /* clock.nightFactor, 0..1: setNight() drives the fleet's headlamp glow. The
+       lamps are built on every car regardless (one shared material) and hidden
+       by day, so a day boot that runs into the evening gets lit traffic. */
+    this.night = +night;
+    this.lampMat = new THREE.MeshStandardMaterial({ color: 0xfff2d0, emissive: 0xfff2d0, emissiveIntensity: 2.6 * this.night });
+    this.lamps = [];
     this.scene = scene;
     this.assets = assets;
     this.rand = mulberry32(4242);
@@ -299,14 +304,29 @@ export class Traffic {
        tell on a hull with no lamps of its own. */
     tail.position.set(-(spec.L * 0.5 - 0.06), spec.bonnetY * 0.86, 0);
     mesh.add(tail);
-    // headlamps: every car reads as lit at night (Phase 5), the nearest four also get a real spot
-    if (this.night) {
-      const lampMat = new THREE.MeshStandardMaterial({ color: 0xfff2d0, emissive: 0xfff2d0, emissiveIntensity: 2.6 });
-      for (const s of [-1, 1]) {
-        const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.3), lampMat);
-        lamp.position.set(spec.L * 0.5 - 0.04, spec.bonnetY * 0.78, s * spec.wMax * 0.62);
-        mesh.add(lamp);
+    /* headlamps: every car reads as lit at night (Phase 5), the nearest four
+       also get a real spot (lighting.js). Both lamps in ONE mesh (two boxes
+       merged: 40 draws for the fleet, not 80), the shared lampMat, hidden while
+       the night factor is zero so the day pays no draw for them. */
+    {
+      const lampGeo = new THREE.BoxGeometry(0.08, 0.16, 0.3);
+      const pair = new THREE.BufferGeometry();
+      const a = lampGeo.clone().translate(spec.L * 0.5 - 0.04, spec.bonnetY * 0.78, -spec.wMax * 0.62);
+      const b = lampGeo.clone().translate(spec.L * 0.5 - 0.04, spec.bonnetY * 0.78, spec.wMax * 0.62);
+      const n = a.attributes.position.count;
+      for (const name of ['position', 'normal', 'uv']) {
+        const A = a.attributes[name], B = b.attributes[name];
+        const arr = new Float32Array(A.array.length + B.array.length); arr.set(A.array); arr.set(B.array, A.array.length);
+        pair.setAttribute(name, new THREE.BufferAttribute(arr, A.itemSize));
       }
+      const ia = a.index.array, ib = b.index.array, idx = new Uint16Array(ia.length + ib.length);
+      idx.set(ia); for (let i = 0; i < ib.length; i++) idx[ia.length + i] = ib[i] + n;
+      pair.setIndex(new THREE.BufferAttribute(idx, 1));
+      lampGeo.dispose(); a.dispose(); b.dispose();
+      const lamp = new THREE.Mesh(pair, this.lampMat);
+      lamp.visible = this.night > 0.02;
+      mesh.add(lamp);
+      this.lamps.push(lamp);
     }
     this.scene.add(mesh);
 
@@ -328,6 +348,16 @@ export class Traffic {
    * already geometry-agnostic, so signals, queueing and collision come along
    * untouched.
    */
+
+  /** The clock's nightFactor 0..1: headlamp glow on every car; the lamps hide at 0 (no draw by day). */
+  setNight(k) {
+    k = Math.max(0, Math.min(1, +k || 0));
+    if (Math.abs(k - this.night) < 0.005 && (k > 0.02) === this.lamps[0]?.visible) return;
+    this.night = k;
+    this.lampMat.emissiveIntensity = 2.6 * k;
+    const on = k > 0.02;
+    for (const l of this.lamps) l.visible = on;
+  }
   useGraph(district) {
     this.E = district.graph.edges;
     this.N = new Map(district.graph.nodes.map((n) => [n.id, n]));

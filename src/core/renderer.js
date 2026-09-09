@@ -100,16 +100,6 @@ function patchNestedRenderInBundle(renderer) {
 }
 
 /**
- * Resolution is the single biggest cost in this scene: at DPR 2 on a Retina
- * panel we are shading 6.7 megapixels and the M2 drops to 37fps; at 1.25 the
- * exact same frame locks 60. So we do not pick a fixed ratio -- we watch the
- * frame time and let the panel earn its pixels back.
- */
-export function autoResolution(renderer) {
-  return () => {};
-}
-
-/**
  * Midday. One hard sun with a wide shadow frustum, a bright sky/ground
  * hemisphere for the ambient, and no warm fill -- daylight bounce is neutral
  * and adding a coloured fill is what makes a "day" scene look like a lit set.
@@ -166,7 +156,7 @@ function createDayLights(scene) {
   return { hemi, sun, csm, fill };
 }
 
-export function createScene(day = false) {
+export function createScene(day = true) {
   const scene = new THREE.Scene();
   // clear daylight sees a long way; a 4.2km city is worth showing off
   scene.fog = day ? new THREE.FogExp2(DUSK ? 0xc9a48a : FOG_DAY, DUSK ? 0.00024 : 0.00017)   // aerial perspective: depth, not murk
@@ -174,35 +164,6 @@ export function createScene(day = false) {
   return scene;
 }
 
-/**
- * Two directional lights and a hemisphere. No per-lamp lights anywhere in the
- * city: the street lighting is painted into the facade emissive maps and faked
- * with additive pools, which is why this scene can afford hundreds of buildings.
- */
-export function createLights(scene, day = false) {
-  if (day) return createDayLights(scene);
-  // the ground half is warm on purpose: sodium bouncing off wet tarmac is what
-  // separates a lit street from a scene that merely has lamps in it
-  const hemi = new THREE.HemisphereLight(0x55699c, 0x33241a, 0.98);
-  scene.add(hemi);
-
-  const sun = new THREE.DirectionalLight(0xffab5e, 0.72);
-  sun.position.set(-260, 42, 150);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 220;
-  sun.shadow.camera.left = -40;
-  sun.shadow.camera.right = 40;
-  sun.shadow.camera.top = 40;
-  sun.shadow.camera.bottom = -40;
-  sun.shadow.bias = -0.002;
-  sun.shadow.normalBias = 0.05;
-  scene.add(sun, sun.target);
-
-  const fill = new THREE.DirectionalLight(0x5d78ad, 0.30);
-  fill.position.set(210, 90, -140);
-  scene.add(fill);
-
-  return { hemi, sun, fill };
-}
+/** The one rig: day sun + CSM + hemisphere. game/clock.js drives its colour,
+ *  intensity and position through the day; `?night` is a start hour, not a rig. */
+export function createLights(scene) { return createDayLights(scene); }

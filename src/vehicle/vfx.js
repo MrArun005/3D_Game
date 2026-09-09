@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { additive } from '../core/additive.js';
+import { toTex } from '../world/textures.js';
 
 /**
  * Master Vehicle Visual Effects Suite:
@@ -30,7 +31,8 @@ export class VehicleVFX {
     this.#buildExhaustFlames();
     this.#buildExhaustSparks();
     this.#buildTireSmoke();
-    this.#buildUnderglow();
+    // hero underglow: opt-in (hero.userData.underglow = true); a cyan neon plane + point light under every car was not a default look
+    if (this.hero.userData?.underglow) this.#buildUnderglow();
     this.#buildHeadlightBeams();
     this.#setupBrakeDiscs();
     this.#buildSpeedLines();
@@ -143,7 +145,7 @@ export class VehicleVFX {
     ctx.fillStyle = rad;
     ctx.fillRect(0, 0, 64, 64);
 
-    const tex = new THREE.CanvasTexture(canvas);
+    const tex = toTex(canvas, true);   // colour map, sRGB, renderer anisotropy
     const mat = new THREE.PointsMaterial({
       map: tex,
       size: 1.6,
@@ -174,7 +176,7 @@ export class VehicleVFX {
     ctx.fillStyle = rad;
     ctx.fillRect(0, 0, 128, 128);
 
-    const tex = new THREE.CanvasTexture(canvas);
+    const tex = toTex(canvas, true);
     const neonMat = additive(new THREE.MeshBasicMaterial({
       map: tex,
       transparent: true,
@@ -252,7 +254,10 @@ export class VehicleVFX {
     this.speedCanvas.height = window.innerHeight;
   }
 
+  /** The phone's NEON card: buying a colour is what turns the underglow on (hero.userData.underglow). */
   setNeonColor(hex) {
+    this.hero.userData.underglow = true;
+    if (!this.neonMesh) this.#buildUnderglow();
     if (this.neonMesh?.material) this.neonMesh.material.color.setHex(hex);
     if (this.neonLight) this.neonLight.color.setHex(hex);
   }
@@ -360,9 +365,11 @@ export class VehicleVFX {
     }
     this.smokeGeo.attributes.position.needsUpdate = true;
 
-    // --- 3. Underglow Neon Pulsing ---
+    // --- 3. Underglow Neon Pulsing (only when hero.userData.underglow; the light is zeroed when it is switched off) ---
     if (this.neonMesh) {
-      const pulse = 0.72 + Math.sin(performance.now() * 0.003) * 0.08;
+      const on = !!this.hero.userData?.underglow;
+      this.neonMesh.visible = on;
+      const pulse = on ? 0.72 + Math.sin(performance.now() * 0.003) * 0.08 : 0;
       this.neonMesh.material.opacity = pulse;
       if (this.neonLight) this.neonLight.intensity = 1.9 * pulse;
     }
