@@ -43,3 +43,6 @@ assets/source/originals/
 # them the day a loader references them -- keep the licence note either way.
 assets/source/vendor/polyhaven/
 public/models/vendor/polyhaven/*.glb
+
+# agent worktrees and local harness state
+.claude/worktrees/
