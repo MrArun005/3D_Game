@@ -94,19 +94,7 @@ export class Phone {
     nav.querySelector('#tab-contacts').onclick = () => this.#switchTab('contacts');
     nav.querySelector('#tab-intel').onclick = () => this.#switchTab('intel');
 
-    // On-screen toggle trigger button
-    const trigger = document.createElement('button');
-    trigger.id = 'phone-btn';
-    trigger.style.cssText = `
-      position: fixed; right: 28px; bottom: 24px; z-index: 90;
-      padding: 10px 18px; background: linear-gradient(135deg, #2980b9, #2c3e50);
-      color: #fff; border: 1px solid rgba(255,255,255,0.3); border-radius: 20px;
-      font-weight: 800; font-size: 13px; letter-spacing: 1px; cursor: pointer;
-      box-shadow: 0 4px 18px rgba(0,0,0,0.5);
-    `;
-    trigger.textContent = '📱 PHONE (M)';
-    trigger.onclick = () => this.toggle();
-    document.body.appendChild(trigger);
+    // (the floating '#phone-btn' sat on the tacho; the prompt bar already says M)
   }
 
   #switchTab(tab) {
@@ -239,7 +227,9 @@ export class Phone {
         this.content.appendChild(cCard);
       });
     } else if (this.tab === 'contacts') {
-      // Maze Bank Tester Grant (One-touch test funds)
+      const DEBUG = typeof location !== 'undefined' && location.search.includes('debug');
+      // Maze Bank Tester Grant (One-touch test funds) -- dev card, ?debug only
+      if (DEBUG) {
       const fundCard = document.createElement('div');
       fundCard.style.cssText = 'background: rgba(46, 204, 113, 0.12); border: 1px solid rgba(46, 204, 113, 0.35); border-radius: 12px; padding: 12px; display:flex; justify-content:space-between; align-items:center;';
       fundCard.innerHTML = `
@@ -257,8 +247,10 @@ export class Phone {
         this.#render();
       };
       this.content.appendChild(fundCard);
+      }
 
-      // Feature Tour & Demo Video Recorder
+      // Feature Tour & Demo Video Recorder -- dev card, ?debug only
+      if (DEBUG) {
       const tourCard = document.createElement('div');
       tourCard.style.cssText = 'background: rgba(255, 0, 85, 0.14); border: 1px solid rgba(255, 0, 85, 0.5); border-radius: 12px; padding: 12px; display:flex; justify-content:space-between; align-items:center;';
       tourCard.innerHTML = `
@@ -278,6 +270,7 @@ export class Phone {
         }
       };
       this.content.appendChild(tourCard);
+      }
 
       // Tokyo Street / Little Tokyo GPS Destination
       const tokyoCard = document.createElement('div');

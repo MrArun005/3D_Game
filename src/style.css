@@ -9,7 +9,8 @@ canvas{display:block}
    the same look the screen does. */
 
 /* filming hides the instruments for a clean frame */
-body.filming #cluster, body.filming #minimap, body.filming #stats { opacity: 0; }
+body.filming #cluster, body.filming #minimap, body.filming #stats,
+body.filming #wanted, body.filming #mission, body.filming #gta-chat, body.filming #gameplay-prompt-bar, body.filming #ammo, body.filming #arsenal, body.filming #health, body.filming #flight-banner { opacity: 0; }
 #cluster, #minimap, #stats { transition: opacity .45s ease; }
 
 #cluster{position:fixed;right:26px;bottom:22px;z-index:20;display:flex;align-items:flex-end;gap:14px}

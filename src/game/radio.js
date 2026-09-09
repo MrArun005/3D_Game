@@ -56,21 +56,36 @@ export class Radio {
   }
 
   cycle() {
+    const prev = this.station;
     this.station = (this.station + 2) % (STATIONS.length + 1) - 1;
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
-    if (this.bus) { this.bus.gain.setTargetAtTime(0, this.ctx.currentTime, 0.1); }
+    if (this.bus) {   // fade the old station out, then unhook its gain node: one per cycle was left connected forever
+      const old = this.bus; old.gain.setTargetAtTime(0, this.ctx.currentTime, 0.1);
+      setTimeout(() => { try { old.disconnect(); } catch { /* already gone */ } }, 600);
+      this.bus = null;
+    }
     if (this.station < 0) { this.hud.flash('RADIO OFF'); return; }
-    const ctx = this.audio.context?.(); if (!ctx) { this.hud.flash('RADIO · CLICK THE GAME FIRST'); this.station = -1; return; }
+    const ctx = this.audio.context?.();
+    if (!ctx) {
+      // L as the very first key: the context is still booting (ctx.resume() is a promise), so wait for it and cycle again
+      const p = this.audio.resume?.();
+      if (p && typeof p.then === 'function' && !this._pending) {
+        this._pending = true; this.station = prev;
+        p.then(() => { this._pending = false; if (this.audio.context?.()) this.cycle(); else this.hud.flash('RADIO · CLICK THE GAME FIRST'); });
+        return;
+      }
+      this.hud.flash('RADIO · CLICK THE GAME FIRST'); this.station = -1; return;
+    }
     this.ctx = ctx;
     this.bus = ctx.createGain(); this.bus.gain.value = 0.16; this.bus.connect(this.audio.bus());
     this.next = ctx.currentTime + 0.1; this.step = 0;
     const st = STATIONS[this.station];
     const bumpers = DJ_BUMPERS[st.name] || [];
     const b = bumpers[Math.floor(Math.random() * bumpers.length)] || '';
-    this.hud.flash(`📻 ${st.name}\n"${b}"`);
+    this.hud.flash(`📻 ${st.name}\n"${b}"`, 'RADIO');
     // the DJ says it too: the browser's speech synthesis, brighter and slower than dispatch (?novoice turns every voice off)
     try {
-      if (b && typeof speechSynthesis !== 'undefined' && !new URLSearchParams(location.search).has('novoice')) {
+      if (b && !this.audio.muted && typeof speechSynthesis !== 'undefined' && !new URLSearchParams(location.search).has('novoice')) {
         speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(`${st.name}. ${b}`.replace(/[^\x00-\x7F]/g, ' '));
         u.rate = 1.0; u.pitch = 1.12; u.volume = 0.6; u.lang = 'en-US';
@@ -84,14 +99,14 @@ export class Radio {
   news(line) {
     if (this.station < 0 || !this.bus || !line) return;
     try {
-      if (typeof speechSynthesis === 'undefined' || new URLSearchParams(location.search).has('novoice')) return;
+      if (this.audio.muted || typeof speechSynthesis === 'undefined' || new URLSearchParams(location.search).has('novoice')) return;
       const now = this.ctx.currentTime;
       this.bus.gain.setTargetAtTime(0.05, now, 0.2); this.bus.gain.setTargetAtTime(0.16, now + 4.5, 0.6);   // the duck
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(`Newsflash. ${line}`.replace(/[^\x00-\x7F]/g, ' '));
       u.rate = 1.02; u.pitch = 1.0; u.volume = 0.65; u.lang = 'en-US';
       speechSynthesis.speak(u);
-      this.hud.flash(`📻 NEWSFLASH · ${line}`);
+      this.hud.flash(`📻 NEWSFLASH · ${line}`, 'RADIO');
     } catch { /* no voice, no harm */ }
   }
 

@@ -38,6 +38,7 @@ export function createAudio() {
   let ready = false;
   let lastGear = 2;
   let lastImpact = 0;
+  let muted = false;   // U; also read by chatter/radio so the voices stop too
 
   function boot() {
     if (ready) return ctx.state === 'running';
@@ -45,7 +46,7 @@ export function createAudio() {
     if (!AC) return false;
     ctx = new AC();
     master = ctx.createGain();
-    master.gain.value = 0.24;
+    master.gain.value = muted ? 0 : 0.24;   // hb.muted may be restored before the first click
     master.connect(ctx.destination);
 
     engineBus = ctx.createGain();
@@ -253,9 +254,11 @@ export function createAudio() {
   }
 
   return {
+    /** Returns the resume promise: a first-key caller (radio L) can wait for the context to run. */
     resume() {
       boot();
-      if (ctx && ctx.state === 'suspended') ctx.resume();
+      if (ctx && ctx.state === 'suspended') return ctx.resume();
+      return ctx ? Promise.resolve() : null;
     },
     /* A car horn: two detuned tones through a fast envelope. `pan` is -1..1
        across the stereo field, `far` 0..1 fades it with distance. Traffic
@@ -493,7 +496,10 @@ export function createAudio() {
     },
     /** A weapon coming up: one dry click. */
     click() { if (!ctx) return; const t = ctx.currentTime; const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = 700; const g = ctx.createGain(); g.gain.setValueAtTime(0.07, t); g.gain.exponentialRampToValueAtTime(0.0008, t + 0.05); o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.06); },   // impact thud, magnitude in m/s-ish; punches and blasts borrow it
+    /** `muted` is read by chatter and the radio DJ (speechSynthesis is not on the master gain). Set before boot, it applies when the context is made. */
+    get muted() { return muted; },
     mute(on) {
+      muted = !!on;
       if (!master) return;
       master.gain.setTargetAtTime(on ? 0 : 0.24, ctx.currentTime, 0.08);
     },

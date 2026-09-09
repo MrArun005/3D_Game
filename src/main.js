@@ -188,7 +188,8 @@ const debris = new Debris(scene);
 /* ?debug: expose the live car state for the browser-automation harness —
    closed-loop test drivers need to read position and yaw. Dev-only surface,
    not a save-game: nothing in the game reads it back. */
-if (new URLSearchParams(location.search).has('debug')) {
+const DEBUG = new URLSearchParams(location.search).has('debug');
+if (DEBUG) {
   window.__car = () => car;
   // shooting-layer state the harness cannot otherwise see or set (pointer lock is refused headless)
   window.__dbg = () => ({ started, aiming, ads, crouch, burst, heat: weapon.heat, ready: weapon.ready, kind: weapon.kind, ammo: weapon.ammo, health });
@@ -220,6 +221,7 @@ let radio = null;                           // generative car radio (game/radio.
 const person = buildHuman();
 scene.add(person.root);
 let muted = false;
+try { muted = localStorage.getItem('hb.muted') === '1'; } catch { /* private mode */ }
 let firing = false;
 let mission = null;
 let net = null;
@@ -1301,7 +1303,10 @@ photo = new Photo(camera, stats);
 window.photo = photo;
 
 const audio = createAudio();
+if (muted) audio.mute(true);   // restored from hb.muted: the flag applies when the context boots
 radio = new Radio(audio, hud);
+window.hud = hud;   // phone.js cards flash through window.hud and set GPS routes through __setWaypoint
+window.__setWaypoint = (x, z, label) => { navigation?.setWaypoint(x, z); if (label) hud.flash(`GPS · ${label}`); };
 
 chat = new Chat();
 hud.useChat(chat);
@@ -1396,7 +1401,7 @@ const start = () => {
 hud.overlay.addEventListener('click', start);
 canvas.addEventListener('click', start);
 if (boot) boot.addEventListener('click', start);
-addEventListener('keydown', start, { once: true });
+addEventListener('keydown', start, { once: true });   // registered before createInput, so it runs first; the input handler also calls start() and the radio waits for ctx.resume()
 
 // ---- cinematic capture ----
 let ROUTE = buildRoute([
@@ -1558,6 +1563,7 @@ applyPerk(NAMED_CHARACTERS[0]);
 
 const input = createInput((action) => {
   idleT = 0;
+  start();   // any first key boots the audio before its action runs
   // C: cycle the chase camera; on foot it is the crouch toggle. (The handler was lost in a headlight edit; the key still sent 'camera'.)
   if (action === 'camera') { if (onFoot.active) { crouch = !crouch; onFoot.crouch = crouch; hud.flash(crouch ? 'CROUCH' : 'STAND'); } else chase.cycle(); }
   if (action === 'lights') {
@@ -1572,18 +1578,18 @@ const input = createInput((action) => {
     }
   }
   if (action === 'photo') photo.toggle();
-  if (action === 'tour') {
+  if (action === 'tour' && DEBUG) {   // O and T are dev tools: ?debug only
     if (featureTour.active) featureTour.stop();
     else window.startFeatureTour();
   }
   if (action === 'phone') phone?.toggle();
-  if (action === 'intel') intelScanner?.toggle();
+  if (action === 'intel' && !photo.on) intelScanner?.toggle();   // Z is photo mode's 'up'
   if (action === 'garage') garage?.browse();
   if (action === 'buy') garage?.act();
   if (action === 'map') hud.toggleMap();
   if (action === 'radio') radio?.cycle();
   if (action === 'reset') respawnCar();
-  if (action === 'time') { clock.hour = (clock.hour + 3) % 24; hud.flash(`TIME · ${clock.formattedTime}`); }
+  if (action === 'time' && DEBUG) { clock.hour = (clock.hour + 3) % 24; hud.flash(`TIME · ${clock.formattedTime}`); }
   if (action === 'horn' && !onFoot.active) {
     // your horn: heard, and answered -- pedestrians ahead break for the kerb, the car in front picks up for three seconds
     audio.horn?.(0, 0);
@@ -1612,7 +1618,10 @@ const input = createInput((action) => {
     applyPerk(persona);
     hud.flash(`${persona.name} (${persona.role}) · ${persona.perk}`);
   }
-  if (action === 'mute') { muted = !muted; audio.mute(muted); }
+  if (action === 'mute') {
+    muted = !muted; audio.mute(muted); hud.flash(muted ? 'MUTED' : 'SOUND ON');
+    try { localStorage.setItem('hb.muted', muted ? '1' : '0'); } catch { /* private mode */ }
+  }
   if (action === 'use') useVehicle();
   if (action === 'room') joinRoom(roomFromUrl());
   if (action === 'fire') pullTrigger();
@@ -1631,7 +1640,7 @@ const input = createInput((action) => {
     chat?.close();
   }
   if (action === 'film') { if (film) stopFilm(); else { started = true; hud.dismiss(); startFilm(); } }
-});
+}, { chatAllowed: () => !photo.on });
 
 /* Mouse look. Pointer lock so the view keeps turning past the screen edge;
    click to grab, Escape to let go, and the rig recentres when you drive on. */
@@ -2061,7 +2070,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   // the HUD fades out with an idle orbit (car or foot) and back in with the first input: one injected rule, a body class
   if (idleCam !== idleCamShown) {
     idleCamShown = idleCam;
-    if (!document.getElementById('idlecam-style')) { const st = document.createElement('style'); st.id = 'idlecam-style'; st.textContent = '#hud,#cluster,#minimap,#dials,#readout,#wanted,#crosshair,#stats,#gameplay-prompt-bar{transition:opacity .6s}.idlecam #hud,.idlecam #cluster,.idlecam #minimap,.idlecam #dials,.idlecam #readout,.idlecam #wanted,.idlecam #crosshair,.idlecam #stats,.idlecam #gameplay-prompt-bar{opacity:0 !important}'; document.head.appendChild(st); }
+    if (!document.getElementById('idlecam-style')) { const st = document.createElement('style'); st.id = 'idlecam-style'; const ids = ['#hud', '#cluster', '#minimap', '#dials', '#readout', '#wanted', '#crosshair', '#stats', '#gameplay-prompt-bar', '#mission', '#gta-chat', '#ammo', '#arsenal', '#health', '#flight-banner']; st.textContent = `${ids.join(',')}{transition:opacity .6s}${ids.map((i) => '.idlecam ' + i).join(',')}{opacity:0 !important}`; document.head.appendChild(st); }
     document.body.classList.toggle('idlecam', idleCam);
   }
   clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: currentVehicle, dome, stars });
@@ -2077,7 +2086,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     if (traffic.wanted >= 3 && wantedWas < 3) radio?.news?.(`Police are pursuing an armed suspect${here ? ' through ' + here.charAt(0) + here.slice(1).toLowerCase() : ' across the city'}. Residents are asked to stay indoors.`);
     wantedWas = traffic.wanted;
     if (here && here !== lastDistrict) {
-      if (lastDistrict !== null) { hud.flash(here); if (traffic.wanted >= 1) chatter?.radio?.(`Suspect heading into ${here.charAt(0) + here.slice(1).toLowerCase()}. Units in the area respond.`); }
+      if (lastDistrict !== null) { hud.area(here); if (traffic.wanted >= 1) chatter?.radio?.(`Suspect heading into ${here.charAt(0) + here.slice(1).toLowerCase()}. Units in the area respond.`); }
       lastDistrict = here;
     }
   }
@@ -2245,7 +2254,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
         : null;
   navigation?.update(currentVehicle, missionTarget);
 
-  hud.update(currentVehicle, traffic, mission, net, heli);
+  hud.update(currentVehicle, traffic, mission, net, heli, dt);
   if (bustFlash > 0) {
     bustFlash -= dt;
     hud.setBusted(bustFlash);

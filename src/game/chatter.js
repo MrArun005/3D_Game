@@ -187,7 +187,7 @@ export class ChatterEngine {
     try {
       if (typeof speechSynthesis === 'undefined' || typeof SpeechSynthesisUtterance === 'undefined') return;
       if (this._novoice === undefined) this._novoice = typeof location !== 'undefined' && new URLSearchParams(location.search).has('novoice');
-      if (this._novoice) return;
+      if (this._novoice || this.audio?.muted) return;   // U mutes the voices too, not only the master gain
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(line.replace(/[^\x00-\x7F]/g, ' '));   // the radio does not read emoji
       u.rate = rate; u.pitch = pitch; u.volume = volume; u.lang = 'en-US';

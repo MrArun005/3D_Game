@@ -3,7 +3,7 @@ import { Recorder } from './recorder.js';
 import { ARSENAL, WEAPON_KINDS } from './weapons.js';
 
 /**
- * FeatureTour: Automated cinematic demo that tours every core feature of Nightfall 3D
+ * FeatureTour: Automated cinematic demo that tours every core feature of Halstead Bay
  * and records the full canvas session straight to a high-definition WebM video file.
  */
 export class FeatureTour {
@@ -253,7 +253,7 @@ export class FeatureTour {
     if (this.recorder) {
       this.recorder.stop().then((blob) => {
         if (blob && download) {
-          Recorder.download(blob, 'nightfall-3d-all-features-tour.webm');
+          Recorder.download(blob, 'halstead-bay-all-features-tour.webm');
           console.info('FeatureTour: Video recording downloaded successfully');
         }
       }).catch((e) => console.warn('FeatureTour: stop error:', e));

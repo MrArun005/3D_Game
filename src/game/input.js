@@ -103,7 +103,7 @@ export function padConnected() {
   return [...navigator.getGamepads()].some(Boolean);
 }
 
-export function createInput(onAction) {
+export function createInput(onAction, { chatAllowed = () => true } = {}) {
   const keys = Object.create(null);
   const blocked = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'];
   // must list every action the pad can raise, or its edge is never detected
@@ -118,7 +118,7 @@ export function createInput(onAction) {
       return;
     }
 
-    if (e.code === 'Enter' || e.code === 'KeyY') {
+    if (e.code === 'Enter' && chatAllowed()) {   // KeyY dropped (it collided with nothing useful and typed into chat); Enter in photo mode is photo.shot()
       e.preventDefault();
       // Clear held keys so car doesn't roll forward while typing
       for (const k of Object.keys(keys)) keys[k] = false;

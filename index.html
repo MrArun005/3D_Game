@@ -4,10 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>&#128663;</text></svg>" />
-  <title>Nightfall Drive</title>
+  <title>Halstead Bay</title>
   <style>
 /* photo mode (P) hides the HUD so a shot is just the frame */
-body.photo #minimap, body.photo #cluster, body.photo #readout, body.photo #dials, body.photo #stats { display: none; }
+body.photo #minimap, body.photo #cluster, body.photo #readout, body.photo #dials, body.photo #stats,
+body.photo #wanted, body.photo #mission, body.photo #gta-chat, body.photo #gameplay-prompt-bar, body.photo #ammo, body.photo #arsenal, body.photo #health, body.photo #flight-banner, body.photo #area-toast { display: none; }
   </style>
 </head>
 <body>
@@ -19,7 +20,7 @@ body.photo #minimap, body.photo #cluster, body.photo #readout, body.photo #dials
   <div id="boot" style="position:fixed;inset:0;z-index:99;background:#080b11;
        display:flex;flex-direction:column;align-items:center;justify-content:center;
        gap:22px;color:#cfe0f5;font:14px/1.5 system-ui,sans-serif;letter-spacing:.22em">
-    <div style="font-size:28px;font-weight:300;letter-spacing:.5em;color:#ffffff;text-shadow:0 0 20px rgba(57,255,176,0.3)">NIGHTFALL&nbsp;DRIVE</div>
+    <div style="font-size:28px;font-weight:300;letter-spacing:.5em;color:#ffffff;text-shadow:0 0 20px rgba(57,255,176,0.3)">HALSTEAD&nbsp;BAY</div>
     <div style="width:320px;height:6px;background:#151c28;border-radius:3px;overflow:hidden;position:relative;box-shadow:inset 0 1px 3px rgba(0,0,0,0.6)">
       <div id="bootprogress" style="width:0%;height:100%;background:linear-gradient(90deg, #39ffb0, #3fd2ff);border-radius:3px;transition:width 0.2s ease-out"></div>
     </div>
@@ -44,7 +45,7 @@ body.photo #minimap, body.photo #cluster, body.photo #readout, body.photo #dials
 
   <div id="hud">
     <div class="card">
-      <h1>Nightfall Drive</h1>
+      <h1>Halstead Bay</h1>
       <p>Blue hour. Rain on the glass. Nobody waiting for you.</p>
       <div class="keys">
         <kbd>W</kbd> throttle &nbsp; <kbd>S</kbd> brake / reverse &nbsp; <kbd>A</kbd><kbd>D</kbd> steer<br />
