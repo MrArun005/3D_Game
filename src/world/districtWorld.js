@@ -134,6 +134,7 @@ export class DistrictWorld {
     this.propGroups = new Map();
     this.headsByChunk = new Map();     // chunk key -> [{x,y,z}] lamp heads (night light pool)
     this.facadeGroups = new Map();
+    this.parkedLod = new Map();        // chunk key -> { near, far, byBody } parked-car LOD sets (#cullFar swaps them; #buildSteps sets, releaseChunk deletes). Dropped by the lite/radius constructor edit in 22c1c0c and every chunk build died on .set -- keep it.
     this.isLite = !!opts.lite;
     this.propRadius = opts.lite ? 1 : (opts.propRadius ?? 2);
     this.nodeById = new Map(district.graph.nodes.map((n) => [n.id, n]));
