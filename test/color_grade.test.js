@@ -104,3 +104,43 @@ test('CommandEngine executes /grade commands successfully', () => {
   engine.execute('/grade default');
   assert.equal(activePreset, 'DEFAULT');
 });
+
+/* --- per-channel night tone map + exposure-derived bloom threshold ------- */
+import { hableCurve, hableToneMap, HABLE, bloomThresholdFor, NIGHT_EXPOSURE } from '../src/core/grade.js';
+
+const sat = (c) => { const M = Math.max(...c), m = Math.min(...c); return M > 0 ? (M - m) / M : 0; };
+const near = (a, b, eps, msg) => assert.ok(Math.abs(a - b) <= eps, `${msg}: ${a} vs ${b}`);
+
+test('hableCurve is Hable\'s Uncharted 2 polynomial, monotone, white point at W', () => {
+  near(hableCurve(0), 0, 1e-12, 'black stays black');
+  near(hableCurve(HABLE.W), 0.7251, 1e-3, 'curve(W) is the white-point normaliser');
+  assert.equal(hableToneMap([HABLE.W / HABLE.BIAS], 1)[0], 1, 'W maps to exactly white');
+  let prev = -1;
+  for (let x = 0; x <= 20; x += 0.05) { const y = hableCurve(x); assert.ok(y > prev, `monotone at ${x}`); prev = y; }
+});
+
+test('hableToneMap keeps saturated HDR neon saturated where AgX does not (measured numbers)', () => {
+  /* AgX at exposure 1.15 (three r185 agxToneMapping ported verbatim, scratch script 2026-09-12):
+       (2, 0, 0)       -> (0.966, 0.244, 0.169)  sat 100% -> 83%
+       (2.4, 0.3, 0.9) -> (0.887, 0.468, 0.607)  sat  88% -> 47% */
+  const red = hableToneMap([2, 0, 0], NIGHT_EXPOSURE);
+  near(red[0], 0.925, 0.005, 'red channel');
+  assert.equal(red[1], 0); assert.equal(red[2], 0);   // per channel: a zero channel STAYS zero
+  assert.equal(sat(red), 1, 'pure red keeps 100% saturation');
+
+  const magenta = hableToneMap([2.4, 0.3, 0.9], NIGHT_EXPOSURE);
+  near(magenta[0], 0.970, 0.005, 'r'); near(magenta[1], 0.355, 0.005, 'g'); near(magenta[2], 0.688, 0.005, 'b');
+  assert.ok(sat(magenta) > 0.60, `magenta keeps >60% (${sat(magenta).toFixed(3)}); AgX keeps 47%`);
+
+  /* BIAS is solved so the blend does not shift exposure: AgX puts 0.18 grey at 0.239. */
+  near(hableToneMap([0.18], NIGHT_EXPOSURE)[0], 0.239, 0.003, 'mid grey matches AgX');
+  assert.equal(hableToneMap([50], 1)[0], 1, 'clamps at white');
+});
+
+test('bloomThresholdFor keeps the night calibration and scales with exposure', () => {
+  assert.equal(bloomThresholdFor(0.85, 1.15), 0.85, 'night 0.85 @ 1.15 is the calibrated point, unchanged');
+  near(bloomThresholdFor(0.25, 1.05), 0.2738, 1e-3, 'day 0.25 @ 1.05');
+  /* the invariant: HDR threshold * exposure (what the eye sees) is constant */
+  for (const e of [0.7, 1.0, 1.05, 1.15, 2.3]) near(bloomThresholdFor(0.85, e) * e, 0.85 * 1.15, 1e-9, `display threshold at ${e}`);
+  assert.equal(bloomThresholdFor(0.5, 1.0, 1.0), 0.5, 'explicit reference exposure');
+});

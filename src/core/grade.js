@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import {
   Fn, Loop, uv, uniform, vec2, vec3, vec4, float, mix, smoothstep, clamp, fract, sin, dot,
-  pass, mrt, output, emissive, normalView, renderOutput, convertToTexture, cameraWorldMatrix,
-  max, min, pow,
+  pass, mrt, output, emissive, normalView, convertToTexture, cameraWorldMatrix,
+  max, min, pow, toneMappingExposure,
 } from 'three/tsl';
 import { ssr } from 'three/examples/jsm/tsl/display/SSRNode.js';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
@@ -40,6 +40,7 @@ export const GRADE_PRESETS = {
     bloomThreshold: 0.80,
     vignette: 0.65,
     grain: 0.032,
+    filmic: 1.0,                      // per-channel Hable: the tubes stay magenta and cyan
   },
   VINTAGE_70S: {
     name: 'Vintage 70s (Fuji Film)',
@@ -59,6 +60,7 @@ export const GRADE_PRESETS = {
     bloomThreshold: 0.35,
     vignette: 0.55,
     grain: 0.040,
+    filmic: 0.0,
   },
   BLACK_WHITE_NOIR: {
     name: 'Classic B&W Noir',
@@ -78,6 +80,7 @@ export const GRADE_PRESETS = {
     bloomThreshold: 0.40,
     vignette: 0.70,
     grain: 0.048,
+    filmic: 0.0,
   },
   BLEACH_BYPASS: {
     name: 'Bleach Bypass',
@@ -97,6 +100,7 @@ export const GRADE_PRESETS = {
     bloomThreshold: 0.30,
     vignette: 0.62,
     grain: 0.035,
+    filmic: 0.0,
   },
   GOLDEN_HOUR: {
     name: 'Golden Hour Sunset',
@@ -116,6 +120,7 @@ export const GRADE_PRESETS = {
     bloomThreshold: 0.30,
     vignette: 0.52,
     grain: 0.022,
+    filmic: 0.0,
   },
 };
 
@@ -127,7 +132,8 @@ export const GRADE_PRESETS = {
  *   scene pass (MRT: colour + view normals + emissive)
  *     -> GTAO from depth+normals, bilateral-denoised, multiplied into colour
  *     -> bloom fed by the emissive MRT channel only
- *     -> renderOutput()  (ACES + sRGB — the pipeline's own transform is off)
+ *     -> tone map (AgX by day, mixed toward per-channel Hable at night) + sRGB
+ *        (the pipeline's own transform is off)
  *     -> vignette * grain + lens rain, in display space
  *
  * Architecture notes, learned the expensive way (see the parked spike this
@@ -161,6 +167,22 @@ export const GRADE_PRESETS = {
  *    two weather materials, once they are NodeMaterials.
  *  - GTAO renders to a RedFormat target: sample `.r` and splat. Multiplying
  *    the frame by the denoised vec4 tints everything red.
+ *  - AgX trades chroma for brightness (measured 2026-09-12, exposure 1.15:
+ *    a (2,0,0) tube comes out (0.966, 0.244, 0.169), 100% -> 83% saturation;
+ *    a (2.4, 0.3, 0.9) magenta 88% -> 47%). That is the operator doing its
+ *    job by day, and the reason the neon never reads as neon at night. The
+ *    night profile blends the frame toward `hableToneMap` (Uncharted 2, one
+ *    curve per channel, so a zero channel STAYS zero: the same two colours
+ *    keep 100% / 63%). `HABLE.BIAS` is solved so both operators put mid-grey
+ *    0.18 at the same 0.239, so the blend moves hue retention, not exposure.
+ *  - The bloom high-pass thresholds the LUMINANCE OF THE EMISSIVE MRT before
+ *    exposure is applied (BloomNode.js:14; exposure lands later, in the tone
+ *    map), while the eye judges "bright" after it. So a threshold authored by
+ *    eye is a display quantity, and the HDR one that reproduces it is
+ *    T_display / exposure -- `bloomThresholdFor()`. The profile numbers were
+ *    tuned at night exposure 1.15, so that is the reference: night is bit-
+ *    identical to before, day's 0.25 at 1.05 becomes 0.274 (still between
+ *    the dimmed 0.04 facades and a 2.2 headlamp lens).
  *
  * `uniform()` nodes carry `.value` exactly like the old uniform objects, so
  * every caller reading `grade.grain.uniforms.uAmount.value` still works.
@@ -172,6 +194,35 @@ const hash2 = Fn(([p]) => fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453))
 const _size = new THREE.Vector2();
 
 const BLOOM_STRENGTH = 0.6;
+
+/** Exposure the grade profiles were tuned at (main.js sets 1.15 for a night boot). */
+export const NIGHT_EXPOSURE = 1.15;
+
+/** Bloom high-pass threshold in HDR emissive units for a threshold authored at
+ *  `ref` exposure: the same emissive reads the same brightness on screen at any
+ *  exposure, so the same sources bloom (see header). */
+export function bloomThresholdFor(threshold, exposure, ref = NIGHT_EXPOSURE) {
+  return threshold * ref / exposure;
+}
+
+/* Hable / Uncharted 2 filmic curve. One function serves the shader and the
+   tests: with a number it does arithmetic, with a TSL node it builds nodes,
+   so the maths is written once. Constants are Hable's GDC 2010 set; BIAS is
+   solved so hable(0.18 * 1.15) == agx(0.18 * 1.15) == 0.239 (scratch script,
+   2026-09-12), i.e. the night blend does not change the exposure of the frame. */
+export const HABLE = { A: 0.15, B: 0.50, C: 0.10, D: 0.20, E: 0.02, F: 0.30, W: 11.2, BIAS: 3.57 };
+export function hableCurve(x) {
+  const { A, B, C, D, E, F } = HABLE;
+  if (typeof x === 'number') return (x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F) - E / F;
+  return x.mul(x.mul(A).add(C * B)).add(D * E).div(x.mul(x.mul(A).add(B)).add(D * F)).sub(E / F);
+}
+/** JS twin of `hableToneMapNode`: linear rgb array in, display-linear array out. */
+export function hableToneMap(rgb, exposure) {
+  const white = hableCurve(HABLE.W);
+  return rgb.map((x) => Math.min(1, Math.max(0, hableCurve(x * exposure * HABLE.BIAS) / white)));
+}
+const hableToneMapNode = Fn(([color, exposure]) =>
+  hableCurve(color.mul(exposure).mul(HABLE.BIAS)).div(hableCurve(HABLE.W)).clamp());
 
 export function createGrade(renderer, scene, camera, {
   ao: withAO = true, bloom: withBloom = true, aa: withAA = true, post: withPost = true,
@@ -210,6 +261,7 @@ export function createGrade(renderer, scene, camera, {
   const uVibrance = uniform(0.05); // selective vibrance protection for neon and skin tones
   const uSplit = uniform(0.0);   // split tone amount
   const uSpeed = uniform(0);     // 0..1: high speed / NOS visual warp and chromatic stretch
+  const uFilmic = uniform(0);    // 0..1: AgX -> per-channel Hable (night keeps its neon saturated)
 
   // 3-Way Color Balance
   const uShadowTint = uniform(new THREE.Vector3(0.94, 0.99, 1.05));   // shadows lean cool/teal by default
@@ -270,7 +322,8 @@ export function createGrade(renderer, scene, camera, {
      Threshold 0.25 sits between daylight's dimmed emissive (0.04) and every
      genuine night source (facade windows ~1, headlamp glass 2.2, brake
      emissive up to 3.5), which is what makes one setting serve both rigs.
-     The diurnal profile (clock.js) moves strength/radius/threshold from here. */
+     The diurnal profile (clock.js) moves strength/radius/threshold from here;
+     the threshold is rescaled by exposure on the way in (bloomThresholdFor). */
   let bloomPass = null;
   let hdr = lit;
   if (withBloom) {
@@ -282,13 +335,9 @@ export function createGrade(renderer, scene, camera, {
      them: three's SMAANode wants tone-mapped input but NOT yet sRGB (unlike
      FXAA), so with AA on, renderOutput() is split into its two halves around
      the AA pass. Grain lands after AA either way — smoothed grain is mud. */
-  let display;
-  if (withAA) {
-    const mapped = hdr.toneMapping(renderer.toneMapping);
-    display = smaa(mapped).workingToColorSpace(THREE.SRGBColorSpace);
-  } else {
-    display = renderOutput(hdr);
-  }
+  const agx = hdr.toneMapping(renderer.toneMapping).rgb;
+  const mapped = vec4(mix(agx, hableToneMapNode(hdr.rgb, toneMappingExposure), uFilmic), 1.0);
+  const display = (withAA ? smaa(mapped) : mapped).workingToColorSpace(THREE.SRGBColorSpace);
 
   /* --- the grade, in display space ---------------------------------------
      Each block reproduces its old quad's blend arithmetic exactly:
@@ -376,7 +425,7 @@ export function createGrade(renderer, scene, camera, {
   })();
 
   const post = new THREE.RenderPipeline(renderer);
-  post.outputColorTransform = false;   // renderOutput()/toneMapping above is the transform (see header)
+  post.outputColorTransform = false;   // the toneMapping + workingToColorSpace above IS the transform (see header)
   post.outputNode = graded;
 
   let activePreset = 'DEFAULT';
@@ -389,6 +438,8 @@ export function createGrade(renderer, scene, camera, {
     if (p.split !== undefined) uSplit.value = p.split;
     if (p.vignette !== undefined) uStrength.value = p.vignette;
     if (p.grain !== undefined) gAmount.value = p.grain;
+    uFilmic.value = p.filmic ?? 0;   // no key (clock.js before it carries one) means AgX -- and a return to DEFAULT
+                                      // from NEON_NOIR must not leave Hable switched on until the profile learns the key
 
     if (p.shadowTint) uShadowTint.value.set(p.shadowTint[0], p.shadowTint[1], p.shadowTint[2]);
     if (p.midTint) uMidTint.value.set(p.midTint[0], p.midTint[1], p.midTint[2]);
@@ -401,7 +452,9 @@ export function createGrade(renderer, scene, camera, {
     if (bloomPass) {
       if (p.bloomStrength !== undefined) bloomPass.strength.value = p.bloomStrength;
       if (p.bloomRadius !== undefined) bloomPass.radius.value = p.bloomRadius;
-      if (p.bloomThreshold !== undefined) bloomPass.threshold.value = p.bloomThreshold;
+      if (p.bloomThreshold !== undefined) {
+        bloomPass.threshold.value = bloomThresholdFor(p.bloomThreshold, renderer.toneMappingExposure);
+      }
     }
   }
 

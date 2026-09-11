@@ -18,6 +18,7 @@ const DIURNAL_PROFILES = {
     bloomThreshold: 0.25,
     vignette: 0.35,
     grain: 0.015,
+    filmic: 0.0,
   },
   DUSK: {
     sat: 1.20,
@@ -35,6 +36,7 @@ const DIURNAL_PROFILES = {
     bloomThreshold: 0.45,
     vignette: 0.50,
     grain: 0.024,
+    filmic: 0.0,
   },
   NIGHT: {
     sat: 1.32,
@@ -52,6 +54,7 @@ const DIURNAL_PROFILES = {
     bloomThreshold: 0.85,
     vignette: 0.62,
     grain: 0.030,
+    filmic: 1.0,   // per-channel Hable tone map (grade.js): neon keeps its chroma
   },
   DAWN: {
     sat: 0.98,
@@ -69,6 +72,7 @@ const DIURNAL_PROFILES = {
     bloomThreshold: 0.30,
     vignette: 0.40,
     grain: 0.020,
+    filmic: 0.0,
   },
 };
 
@@ -118,6 +122,7 @@ export function interpolateGradeProfile(hour, weather) {
   let bloomStrength = blendVal('bloomStrength');
   let bloomRadius = blendVal('bloomRadius');
   let bloomThreshold = blendVal('bloomThreshold');
+  const filmic = blendVal('filmic');
 
   let shadowTint = blendVec('shadowTint');
   let midTint = blendVec('midTint');
@@ -146,7 +151,7 @@ export function interpolateGradeProfile(hour, weather) {
 
   return {
     sat, vibrance, contrast, split, vignette, grain,
-    bloomStrength, bloomRadius, bloomThreshold,
+    bloomStrength, bloomRadius, bloomThreshold, filmic,
     shadowTint, midTint, highTint,
     slope, offset, power,
   };
@@ -287,7 +292,7 @@ export class GameClock {
 
       // Stagger 2: Commercial neon signs ignite at 20% dusk
       const signOn = nightFactor > 0.20;
-      if (assets.mat?.sign) assets.mat.sign.emissiveIntensity = signOn ? 0.06 + 2.4 * nightFactor : 0.06;   // neon that blooms (grade.setNight threshold 0.72)
+      if (assets.mat?.sign) assets.mat.sign.emissiveIntensity = signOn ? 0.06 + 2.4 * nightFactor : 0.06;   // neon that blooms (grade.setNight threshold 0.85 via bloomThresholdFor)
       if (assets.mat?.beacon) assets.mat.beacon.emissiveIntensity = signOn ? 0.6 + 1.8 * nightFactor : 0.6;
 
       // Stagger 3: Tower & residential window illumination staggers between 40% and 85% dusk
