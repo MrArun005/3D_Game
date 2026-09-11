@@ -212,6 +212,23 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   city never streamed ("chunk: none built since load", 0 bundled). When a
   pull changes a constructor, diff the `this.* = new Map()` lines against
   their consumers.
+- **Vehicle contact (2026-09-12, "touch another car and the whole game
+  rumbles")**: two real causes, measured in the browser. camera.js added
+  `impact * 0.022` EVERY frame of the 0.5 s decay envelope (3.5x the
+  intended kick, frame-rate dependent, unbounded: a 160 km/h wall moved the
+  camera 1.6 m/frame) -- now `shake = min(1.6, shake*exp(-6dt) +
+  max(0, impact - lastImpact) * 0.07)`, one kick per RISE. collision.js
+  `resolveObstacles` measured the closing speed against the GROUND, so
+  nudging traffic at your own speed was a full-speed crash plus a dead stop
+  in the lane, then another crash on every re-contact -- `into` is now
+  relative to `o.car.speed` along `o.yaw`, restitution/friction act on the
+  relative velocity (parked cars unchanged), and hitTag/hitForce/hitRef
+  are only attributed when YOU drove into it (a PIT ram no longer gives you
+  a star and no longer costs the cruiser its engine). main.js gates
+  `damageModel.hit` on `car.hitAt` (once per contact event; it bit every
+  frame and double-charged police rounds) and damage.js's per-event cap is
+  0.3 / 0.02 per m/s. Standing contact: impact 0, jitter <= 0.2 mm.
+  `test/contact.test.js` holds all of it.
 - **Browser verification IS allowed (2026-09-05 onward)** when Arun asks
   for a recording or reports a bug: `tools/record-tour.mjs` recipe (headed
   Chrome for Testing under ~/Library/Caches/ms-playwright, `vite preview`
