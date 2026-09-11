@@ -181,6 +181,8 @@ export class Stats {
 
     const live = world && world.chunks ? world.chunks.size : 0;
     const texMB = this.snapshot.textures * 0.35; // rough: most are 1024^2 RGBA
+    const isLite = world?.isLite ?? (world?.radius === 1);
+    const chunkBudget = isLite ? 9 : BUDGET.chunks;
 
     const row = (label, value, budget, unit = '', fmt = (v) => v.toFixed(0)) => {
       const over = budget !== null && value > budget;
@@ -189,6 +191,7 @@ export class Stats {
     };
 
     let out = '';
+    out += `  quality     ${(isLite ? 'LITE' : 'FULL').padStart(7)}\n`;
     out += row('frame med', median, BUDGET.frameMs, ' ms', (v) => v.toFixed(1));
     out += row('frame 95th', p95, 20, ' ms', (v) => v.toFixed(1));
     out += row('frame 99th', p99, 24, ' ms', (v) => v.toFixed(1));
@@ -199,7 +202,7 @@ export class Stats {
     out += row('triangles', (this.snapshot.tris + this.snapshot.bundledTris) / 1e6, BUDGET.tris / 1e6, ' M', (v) => v.toFixed(2));
     out += `  of which bundled ${String(this.snapshot.bundledDraws).padStart(5)} draws / ${(this.snapshot.bundledTris / 1e6).toFixed(2)} M\n`;
     out += row('texture mem', texMB, BUDGET.textureMB, ' MB');
-    out += row('live chunks', live, BUDGET.chunks);
+    out += row('live chunks', live, chunkBudget);
     out += row('chunk build', this.worstChunkMs, BUDGET.chunkBuildMs, ' ms', (v) => v.toFixed(1));
     out += `  geometries  ${String(this.snapshot.geometries).padStart(7)}\n`;
     out += `  textures    ${String(this.snapshot.textures).padStart(7)}\n`;

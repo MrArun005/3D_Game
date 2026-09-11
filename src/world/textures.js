@@ -28,6 +28,26 @@ export function shade(hex, k) {
   return `rgb(${f(r)},${f(g)},${f(b)})`;
 }
 
+/**
+ * Per-pixel dither, to break 8-bit banding in a smooth gradient.
+ *
+ * A vertical gradient over 512 px steps roughly every two pixels, and those
+ * steps stretched across a 9000 m dome are Mach bands -- the eye reads the
+ * interference between them and the sphere's own tessellation as a faint
+ * moire. Half an LSB of noise per pixel removes it outright and is invisible
+ * as noise. Seeded like everything else here, so the sky is identical on
+ * every load.
+ */
+export function ditherCanvas(g, w, h, amp = 1.5) {
+  const img = g.getImageData(0, 0, w, h);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const n = (rp() - 0.5) * 2 * amp;
+    d[i] += n; d[i + 1] += n; d[i + 2] += n;      // Uint8ClampedArray clamps for us
+  }
+  g.putImageData(img, 0, 0);
+}
+
 /** Scattered soft blobs — the base of every grimy surface here. */
 export function noiseWash(g, w, h, n, alpha, tint) {
   for (let i = 0; i < n; i++) {
@@ -160,9 +180,19 @@ export function texPool() {
 /* Two skies. Day is not "night, brighter": the horizon haze has to be lighter
    AND less saturated than the zenith, or distant geometry never separates from
    the sky and the whole city reads as a flat cut-out. */
+/* The pale horizon is deliberate and stays: without aerial perspective the
+   distant geometry never separates from the sky and the city reads as a flat
+   cut-out. What was wrong was its WIDTH. The white ran 0.482..0.53, which is
+   about 8 degrees of elevation, and from a street you are looking straight
+   into that band -- every daytime frame read overcast-white even though the
+   zenith was already a good deep blue nobody in a city ever looks at. Now the
+   haze is a ~3.5 degree band sitting on the horizon line itself, with real
+   blue by v 0.55 (about 9 degrees up), so aerial perspective still works
+   where distant buildings actually meet the sky. */
 const SKY_DAY = [
-  [0.00, '#7f95ad'], [0.40, '#b3c5d6'], [0.482, '#e0e6ea'], [0.50, '#ece9df'],
-  [0.53, '#bfd3e9'], [0.64, '#7ea8d9'], [0.80, '#3f78bf'], [1.00, '#1f4f98'],
+  [0.00, '#7f95ad'], [0.40, '#a8bccd'], [0.492, '#cfdae4'], [0.50, '#e7e5dd'],
+  [0.512, '#c4d7ec'], [0.55, '#93b7de'], [0.66, '#6b9bd1'], [0.82, '#3f78bf'],
+  [1.00, '#1f4f98'],
 ];
 
 
@@ -184,6 +214,12 @@ function texDaySky(sunDir) {
   const gr = g.createLinearGradient(0, H, 0, 0);
   for (const [at, col] of SKY_DAY) gr.addColorStop(at, col);
   g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  /* Break the ramp before anything is painted on top of it. The noiseWash
+     further down only ever covered the top half, so the horizon -- the half
+     you actually see from a street -- had no dither at all. Seeded on its own
+     stream so the cloud placement below is byte-identical to before. */
+  seed(17);
+  ditherCanvas(g, W, H, 1.6);
 
   // where the sun sits on the dome
   let su = 0.62, sv = 0.78;

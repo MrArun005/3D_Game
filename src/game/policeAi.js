@@ -191,11 +191,12 @@ export function searchRadius(coldFor) {
  * victim alone is on the ground. Hitting the police is always seen. Once you
  * are wanted everything counts. Pure; tested.
  */
-export function crimeWitnessed(tag, px, pz, peds, police, wanted = 0) {
+export function crimeWitnessed(tag, px, pz, peds, police, wanted = 0, reach = 1) {
   if (wanted > 0 || tag === 'police') return true;
-  for (const c of police) if (c.live && Math.hypot(c.x - px, c.z - pz) < 90) return true;
+  // `reach` scales both radii: the Underworld Network perk halves it
+  for (const c of police) if (c.live && Math.hypot(c.x - px, c.z - pz) < 90 * reach) return true;
   let n = 0;
-  for (const p of peds) if (p.live && !p.down && Math.hypot(p.x - px, p.z - pz) < 45 && ++n >= (tag === 'person' ? 2 : 1)) return true;
+  for (const p of peds) if (p.live && !p.down && Math.hypot(p.x - px, p.z - pz) < 45 * reach && ++n >= (tag === 'person' ? 2 : 1)) return true;
   return false;
 }
 

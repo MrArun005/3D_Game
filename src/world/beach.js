@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { M4, mergeGeos } from '../core/geometry.js';
 import { FigureFleet, FOOT_DROP } from './figure.js';
+import { buildSpecies } from './props.js';
+import { SHADOW_FAR_LAYER } from '../core/renderer.js';
 
 /**
  * Halstead Sands, and the people on it.
@@ -34,18 +36,52 @@ const hash = (x, z) => {
   return n - Math.floor(n);
 };
 
-export function buildBeach(scene, district, day = true) {
+export function buildBeach(scene, district, day = true, catalogue = null) {
   const group = new THREE.Group();
+  /* Library materials, the same ones the 91 kit props bind to, so the port is
+     made of the city's own concrete, asphalt and galvanised steel rather than
+     flat Lambert colour. A tint clones the material and sets .color, which
+     multiplies the albedo map. Kit UVs are in METRES (PIPELINE.md), so every
+     box here gets metre UVs too or a 64 m shed would stretch one texture
+     across its whole side. Falls back to Lambert if the catalogue is absent. */
+  const lib = (name, tint = null, fallback = 0x9a9a9a) => {
+    const m = catalogue?.materials?.get?.(name);
+    if (!m) return new THREE.MeshLambertMaterial({ color: tint ?? fallback });
+    if (tint === null) return m;
+    const c = m.clone(); c.color = new THREE.Color(tint); c.name = `${name}:${tint.toString(16)}`;
+    return c;
+  };
+  const metreUVs = (g, lx, ly, lz) => {          // BoxGeometry, one segment: 6 faces x 4 verts, uv 0..1 per face
+    const uv = g.attributes.uv, dims = [[lz, ly], [lz, ly], [lx, lz], [lx, lz], [lx, ly], [lx, ly]];
+    for (let f = 0; f < 6; f++) for (let i = f * 4; i < f * 4 + 4; i++) uv.setXY(i, uv.getX(i) * dims[f][0], uv.getY(i) * dims[f][1]);
+    uv.needsUpdate = true;
+    return g;
+  };
   const bay = district.data.water.bay;
 
   // the coast is every bay edge that is not the map boundary
   const cx = bay.reduce((s, p) => s + p[0], 0) / bay.length;
   const cz = bay.reduce((s, p) => s + p[1], 0) / bay.length;
+  /* The stretch of shore inside Harbour Point is the container port
+     (world/port.js), with a quay wall where this file would lay sand. Ray-cast
+     point-in-polygon on the district boundary; the one segment that lands
+     inside is the docks' waterfront, the other four are Halstead Sands. */
+  const hp = (district.data.districts || []).find((d) => /HARBOUR/i.test(d.name || ''));
+  const inDocks = (x, z) => {
+    const poly = hp?.boundary; if (!poly) return false;
+    let ins = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [xi, zi] = poly[i], [xj, zj] = poly[j];
+      if (((zi > z) !== (zj > z)) && (x < (xj - xi) * (z - zi) / (zj - zi) + xi)) ins = !ins;
+    }
+    return ins;
+  };
   const coast = [];
   for (let i = 0; i < bay.length - 1; i++) {
     const a = bay[i], b = bay[i + 1];
     // the two edges that run along the map border are not shoreline
     if (Math.abs(a[0] - b[0]) < 1 || Math.abs(a[1] - b[1]) < 1) continue;
+    if (inDocks((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)) continue;
     coast.push([a, b]);
   }
 
@@ -74,7 +110,11 @@ export function buildBeach(scene, district, day = true) {
     ]);
     for (let r = 0; r < 2; r++) {
       const [p0, p1] = P[r], [q0, q1] = P[r + 1];
-      pos.push(...p0, ...p1, ...q1, ...p0, ...q1, ...q0);
+      // wind each triangle so its face normal points UP -- see the material note
+      for (const [A, B, C] of [[p0, p1, q1], [p0, q1, q0]]) {
+        const ny = (B[2] - A[2]) * (C[0] - A[0]) - (B[0] - A[0]) * (C[2] - A[2]);   // y of (B-A) x (C-A)
+        if (ny > 0) pos.push(...A, ...B, ...C); else pos.push(...A, ...C, ...B);
+      }
       const v0 = r === 0 ? 0 : DRY / 9, v1 = r === 0 ? DRY / 9 : (DRY + WET) / 9;
       const u = L / 9;
       uv.push(0, v0, u, v0, u, v1, 0, v0, u, v1, 0, v1);
@@ -107,10 +147,17 @@ export function buildBeach(scene, district, day = true) {
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
   g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(nor), 3));
   g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
-  /* DoubleSide because the coast polyline's winding depends on which way the
-     bay polygon was authored, and a back-faced beach is an invisible one. */
+  /* This was DoubleSide, "because the coast polyline's winding depends on
+     which way the bay polygon was authored, and a back-faced beach is an
+     invisible one". True -- but DoubleSide does not just show the back face,
+     it lights it with the normal FLIPPED, so a sand strip whose winding came
+     out reversed was shaded as if it faced the ground: no sun, only the
+     hemisphere's dark ground term. That is the near-black beach in the
+     2026-09-08 survey shot. The triangles are now wound to face up above, so
+     the material can be single-sided and lit properly; if the winding ever
+     regresses the beach vanishes, which is a loud failure instead of a dark one. */
   const sand = new THREE.Mesh(g, new THREE.MeshLambertMaterial({
-    map: sandTexture(), color: day ? 0xffffff : 0x6b6a63, side: THREE.DoubleSide,
+    map: sandTexture(), color: day ? 0xffffff : 0x6b6a63, side: THREE.FrontSide,
   }));
   sand.receiveShadow = true;
   sand.frustumCulled = false;
@@ -178,6 +225,7 @@ export function buildBeach(scene, district, day = true) {
     }
     m.frustumCulled = false;
     m.castShadow = !!shadow;
+    if (shadow) m.layers.enable(SHADOW_FAR_LAYER);   // palms and parasols: see the note on solid()
     group.add(m);
     return m;
   };
@@ -189,12 +237,156 @@ export function buildBeach(scene, district, day = true) {
     color: 0xffffff, side: THREE.DoubleSide,
   }), towels, towelCol);
 
+  /* --- promenade, palms, pier, lifeguard towers ---
+     A 58 m ribbon of sand with grass behind it is a sandpit. What makes a
+     GTA beach read as a beach from any angle is the furniture behind the sand
+     and one big silhouette over the water: a paved promenade with a palm row,
+     a pier on piles with a pavilion at the end, lifeguard towers on stilts.
+     Procedural boxes and cylinders merged per material -- the lot is under a
+     dozen draws. Palm geometry is props.js's own species, so it matches the
+     street palms. */
+  const frameAt = (t) => {                    // the coast segment under arc length t
+    let run = t;
+    for (const r of strip) { if (run > r.L) { run -= r.L; continue; } return r; }
+    return strip[strip.length - 1];
+  };
+  const tOf = (x, z) => {                     // arc length of the coast point nearest (x, z)
+    let best = 0, bd = Infinity, acc = 0;
+    for (const r of strip) {
+      const u = Math.max(0, Math.min(r.L, (x - r.a[0]) * r.dx + (z - r.a[1]) * r.dz));
+      const d = (r.a[0] + r.dx * u - x) ** 2 + (r.a[1] + r.dz * u - z) ** 2;
+      if (d < bd) { bd = d; best = acc + u; }
+      acc += r.L;
+    }
+    return best;
+  };
+  // yaw that lays a box's local +X along the SEAWARD normal of segment r
+  const seawardYaw = (r) => Math.atan2(r.nz, -r.nx);
+  const solid = (parts, mat, shadow = true) => {
+    if (!parts.length) return null;
+    const m = new THREE.Mesh(mergeGeos(parts), mat);
+    m.castShadow = shadow; m.receiveShadow = true; m.frustumCulled = false;
+    /* Beyond 52 m of the camera only SHADOW_FAR_LAYER casts (renderer.js GatedCSM):
+       without this flag a 42 m crane throws no shadow from anywhere you can see
+       the whole crane. */
+    if (shadow) m.layers.enable(SHADOW_FAR_LAYER);
+    group.add(m);
+    return m;
+  };
+  // an upward-facing quad, wound like the sand
+  const quadUp = (P, Nn, p0, p1, q1, q0) => {
+    for (const [A, B, C] of [[p0, p1, q1], [p0, q1, q0]]) {
+      const ny = (B[2] - A[2]) * (C[0] - A[0]) - (B[0] - A[0]) * (C[2] - A[2]);
+      if (ny > 0) P.push(...A, ...B, ...C); else P.push(...A, ...C, ...B);
+      Nn.push(0, 1, 0, 0, 1, 0, 0, 1, 0);
+    }
+  };
+
+  // the promenade: a paved band just landward of the dune line
+  {
+    const P = [], Nn = [];
+    for (const r of strip) {
+      const o0 = DRY + 1, o1 = DRY + 11, y = 0.22;
+      const b = [r.a[0] + r.dx * r.L, r.a[1] + r.dz * r.L];
+      quadUp(P, Nn,
+        [r.a[0] + r.nx * o0, y, r.a[1] + r.nz * o0], [b[0] + r.nx * o0, y, b[1] + r.nz * o0],
+        [b[0] + r.nx * o1, y, b[1] + r.nz * o1], [r.a[0] + r.nx * o1, y, r.a[1] + r.nz * o1]);
+    }
+    const pg = new THREE.BufferGeometry();
+    pg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(P), 3));
+    pg.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(Nn), 3));
+    // metre UVs: u along the coast, v across, so the slab texture tiles at its authored size
+    {
+      const U = [], r0 = strip[0];
+      for (let i = 0; i < P.length; i += 3) {
+        let best = null, bd = Infinity;
+        for (const r of strip) { const u = (P[i] - r.a[0]) * r.dx + (P[i + 2] - r.a[1]) * r.dz; const v = (P[i] - r.a[0]) * r.nx + (P[i + 2] - r.a[1]) * r.nz; const d = Math.abs(v - (DRY + 6)); if (d < bd && u > -1 && u < r.L + 1) { bd = d; best = [u, v]; } }
+        const [u, v] = best ?? [0, 0]; U.push(u, v);
+      }
+      pg.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(U), 2));
+    }
+    const prom = new THREE.Mesh(pg, lib('pavement_slab', null, 0xcfc7b8));
+    prom.receiveShadow = true; prom.frustumCulled = false;
+    group.add(prom);
+  }
+
+  // palms along the promenade every 15 m, each leaning its own way
+  {
+    const palm = buildSpecies('palm');
+    const trunks = [], fronds = [];
+    for (let t = 8; t < total - 8; t += 15) {
+      const [x, z] = at(t, DRY + 6);
+      const sc = 0.9 + hash(t, 61) * 0.3, yaw = hash(t, 67) * 6.28;
+      trunks.push(M4(x, 0.22, z, 0, yaw, 0, sc, sc, sc));
+      fronds.push(M4(x, 0.22, z, 0, yaw, 0, sc, sc, sc));
+    }
+    inst(palm.trunk, new THREE.MeshLambertMaterial({ color: 0x7a5a3a }), trunks, null, true);
+    inst(palm.canopy, new THREE.MeshLambertMaterial({ color: 0x2f6b32, side: THREE.DoubleSide }), fronds, null, true);
+  }
+
+  /* the pier: 120 m out over the water on piles, railed, a pavilion at the
+     end, broad steps down to the promenade. Sited on the mid-shore segment so
+     the 'beach' photo preset frames it. */
+  const pierT = tOf(3260, 2606);
+  {
+    const r = frameAt(pierT), yaw = seawardYaw(r), root = at(pierT, 0);
+    const W = (u, v) => [root[0] - r.nx * u + r.dx * v, root[1] - r.nz * u + r.dz * v];   // u seaward, v along the coast
+    const timber = [], paint = [], white = [];
+    const box = (list, u, y, v, lx, ly, lz) => {
+      const [x, z] = W(u, v);
+      const g2 = metreUVs(new THREE.BoxGeometry(lx, ly, lz), lx, ly, lz);
+      g2.applyMatrix4(M4(x, y, z, 0, yaw, 0, 1, 1, 1));
+      list.push(g2);
+    };
+    const DECK_Y = 3.4, LEN = 120, WID = 8;
+    box(timber, LEN / 2 - 3, DECK_Y - 0.25, 0, LEN, 0.5, WID);                            // deck
+    for (let u = 2; u < LEN; u += 8) for (const side of [-1, 1]) {                      // piles
+      const [x, z] = W(u, side * (WID / 2 - 0.8));
+      const pile = new THREE.CylinderGeometry(0.32, 0.36, 7.0, 8);
+      pile.applyMatrix4(M4(x, -0.2, z));
+      timber.push(pile);
+    }
+    for (const side of [-1, 1]) {                                                       // rails and posts
+      const v = side * (WID / 2 - 0.1);
+      box(white, LEN / 2 - 9, DECK_Y + 1.1, v, LEN - 12, 0.1, 0.1);
+      box(white, LEN / 2 - 9, DECK_Y + 0.55, v, LEN - 12, 0.08, 0.08);
+      for (let u = 0; u < LEN - 12; u += 4) box(white, u, DECK_Y + 0.6, v, 0.12, 1.2, 0.12);
+    }
+    box(paint, LEN - 9, DECK_Y + 2.1, 0, 12, 4.2, 9);                                   // pavilion
+    box(timber, LEN - 9, DECK_Y + 4.35, 0, 13.5, 0.35, 10.5);                            // its roof
+    for (let i = 0; i < 4; i++) box(timber, -4.5 - i * 3, 2.7 - i * 0.82, 0, 3, 0.35, 6.4); // steps down to the sand
+    solid(timber, lib('timber_bare', null, 0x8a6a48));
+    solid(white, lib('timber_painted', 0xf2efe6));
+    solid(paint, lib('timber_painted', 0xd8cfc0));
+  }
+
+  // lifeguard towers every ~230 m on the dry sand, facing the sea, none in the pier's lap
+  {
+    const posts = [], huts = [], roofs = [];
+    for (let t = 115; t < total - 60; t += 230) {
+      if (Math.abs(t - pierT) < 70) continue;
+      const r = frameAt(t), yaw = seawardYaw(r), [x, z] = at(t, 26);
+      const put = (list, du, y, dv, lx, ly, lz) => {
+        const g2 = metreUVs(new THREE.BoxGeometry(lx, ly, lz), lx, ly, lz);
+        g2.applyMatrix4(M4(x - r.nx * du + r.dx * dv, y, z - r.nz * du + r.dz * dv, 0, yaw, 0, 1, 1, 1));
+        list.push(g2);
+      };
+      for (const a of [-1, 1]) for (const b of [-1, 1]) put(posts, a * 1.2, 1.85, b * 1.2, 0.18, 3.4, 0.18);
+      put(huts, 0, 4.75, 0, 3.0, 2.4, 3.0);
+      put(roofs, 0, 6.1, 0, 3.7, 0.3, 3.7);
+    }
+    solid(posts, lib('timber_painted', 0xf2efe6));
+    solid(huts, lib('timber_painted', 0xf7f3ea));
+    solid(roofs, lib('metal_painted', 0x2f7dc0));
+  }
+
   /* --- the crowd --- */
   const SKIN = [0xf0c8a0, 0xd9a173, 0xa8724a, 0x7a4f33, 0x5a3a26];
   const WEAR = [0x2f6dff, 0xe8503c, 0xf0b429, 0xffffff, 0x35b57a, 0xd63cff, 0x1f2a36];
   const people = [];
   for (let i = 0; i < CROWD; i++) {
-    const t = hash(i, 3) * total;
+    // two in five set up within 80 m of the pier -- that is where a beach crowds
+    const t = i % 5 < 2 ? Math.max(0, Math.min(total, pierT + (hash(i, 3) - 0.5) * 160)) : hash(i, 3) * total;
     // most on the dry sand, some paddling in the shallows
     const across = hash(i, 5) < 0.24 ? -4 - hash(i, 11) * 9 : 3 + hash(i, 11) * (DRY - 12);
     const [x, z] = at(t, across);

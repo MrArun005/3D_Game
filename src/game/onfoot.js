@@ -35,6 +35,13 @@ export class OnFoot {
     this.camYaw = 0;
     this.camPitch = 0.08;
     this.camPos = new THREE.Vector3();
+    /* The camera eases toward its over-the-shoulder target with a 0.002^dt
+       lag, which is right while you walk and wrong the moment you step out:
+       camPos was never reset, so the first frames on foot flew in from the
+       origin (or from wherever you last got out) -- at low frame rates the
+       whole street swooped past and the hero was nowhere in frame. exit()
+       arms this and the next update() lands the camera on its target. */
+    this.camSnap = true;
     /* Set by main.js each frame from the shooting layer. ads is 0..1 (the
        sights coming up over ADS_BLEND_S), crouch is a toggle. Both only change
        the camera and the feet; the gun reads them separately. */
@@ -85,6 +92,7 @@ export class OnFoot {
     this.camPitch = 0.08;
     this.vx = 0; this.vz = 0;
     this.active = true;
+    this.camSnap = true;
     if (this.character.ready) this.character.show(true);
     else this.group.visible = true;
   }
@@ -146,6 +154,10 @@ export class OnFoot {
 
     // Elevation & ground tracking
     this.groundY = elevationAt ? elevationAt(this.x, this.z) : 0;
+    /* Fell through: more than 2.5 m under the ground the sampler reports
+       (a hill edge, a quay lip, an elevation seam) and gravity would only
+       take you further. Put you back on it. */
+    if (this.y < this.groundY - 2.5) { this.y = this.groundY; this.vy = 0; this.isGrounded = true; }
 
     // Jump trigger
     this.jumpCooldown = Math.max(0, this.jumpCooldown - dt);
@@ -204,6 +216,7 @@ export class OnFoot {
       const tx = this.x - Math.cos(this.camYaw) * back * flat + lx;
       const tz = this.z + Math.sin(this.camYaw) * back * flat + lz;
       const ty = this.y + up + Math.sin(this.camPitch) * back;
+      if (this.camSnap) { this.camPos.set(tx, ty, tz); this.camSnap = false; }
       const k = 1 - Math.pow(0.002, dt);
       this.camPos.x += (tx - this.camPos.x) * k;
       this.camPos.y += (ty - this.camPos.y) * k;

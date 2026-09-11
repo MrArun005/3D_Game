@@ -37,6 +37,18 @@ export function place(x, y, z, yaw, scale = 1) {
   );
 }
 
+/* Shipping containers are the one prop whose COLOUR is the read: a yard of
+   identical grey boxes is a texture, a yard of rust-red, blue, green and white
+   boxes is a port. Picked by position hash so a container keeps its colour
+   across reloads. Rides InstanceBatch.add's third argument (the batched path's
+   per-instance colour); any other asset gets null and stays as authored. */
+const CONTAINER_COLOURS = [0x8a3a2a, 0x2a4f8a, 0x2f6b3a, 0xc9a227, 0xd8d8d0, 0x50555a, 0x6b2a3a, 0x2a6b6b, 0x9a4a1e];
+export function containerColour(px, pz, asset) {
+  if (!/container/.test(asset)) return null;
+  const i = Math.floor(hash(px * 0.37, pz * 0.91) * CONTAINER_COLOURS.length) % CONTAINER_COLOURS.length;
+  return new THREE.Color(CONTAINER_COLOURS[i]);
+}
+
 /** Same, with a width and height: the sign quad is unit-sized and stretched here. */
 function placeBoard(x, y, z, yaw, w, h) {
   _e.set(0, yaw, 0);
@@ -315,7 +327,7 @@ function blockDressing(batch, blocks, district, solids) {
           const sc = k.scale
             ? k.scale[0] + hash(pz, px) * (k.scale[1] - k.scale[0]) : 1;
           batch.add(k.asset, place(px, KERB_H + district.elevationAt(px, pz), pz,
-            hash(px, pz) * 6.283, sc));
+            hash(px, pz) * 6.283, sc), containerColour(px, pz, k.asset));
         }
       }
       // paths across the park, and a gate where one meets the kerb
@@ -374,7 +386,7 @@ function blockDressing(batch, blocks, district, solids) {
           const [px, pz] = toWorld(lx, lz);
           const k = pick(kit, hash(pz, px));
           batch.add(k.asset, place(px, KERB_H + district.elevationAt(px, pz), pz,
-            Math.round(hash(px, pz) * 4) * (Math.PI / 2) + bl.angle));
+            Math.round(hash(px, pz) * 4) * (Math.PI / 2) + bl.angle), containerColour(px, pz, k.asset));
           solids.push({ x: px, z: pz, yaw: 0, offsets: [0], radius: 1.5, reach: 2.6, tag: 'prop' });
         }
       }
@@ -412,6 +424,7 @@ export function dressRoofs(batch, boxes, district) {
     if (b.hw < 3.5 || b.hd < 3.5) continue;
     // Suburban residential houses have pitched gables; skip industrial clutter
     if (b.kit && (b.district === 'NORTHLINE' || b.district === 'GREENFELL PARK' || b.district === 'MARROW HILL')) continue;
+    if (b.pitched) continue;                         // our own gable roofs (districtWorld #massing): nothing stands on a slope
     const y = KERB_H + b.height;
     // Clutter scales with the roof, 1 unit per ~45 m2, capped at 12 (or 5 for kit roofs)
     const maxClutter = b.kit ? 5 : 12;

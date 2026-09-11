@@ -33,9 +33,30 @@ export function createAssets() {
 
   const box = new THREE.BoxGeometry(1, 1, 1);
   box.translate(0, 0.5, 0);      // origin at the footprint, so scale.y is height
+  /* A pitched roof, unit-sized: eaves at y=0 on a 1x1 footprint, ridge along X
+     at y=1. Two slopes, two gable ends, no soffit (nobody sees it). UVs are
+     planar per face so an instance scaled to a house tiles in metres on its
+     own slope. 8 triangles; the suburbs' single strongest "houses" cue. */
+  const gable = (() => {
+    const p = [], n = [], u = [];
+    const tri = (a, b, c, nx, ny, nz, ua, ub, uc) => { p.push(...a, ...b, ...c); for (let i = 0; i < 3; i++) n.push(nx, ny, nz); u.push(...ua, ...ub, ...uc); };
+    const s = Math.SQRT1_2;
+    tri([-0.5, 0, 0.5], [0.5, 0, 0.5], [0.5, 1, 0], 0, s, s, [0, 0], [1, 0], [1, 1]);      // +z slope
+    tri([-0.5, 0, 0.5], [0.5, 1, 0], [-0.5, 1, 0], 0, s, s, [0, 0], [1, 1], [0, 1]);
+    tri([0.5, 0, -0.5], [-0.5, 0, -0.5], [-0.5, 1, 0], 0, s, -s, [0, 0], [1, 0], [1, 1]);  // -z slope
+    tri([0.5, 0, -0.5], [-0.5, 1, 0], [0.5, 1, 0], 0, s, -s, [0, 0], [1, 1], [0, 1]);
+    tri([0.5, 0, 0.5], [0.5, 0, -0.5], [0.5, 1, 0], 1, 0, 0, [0, 0], [1, 0], [0.5, 1]);    // gable ends
+    tri([-0.5, 0, -0.5], [-0.5, 0, 0.5], [-0.5, 1, 0], -1, 0, 0, [0, 0], [1, 0], [0.5, 1]);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(n, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(u, 2));
+    return g;
+  })();
 
   const geo = {
     box,
+    gable,
     plane: new THREE.PlaneGeometry(1, 1),
     lens: new THREE.SphereGeometry(0.09, 8, 6),
     lamp: buildStreetLamp(),
@@ -124,6 +145,7 @@ export function createAssets() {
       return m;
     })(),
     roof: new THREE.MeshLambertMaterial({ color: 0x2a2e34 }),
+    roofPitch: new THREE.MeshStandardMaterial({ color: 0x4a4644, roughness: 0.92, metalness: 0 }),   // slate; a pitched roof reads by its shape, not its tile
     roofGlass: new THREE.MeshStandardMaterial({
       color: 0x1a222c, roughness: 0.18, metalness: 0.55, envMapIntensity: 1.35,
     }),

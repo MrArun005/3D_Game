@@ -538,6 +538,20 @@ export class Hud {
   /** Cash and the current job, first line of the mission drawer (jobs.js). */
   setJob(text) { this.jobLine = text; }
 
+  /** The place line: "OLD QUARTER · 15:30 · AFTERNOON", top centre, always on (2026-09-10). */
+  setPlace(text) {
+    if (!this.placeEl) {
+      const el = document.createElement('div');
+      el.id = 'place';
+      el.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);'
+        + 'font:600 11px/1.4 ui-monospace,Consolas,monospace;letter-spacing:.26em;'
+        + 'color:#c9d4e3;text-shadow:0 1px 6px rgba(0,0,0,.85);pointer-events:none;opacity:.88';
+      document.body.appendChild(el);
+      this.placeEl = el;
+    }
+    if (text !== this._place) { this._place = text; this.placeEl.textContent = text; }
+  }
+
   /**
    * Damage direction: a red wedge on the screen edge toward where the round
    * came from, in the player's look frame (0 = ahead), fading over 0.7 s.

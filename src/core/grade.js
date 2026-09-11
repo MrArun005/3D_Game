@@ -1,12 +1,123 @@
 import * as THREE from 'three';
 import {
   Fn, Loop, uv, uniform, vec2, vec3, vec4, float, mix, smoothstep, clamp, fract, sin, dot,
-  pass, mrt, output, emissive, normalView, renderOutput, convertToTexture,
+  pass, mrt, output, emissive, normalView, renderOutput, convertToTexture, cameraWorldMatrix,
+  max, min, pow,
 } from 'three/tsl';
+import { ssr } from 'three/examples/jsm/tsl/display/SSRNode.js';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
 import { bloom } from 'three/examples/jsm/tsl/display/BloomNode.js';
 import { smaa } from 'three/examples/jsm/tsl/display/SMAANode.js';
+import { interpolateGradeProfile } from '../game/clock.js';
+
+/**
+ * Cinematic Grade Presets.
+ *
+ * Can be triggered via /grade <preset>, photo mode, or cycled with hotkeys.
+ * 'DEFAULT' delegates control to the continuous diurnal timecycle in clock.js.
+ */
+export const GRADE_PRESETS = {
+  DEFAULT: {
+    name: 'Dynamic Timecycle',
+    description: 'Dynamic physical lighting and atmosphere tied to game clock',
+  },
+  NEON_NOIR: {
+    name: 'Neon Noir (Cyberpunk)',
+    description: 'Vibrant electric cyan/magenta with deep inky shadows and high contrast',
+    sat: 1.38,
+    vibrance: 0.25,
+    contrast: 0.36,
+    split: 0.95,
+    shadowTint: [0.88, 0.92, 1.10],   // indigo/cold shadows
+    midTint: [0.98, 0.95, 1.02],
+    highTint: [1.12, 0.94, 1.08],     // magenta highlights
+    slope: [1.02, 1.0, 1.06],
+    offset: [-0.015, -0.015, -0.01],
+    power: [1.05, 1.05, 1.02],
+    bloomStrength: 1.10,
+    bloomRadius: 0.58,
+    bloomThreshold: 0.80,
+    vignette: 0.65,
+    grain: 0.032,
+  },
+  VINTAGE_70S: {
+    name: 'Vintage 70s (Fuji Film)',
+    description: 'Warm nostalgic tones, lifted green-gold shadows, soft organic roll-off',
+    sat: 0.92,
+    vibrance: -0.10,
+    contrast: 0.26,
+    split: 0.75,
+    shadowTint: [0.94, 1.04, 0.98],   // greenish/warm shadows
+    midTint: [1.03, 1.01, 0.97],
+    highTint: [1.10, 1.03, 0.92],     // golden highlights
+    slope: [1.04, 0.98, 0.92],
+    offset: [0.02, 0.03, 0.015],      // lifted film blacks
+    power: [0.96, 1.02, 1.06],
+    bloomStrength: 0.50,
+    bloomRadius: 0.40,
+    bloomThreshold: 0.35,
+    vignette: 0.55,
+    grain: 0.040,
+  },
+  BLACK_WHITE_NOIR: {
+    name: 'Classic B&W Noir',
+    description: 'High-contrast monochrome with silver-metallic midtones and gritty film grain',
+    sat: 0.0,
+    vibrance: 0.0,
+    contrast: 0.48,
+    split: 0.0,
+    shadowTint: [1.0, 1.0, 1.0],
+    midTint: [1.0, 1.0, 1.0],
+    highTint: [1.0, 1.0, 1.0],
+    slope: [1.10, 1.10, 1.10],
+    offset: [-0.02, -0.02, -0.02],
+    power: [1.08, 1.08, 1.08],
+    bloomStrength: 0.75,
+    bloomRadius: 0.45,
+    bloomThreshold: 0.40,
+    vignette: 0.70,
+    grain: 0.048,
+  },
+  BLEACH_BYPASS: {
+    name: 'Bleach Bypass',
+    description: 'Aggressive metallic silver retention, crushed darks, muted palette',
+    sat: 0.55,
+    vibrance: -0.20,
+    contrast: 0.44,
+    split: 0.65,
+    shadowTint: [0.88, 0.95, 1.04],
+    midTint: [0.98, 1.0, 1.0],
+    highTint: [1.05, 1.02, 0.98],
+    slope: [1.12, 1.12, 1.12],
+    offset: [-0.03, -0.03, -0.03],
+    power: [1.15, 1.15, 1.15],
+    bloomStrength: 0.40,
+    bloomRadius: 0.30,
+    bloomThreshold: 0.30,
+    vignette: 0.62,
+    grain: 0.035,
+  },
+  GOLDEN_HOUR: {
+    name: 'Golden Hour Sunset',
+    description: 'Intense warm sunlight flare, violet-blue cast in shadowed streets',
+    sat: 1.22,
+    vibrance: 0.18,
+    contrast: 0.34,
+    split: 0.85,
+    shadowTint: [0.90, 0.92, 1.08],   // cool violet shadows
+    midTint: [1.04, 1.01, 0.97],
+    highTint: [1.15, 1.02, 0.88],     // rich golden sun highlights
+    slope: [1.05, 1.02, 0.96],
+    offset: [-0.005, -0.005, 0.0],
+    power: [1.02, 1.02, 1.04],
+    bloomStrength: 0.85,
+    bloomRadius: 0.50,
+    bloomThreshold: 0.30,
+    vignette: 0.52,
+    grain: 0.022,
+  },
+};
 
 /**
  * The post stack (docs/ROADMAP Tier 1.1) with the colour grade folded in.
@@ -64,6 +175,7 @@ const BLOOM_STRENGTH = 0.6;
 
 export function createGrade(renderer, scene, camera, {
   ao: withAO = true, bloom: withBloom = true, aa: withAA = true, post: withPost = true,
+  ssr: withSSR = false,
 } = {}) {
   /* ?nopost: no pipeline, no MRT, no grade — the pre-Tier-1.1 render path.
      An A/B lever and an escape hatch: the MRT pass does make every scene
@@ -77,13 +189,16 @@ export function createGrade(renderer, scene, camera, {
       grain: { uniforms: { uTime: { value: 0 }, uAmount: { value: 0 } } },
       lens: { uniforms: { uTime: { value: 0 }, uAmt: { value: 0 } } },
       gtao: null, bloomNode: null, post: null, bloom: false,
-      setBloom() {}, setDrops() {}, setHurt() {}, setSpeed() {},
+      setBloom() {}, setDrops() {}, setHurt() {}, setSpeed() {}, setWet() {},
+      setNight() {}, setGradeProfile() {}, setPreset() { return 'DEFAULT'; }, cyclePreset() { return 'DEFAULT'; },
+      currentPreset: 'DEFAULT', presetDetails: GRADE_PRESETS.DEFAULT, presets: GRADE_PRESETS,
       beginScene(renderer) { renderer.setRenderTarget(null); return null; },
       sync() {}, resize() {},
       render(renderer) { renderer.render(scene, camera); },
       size(renderer) { return renderer.getDrawingBufferSize(_size); },
     };
   }
+
   /* --- grade uniforms, same names and defaults as the quad era ----------- */
   const uStrength = uniform(0.62);
   const gTime = uniform(0);
@@ -91,9 +206,21 @@ export function createGrade(renderer, scene, camera, {
   const lTime = uniform(0);
   const lAmt = uniform(0.7);
   const uHurt = uniform(0);      // 0..1: red at the frame edge -- a hit pulses it, low health holds it
-  const uSat = uniform(1.0);     // colour saturation: 1 by day, up at night for the neon look
-  const uSplit = uniform(0.0);   // split tone amount: shadows toward indigo, highlights toward warm magenta
+  const uSat = uniform(1.0);     // colour saturation
+  const uVibrance = uniform(0.05); // selective vibrance protection for neon and skin tones
+  const uSplit = uniform(0.0);   // split tone amount
   const uSpeed = uniform(0);     // 0..1: high speed / NOS visual warp and chromatic stretch
+
+  // 3-Way Color Balance
+  const uShadowTint = uniform(new THREE.Vector3(0.94, 0.99, 1.05));   // shadows lean cool/teal by default
+  const uMidTint = uniform(new THREE.Vector3(1.0, 1.0, 1.0));         // neutral midtones
+  const uHighTint = uniform(new THREE.Vector3(1.06, 1.01, 0.95));     // highlights lean sun-warm
+  const uContrast = uniform(0.34);                                    // S-curve mix
+
+  // ASC CDL (Slope, Offset, Power)
+  const uSlope = uniform(new THREE.Vector3(1.0, 1.0, 1.0));
+  const uOffset = uniform(new THREE.Vector3(0.0, 0.0, 0.0));
+  const uPower = uniform(new THREE.Vector3(1.0, 1.0, 1.0));
 
   /* --- scene pass --------------------------------------------------------
      GTAO needs geometry (depth + view normals) and selective bloom needs the
@@ -124,10 +251,26 @@ export function createGrade(renderer, scene, camera, {
     lit = beauty.mul(vec4(vec3(contactAO), 1));
   }
 
+  /* --- wet-street reflections (OPT-IN: ?ssr) ------------------------------ */
+  let ssrPass = null;
+  const uWet = uniform(0);
+  if (withSSR) {
+    const worldUpness = cameraWorldMatrix.mul(vec4(normalTex.rgb, 0)).xyz.y;
+    const groundMask = smoothstep(0.86, 0.97, worldUpness).mul(0.9);
+    const ssrInput = convertToTexture(vec4(clamp(vec3(lit.x, lit.y, lit.z), vec3(0), vec3(1.15)), 1));
+    ssrPass = ssr(ssrInput, depthTex, normalTex, { metalnessNode: groundMask, roughnessNode: float(0.03), stochastic: true, camera });
+    ssrPass.resolutionScale = 0.5;
+    ssrPass.maxDistance.value = 13;
+    ssrPass.thickness.value = 0.4;
+    const refl = clamp(vec3(ssrPass.x, ssrPass.y, ssrPass.z), vec3(0), vec3(1.1));
+    lit = mix(lit, vec4(refl, 1), ssrPass.a.mul(0.45).mul(uWet));
+  }
+
   /* --- bloom -------------------------------------------------------------
      Threshold 0.25 sits between daylight's dimmed emissive (0.04) and every
      genuine night source (facade windows ~1, headlamp glass 2.2, brake
-     emissive up to 3.5), which is what makes one setting serve both rigs. */
+     emissive up to 3.5), which is what makes one setting serve both rigs.
+     The diurnal profile (clock.js) moves strength/radius/threshold from here. */
   let bloomPass = null;
   let hdr = lit;
   if (withBloom) {
@@ -151,45 +294,66 @@ export function createGrade(renderer, scene, camera, {
      Each block reproduces its old quad's blend arithmetic exactly:
      vignette was a MultiplyBlending quad (dst * src.rgb), grain an additive
      quad at alpha 1 (dst + src.rgb), lens rain an additive quad with alpha
-     (dst + src.rgb * src.a). Same maths, zero draw calls. */
+     (dst + src.rgb * src.a). Same maths, zero draw calls. The CDL, 3-way
+     balance and vibrance stages (2026-09-11) sit in the same display-space
+     chain and are driven by clock.js's diurnal profile or a named preset. */
   const graded = Fn(() => {
     const c = display.rgb.toVar();
 
-    // vignette: darkens the corners, splits the frame warm/cool
+    // 1. ASC CDL (Slope, Offset, Power)
+    const cdl = clamp(c.mul(uSlope).add(uOffset), 0.0, 1.0);
+    c.assign(cdl.pow(uPower));
+
+    // 2. Vignette: darkens corners, splits warm/cool vertically
     const p = uv().sub(0.5);
     const r = p.mul(vec2(1.16, 1.0)).length();
     const v = mix(float(1).sub(uStrength), 1.0, smoothstep(0.80, 0.30, r));
-    // cool in the upper frame, warm down at street level
     const tint = mix(vec3(1.05, 1.00, 0.93), vec3(0.93, 0.96, 1.07), uv().y);
     c.mulAssign(vec3(v).mul(tint));
 
-    /* Night look (the cover art): saturation up, and a split tone -- the
-       darks lean indigo, the brights lean warm magenta -- so neon reads as
-       neon and the sky as ink. Both uniforms sit at 0/1 by day: no change. */
+    // 3. Luminance (Rec. 709)
     const lum = c.r.mul(0.2126).add(c.g.mul(0.7152)).add(c.b.mul(0.0722));
-    c.assign(mix(vec3(lum), c, uSat));
-    const shadowTint = vec3(0.92, 0.93, 1.06), highTint = vec3(1.08, 0.97, 1.05);   // a hint of indigo in the darks; 1.18 turned the night sky mid-blue
-    c.assign(c.mul(mix(shadowTint, highTint, smoothstep(0.05, 0.75, lum)).sub(1.0).mul(uSplit).add(1.0)));
 
-    // hurt: blood at the edges of vision, GTA's way of saying the number without the number
+    // 4. 3-Way Color Balance (Shadows, Midtones, Highlights)
+    const shadowWeight = float(1.0).sub(smoothstep(0.05, 0.40, lum));
+    const highWeight = smoothstep(0.60, 0.95, lum);
+    const midWeight = clamp(float(1.0).sub(shadowWeight).sub(highWeight), 0.0, 1.0);
+    const toneMult = uShadowTint.mul(shadowWeight)
+      .add(uMidTint.mul(midWeight))
+      .add(uHighTint.mul(highWeight));
+    c.assign(mix(c, c.mul(toneMult), uSplit));
+
+    // 5. Saturation & Vibrance (with Hurt desaturation)
+    const effSat = uSat.mul(float(1.0).sub(uHurt.mul(0.35)));
+    c.assign(mix(vec3(lum), c, effSat));
+
+    // Vibrance: boosts low-saturation hues more than already saturated ones
+    const maxC = max(c.r, max(c.g, c.b));
+    const minC = min(c.r, min(c.g, c.b));
+    const satDelta = maxC.sub(minC);
+    const vibFactor = float(1.0).sub(satDelta).mul(uVibrance);
+    c.assign(mix(c, mix(vec3(lum), c, float(1.0).add(vibFactor)), clamp(uVibrance.abs(), 0.0, 1.0)));
+    c.assign(clamp(c, 0.0, 1.0));   // saturation past 1 and vibrance both extrapolate; the S-curve below assumes 0..1
+
+    // 6. Hurt: blood vignette at the edges of vision
     const hurtEdge = smoothstep(0.30, 0.80, r).mul(uHurt);
     c.assign(mix(c, vec3(0.42, 0.01, 0.01), hurtEdge.mul(0.85)));
 
-    // cinematic film S-curve contrast: expands highlights, deepens shadows
+    // 7. Film S-curve contrast
     const contrasted = c.mul(c).mul(float(3.0).sub(c.mul(2.0)));
-    c.assign(mix(c, contrasted, 0.22));
+    c.assign(mix(c, contrasted, uContrast));
 
-    // subtle lens edge chromatic aberration on periphery + high-speed warp
+    // 8. Lens edge chromatic aberration + high-speed warp
     const chromaOffset = r.mul(r).mul(float(0.0025).add(uSpeed.mul(0.012)));
     c.r.addAssign(chromaOffset.mul(0.14));
     c.b.subAssign(chromaOffset.mul(0.14));
 
-    // grain
+    // 9. Film grain (luminance-weighted: organic in mid/darks, subtle in brights)
     const n = hash2(uv().mul(vec2(1920.0, 1080.0)).add(fract(gTime).mul(91.7)));
-    c.addAssign(vec3(n.mul(gAmount)));
+    const grainMask = float(1.0).sub(lum.mul(0.55));
+    c.addAssign(vec3(n.mul(gAmount).mul(grainMask)));
 
-    // rain on the lens: fourteen drops, each seeded off its own index and
-    // falling at its own speed. Unrolled by the compiler as the GLSL was.
+    // 10. Rain on the lens: 14 drops, each seeded off its own index
     const col = vec3(0).toVar();
     const a = float(0).toVar();
     Loop(14, ({ i }) => {
@@ -212,45 +376,109 @@ export function createGrade(renderer, scene, camera, {
   })();
 
   const post = new THREE.RenderPipeline(renderer);
-  post.outputColorTransform = false;   // renderOutput() above is the transform
+  post.outputColorTransform = false;   // renderOutput()/toneMapping above is the transform (see header)
   post.outputNode = graded;
 
+  let activePreset = 'DEFAULT';
+
+  function applyProfileValues(p) {
+    if (!p) return;
+    if (p.sat !== undefined) uSat.value = p.sat;
+    if (p.vibrance !== undefined) uVibrance.value = p.vibrance;
+    if (p.contrast !== undefined) uContrast.value = p.contrast;
+    if (p.split !== undefined) uSplit.value = p.split;
+    if (p.vignette !== undefined) uStrength.value = p.vignette;
+    if (p.grain !== undefined) gAmount.value = p.grain;
+
+    if (p.shadowTint) uShadowTint.value.set(p.shadowTint[0], p.shadowTint[1], p.shadowTint[2]);
+    if (p.midTint) uMidTint.value.set(p.midTint[0], p.midTint[1], p.midTint[2]);
+    if (p.highTint) uHighTint.value.set(p.highTint[0], p.highTint[1], p.highTint[2]);
+
+    if (p.slope) uSlope.value.set(p.slope[0], p.slope[1], p.slope[2]);
+    if (p.offset) uOffset.value.set(p.offset[0], p.offset[1], p.offset[2]);
+    if (p.power) uPower.value.set(p.power[0], p.power[1], p.power[2]);
+
+    if (bloomPass) {
+      if (p.bloomStrength !== undefined) bloomPass.strength.value = p.bloomStrength;
+      if (p.bloomRadius !== undefined) bloomPass.radius.value = p.bloomRadius;
+      if (p.bloomThreshold !== undefined) bloomPass.threshold.value = p.bloomThreshold;
+    }
+  }
+
   return {
-    /* same shapes the quad era exported, so existing callers keep working */
+    /* backwards-compatible uniform getters */
     vignette: { uniforms: { uStrength } },
     grain: { uniforms: { uTime: gTime, uAmount: gAmount } },
     lens: { uniforms: { uTime: lTime, uAmt: lAmt } },
 
-    /* the live nodes, for tuning from the console or a later weather hook */
     gtao: aoPass,
     bloomNode: bloomPass,
     post,
-
     bloom: withBloom,
+
     setBloom(on) { if (bloomPass) bloomPass.strength.value = on ? BLOOM_STRENGTH : 0; },
-    /* Night mood: signs and lamps glow harder and softer (radius up), the
-       threshold stays where windows (emissive ~1.0 * tint <= 1) do not bloom
-       but sign boards (1.4) and lamp caps (3.2) do. */
+
+    /**
+     * Dynamic Diurnal Profile Setter.
+     * Called continuously from clock.js to blend Day/Dusk/Night/Dawn & weather states.
+     */
+    setGradeProfile(profile) {
+      if (activePreset !== 'DEFAULT') return; // Presets take precedence over dynamic timecycle
+      applyProfileValues(profile);
+    },
+
+    /**
+     * Preset switcher. Pass 'DEFAULT' to resume automatic diurnal grading.
+     */
+    setPreset(name) {
+      if (!name || name === 'DEFAULT' || !GRADE_PRESETS[name]) {
+        activePreset = 'DEFAULT';
+        return 'DEFAULT';
+      }
+      activePreset = name;
+      applyProfileValues(GRADE_PRESETS[name]);
+      return activePreset;
+    },
+
+    cyclePreset(dir = 1) {
+      const keys = Object.keys(GRADE_PRESETS);
+      let idx = keys.indexOf(activePreset);
+      if (idx < 0) idx = 0;
+      idx = (idx + dir + keys.length) % keys.length;
+      return this.setPreset(keys[idx]);
+    },
+
+    get currentPreset() {
+      return activePreset;
+    },
+
+    get presetDetails() {
+      return GRADE_PRESETS[activePreset] || GRADE_PRESETS.DEFAULT;
+    },
+
+    get presets() {
+      return GRADE_PRESETS;
+    },
+
+    /**
+     * Legacy discrete day/night swap. The numbers live in ONE place -- the
+     * diurnal profiles in clock.js -- so this is the midnight or noon sample
+     * of that curve, not a second copy of it (a second copy drifted within a
+     * day of being written, 2026-09-11).
+     */
     setNight(on) {
-      uSat.value = on ? 1.32 : 1.0;
-      uSplit.value = on ? 1.0 : 0.0;
-      if (!bloomPass) return;
-      // the neon night: more bloom, wider, from a lower floor (lit windows glow, as they do in the reference)
-      // crisp neon on a dark street, not haze: 1.35 / 0.72 / 0.72 bloomed every lit window into fog (browser check, 2026-09-05)
-      bloomPass.strength.value = on ? 0.95 : BLOOM_STRENGTH;
-      bloomPass.radius.value = on ? 0.55 : 0.35;
-      bloomPass.threshold.value = on ? 0.85 : 0.25;
+      this.setGradeProfile(interpolateGradeProfile(on ? 0.0 : 12.0, 'CLEAR'));
     },
 
     setDrops(amount) { lAmt.value = amount; },
+    setWet(amount) { uWet.value = Math.max(0, Math.min(1, amount || 0)); },
+    ssrNode: ssrPass,
     setHurt(amount) { uHurt.value = Math.max(0, Math.min(1, amount)); },
     setSpeed(amount) { uSpeed.value = Math.max(0, Math.min(1, amount)); },
 
-    /** Legacy no-op: the pipeline owns the frame now. */
     beginScene(renderer) { renderer.setRenderTarget(null); return null; },
-
-    sync() { /* pass + AO track drawing-buffer size themselves */ },
-    resize() { /* kept so old callers are harmless */ },
+    sync() {},
+    resize() {},
 
     render(renderer, time) {
       gTime.value = time;
@@ -258,7 +486,6 @@ export function createGrade(renderer, scene, camera, {
       post.render();
     },
 
-    /** Drawing-buffer size, for anything that still wants to ask. */
     size(renderer) { return renderer.getDrawingBufferSize(_size); },
   };
 }

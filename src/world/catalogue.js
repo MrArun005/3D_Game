@@ -271,6 +271,23 @@ export class Catalogue {
   }
 
   /** Total triangles an asset contributes at a given LOD. */
+  /**
+   * A vertexColors clone of a library material, one per material, for the
+   * merge path's tinted placements (containers). The clone is what keeps a
+   * per-vertex tint off every other prop that shares the material.
+   */
+  tintedMaterial(material) {
+    this._tinted ??= new Map();
+    let m = this._tinted.get(material);
+    if (!m) {
+      m = material.clone();
+      m.vertexColors = true;
+      m.name = `${material.name}:tinted`;
+      this._tinted.set(material, m);
+    }
+    return m;
+  }
+
   trisOf(name, lod = 0) {
     const rec = this.assets.get(name);
     return rec?.def?.tris?.[`lod${lod}`] ?? 0;
@@ -392,11 +409,15 @@ export class InstanceBatch {
     this.tracked = [];
   }
 
-  add(name, matrix) {
+  add(name, matrix, color = null) {
     if (!name) return;
     let list = this.buckets.get(name);
     if (!list) this.buckets.set(name, (list = []));
-    list.push(matrix);
+    /* A Color tints this placement. BatchedMesh.setColorAt() feeds a colour
+       texture the node material multiplies into diffuse (three.webgpu:
+       `batchColor.mul(colorNode)` whenever _colorsTexture exists), so the
+       batched path honours it for free. The per-chunk merge fallback ignores it. */
+    list.push(color ? { matrix, color } : matrix);
   }
 
   #trackRec(name, matrix) {
@@ -437,7 +458,10 @@ export class InstanceBatch {
         for (const p of parts) {
           let b = byMaterial.get(p.material);
           if (!b) byMaterial.set(p.material, (b = []));
-          for (const mm of list) b.push({ geo: p.geometry, part: p, matrix: mm, name });
+          for (const mm of list) {
+            const tinted = mm.isMatrix4 !== true;
+            b.push({ geo: p.geometry, part: p, matrix: tinted ? mm.matrix : mm, color: tinted ? mm.color : null, name });
+          }
         }
       }));
     }
@@ -454,6 +478,7 @@ export class InstanceBatch {
         for (const it of items) {
           const geoId = this.cat.geometryIdFor(b, it.part);
           const id = this.cat.addBatched(b, geoId, it.matrix);
+          if (it.color) b.mesh.setColorAt(id, it.color);
           list.push({ batch: b.mesh, id });
           if (this.trackNames?.has(it.name)) this.#trackRec(it.name, it.matrix).instances.push({ batch: b.mesh, id });
         }
@@ -468,7 +493,19 @@ export class InstanceBatch {
        a hitch the chunk-build budget never even saw because it lives on the
        promise side of the fence. */
     const nextTask = () => new Promise((r) => setTimeout(r, 0));
-    for (const [material, items] of byMaterial) {
+    /* Tinted placements (containers) merge apart from the plain ones: they
+       carry a per-vertex colour under a vertexColors clone of the material,
+       and mergeGeometries refuses to mix a geometry that has a colour
+       attribute with one that has not. One extra draw per chunk that has
+       any -- the yards and the port. (2026-09-08; before this the merge
+       path dropped the colour and every container was grey.) */
+    const merges = [];
+    for (const [material, all] of byMaterial) {
+      const plain = all.filter((it) => !it.color), tinted = all.filter((it) => it.color);
+      if (plain.length) merges.push([material, plain]);
+      if (tinted.length) merges.push([this.cat.tintedMaterial(material), tinted]);
+    }
+    for (const [material, items] of merges) {
       await nextTask();
       const geos = [];
       const pending = [];               // break-tracking: ranges awaiting the mesh
@@ -491,6 +528,11 @@ export class InstanceBatch {
           g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
         }
         if (!g.attributes.normal) g.computeVertexNormals();
+        if (it.color) {
+          const n = g.attributes.position.count, col = new Float32Array(n * 3);
+          for (let i = 0; i < n; i++) { col[i * 3] = it.color.r; col[i * 3 + 1] = it.color.g; col[i * 3 + 2] = it.color.b; }
+          g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+        }
         const count = g.attributes.position.count;
         if (this.trackNames?.has(it.name)) {
           pending.push({ rec: this.#trackRec(it.name, it.matrix), start: offset, count });

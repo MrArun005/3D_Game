@@ -1,5 +1,157 @@
 import * as THREE from 'three';
 
+// Diurnal color grade anchor profiles
+const DIURNAL_PROFILES = {
+  DAY: {
+    sat: 1.05,
+    vibrance: 0.05,
+    contrast: 0.34,
+    split: 0.50,
+    shadowTint: [0.93, 0.98, 1.05],
+    midTint: [1.0, 1.0, 1.0],
+    highTint: [1.06, 1.01, 0.95],
+    slope: [1.0, 1.0, 1.0],
+    offset: [0.0, 0.0, 0.0],
+    power: [1.0, 1.0, 1.0],
+    bloomStrength: 0.55,
+    bloomRadius: 0.35,
+    bloomThreshold: 0.25,
+    vignette: 0.35,
+    grain: 0.015,
+  },
+  DUSK: {
+    sat: 1.20,
+    vibrance: 0.18,
+    contrast: 0.32,
+    split: 0.85,
+    shadowTint: [0.89, 0.91, 1.08],
+    midTint: [1.03, 1.0, 0.98],
+    highTint: [1.14, 1.01, 0.88],
+    slope: [1.03, 1.01, 0.97],
+    offset: [0.0, 0.0, 0.0],
+    power: [1.01, 1.01, 1.03],
+    bloomStrength: 0.85,
+    bloomRadius: 0.50,
+    bloomThreshold: 0.45,
+    vignette: 0.50,
+    grain: 0.024,
+  },
+  NIGHT: {
+    sat: 1.32,
+    vibrance: 0.22,
+    contrast: 0.24,
+    split: 1.0,
+    shadowTint: [0.92, 0.93, 1.06],
+    midTint: [0.98, 0.98, 1.02],
+    highTint: [1.08, 0.97, 1.05],
+    slope: [1.01, 1.0, 1.04],
+    offset: [-0.01, -0.01, -0.005],
+    power: [1.03, 1.03, 1.02],
+    bloomStrength: 0.95,
+    bloomRadius: 0.55,
+    bloomThreshold: 0.85,
+    vignette: 0.62,
+    grain: 0.030,
+  },
+  DAWN: {
+    sat: 0.98,
+    vibrance: 0.02,
+    contrast: 0.28,
+    split: 0.50,
+    shadowTint: [0.95, 0.97, 1.04],
+    midTint: [1.0, 1.0, 1.0],
+    highTint: [1.08, 1.03, 0.98],
+    slope: [1.0, 1.0, 1.0],
+    offset: [0.01, 0.01, 0.01],
+    power: [0.98, 0.98, 0.98],
+    bloomStrength: 0.60,
+    bloomRadius: 0.38,
+    bloomThreshold: 0.30,
+    vignette: 0.40,
+    grain: 0.020,
+  },
+};
+
+export function interpolateGradeProfile(hour, weather) {
+  let wNight = 0, wDawn = 0, wDay = 0, wDusk = 0;
+
+  if (hour < 5.0 || hour >= 21.0) {
+    wNight = 1.0;
+  } else if (hour >= 5.0 && hour < 7.5) {
+    const t = (hour - 5.0) / 2.5;
+    wNight = 1.0 - t;
+    wDawn = t;
+  } else if (hour >= 7.5 && hour < 9.5) {
+    const t = (hour - 7.5) / 2.0;
+    wDawn = 1.0 - t;
+    wDay = t;
+  } else if (hour >= 9.5 && hour < 17.0) {
+    wDay = 1.0;
+  } else if (hour >= 17.0 && hour < 19.5) {
+    const t = (hour - 17.0) / 2.5;
+    wDay = 1.0 - t;
+    wDusk = t;
+  } else if (hour >= 19.5 && hour < 21.0) {
+    const t = (hour - 19.5) / 1.5;
+    wDusk = 1.0 - t;
+    wNight = t;
+  }
+
+  const pDay = DIURNAL_PROFILES.DAY;
+  const pDusk = DIURNAL_PROFILES.DUSK;
+  const pNight = DIURNAL_PROFILES.NIGHT;
+  const pDawn = DIURNAL_PROFILES.DAWN;
+
+  const blendVal = (k) => pDay[k] * wDay + pDusk[k] * wDusk + pNight[k] * wNight + pDawn[k] * wDawn;
+  const blendVec = (k) => [
+    pDay[k][0] * wDay + pDusk[k][0] * wDusk + pNight[k][0] * wNight + pDawn[k][0] * wDawn,
+    pDay[k][1] * wDay + pDusk[k][1] * wDusk + pNight[k][1] * wNight + pDawn[k][1] * wDawn,
+    pDay[k][2] * wDay + pDusk[k][2] * wDusk + pNight[k][2] * wNight + pDawn[k][2] * wDawn,
+  ];
+
+  let sat = blendVal('sat');
+  let vibrance = blendVal('vibrance');
+  let contrast = blendVal('contrast');
+  let split = blendVal('split');
+  let vignette = blendVal('vignette');
+  let grain = blendVal('grain');
+  let bloomStrength = blendVal('bloomStrength');
+  let bloomRadius = blendVal('bloomRadius');
+  let bloomThreshold = blendVal('bloomThreshold');
+
+  let shadowTint = blendVec('shadowTint');
+  let midTint = blendVec('midTint');
+  let highTint = blendVec('highTint');
+  let slope = blendVec('slope');
+  let offset = blendVec('offset');
+  let power = blendVec('power');
+
+  // Atmospheric weather adjustments
+  if (weather === 'OVERCAST') {
+    sat *= 0.86;
+    contrast *= 0.90;
+    vignette += 0.05;
+    shadowTint = [shadowTint[0] * 0.96, shadowTint[1] * 0.98, shadowTint[2] * 1.02];
+  } else if (weather === 'RAIN') {
+    sat *= 0.92;
+    contrast += 0.04;
+    vignette += 0.08;
+    grain += 0.005;
+  } else if (weather === 'STORM') {
+    sat *= 0.88;
+    contrast += 0.06;
+    vignette += 0.14;
+    grain += 0.010;
+  }
+
+  return {
+    sat, vibrance, contrast, split, vignette, grain,
+    bloomStrength, bloomRadius, bloomThreshold,
+    shadowTint, midTint, highTint,
+    slope, offset, power,
+  };
+}
+
 /**
  * 24-minute real-world day-night clock with smooth dynamic celestial cycle,
  * dynamic solar vector, lighting states (Day, Sunset, Night, Dawn),
@@ -166,10 +318,9 @@ export class GameClock {
     // Night lighting state: headlights default active at night & dusk if not manually toggled
     const lightsActive = this.hour >= 18.2 || this.hour < 6.4;
 
-    // Tune post bloom per hour (Task 2.5): subtle during the day, radiant at dusk/night
-    if (grade?.setNight) {
-      grade.setNight(lightsActive);
-    }
+    // Continuous Diurnal & Weather Color Grade Profile
+    // the one writer of the grade's look uniforms; grade.setNight() delegates back here
+    grade?.setGradeProfile?.(interpolateGradeProfile(this.hour, this.weather));
 
     // Dynamic weather cycle (Task 2.6)
     this.weatherTimer += dt;

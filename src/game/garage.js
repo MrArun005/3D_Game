@@ -1,5 +1,19 @@
 import { loadHeroSkin } from '../world/vendorCars.js';
 
+/* The chop shop (2026-09-09). Drive a car you do not OWN -- a carjack or a
+   break-in fits the victim's body without buying it -- to the Steelgate
+   warehouse and press N inside 60 m: it pays 35% of the showroom price (a
+   fifth more with the Chop Shop perk, reputation <= -80), costs 40
+   reputation, and puts you back in the last body you actually owned. It is
+   the heist_2 weapons stash, so the map's one criminal address stays one
+   address. The AR scanner (intel.js) quotes the same number over traffic. */
+export const CHOP_SHOP = { x: 3662, z: 1221, r: 60, name: 'STEELGATE CHOP SHOP' };
+export function chopValue(file, outlaw = false) {
+  const c = CATALOGUE.find((k) => k.file === file);
+  const base = Math.max(200, Math.round((c?.price ?? 600) * 0.35));
+  return outlaw ? Math.round(base * 1.2) : base;
+}
+
 export const CATALOGUE = [
   { file: 'q-sports',     name: 'SPORTS COUPE',  price: 0 },
   { file: 'q-normal1',    name: 'SALOON',        price: 500 },
@@ -20,7 +34,10 @@ export const CATALOGUE = [
   { file: 's-corvette-zr1',  name: 'CORVETTE ZR1',      price: 14000 },
   { file: 's-monza',         name: 'MONZA',             price: 12000 },
 ];
-const REPAIR = 150;
+/* Repair is priced by the damage on the car, plus a respray when you are hot:
+   a scuffed wing is $100, a wreck at 100% is $700, and the police pay-off is
+   $200 on top. A flat $150 (2026-09-08 and before) made crashing free. */
+const repairCost = (damage, hot) => Math.round(100 + 600 * Math.min(1, damage)) + (hot ? 200 : 0);
 
 export class Garage {
   constructor(jobs, assets, hero, damage, hud) {
@@ -35,6 +52,7 @@ export class Garage {
     if (!CATALOGUE.some((c) => c.file === this.fitted)) this.fitted = 'q-sports';
     this.cursor = CATALOGUE.findIndex((c) => c.file === this.fitted);
     this.browsing = false;
+    this.lastOwned = this.owned.has(this.fitted) ? this.fitted : 'q-sports';   // what the chop shop hands you back
 
     // Performance & NOS Tuning
     this.stage = Number(localStorage.getItem('hb.tune_stage') || 1);
@@ -107,9 +125,23 @@ export class Garage {
   async act() {
     const c = CATALOGUE[this.cursor];
     if (!this.browsing || c.file === this.fitted) {
+      // a stolen body: the only thing N does with it is sell it, and only at the chop shop
+      if (!this.owned.has(this.fitted)) {
+        const at = this.where?.();
+        const d = at ? Math.hypot(at.x - CHOP_SHOP.x, at.z - CHOP_SHOP.z) : Infinity;
+        const rep = (typeof window !== 'undefined') ? window._reputation : null;
+        const pay = chopValue(this.fitted, (rep?.score ?? 0) <= -80);
+        const name = CATALOGUE.find((k) => k.file === this.fitted)?.name ?? this.fitted.toUpperCase();
+        if (d > CHOP_SHOP.r) { this.hud.flash(`STOLEN ${name} · CHOP $${pay} AT ${CHOP_SHOP.name} (${Math.round(d)} m)`); return; }
+        this.addCash(pay, `CHOP SHOP · ${name}`);
+        rep?.adjust(-40, 'CHOP SHOP SALE');
+        await this.wear(this.lastOwned);
+        return;
+      }
       // repair -- and a respray: below three stars the garage also loses the police (GTA's Pay 'n' Spray; main wires onRepair)
       const heat = this.heat?.() ?? 0;
       if (this.damage?.value <= 0.02 && heat <= 0) { this.hud.flash('NOTHING TO REPAIR'); return; }
+      const REPAIR = repairCost(this.damage?.value ?? 0, heat > 0);
       if (!this.spendCash(REPAIR)) { this.hud.flash(`REPAIR $${REPAIR} · NOT ENOUGH CASH`); return; }
       this.damage?.repair();
       const cleared = this.onRepair?.();
@@ -126,7 +158,9 @@ export class Garage {
 
   /** Drive what you stole: fit a body without buying it. */
   async wear(file) {
-    if (file && file !== this.fitted) await this.#fit(file);
+    if (!file || file === this.fitted) return;
+    if (this.owned.has(this.fitted)) this.lastOwned = this.fitted;   // remember what to come back to
+    await this.#fit(file);
   }
 
   async #fit(file) {

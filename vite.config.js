@@ -35,5 +35,5 @@ export default defineConfig({
     holdUntilCrawlEnd: true,
   },
   server: { port: 5173, open: false, warmup: { clientFiles: ['./src/main.js'] } },
-  build: { target: 'es2022', outDir: 'dist', sourcemap: true },
+  build: { target: 'es2022', outDir: 'dist', sourcemap: 'hidden' },   // hidden: the map is written but never referenced or served -- 8 MB off the deploy (2026-09-11)
 });

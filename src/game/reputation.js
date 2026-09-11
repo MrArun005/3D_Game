@@ -178,13 +178,13 @@ export class ReputationSystem {
   get perks() {
     const perks = [];
     if (this.score <= -80) {
-      perks.push({ name: 'Chop Shop Bonus', desc: '+20% Black Market vehicle payouts' });
+      perks.push({ name: 'Chop Shop Bonus', desc: '+20% at the Steelgate chop shop (drive a stolen car there, press N)' });
     }
     if (this.score <= -300) {
       perks.push({ name: 'Street Intimidation', desc: 'Civilian traffic yields quickly to aggressive driving' });
     }
     if (this.score <= -750) {
-      perks.push({ name: 'Underworld Network', desc: 'Police radar detection time doubled' });
+      perks.push({ name: 'Underworld Network', desc: 'Witnesses and cruisers must be half as close to report a crime' });
     }
 
     if (this.score >= 80) {

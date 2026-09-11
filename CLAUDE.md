@@ -330,9 +330,211 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   only, see NOTICE.md; do not ship them (the generated wardrobe GLBs derive
   from them, so a licensed base mesh must replace them before any release).
 
+- **Death flow + on-foot camera (2026-09-11).** The "no hero" report was the
+  CAMERA, not the character: `OnFoot.update` eases `camPos` toward its target
+  with a 0.002^dt lag and `exit()` never reset it, so the first frames on foot
+  flew in from the origin (or the last exit point) with the hero out of frame.
+  `exit()` now arms `camSnap` and the next update lands the camera; a
+  fall-through guard snaps you back when you are >2.5 m under the sampled
+  ground. The WASTED path (`main.js onDeath`): the hit handler ignores damage
+  while `wastedAnim`/`dying` are set; `traffic.holdFire` (cleared by
+  `standDown`) stops officers firing during the clip; the clip ends in
+  `hud.blackout` and the respawn happens at full black; `onBust` returns
+  while dying (the timer used to respawn you twice); drowning sets `dying`
+  and goes through the same path (fee, job lost, stars KEPT -- the quay
+  hand-back and the free star are gone); armour resets to 0, weapons stay;
+  you wake up ON FOOT at the hospital doors with the car parked beside you,
+  whatever body it wears. Review fixes on the grade work: G in photo mode no
+  longer toggles the checkpoint run, the contract comments in grade.js are
+  back, the frame is clamped after vibrance, `setNight` delegates to
+  `interpolateGradeProfile` (clock.js is the ONE writer; the boot-time
+  `setNight(true)` is gone), garage flash strings have their $ back. Debug
+  hooks: `__hurt(h)`, `__dying()`, `__camera`, `__hud`. 151/151 tests;
+  browser verification: see the line below this entry.
+  VERIFY-STATUS-PLACEHOLDER
+- **Taken from APEX Heat City (2026-09-10)** -- a mindblown.ai three.js/WebGL2
+  game probed with Playwright (`scratchpad/probe-game*.mjs`; 85 MB download,
+  parts of it better than ours, most of it not). What was worth taking:
+  1. **An opening menu** (`index.html #hud`, `style.css`, `main.js start()`):
+     eyebrow, title, five mode cards (free roam / street jobs / heists / range
+     / hold-out), a gold ENTER THE CITY, a three-line legend. A card only sets
+     `menuMode`; ENTER (or any click) starts, then the mode fires 500 ms later
+     -- `jobs.toggle`, `modes.startRange`, `modes.startHoldout`, or a flash
+     pointing at the phone. Every mode already existed; none was findable.
+  2. **The place line** (`hud.setPlace`, fed from the district poll in main):
+     "OLD QUARTER · 15:30 · AFTERNOON", top centre, mono, always on.
+  3. **A hero frontage from Poly Haven's CC0 tenement kit**
+     (`landmarks.js assembleTenement`). The GLB is a PARTS LIBRARY laid out on
+     a display grid, NOT an assembled wall -- placing it whole gave a row of
+     loose wall samples in front of a grey block (verified, then fixed the same
+     hour). Kit facts, measured: 3 m modules x 3 m storeys, origin at the
+     module's RIGHT edge on the wall plane z=0, front +Z; window/door inserts
+     share the wall module's origin; dado/cornice are 3 m mouldings, crown the
+     0.75 m parapet, *_end and pier pieces close the ends. The assembler
+     builds 17 bays x 4 floors (one window type per bay up its height, a
+     doorway every fourth bay, dado with door cut-outs, cornice + crown, end
+     piers), bakes ~150 clones into ONE mesh per material (5 draws), faces the
+     nearest road by probing `district.tarmacDepth` at four yaws, slides to
+     the kerb, and puts a plaster body 14 m deep behind it. Lands on the
+     56x44 Old Quarter lot at 1103,1291. 10.6 MB lazily loaded; the factory
+     set (13.8 MB) waits for KTX2 -- `optimise-glb` made these files BIGGER
+     (PNG normals), as the memory note warned.
+- **Economy + world, 2026-09-09** (built and tested; screenshot pass for the
+  gables and SSR still owed): Steelgate **chop shop** (`garage.js CHOP_SHOP`,
+  `chopValue`: 35% of showroom, +20% with the Chop Shop perk; N inside 60 m
+  sells a body you do not own and hands back `lastOwned`; the AR scanner
+  quotes the same number); **Underworld Network** perk made real (witness
+  reach halved via `crimeWitnessed(..., reach)`); landmarks `marrow` and
+  `steelgate` for `/tp`, photo preset `marrow-hill` (needs the car there for
+  the gable chunks); **SSR wet streets** ported from the 2026-09-01 stash as
+  an OPT-IN `?ssr` (grade.js, gated by `setWet(car.wet)`) -- opt-in because the
+  harness cannot time the GPU and rule 1 wants a measured cost first.
+  Tests: `test/chop-shop.test.js`.
+- **Interior mapping + a gameplay loop with teeth (2026-09-08, evening)**:
+  1. **Interior mapping** (ROADMAP 2.2, `city.js:makeTileable`): every window
+     now has a parallax ROOM behind it -- a tangent-space ray from the glass
+     into a bay x storey x depth box, hit-tested against back wall / sides /
+     ceiling (lamp hotspot) / floor, a furniture-dark lower third and a blind
+     in one room in three. Glass pixels come from the ORM roughness the
+     facade painter writes; the grid comes from `material.userData.{tile,
+     cell, depth}` set in `facades.js` (COLS per kind; bases 1 or 3 units).
+     Lit/unlit is now PER WINDOW (was per 4-storey tile). Zero draws, zero
+     tris; one ORM sample now shared by roughness, AO and the glass mask.
+     Verified: kingsway-corner @21:00 shows a warm/cool scatter of lit rooms
+     with no lamp-on-floor artefact (the TBN sign was the risk).
+  2. **RACE jobs** (`jobs.js #race`, tested in `test/jobs-race.test.js`):
+     G can now roll a street race -- 3-4 checkpoints 150-320 m apart on the
+     Mission route, par at 15 m/s + 8 s, +30% for beating par by 15%, the
+     usual late/heat penalties. `pickedUp` starts true so the stop-to-load
+     prompts stay quiet.
+  3. **Repair priced by damage** (`garage.js repairCost`): \$100 + \$600 x
+     damage, +\$200 for a respray when hot. It was a flat \$150, which made
+     crashing free.
+  4. **Reputation perks that were listed on the phone but consumed nowhere
+     now do something**: Guardian Armor (>= 300) cuts collision damage by a
+     quarter (`damage.js hit`); Civic Priority (>= 750) drops heat 1.5x faster
+     (`traffic.js` around evasionDecay); Street Intimidation (<= -300) makes
+     civilians ahead of a fast player pull away for 4 s, one in five with a
+     horn (`traffic.update`, the fugitive flee boost reused). Chop Shop and
+     Underworld Network are still labels only -- there is no black market
+     to pay out and no detection timer to double.
+  Gunfire already scattered pedestrians and made drivers floor it
+  (`main.js` fire path), so that reactivity was NOT re-added.
+  Night at kingsway-corner measures 1523 draws / 3.80M tris -- over the
+  1400 line, but that is the lamp/glare night load (Tokyo night was already
+  1481); nothing in this pass adds a draw.
+- **Buildings & daylight (2026-09-08, PLAN-BUILDINGS-LIGHTS-2026-09-08.md)**:
+  the day scene was flat because the upper storeys were PAINT (no relief) and
+  the fill swamped the sun. Four changes, all verified on screen (one boot,
+  three presets -- not a shot per step):
+  1. **Facade relief.** `facades.js` now paints a NORMAL and an ORM map beside
+     every colour/emissive facade and base painting -- window recesses (four
+     tilted reveals + a sill), floor/fascia ledges, glass at roughness
+     0.10-0.16 vs walls ~0.78, metalness 0 (ART_BIBLE binary). Bound through
+     the tiled UV in `city.js:makeTileable` as `normalNode`/`roughnessNode`/
+     `aoNode` (the raw-UV trap that whole function exists for). Cost: two
+     texture samples per facade pixel, ~30 canvas maps; no draws, no tris.
+  2. **Different structure.** `#massing` gained `gable` (a pitched roof prism,
+     `A.geo.gable`, 8 tris, for suburbs + period rows -- the single strongest
+     "houses not offices" cue) and `bays` (full-height projecting oriels on
+     period mid-rises), plus parapet lips round every flat roof and a plant
+     room on office slabs. New per-district form weights. All extra boxes go
+     in the existing facade/roof buckets, so ~+120 tris/building and zero new
+     draws. Pitched roofs skip `dressRoofs` clutter.
+  3. **Daylight.** Hemisphere fill 0.55(grey) -> 0.40(blue), sky environment
+     1.15 -> 0.85, sun 2.8-3.6 -> 3.3-4.2 with colour temperature by
+     elevation. The old grey fill + bright env lit a shaded face to within a
+     stop of a sunlit one -- which is why the exposure and grade A/Bs never
+     found the missing contrast; it was in the fill, not the curve.
+  4. **Containers** (see the fixed bug above) and the mountain/fog colour (also
+     above). Draws at kingsway-corner ~1092-1414 / 1.5-2.6M tris, within
+     budget. Full plan and the research it rests on:
+     `docs/PLAN-BUILDINGS-LIGHTS-2026-09-08.md`.
+- **Waterfront (2026-09-08)**: `world/port.js` (new) builds Harbour Point as a
+  container port along the one bay shore segment inside the district boundary:
+  a quay wall with a real drop, an apron, three procedural gantry cranes, dense
+  aligned container rows from the catalogue batch, sheds, and an extruded-plan
+  container ship berthed 8 m off the wall. Every placement is gated by
+  `district.tarmacDepth(x, z) > 0.5` (negative means inside the carriageway).
+  `world/beach.js` skips that segment and now carries a promenade, a palm row
+  (the props.js palm species), a 120 m pier with a pavilion, lifeguard towers,
+  and a crowd that bunches at the pier. Cost, measured at the photo presets:
+  beach +17 draws, port +6, both scenes ~1.42M tris. Presets `beach`, `port`
+  and `docks` frame them. Three traps, each confirmed by computation before
+  the fix: (1) the sand read near-black because its quads faced -Y and
+  `DoubleSide` lights a back face with the normal FLIPPED -- wind the triangles
+  up and go single-sided; (2) the bay polygon starts on the map edge at z=3060
+  while the district boundary stops at z=3000, so a clip that runs from the
+  segment start returns a zero-length quay -- find the inside RANGE; (3) with a
+  `batchRoot`, `InstanceBatch.emit()` puts placements into city-wide
+  BatchedMeshes and the target group stays near-empty by design, and neither
+  batch path carries per-instance colour -- which is why the containers are
+  grey. Colouring them needs a catalogue feature or an exception to rule 3.
+- **Noon sky (2026-09-08)**: the haze band narrowed from 8 to 3.5 degrees of
+  elevation and the gradient is dithered over its full height (the old wash
+  covered the top half only; the banding below read as moire on the dome); the
+  sky texture is ClampToEdge on V, as an equirect must be, at anisotropy 16.
+  Measured through three r185 AgX (ported verbatim): a bright sky keeps only
+  ~52% of its chroma and retention is a function of BRIGHTNESS, not hue, so a
+  noon sky can only be so blue at exposure 1.05. Exposure 0.88 was tried and
+  reverted (darker, no more contrast). The day grade (`uContrast` 0.34 and a
+  teal/warm split tone) measured +5% contrast and no saturation gain. The
+  tables are in `docs/GTA-VISUALS-RESEARCH.md` item 3.
+- **Afternoon by default, haze by day (2026-09-08)**: the game boots at 15:30
+  (`main.js` GameClock startHour; `?time=12` gets noon back). The clock puts
+  the noon sun at ~79 degrees, so every shadow fell straight down under its
+  caster; at 15:30 it is near 38 degrees and the near cascade puts long shadows
+  under cars, lamps, people and parasols (verified at the beach preset). Day
+  fog density 0.00018 -> 0.0004 (`clock.js`, `renderer.js`): the mountain ring
+  no longer stands crisp and brighter than the sky 3 km out. The port and beach
+  set pieces are flagged for SHADOW_FAR_LAYER like the building shells. The
+  look-lab that measured all of this pins live values with defineProperty,
+  because the clock rewrites fog density and both light intensities every
+  frame; a plain assignment is overwritten before the shot.
+
 ## Known bugs — do not "discover" these again, just fix them when in the area
 
 ### Open
+
+- ~~Per-instance colour only on the batched path; merge path drops it, so
+  containers were grey.~~ **FIXED 2026-09-08 (verified: coloured containers at
+  the `docks` preset).** `InstanceBatch.emit` now splits each material's
+  placements into plain and tinted; the tinted ones bake their per-placement
+  `color` into a vertex-colour attribute and merge under
+  `catalogue.tintedMaterial(mat)` -- a `vertexColors` clone kept per material,
+  so only containers are tinted, every other prop sharing the material is
+  untouched. One extra draw per chunk that has any (the yards, the port).
+- ~~Distant mountains read brighter than the sky.~~ **FIXED 2026-09-08
+  (verified at the `docks` preset: the range now fades INTO the sky).** The
+  cause was the fog colour, and specifically that `clock.js` set it with
+  `Color.setRGB(0.72, 0.79, 0.87)` -- setRGB takes LINEAR, so on screen that
+  was ~#dbe6f0, far paler than the sky behind the range. FOG_DAY is now
+  0x93b7de (the dome's own colour ~10 deg up, textures.js SKY_DAY at v=0.55)
+  set with `setHex` in both renderer.js and clock.js. The rock palette and
+  slope shading from the earlier pass stay.
+
+
+- **Far-cascade shadow: the receivers were the gap, not the cascades
+  (2026-09-08).** Reproducing CSMShadowNode's fitting offline
+  (`scratchpad/csm-fit.mjs`, the r185 math against the `docks` preset): every
+  ground receiver 30-500 m out and a 42 m crane top all fall inside their
+  cascade's ortho box AND inside [near, far] -- so neither the fit nor the far
+  plane (900) was ever the cause, and nor is the SHADOW_FAR_LAYER gate. What
+  the `docks`/`beach` presets actually show is the FAR CITY: they stand
+  1.3-1.5 km from the car, outside the loaded ring, where the only ground is
+  the far-city roads and block slabs -- and those had `receiveShadow` unset,
+  so nothing there could take a shadow. Both now receive (districtWorld
+  #buildFarCity). Cascade 0 (0-52 m) always worked (beach parasols/palms);
+  near+mid shadows verified at `tower-west`/`kingsway-corner` at 15:30 and
+  17:00. A crisp long crane shadow at the docks is still marginal -- the port
+  sits at the map edge where the mid-cascade texel is ~0.16 m and the
+  caster/receiver geometry is sparse -- but it is no longer "lands nothing".
+  For reference, the earlier note read: Cascade cameras read masks [1, 8, 8] as
+  designed and 76 meshes carry the far layer. Unresolved; suspects are the
+  far cascades not fitting in photo mode, receivers (water, apron) not taking
+  far shadow, or CSMShadowNode itself. Next test: a view within 52 m of a
+  crane base at 17:00 (isolates casters/receivers from the cascades), then a
+  kit tower with the sun perpendicular to the view.
 
 - Doors are hinged but single-skinned: from inside the cabin an open door's
   inner face is back-culled (`paint` is FrontSide). An inner skin, or

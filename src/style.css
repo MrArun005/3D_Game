@@ -37,4 +37,16 @@ body.filming #cluster, body.filming #minimap, body.filming #stats { opacity: 0; 
 #hud .keys{margin-top:26px;font-size:12px;letter-spacing:.16em;color:#78859a;line-height:2.1}
 kbd{border:1px solid #39414f;border-radius:4px;padding:3px 8px;font-family:inherit;
   font-size:11px;color:#b3bfd0;background:rgba(255,255,255,.035)}
-#hud .go{margin-top:30px;color:#e6c489;letter-spacing:.20em;font-size:13px}
+#hud .go{margin:28px auto 0;display:inline-block;padding:14px 38px;border:1px solid #e6c489;border-radius:3px;
+  color:#0c0f14;background:#e6c489;letter-spacing:.24em;font-size:13px;font-weight:700;cursor:pointer}
+#hud .go:hover{background:#f0d6a4}
+#hud .eyebrow{font-size:11px;letter-spacing:.42em;color:#39ffb0;margin-bottom:10px}
+#hud .modes{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin:28px auto 0;max-width:1080px}
+#hud .mode{flex:1 1 190px;max-width:220px;text-align:left;padding:14px 16px;border-radius:4px;cursor:pointer;
+  background:rgba(14,18,26,.72);border:1px solid #2a3140;color:#c9d4e3;font:inherit;letter-spacing:.02em;transition:border-color .15s,background .15s}
+#hud .mode b{display:block;font-size:14px;font-weight:600;color:#fff;margin-bottom:6px}
+#hud .mode span{display:block;font-size:12px;line-height:1.5;color:#8b97a8}
+#hud .mode:hover{border-color:#5a6478}
+#hud .mode.active{border-color:#e6c489;background:rgba(74,60,30,.55)}
+#hud .mode:focus-visible{outline:2px solid #39ffb0;outline-offset:2px}
+#hud .keys{margin-top:22px;font-size:11px;letter-spacing:.14em;color:#5f6c80;line-height:2}

@@ -1,5 +1,79 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+
+/**
+ * Poly Haven's modular tenement facade is a PARTS LIBRARY laid out on a display
+ * grid, not a wall (measured 2026-09-10: 3 m wide x 3 m tall modules whose
+ * origin is their right edge on the wall plane z=0, front facing +Z; the
+ * window and door inserts share the wall module's origin; dado and cornice
+ * are 3 m mouldings, crown is the 0.75 m parapet; *_end and pier pieces close
+ * the ends). This assembles a tenement of `bays` x `floors` from it: each bay
+ * keeps one window type up its full height (tenements stack their openings),
+ * every fourth bay is a doorway, the dado moulding runs along the base with
+ * the door cut-outs, cornice and crown finish the top, piers close both ends.
+ * ~140 module clones are merged per material (5 materials -> 5 draws).
+ */
+const KIT_BAY = 3, KIT_STOREY = 3;
+export function assembleTenement(gltf, bays = 17, floors = 4, seed = 7) {
+  const lib = new Map();                                   // family -> first node of that family
+  gltf.scene.traverse((o) => { const fam = (o.name || '').replace(/_\d+$/, ''); if (fam && !lib.has(fam) && o !== gltf.scene) lib.set(fam, o); });
+  const parts = [];                                        // { node, x, y, mirror }
+  const put = (fam, x, y, mirror = false) => { const n = lib.get(fam); if (n) parts.push({ node: n, x, y, mirror }); else console.warn('tenement kit: no part', fam); };
+  let st = seed >>> 0; const rnd = () => { st ^= st << 13; st >>>= 0; st ^= st >> 17; st ^= st << 5; st >>>= 0; return st / 4294967296; };
+  const WINDOWS = ['centered_large', 'centered_small', 'offset_small', 'centered_double'];
+  const DOORS = ['door_window_small', 'door_centered_small', 'door_offset_small', 'door_centered_large'];
+  for (let b = 0; b < bays; b++) {
+    const x = -KIT_BAY * b;                                // this bay's right edge
+    const col = WINDOWS[Math.floor(rnd() * WINDOWS.length)];
+    const door = b % 4 === 2 ? DOORS[Math.floor(rnd() * DOORS.length)] : null;
+    for (let f = 0; f < floors; f++) {
+      const y = KIT_STOREY * f;
+      if (f === 0 && door) { put(`wall_${door}`, x, y); put(door, x, y); }
+      else { put(`wall_window_${col}`, x, y); put(`window_${col}`, x, y); }
+    }
+    put(door ? `dado_${door}` : 'dado_standard_standard', x, 0);
+    put('cornice_standard_standard', x, KIT_STOREY * floors);
+    put('crown_standard_standard', x, KIT_STOREY * floors + 0.2);
+  }
+  const left = -KIT_BAY * bays;
+  for (const [x, mirror] of [[0, false], [left, true]]) {
+    for (let f = 0; f < floors; f++) put('wall_pier_standard', x, KIT_STOREY * f, mirror);
+    put('dado_end', x, 0, mirror); put('cornice_end', x, KIT_STOREY * floors, mirror); put('crown_end', x, KIT_STOREY * floors + 0.2, mirror);
+  }
+  // bake: every part's meshes into one geometry per material
+  const byMat = new Map();
+  const m4 = new THREE.Matrix4(), place = new THREE.Matrix4();
+  for (const p of parts) {
+    p.node.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(p.node.matrixWorld).invert();   // strip the display-grid placement
+    place.compose(new THREE.Vector3(p.x, p.y, 0), new THREE.Quaternion(), new THREE.Vector3(p.mirror ? -1 : 1, 1, 1));
+    p.node.traverse((o) => {
+      if (!o.isMesh) return;
+      const rel = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);   // never alias the target of multiplyMatrices
+      m4.multiplyMatrices(place, rel);
+      let g = o.geometry.clone().applyMatrix4(m4);
+      if (p.mirror) { const idx = g.index; if (idx) { for (let i = 0; i < idx.count; i += 3) { const t = idx.getX(i); idx.setX(i, idx.getX(i + 2)); idx.setX(i + 2, t); } } }   // a mirrored part flips its winding
+      const keep = new THREE.BufferGeometry();
+      for (const k of ['position', 'normal', 'uv']) if (g.attributes[k]) keep.setAttribute(k, g.attributes[k]);
+      if (g.index) keep.setIndex(g.index);
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      const mat = mats[0];
+      (byMat.get(mat) ?? byMat.set(mat, []).get(mat)).push(keep.index ? keep.toNonIndexed() : keep);
+    });
+  }
+  const group = new THREE.Group();
+  for (const [mat, geos] of byMat) {
+    const merged = mergeGeometries(geos, false);
+    if (!merged) continue;
+    merged.computeBoundingBox();
+    const mesh = new THREE.Mesh(merged, mat);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+  group.userData.tenement = { bays, floors, width: KIT_BAY * bays, height: KIT_STOREY * floors + 0.95, draws: group.children.length, parts: parts.length };
+  return group;
+}
 
 /**
  * Landmarks: one-off set pieces the owner brought in (Sketchfab), placed on
@@ -12,8 +86,9 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 const BASE = '/models/vendor/sketchfab/props/';
 const LANDMARKS = [
   { file: 'gun-shop',    district: 'OLD QUARTER',  minW: 8,  name: "Schneider's Guns" },
-  { file: 'supermarket', district: 'THE FLATS',    minW: 30, name: 'Flats Supermarket' },
-  { file: 'street-set',  district: 'VELLERY ROW',  minW: 12, name: 'Vellery corner' },
+  // heavy: 133k and 94k triangles (budget for a large prop is 6k) -- they do not cast into the shadow cascades
+  { file: 'supermarket', district: 'THE FLATS',    minW: 30, name: 'Flats Supermarket', heavy: true },
+  { file: 'street-set',  district: 'VELLERY ROW',  minW: 12, name: 'Vellery corner', heavy: true },
   {
     file: '/models/vendor/kenney/commercial/building-skyscraper-d.glb',
     district: 'KINGSWAY',
@@ -34,6 +109,22 @@ const LANDMARKS = [
     minW: 20,
     targetW: 20,
     name: 'Harbour Point Turbine & Signal',
+  },
+  /* A FRONTAGE, not a prop (2026-09-10): Poly Haven's CC0 modular tenement
+     facade (James Ray Cock), 51.5 x 17 m assembled, detail on its +Z face,
+     doors at y = -1 over a 1 m foundation. It stands at the lot edge facing
+     the nearest road with a plain massing block behind it, so from the
+     street it is a real Old Quarter block and from the alley a building,
+     not a stage flat. 10.6 MB and ~39k tris -- one of these in the city,
+     lazily loaded like every landmark, keeps the initial download under
+     the 25 MB budget; the factory set (13.8 MB) waits for KTX2. */
+  {
+    file: '/models/vendor/polyhaven/modular_urban_apartments_facade.glb',
+    district: 'OLD QUARTER',
+    minW: 44,
+    maxScale: 1.0,
+    frontage: { assemble: { bays: 17, floors: 4 }, groundY: 0, depth: 14, colour: 0x6f5548 },
+    name: 'Old Quarter tenements',
   },
 ];
 
@@ -56,18 +147,52 @@ export class Landmarks {
       used.add(lot);
       const path = lm.file.startsWith('/') ? lm.file : BASE + lm.file + '.glb';
       let gltf; try { gltf = await new Promise((res, rej) => loader.load(path, res, undefined, rej)); } catch (e) { console.warn('landmark', lm.file, e.message); return; }
-      const obj = gltf.scene;
+      let obj = gltf.scene;
+      if (lm.frontage?.assemble) {
+        obj = assembleTenement(gltf, lm.frontage.assemble.bays, lm.frontage.assemble.floors);
+        console.info(`tenement assembled: ${JSON.stringify(obj.userData.tenement)}`);
+      }
       obj.updateMatrixWorld(true);
       const bb = new THREE.Box3().setFromObject(obj), size = bb.getSize(new THREE.Vector3()), c = bb.getCenter(new THREE.Vector3());
       const maxK = lm.maxScale ?? 1.6;
       const k = lm.targetW ? (lm.targetW / size.x) : Math.min((lot.w - 3) / size.x, (lot.h - 3) / size.z, maxK);        // fit the lot or scale to target dimension
       const wrap = new THREE.Group();
-      obj.position.set(-c.x, -bb.min.y, -c.z);
+      obj.position.set(-c.x, -(lm.frontage?.groundY ?? bb.min.y), -c.z);
       wrap.add(obj);
       wrap.scale.setScalar(k);
       wrap.position.set(lot.x, 0.15, lot.y);
       wrap.rotation.y = lot.angle;
-      wrap.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      if (lm.frontage) {
+        /* Face the road. Four candidate yaws; the facade's +Z normal probes
+           8 m past the lot edge and the most-on-tarmac one wins
+           (district.tarmacDepth is negative on the carriageway). The facade
+           has to fit along the lot axis it stands on, so a 44 m side is
+           never offered a 51 m wall. Then slide it to that edge. */
+        const D = this.district, fw = size.x * k, fd = size.z * k;
+        let best = null;
+        for (let q = 0; q < 4; q++) {
+          const yaw = lot.angle + q * Math.PI / 2;
+          const along = (q % 2 === 0) ? lot.w : lot.h;     // lot axis the wall runs along
+          const out = (q % 2 === 0) ? lot.h : lot.w;       // lot axis the normal points along
+          if (along < fw + 1) continue;
+          const nx = Math.sin(yaw), nz = Math.cos(yaw);
+          const depth = D.tarmacDepth ? D.tarmacDepth(lot.x + nx * (out / 2 + 8), lot.y + nz * (out / 2 + 8)) : 0;
+          if (!best || depth < best.depth) best = { yaw, nx, nz, out, depth };
+        }
+        if (best) {
+          wrap.rotation.y = best.yaw;
+          const push = best.out / 2 - fd / 2 - 1.0;
+          wrap.position.x += best.nx * push; wrap.position.z += best.nz * push;
+          // the block behind the wall: the facade's own height, the frontage depth, a plain plaster body and a flat roof
+          const H = (bb.max.y - (lm.frontage.groundY ?? bb.min.y));
+          const body = new THREE.Mesh(new THREE.BoxGeometry(size.x - 0.3, H - 0.6, lm.frontage.depth), new THREE.MeshStandardMaterial({ color: lm.frontage.colour, roughness: 0.92, metalness: 0 }));
+          body.position.set(0, (H - 0.6) / 2, -(size.z / 2 + lm.frontage.depth / 2) + 0.15);
+          body.castShadow = true; body.receiveShadow = true;
+          obj.parent.add(body);
+          console.info(`frontage ${lm.name}: yaw ${best.yaw.toFixed(2)}, road depth ${best.depth.toFixed(1)} m`);
+        }
+      }
+      wrap.traverse((o) => { if (o.isMesh) { o.castShadow = !lm.heavy; o.receiveShadow = true; } });
       this.scene.add(wrap);
       this.placed.push({ ...lm, x: lot.x, z: lot.y, scale: k });
       console.info(`landmark ${lm.name} at ${lot.x | 0},${lot.y | 0} (${lm.district}) x${k.toFixed(2)}`);

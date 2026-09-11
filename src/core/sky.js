@@ -10,6 +10,19 @@ import { seed, rp, rr } from './rng.js';
  */
 export function createSky(scene, renderer, day = false) {
   const skyTex = texSky(day, day ? DAY_SUN : null);
+  /* toTex() hands back RepeatWrapping on BOTH axes, which is right for a
+     tiling surface and wrong for an equirectangular sky: wrapping V means the
+     zenith row and the nadir row are neighbours, so every mip level blends
+     deep blue into ground grey and the poles get a seam. Horizontal wrap is
+     still wanted -- the sky is continuous around the compass. Anisotropy goes
+     up too: this is one texture seen at the most grazing angles in the game,
+     which is the other half of the reported moire. */
+  skyTex.wrapS = THREE.RepeatWrapping;
+  skyTex.wrapT = THREE.ClampToEdgeWrapping;
+  skyTex.anisotropy = 16;                     // drivers clamp to their own max
+  skyTex.generateMipmaps = true;
+  skyTex.minFilter = THREE.LinearMipmapLinearFilter;
+  skyTex.needsUpdate = true;
 
   const dome = new THREE.Mesh(
     new THREE.SphereGeometry(9000, 64, 32),   // must contain the mountain ring; 24 segments banded the sun glare
@@ -36,7 +49,7 @@ export function createSky(scene, renderer, day = false) {
   const pmrem = new THREE.PMREMGenerator(renderer);
   pmrem.compileEquirectangularShader();
   scene.environment = pmrem.fromScene(envScene, 0, 1, 200).texture;
-  scene.environmentIntensity = day ? 1.15 : 0.85;
+  scene.environmentIntensity = day ? 0.85 : 0.85;   // clock.js owns this per hour; 0.85 by day since 2026-09-08 (was 1.15: half the flat fill)
   pmrem.dispose();
 
   // stars, only well clear of the afterglow

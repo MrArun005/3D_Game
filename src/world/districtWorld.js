@@ -76,17 +76,22 @@ const ARCHETYPE = { tower: TOWER, mid: MID, row: LOFT, yard: DECK, lot: PODIUM }
    long sheds; THE FLATS: stepped residential terraces; NORTHLINE and
    GREENFELL: low suburban rows. Same seed, same city -- these only weight
    the hashed choice. */
+/* 2026-09-08: two new forms. 'gable' -- a pitched roof on a low building
+   (the suburbs and the period rows had flat slabs everywhere, the single
+   loudest "offices, not houses" tell); 'bays' -- full-height projecting bays
+   on a period mid-rise, the relief a Victorian terrace is made of. Both fall
+   through to the box forms when the footprint does not suit them. */
 const DISTRICT_FORM = {
   KINGSWAY:        { forms: { podium: 0.45, setback: 0.35, slab: 0.2 }, style: 'modern' },
-  NORTHLINE:       { forms: { slab: 0.5, wing: 0.3, terrace: 0.2 }, style: 'period' },
+  NORTHLINE:       { forms: { gable: 0.45, slab: 0.25, wing: 0.2, terrace: 0.1 }, style: 'period' },
   STEELGATE:       { forms: { shed: 0.55, slab: 0.3, wing: 0.15 }, style: 'industrial' },
   'HARBOUR POINT': { forms: { shed: 0.4, slab: 0.35, wing: 0.25 }, style: 'industrial' },
-  'OLD QUARTER':   { forms: { wing: 0.45, slab: 0.35, terrace: 0.2 }, style: 'period' },
-  'VELLERY ROW':   { forms: { wing: 0.4, slab: 0.4, setback: 0.2 }, style: 'period' },
-  ASHMOOR:         { forms: { slab: 0.45, wing: 0.35, shed: 0.2 }, style: 'period' },
-  'MARROW HILL':   { forms: { terrace: 0.4, slab: 0.4, wing: 0.2 }, style: 'period' },
-  'THE FLATS':     { forms: { terrace: 0.5, slab: 0.3, setback: 0.2 }, style: 'modern' },
-  'GREENFELL PARK': { forms: { slab: 0.6, wing: 0.4 }, style: 'period' },
+  'OLD QUARTER':   { forms: { wing: 0.3, bays: 0.3, gable: 0.2, slab: 0.2 }, style: 'period' },
+  'VELLERY ROW':   { forms: { bays: 0.35, wing: 0.3, slab: 0.2, setback: 0.15 }, style: 'period' },
+  ASHMOOR:         { forms: { slab: 0.3, wing: 0.3, gable: 0.2, bays: 0.2 }, style: 'period' },
+  'MARROW HILL':   { forms: { gable: 0.35, terrace: 0.3, slab: 0.2, wing: 0.15 }, style: 'period' },
+  'THE FLATS':     { forms: { terrace: 0.4, bays: 0.3, slab: 0.15, setback: 0.15 }, style: 'modern' },
+  'GREENFELL PARK': { forms: { gable: 0.55, slab: 0.25, wing: 0.2 }, style: 'period' },
   'LITTLE TOKYO':   { forms: { tokyo_walkup: 0.55, setback: 0.25, slab: 0.20 }, style: 'tokyo' },
 };
 const pickForm = (forms, r) => { let acc = 0; for (const [k, w] of Object.entries(forms)) { acc += w; if (r < acc) return k; } return 'slab'; };
@@ -129,10 +134,10 @@ export class DistrictWorld {
     this.propGroups = new Map();
     this.headsByChunk = new Map();     // chunk key -> [{x,y,z}] lamp heads (night light pool)
     this.facadeGroups = new Map();
-    this.parkedLod = new Map();
-    this.propRadius = 2;
+    this.isLite = !!opts.lite;
+    this.propRadius = opts.lite ? 1 : (opts.propRadius ?? 2);
     this.nodeById = new Map(district.graph.nodes.map((n) => [n.id, n]));
-    this.radius = 2;   // 5x5 x 256m ~= 1.2km of full-detail street
+    this.radius = opts.lite ? 1 : (opts.radius ?? 2);   // 3x3 in LITE (9 chunks = 768m) or 5x5 in FULL (25 chunks = 1.28km)
 
     this.#buildFarCity(opts.day);
 
@@ -202,6 +207,11 @@ export class DistrictWorld {
     const roads = new THREE.Mesh(rg, this.assets.mat.tarmac);
     roads.position.y = -0.03;               // always loses to the real tarmac
     roads.frustumCulled = false;
+    /* The far city RECEIVES the sun's shadow (2026-09-08). Photo presets that
+       stand outside the loaded ring (docks, beach, aerial) see only these
+       meshes as ground, and until now nothing there could take a shadow --
+       which is what the "no far-cascade shadow lands" hunt was looking at. */
+    roads.receiveShadow = true;
     far.add(roads);
 
     const slabs = [], solids = [], uvScale = [];
@@ -235,6 +245,7 @@ export class DistrictWorld {
     slabs.forEach((m, i) => slabMesh.setMatrixAt(i, m));
     slabMesh.instanceMatrix.needsUpdate = true;
     slabMesh.frustumCulled = false;
+    slabMesh.receiveShadow = true;
     far.add(slabMesh);
 
     /* Windows on the skyline.
@@ -577,11 +588,52 @@ export class DistrictWorld {
       (glassTop ? out.glassRoofs : out.roofs).push(
         mat4(wx, y, wz, angle, w * k + pad, hh, d * k + pad));
 
-    let topK = 1;
+    let topK = 1, pitched = false;
+    /* A parapet lip round a flat roof: 0.6 m up, 0.3 m thick, four boxes in
+       the roof bucket. From the street it IS the roofline; without it the top
+       of every box was a knife edge against the sky. */
+    const lip = (y, sw, sd) => {
+      const t = 0.3, hh = 0.6;
+      for (const s of [-1, 1]) {
+        let [px, pz] = at(0, s * (sd / 2 - t / 2)); out.roofs.push(mat4(px, y, pz, angle, sw, hh, t));
+        [px, pz] = at(s * (sw / 2 - t / 2), 0);     out.roofs.push(mat4(px, y, pz, angle, t, hh, sd));
+      }
+    };
+    const lipY = KERB_H + h + 0.7 - 0.05;          // on top of the final cap (cap() stands 0.7 above h)
     /* District forms first; the old tower/mid setbacks remain as 'setback'
        and the plain box as 'slab'. Every form is still a few instanced boxes
        in the same facade bucket, so the draw count does not move. */
-    if (form === 'wing' && w > 15 && d > 11 && shaft > 6) {
+    if (form === 'gable' && out.gables && shaft <= 13 && w <= 24 && d <= 24) {
+      /* A pitched roof: the shell stops at the eaves and a prism (A.geo.gable,
+         ridge along its local X) sits on it with a 0.45 m overhang, ridge
+         along the longer side, pitch ~35 degrees, capped at 4.5 m tall. The
+         ridge overshoots the planning height by a storey; h stays the
+         collision height, and dressRoofs leaves the slope alone (pitched). */
+      const rh = Math.min(4.5, Math.min(w, d) * 0.36);
+      const wallH = Math.max(3.0, shaft - rh * 0.5);
+      stage(y0, wallH, 1);
+      const along = w >= d;
+      out.gables.push(mat4(wx, y0 + wallH - SINK, wz, angle + (along ? 0 : Math.PI / 2), (along ? w : d) + 0.9, rh, (along ? d : w) + 0.9));
+      pitched = true;
+    } else if (form === 'bays' && w > 9 && shaft > 7) {
+      /* Projecting bays: two or three full-height oriels on both long faces,
+         each its own capped box in the SAME facade bucket, so the window
+         rhythm continues round the bay. Four to six boxes of relief per
+         building -- the cheapest thing a flat period wall can carry. */
+      stage(y0, shaft, 1);
+      cap(KERB_H + h - SINK, 0.7 + SINK, 1, 0.1);
+      const n = w > 18 ? 3 : 2, pitch = w / n, bw = Math.min(3.0, pitch * 0.45), bd = 0.75, bh = shaft - 1.2;
+      for (let i = 0; i < n; i++) {
+        const ox = -w / 2 + pitch * (i + 0.5);
+        for (const side of [-1, 1]) {
+          const [px, pz] = at(ox, side * (d / 2 + bd / 2 - 0.05));
+          fb.m.push(mat4(px, y0, pz, angle, bw, bh, bd));
+          fb.uv.push(bw / tileW, bh / tileH);
+          out.roofs.push(mat4(px, y0 + bh - SINK, pz, angle, bw + 0.3, 0.4 + SINK, bd + 0.3));
+        }
+      }
+      lip(lipY, w + 0.1, d + 0.1);
+    } else if (form === 'wing' && w > 15 && d > 11 && shaft > 6) {
       // an L: the main block along the frontage, a lower wing back on one side
       const side = rand() < 0.5 ? -1 : 1, wingW = w * (0.34 + rand() * 0.12), wingH = shaft * (0.55 + rand() * 0.25);
       stageAt(y0, shaft, w, d * 0.58, 0, -d * 0.21);
@@ -644,10 +696,17 @@ export class DistrictWorld {
       stage(y0 + split - SINK, shaft - split + SINK, k);
       cap(y0 + split - SINK, 0.5 + SINK, 1, 0.12);
       cap(KERB_H + h - SINK, 0.7 + SINK, k, 0.12);
+      lip(lipY, w * k + 0.12, d * k + 0.12);
+      // a plant room, the way every office slab has one
+      if (rand() < 0.6) {
+        const [px, pz] = at((rand() - 0.5) * w * k * 0.3, (rand() - 0.5) * d * k * 0.3);
+        out.roofs.push(mat4(px, lipY - 0.05, pz, angle, Math.max(3, w * k * 0.35), 3.0, Math.max(3, d * k * 0.35)));
+      }
       topK = k;
     } else {
       stage(y0, shaft, 1);
       cap(KERB_H + h - SINK, 0.7 + SINK, 1, 0.1);
+      lip(lipY, w + 0.1, d + 0.1);
     }
 
     if (arch === TOWER) {
@@ -661,7 +720,7 @@ export class DistrictWorld {
         out.masts.push(mat4(wx, KERB_H + h + ch1 + spireH / 2, wz, 0,
           0.22, spireH, 0.22));
       }
-    } else if (w > 12 && rand() < 0.4) {
+    } else if (!pitched && w > 12 && rand() < 0.4) {
       // Roof clutter on commercial mid-rises
       for (let i = 0, n = 1 + Math.floor(rand() * 2); i < n; i++) {
         const r = rand();
@@ -670,6 +729,7 @@ export class DistrictWorld {
                wz + (rand() - 0.5) * d * 0.5, rand() * 6.28, 1, 1, 1));
       }
     }
+    return pitched;
   }
 
   /**
@@ -1235,7 +1295,7 @@ export class DistrictWorld {
     const tokyoParts = [], tokyoBoards = [], tokyoProps = [], tokyoHeads = [];   // Little Tokyo: our own buildings (world/tokyo.js), one mesh per chunk
     const slabs = { block: [], park: [], lot: [], vacant: [] };
     const facades = {}, bases = {};
-    const roofs = [], glassRoofs = [], crowns = [], masts = [];
+    const roofs = [], glassRoofs = [], crowns = [], masts = [], gables = [];
     const plant = { ac: [], tank: [], hut: [] };
     const slabGeo = A.geo.box;
 
@@ -1328,9 +1388,9 @@ export class DistrictWorld {
           boxes.push({ x: wx, z: wz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: m.h * sy, district: bl.district, kit: true });
           continue;
         }
-        this.#massing(arch, wx, wz, bl.angle, g.w, g.d, h,
-                      { bases, facades, roofs, glassRoofs, crowns, masts, plant }, bl.district, chunkDist2);
-        boxes.push({ x: wx, z: wz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: h, district: bl.district });
+        const pitched = this.#massing(arch, wx, wz, bl.angle, g.w, g.d, h,
+                      { bases, facades, roofs, glassRoofs, crowns, masts, plant, gables }, bl.district, chunkDist2);
+        boxes.push({ x: wx, z: wz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: h, district: bl.district, pitched });
       }
     }
 
@@ -1732,6 +1792,7 @@ export class DistrictWorld {
     yield;
     for (const key of Object.keys(bases)) tiled(A.base.materials[+key], bases[key]);
     inst(slabGeo, A.mat.roof, roofs);
+    inst(A.geo.gable, A.mat.roofPitch, gables, true);   // pitched roofs cast: their shadow is half of what says "roof"
     inst(slabGeo, A.mat.roofGlass, glassRoofs);
     inst(slabGeo, A.mat.crown, crowns);
     inst(slabGeo, A.mat.pole, masts);

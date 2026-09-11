@@ -11,7 +11,9 @@ const LANDMARKS = {
   harbour:  { x: 1850, z: 2150, yaw: Math.PI / 2, name: 'Harbour Point' },
   bridge:   { x: 2600, z: 800, yaw: -Math.PI / 4, name: 'Halstead Suspension Bridge' },
   airport:  { x: 1200, z: 1100, yaw: 0, name: 'Airport District' },
-  north:    { x: 2350, z: 450, yaw: Math.PI, name: 'North Bay Overlook' }
+  north:    { x: 2350, z: 450, yaw: Math.PI, name: 'North Bay Overlook' },
+  marrow:   { x: 499, z: 1391, yaw: 0, name: 'Marrow Hill' },              // the suburb: gable roofs (photo preset marrow-hill)
+  steelgate: { x: 3662, z: 1221, yaw: 0, name: 'Steelgate Chop Shop' }
 };
 
 export class CommandEngine {
@@ -43,6 +45,9 @@ export class CommandEngine {
         chat.post('SYSTEM', '· /time <0-23|day|night|dusk> — Set city clock');
         chat.post('SYSTEM', '· /weather <clear|rain> — Set road precipitation');
         chat.post('SYSTEM', '· /car <zr1|patrol|c6r> — Spawn vehicle');
+        chat.post('SYSTEM', '· /grade <preset|list|cycle> — Cinematic color grade');
+        chat.post('SYSTEM', '· /quality <lite|full|status> — Switch quality profile');
+        chat.post('SYSTEM', '· /perf — Live frame time & GPU performance stats');
         chat.post('SYSTEM', '· /cash <amount> — (Gated behind ?debug)');
         break;
       }
@@ -171,6 +176,74 @@ export class CommandEngine {
         } else {
           chat.post('SYSTEM', `Available cars: zr1, patrol, c6r`);
         }
+        break;
+      }
+
+      case 'grade':
+      case 'lut': {
+        const { grade } = this.ctx;
+        if (!grade) {
+          chat.post('SYSTEM', 'Color grade system is unavailable.');
+          break;
+        }
+        const sub = (args[0] || '').toUpperCase();
+        if (!sub || sub === 'LIST') {
+          const list = Object.keys(grade.presets || {}).join(', ');
+          chat.post('SYSTEM', `Current grade: ${grade.currentPreset}. Available: ${list}`);
+          chat.post('SYSTEM', 'Usage: /grade <preset_name> or /grade cycle');
+        } else if (sub === 'CYCLE' || sub === 'NEXT') {
+          const next = grade.cyclePreset(1);
+          chat.post('SYSTEM', `Color grade swapped to: ${grade.presetDetails?.name || next}`);
+        } else if (grade.presets && grade.presets[sub]) {
+          grade.setPreset(sub);
+          chat.post('SYSTEM', `Color grade set to: ${grade.presetDetails?.name || sub}`);
+        } else if (sub === 'DEFAULT' || sub === 'RESET') {
+          grade.setPreset('DEFAULT');
+          chat.post('SYSTEM', 'Color grade restored to Dynamic Timecycle.');
+        } else {
+          chat.post('SYSTEM', `Unknown grade preset '${args[0]}'. Use '/grade list'.`);
+        }
+        break;
+      }
+
+      case 'quality': {
+        const mode = (args[0] || '').toLowerCase();
+        if (mode === 'lite' || mode === 'full') {
+          chat.post('SYSTEM', `Setting quality to ${mode.toUpperCase()}... (reloading engine)`);
+          this.ctx.setQuality?.(mode);
+        } else if (mode === 'auto' || mode === 'default' || mode === 'reset') {
+          chat.post('SYSTEM', 'Resetting quality to auto hardware detection... (reloading engine)');
+          this.ctx.setQuality?.('auto');
+        } else {
+          const current = this.ctx.isLite ? 'LITE' : 'FULL';
+          const gpu = this.ctx.gpuInfo?.gpuDesc || 'unknown';
+          chat.post('SYSTEM', `Current quality: ${current} (GPU: ${gpu})`);
+          chat.post('SYSTEM', 'Usage: /quality lite | /quality full | /quality auto');
+        }
+        break;
+      }
+
+      case 'perf':
+      case 'fps': {
+        const stats = this.ctx.stats;
+        const renderer = this.ctx.renderer;
+        if (!stats) {
+          chat.post('SYSTEM', 'Performance monitor unavailable.');
+          break;
+        }
+        const sorted = [...stats.samples].sort((a, b) => a.ms - b.ms);
+        const n = sorted.length;
+        const median = n ? (sorted[n >> 1]?.ms || 0).toFixed(1) : '-';
+        const p95 = n ? (sorted[Math.min(n - 1, Math.floor(n * 0.95))]?.ms || 0).toFixed(1) : '-';
+        const worst = n ? (sorted[n - 1]?.ms || 0).toFixed(1) : '-';
+        const draws = (stats.snapshot.draws || 0) + (stats.snapshot.bundledDraws || 0);
+        const mTris = (((stats.snapshot.tris || 0) + (stats.snapshot.bundledTris || 0)) / 1e6).toFixed(2);
+        const liveChunks = this.ctx.world?.chunks?.size ?? '-';
+        const pxRatio = renderer?.getPixelRatio ? renderer.getPixelRatio().toFixed(2) : '-';
+        const quality = this.ctx.isLite ? 'LITE' : 'FULL';
+
+        chat.post('SYSTEM', `[PERF] Mode: ${quality} | Frame Med: ${median}ms | 95th: ${p95}ms | Worst: ${worst}ms`);
+        chat.post('SYSTEM', `[PERF] Draws: ${draws} | Tris: ${mTris}M | Chunks: ${liveChunks} | DPR: ${pxRatio}`);
         break;
       }
 

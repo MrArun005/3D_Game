@@ -73,7 +73,11 @@ export const KENNEY_CARS = {
 };
 /* Spawn weights: the pooled fleet picks a style per car at start, so common
    bodies are listed several times and the heavy textured ones once. */
-const STYLE_WEIGHT = { sedan: 4, hatch: 3, suv: 3, van: 2, wagon: 2, pickup: 2, taxi: 3, hatch2: 2, sports: 1, sports2: 1, chev1: 1, chev2: 1, chev3: 1 };
+/* The Sketchfab cars are OUT of ambient traffic (2026-09-11): 28k-50k
+   triangles each against a 4k traffic budget, and a shadow caster apiece.
+   They stay in the garage as cars you buy; the roads run on the Quaternius
+   and Kenney fleet. */
+const STYLE_WEIGHT = { sedan: 4, hatch: 3, suv: 3, van: 2, wagon: 2, pickup: 2, taxi: 3, hatch2: 2, sports: 1, sports2: 1, chev1: 0, chev2: 0, chev3: 0 };   // explicit 0: the picker defaults a missing key to 1
 const NEUTRAL = new Set(['black', 'grey', 'gray', 'windows', 'window', 'glass', 'headlights', 'taillights', 'chrome', 'silver', 'lights', 'darkgrey', 'darkgray', 'white', 'tyre', 'tire', 'rubber']);
 // styles with no spec of their own borrow the sedan's dimensions
 const SPEC_OF = { taxi: 'sedan', police: 'sedan', sports: 'sedan', sports2: 'sedan', hatch2: 'hatch', chev1: 'sedan', chev2: 'sedan', chev3: 'sedan' };

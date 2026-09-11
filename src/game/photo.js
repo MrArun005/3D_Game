@@ -30,9 +30,10 @@ export const PRESETS = {
 const _fwd = new THREE.Vector3(), _right = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
 
 export class Photo {
-  constructor(camera, stats) {
+  constructor(camera, stats, grade = null) {
     this.camera = camera;
     this.stats = stats;
+    this.grade = grade;
     this.on = false;
     this.preset = null;
     this.yaw = 0; this.pitch = 0;
@@ -45,6 +46,11 @@ export class Photo {
       this.keys[e.code] = true;
       if (e.code === 'BracketRight') this.cycle(1);
       if (e.code === 'BracketLeft') this.cycle(-1);
+      if (e.code === 'KeyG' && this.grade) {
+        const next = this.grade.cyclePreset(1);
+        const name = this.grade.presetDetails?.name || next;
+        this.#say(`grade filter: ${name}`);
+      }
       if (e.code === 'Enter') this.shot();
     });
     addEventListener('keyup', (e) => { this.keys[e.code] = false; });
@@ -61,7 +67,7 @@ export class Photo {
     this.on = true;
     this.#fromCamera();
     document.body.classList.add('photo');
-    this.#say('photo mode  ·  WASD QZ move  ·  [ ] presets  ·  Enter shot  ·  P exit');
+    this.#say('photo mode  ·  WASD QZ move  ·  [ ] presets  ·  G grade filter  ·  Enter shot  ·  P exit');
   }
 
   exit() {

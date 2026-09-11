@@ -128,7 +128,11 @@ export class Crowd {
   update(car, dt, onHit) {
     this.clock += dt;
     this.tokyo = this.district.districtAt?.(car.x, car.z) === 'LITTLE TOKYO';   // where you are steers where the crowd spawns (see #spawn)
-    for (let i = 0; i < COUNT; i++) {
+    /* this.people.length, not COUNT: the fleet is built with the constructor's
+       count (160 under LITE) and the module constant is 320, so LITE crashed
+       every frame on people[160].live -- found 2026-09-11 the moment LITE
+       became the default on integrated GPUs. */
+    for (let i = 0; i < this.people.length; i++) {
       const p = this.people[i];
       if (!p.live) { this.#spawn(p, car); if (!p.live) { this.fleet.hide(i); continue; } }
 

@@ -91,6 +91,7 @@ export class Traffic {
        just traffic with a different opinion about where to go and whether red
        means stop -- all the path, gate and leader machinery is already here. */
     this.wanted = 0;
+    this.holdFire = false;            // WASTED clip playing: officers keep their positions but do not fire (main.js onDeath)
     this.cool = 0;                    // seconds of clean driving
     this.bustT = 0;                   // how long they have had you surrounded
     this.police = [];
@@ -105,7 +106,9 @@ export class Traffic {
                 : 0;                                  // walls and parked cars: nobody cares
     if (!worth) return;
     const px = this.player?.x ?? 0, pz = this.player?.z ?? 0;
-    if (!crimeWitnessed(tag, px, pz, this.crowd?.people ?? [], this.police, this.wanted)) return;   // nobody saw it (policeAi.crimeWitnessed)
+    // Underworld Network (reputation <= -750): witnesses and cruisers must be half as close to report you
+    const reach = (typeof window !== 'undefined' && (window._reputation?.score ?? 0) <= -750) ? 0.5 : 1;
+    if (!crimeWitnessed(tag, px, pz, this.crowd?.people ?? [], this.police, this.wanted, reach)) return;   // nobody saw it (policeAi.crimeWitnessed)
     // one pedestrian is about two stars, not five: `force` is m/s, so the
     // multiplier has to be gentle or a single hit at speed maxes the meter
     const gain = worth * Math.min(1.4, 0.5 + force * 0.05);
@@ -243,6 +246,7 @@ export class Traffic {
   /** Send everyone home: used when the player is arrested. */
   standDown() {
     this.wanted = 0;
+    this.holdFire = false;
     this.cool = 0;
     this.bustT = 0;
     for (const c of this.police) {
@@ -874,6 +878,20 @@ export class Traffic {
     this.time = time !== undefined ? time : this.time + dt;
     const t = this.time;
     this.player = player;
+    /* Street Intimidation (reputation <= -300): civilians ahead of you yield.
+       Coming up fast behind a car, it puts its foot down and pulls on for a
+       few seconds (the same flee boost the fugitive chases use), one in five
+       with a horn. Outlaws get an open road; everyone else sits in traffic. */
+    if (typeof window !== 'undefined' && (window._reputation?.score ?? 0) <= -300 && Math.abs(player.fwdSpeed ?? 0) > 14) {
+      const fx = Math.cos(player.yaw ?? 0), fz = -Math.sin(player.yaw ?? 0);
+      for (const v of this.cars) {
+        if (!v.live || v.fleeT > 0) continue;
+        const dx = v.x - player.x, dz = v.z - player.z, d = Math.hypot(dx, dz);
+        if (d > 30 || d < 3 || dx * fx + dz * fz < d * 0.8) continue;   // ahead of you, in your lane's cone
+        v.baseCruise ??= v.cruise; v.cruise = Math.max(v.cruise, v.baseCruise * 1.45); v.fleeT = 4;
+        if (this.rand() < 0.2) this.honk?.(v.x, v.z);
+      }
+    }
     this.#updateWanted(player, dt, t);
     /* Two ways to lose them (policeAi.evasionDecay): get 240 m clear of
        every cruiser, or break line of sight and stay unseen for ten seconds
@@ -896,7 +914,9 @@ export class Traffic {
     }
     if (this.wanted > 0) {
       this.cool = ((this._nearest ?? Infinity) > 240 && !this.eyesOn) ? this.cool + dt : 0;
-      const rate = evasionDecay({ hot: this.hot, eyesOn: this.eyesOn, coldFor: this.coldFor, nearest: this._nearest ?? Infinity, wanted: this.wanted, cool: this.cool });
+      let rate = evasionDecay({ hot: this.hot, eyesOn: this.eyesOn, coldFor: this.coldFor, nearest: this._nearest ?? Infinity, wanted: this.wanted, cool: this.cool });
+      // Civic Priority (reputation >= 750): heat drops half again as fast. Listed as a perk since the phone shipped; consumed here since 2026-09-08.
+      if (rate > 0 && typeof window !== 'undefined' && (window._reputation?.score ?? 0) >= 750) rate *= 1.5;
       if (rate > 0) {
         const before = this.wanted;
         this.wanted = Math.max(0, this.wanted - dt * rate);
@@ -1272,7 +1292,7 @@ export class Traffic {
         c.fireT -= dt;
         if (c.flash) c.flash.visible = c.fireT > -0.06 && c.fireT < 0 && c.state === 'peek';
         if (c.reloading > 0) { c.reloading -= dt; c.burstLeft = 0; }   // a reload is a burst that never comes; he goes back to cover
-        if (c.state === 'peek' && c.burstLeft > 0 && c.fireT <= -0.06 && shouldFire(Math.floor(this.wanted), c.quietFor)) {   // one star: they come to cuff you, and shoot only if you have
+        if (c.state === 'peek' && c.burstLeft > 0 && c.fireT <= -0.06 && !this.holdFire && shouldFire(Math.floor(this.wanted), c.quietFor)) {   // one star: they come to cuff you, and shoot only if you have
           const b = burstFor(c.gunKind);
           c.fireT = b.gap;
           c.burstLeft--;

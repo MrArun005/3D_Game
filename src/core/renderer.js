@@ -2,7 +2,11 @@ import * as THREE from 'three';
 import { CSMShadowNode } from 'three/examples/jsm/csm/CSMShadowNode.js';
 
 export const FOG_COLOUR = 0x222a3a;
-export const FOG_DAY = 0xb7c9dd;
+/* The dome's own colour ~10 degrees above the horizon (textures.js SKY_DAY at
+   v=0.55). It was 0xb7c9dd, paler than the sky behind the mountains, which is
+   why the range read brighter than the sky (2026-09-08). clock.js sets the
+   same value each frame; keep the two together. */
+export const FOG_DAY = 0x93b7de;
 /** Where the day sun is. The sky dome paints its disc from this same vector. */
 export const DAY_SUN = new THREE.Vector3(-190, 250, 120);
 /* ?dusk: the same day rig with the sun 12 degrees up. Long shadows, orange
@@ -43,7 +47,17 @@ class GatedCSM extends CSMShadowNode {
   }
 }
 
-export function createRenderer(canvas) {
+/** Pixel ratio that caps the drawing buffer at the budget (1.0 when the window is already smaller). */
+export const RENDER_BUDGET_PX = 1440 * 860;        // ~1.24 MP (Full mode)
+export const RENDER_BUDGET_PX_LITE = 1152 * 680;   // ~0.78 MP (Lite mode, 37% fill-rate savings for integrated GPUs)
+
+export function renderScale(w, h, lite = false) {
+  if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('native')) return 1;
+  const budget = lite ? RENDER_BUDGET_PX_LITE : RENDER_BUDGET_PX;
+  return Math.min(1, Math.sqrt(budget / Math.max(1, w * h)));
+}
+
+export function createRenderer(canvas, lite = false) {
   /* WebGPURenderer, from the three/webgpu build the vite alias points at.
      It picks a WebGPU device where one exists and a WebGL2 backend where one
      does not, so this is not a hardware requirement -- it is the node-based
@@ -51,10 +65,22 @@ export function createRenderer(canvas) {
   const renderer = new THREE.WebGPURenderer({
     canvas, antialias: true, powerPreference: 'high-performance',
   });
-  renderer.setPixelRatio(1.0);
+  /* Render-scale cap (2026-09-11). The 60 fps floor is defined at 1440x860 =
+     1.24 MP (or 1152x680 = 0.78 MP in LITE mode on integrated GPUs).
+     The drawing buffer is capped at the floor's pixel count (aspect preserved)
+     and the canvas CSS stays 100% so the browser upscales -- a 1.33x upscale in a
+     moving frame is hard to see, a 2x shading bill is not. Set ONCE here and in the
+     resize handler, never per frame: reallocating the buffer rebuilds the whole post
+     stack. ?native renders at full window resolution. */
+  renderer.setPixelRatio(renderScale(window.innerWidth, window.innerHeight, lite));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.AgXToneMapping;
+  /* Day exposure. Measured 2026-09-08 at kingsway-corner and tower-shadow: dropping
+     this to 0.88 darkened the frame (mean 123 -> 115) and bought +1.5pp saturation
+     but did NOT add contrast (luminance sd 42.8 -> 41.9). The flat noon image is
+     the lit-to-shadow ratio, not the exposure -- that lever is the hemisphere fill
+     in createDayLights, and it wants an A/B, not a guess. */
   renderer.toneMappingExposure = 1.05;
   renderer.shadowMap.enabled = true;
   /* PCF, and it is not a choice.
@@ -100,13 +126,59 @@ function patchNestedRenderInBundle(renderer) {
 }
 
 /**
- * Resolution is the single biggest cost in this scene: at DPR 2 on a Retina
- * panel we are shading 6.7 megapixels and the M2 drops to 37fps; at 1.25 the
- * exact same frame locks 60. So we do not pick a fixed ratio -- we watch the
- * frame time and let the panel earn its pixels back.
+ * Dynamic Resolution Scaling (DRS).
+ *
+ * Resolution is the single biggest fill-rate cost in this scene.
+ * autoResolution monitors rolling frame times over a 60-frame window.
+ * If median frame time exceeds 19.5 ms (dropping under 50 fps), it gently
+ * steps the drawing buffer scale down (floor at 0.50). When frame times stay
+ * below 14.2 ms for over 2.5 seconds, it gradually recovers back to baseScale.
  */
-export function autoResolution(renderer) {
-  return () => {};
+export function autoResolution(renderer, grade = null, lite = false) {
+  if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('native')) {
+    return () => {};
+  }
+
+  const baseScale = renderScale(window.innerWidth, window.innerHeight, lite);
+  let currentScale = baseScale;
+  let frameCount = 0;
+  let sumMs = 0;
+  let lastAdjustTime = 0;
+  const MIN_SCALE = 0.50;
+
+  return function updateAutoResolution(dt) {
+    frameCount++;
+    sumMs += dt * 1000;
+
+    // Sample every 60 frames (~1 second at 60 FPS)
+    if (frameCount >= 60) {
+      const avgMs = sumMs / frameCount;
+      frameCount = 0;
+      sumMs = 0;
+      const now = performance.now();
+
+      // Cooldown of at least 2.5 seconds between adjustments to avoid thrashing
+      if (lastAdjustTime !== 0 && now - lastAdjustTime < 2500) return;
+
+      if (avgMs > 19.5 && currentScale > MIN_SCALE) {
+        // Step down by 6%
+        currentScale = Math.max(MIN_SCALE, currentScale * 0.94);
+        lastAdjustTime = now;
+        renderer.setPixelRatio(currentScale);
+        renderer.setSize(window.innerWidth, window.innerHeight, false);
+        grade?.resize?.(window.innerWidth * currentScale, window.innerHeight * currentScale);
+        console.info(`[drs] downscale -> ratio: ${currentScale.toFixed(2)} (avg frame: ${avgMs.toFixed(1)} ms)`);
+      } else if (avgMs < 14.2 && currentScale < baseScale) {
+        // Step up by 4%
+        currentScale = Math.min(baseScale, currentScale * 1.04);
+        lastAdjustTime = now;
+        renderer.setPixelRatio(currentScale);
+        renderer.setSize(window.innerWidth, window.innerHeight, false);
+        grade?.resize?.(window.innerWidth * currentScale, window.innerHeight * currentScale);
+        console.info(`[drs] upscale -> ratio: ${currentScale.toFixed(2)} (avg frame: ${avgMs.toFixed(1)} ms)`);
+      }
+    }
+  };
 }
 
 /**
@@ -114,48 +186,41 @@ export function autoResolution(renderer) {
  * hemisphere for the ambient, and no warm fill -- daylight bounce is neutral
  * and adding a coloured fill is what makes a "day" scene look like a lit set.
  */
-function createDayLights(scene) {
+function createDayLights(scene, lite = false) {
   /* Less fill, more sun. At 1.05 the hemisphere lit every face the same and
      the 2.6 sun never produced light-and-shade -- a facade turned away from
      the sun was the same tone as one facing it, which is most of why day read
      as milky. Ambient is now the sky's job at 0.55; the sun carries the form. */
-  const hemi = new THREE.HemisphereLight(DUSK ? 0x6f7fa8 : 0xa9c4e0, DUSK ? 0x5c4a3c : 0x8f8873, DUSK ? 0.42 : 0.55);
+  /* 0.40 and blue (2026-09-08; clock.js rewrites these every frame with the
+     same numbers): shade under a clear sky is sky-coloured, and at 0.55 grey
+     plus the env map the shaded face of a building was a stop from the lit one. */
+  const hemi = new THREE.HemisphereLight(DUSK ? 0x6f7fa8 : 0x8cb3eb, DUSK ? 0x5c4a3c : 0x7a706a, DUSK ? 0.42 : 0.40);
   scene.add(hemi);
 
-  /* One sun, three real cascades.
-     The previous rig was two directional lights, "a poor man's cascade": a
-     3.4 sun with an 80m shadow box and a 0-intensity twin with a 460m box,
-     "shadows only". A shadow multiplies its own light's contribution, and
-     this one's was zero -- so the far map never darkened a single pixel in
-     the life of the project (verified 2026-09-02: splitting the intensity
-     1.7/1.7 made the Kingsway tower's shadow appear on the grass; at 3.4/0
-     it was not there). Every triangle drawn into it was waste.
-
-     CSMShadowNode is three's cascaded shadow map for the WebGPU renderer:
-     one light, N slices of the view frustum, each with its own 2048 map
-     fitted to that slice, so shadow density falls off with distance instead
-     of stepping between two boxes. Cascade 0 (the street you are in) and 1
-     take every caster; the far cascade takes SHADOW_FAR_LAYER only -- the
-     building shells -- because at its texel size nothing smaller resolves. */
+  /* Cascaded Shadow Maps:
+     In FULL mode: 3 cascades at 2048x2048 (~12.58 MP shadow pass per frame).
+     In LITE mode: 2 cascades at 1024x1024 (~2.09 MP shadow pass per frame),
+     reducing shadow pass fill-rate by 83.3% for integrated graphics. */
   const sun = new THREE.DirectionalLight(DUSK ? 0xffa25a : 0xffeac6, DUSK ? 2.8 : 3.4);
   sun.position.copy(DAY_SUN);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  const mapSize = lite ? 1024 : 2048;
+  sun.shadow.mapSize.set(mapSize, mapSize);
   sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 900;
+  sun.shadow.camera.far = lite ? 600 : 900;
   sun.shadow.bias = -0.0003;      // CSM multiplies bias by (cascade + 1)
   sun.shadow.normalBias = 0.03;
-  /* Splits measured 2026-09-02 at kingsway-corner (draws / Mtris):
-       practical 89/199/520, cascade 1 all casters   1327 / 4.66
-       practical 89/199/520, cascade 1 shells only   1054 / 3.39
-       custom    52/156/520, cascade 1 shells only   1017 / 3.32  <- this
-       custom    52/156/520, cascade 1 all casters   1259 / 4.57
-     The gated two-light rig it replaces was 939 / 3.31 with no working far
-     shadow at all, so real tower shadows cost one extra pass and ~10k
-     triangles. Cascade 0 carries every caster to 52m; beyond that only the
-     shells, whose shadows are the only ones that still resolve. */
-  const csm = new GatedCSM(sun, { cascades: 3, maxFar: 520, mode: 'custom', lightMargin: 300 });
-  csm.customSplitsCallback = (n, near, far, target) => { target.push(0.1, 0.3, 1); };
+
+  const csmCascades = lite ? 2 : 3;
+  const csmFar = lite ? 320 : 520;
+  const csm = new GatedCSM(sun, { cascades: csmCascades, maxFar: csmFar, mode: 'custom', lightMargin: lite ? 200 : 300 });
+  csm.customSplitsCallback = (n, near, far, target) => {
+    if (lite) {
+      target.push(0.18, 1);
+    } else {
+      target.push(0.1, 0.3, 1);
+    }
+  };
   csm.fade = true;
   sun.shadow.shadowNode = csm;
   scene.add(sun, sun.target);
@@ -169,7 +234,7 @@ function createDayLights(scene) {
 export function createScene(day = false) {
   const scene = new THREE.Scene();
   // clear daylight sees a long way; a 4.2km city is worth showing off
-  scene.fog = day ? new THREE.FogExp2(DUSK ? 0xc9a48a : FOG_DAY, DUSK ? 0.00024 : 0.00017)   // aerial perspective: depth, not murk
+  scene.fog = day ? new THREE.FogExp2(DUSK ? 0xc9a48a : FOG_DAY, DUSK ? 0.00024 : 0.0004)   // aerial perspective: depth, not murk
                   : new THREE.FogExp2(FOG_COLOUR, 0.0034);
   return scene;
 }
@@ -179,8 +244,8 @@ export function createScene(day = false) {
  * city: the street lighting is painted into the facade emissive maps and faked
  * with additive pools, which is why this scene can afford hundreds of buildings.
  */
-export function createLights(scene, day = false) {
-  if (day) return createDayLights(scene);
+export function createLights(scene, day = false, lite = false) {
+  if (day) return createDayLights(scene, lite);
   // the ground half is warm on purpose: sodium bouncing off wet tarmac is what
   // separates a lit street from a scene that merely has lamps in it
   const hemi = new THREE.HemisphereLight(0x55699c, 0x33241a, 0.98);
@@ -189,9 +254,10 @@ export function createLights(scene, day = false) {
   const sun = new THREE.DirectionalLight(0xffab5e, 0.72);
   sun.position.set(-260, 42, 150);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  const mapSize = lite ? 1024 : 2048;
+  sun.shadow.mapSize.set(mapSize, mapSize);
   sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 220;
+  sun.shadow.camera.far = lite ? 160 : 220;
   sun.shadow.camera.left = -40;
   sun.shadow.camera.right = 40;
   sun.shadow.camera.top = 40;

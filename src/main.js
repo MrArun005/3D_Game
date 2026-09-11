@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { additive } from './core/additive.js';
 import './style.css';
 
-import { autoResolution, createRenderer, createScene, createLights, DAY_SUN } from './core/renderer.js';
+import { autoResolution, createRenderer, createScene, createLights, DAY_SUN, renderScale } from './core/renderer.js';
+import { detectGpuInfo, resolveQualityMode } from './core/gpu.js';
 import { createSky } from './core/sky.js';
 import { createGrade } from './core/grade.js';
 import { setAnisotropy } from './world/textures.js';
@@ -107,24 +108,37 @@ setBootProgress(10, 'Waking the GPU…');
 const renderer = createRenderer(canvas);
 setBootProgress(25, 'Starting the renderer…');
 await renderer.init();
+
+setBootProgress(35, 'Analyzing GPU architecture…');
+const gpuInfo = await detectGpuInfo(renderer);
+const qualityChoice = resolveQualityMode(gpuInfo);
+const isLite = qualityChoice.isLite;
+window.__gpuInfo = gpuInfo;
+window.__isLite = isLite;
+console.info(`quality: ${isLite ? 'LITE' : 'FULL'} (${qualityChoice.reason}, gpu: ${gpuInfo.gpuDesc || 'unknown'}, render scale ${renderScale(innerWidth, innerHeight, isLite).toFixed(2)})`);
+
+// Apply initial render scale for the detected architecture
+renderer.setPixelRatio(renderScale(innerWidth, innerHeight, isLite));
+renderer.setSize(innerWidth, innerHeight, false);
+
 setBootProgress(45, 'Building the scene & lights…');
-const resolution = autoResolution(renderer);
 setAnisotropy(renderer.capabilities?.getMaxAnisotropy?.() ?? 16);
 
 const scene = createScene(DAY);
 window.scene = scene;
 const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.5, 14000);
-const { sun, hemi } = createLights(scene, DAY);
+const { sun, hemi } = createLights(scene, DAY, isLite);
 const { dome, stars } = createSky(scene, renderer, DAY);
 
 setBootProgress(60, 'Initializing TSL post-processing pipeline…');
-const isLite = typeof location !== 'undefined' && new URLSearchParams(location.search).has('lite');
 const grade = createGrade(renderer, scene, camera, {
+  ssr: new URLSearchParams(location.search).has('ssr'),
   ao: !isLite && !new URLSearchParams(location.search).has('noao'),
   bloom: !new URLSearchParams(location.search).has('nobloom'),
   aa: !new URLSearchParams(location.search).has('noaa'),
   post: !new URLSearchParams(location.search).has('nopost'),
 });
+const resolution = autoResolution(renderer, grade, isLite);
 
 const assets = createAssets();
 setBootProgress(75, 'Loading car fleet…');
@@ -190,11 +204,14 @@ const debris = new Debris(scene);
    not a save-game: nothing in the game reads it back. */
 if (new URLSearchParams(location.search).has('debug')) {
   window.__car = () => car;
+  window.__camera = camera;
   // shooting-layer state the harness cannot otherwise see or set (pointer lock is refused headless)
   window.__dbg = () => ({ started, aiming, ads, crouch, burst, heat: weapon.heat, ready: weapon.ready, kind: weapon.kind, ammo: weapon.ammo, health });
   window.__aim = (v) => { aiming = !!v; };
   window.__police = () => traffic.police.filter((c) => c.live).map((c) => ({ deployed: !!c.deployed, state: c.state, gun: c.gunKind, hp: c.hp, down: +c.down.toFixed(1), pose: c.pose, mode: c.mode, hunt: !!c.hunt, chase: !!c.chase, spd: +(c.speed || 0).toFixed(1), cruise: +(c.cruise || 0).toFixed(1), stale: +(c.stale || 0).toFixed(1), lost: +(c.lost || 0).toFixed(1), x: Math.round(c.x), z: Math.round(c.z), d: Math.round(Math.hypot(c.x - (onFoot.active ? onFoot.x : car.x), c.z - (onFoot.active ? onFoot.z : car.z))) }));
   window.__wanted = (n) => { traffic.wanted = n; };
+  window.__hurt = (h) => { health = Math.max(0, health - (+h || 1)); hud.setHealth(health); if (health <= 0) onDeath(); };   // the death flow, on demand
+  window.__hud = hud; window.__dying = () => ({ dying, wastedAnim, drowning, holdFire: traffic.holdFire });
   window.__time = (h) => { clock.hour = ((+h) % 24 + 24) % 24; };          // the recording harness sets the hour
   window.__cmd = (line) => (commands ? commands.execute(line) : false);   // and runs chat commands ('/time 22', '/tp ...')
   window.__rain = (v) => { rainForce = v; };   // true/false forces the weather on/off; null returns it to the spells
@@ -314,6 +331,7 @@ function onShot(gap, landed = null, damage = 26, from = null, kind = 'pistol') {
     onFoot.camPitch = Math.min(0.9, onFoot.camPitch + 0.035 * Math.min(2, damage / 26));
     onFoot.camYaw += (Math.random() - 0.5) * 0.05;
   }
+  if (wastedAnim !== 0 || dying > 0) return;   // already dying: the clip plays out, nothing lands on the body
   if (onFoot.active) {
     // on foot there is no bodywork to absorb it -- unless you bought some
     const a = absorb(armour, hit * 0.16); armour = Math.max(0, armour - a.toArmour);
@@ -394,12 +412,18 @@ function respawnCar(nearX = car.x, nearZ = car.z, kinds = null) {
 function onDeath() {
   /* On foot, the body falls first and the fade follows: the Death clip runs,
      input is dead, then the respawn. In a car it is the old instant fade. */
+  if (wastedAnim === 1) return;        // the clip is still playing; the timer will call us back
   if (onFoot.active && wastedAnim === 0 && onFoot.character?.ready) {
     const ms = onFoot.character.die();
-    if (ms > 0) { wastedAnim = 1; controlsLockedUntil = performance.now() + ms + 300; setTimeout(() => { wastedAnim = 2; onDeath(); }, ms + 300); return; }
+    if (ms > 0) {
+      wastedAnim = 1; controlsLockedUntil = performance.now() + ms + 300;
+      traffic.holdFire = true;         // the officers lower their guns while you fall (the hit handler ignores the rest)
+      wastedTimer = setTimeout(() => { wastedTimer = 0; hud.blackout(() => { wastedAnim = 2; onDeath(); }); }, ms + 300);
+      return;
+    }
   }
-  if (wastedAnim === 1) return;        // the clip is still playing; the timer will call us back
   wastedAnim = 0;                      // 2 -> 0: the animation ran, now the real WASTED path
+  traffic.holdFire = false;
   bustFlash = 2.8;
   /* The hospital bills you: GTA's rule, and the reason a death costs something
      when the ammo comes back with you. Never more than you have. */
@@ -409,6 +433,9 @@ function onDeath() {
   traffic.standDown();
   if (mission && mission.active) mission.stop('WASTED');
   health = 1; hud.setHealth(1);
+  /* Armour is what you were wearing when you went down: gone. Weapons and
+     ammo come back with you (GTA V's hospital, not III's). */
+  if (armour > 0) { armour = 0; saveArsenal(); }
   // Wake up outside the nearest hospital
   const hospitals = (districtRef?.places || []).filter((p) => p.type === 'hosp');
   const at = hospitals.reduce((best, p) => {
@@ -416,12 +443,21 @@ function onDeath() {
     return d < best.d ? { d, p } : best;
   }, { d: Infinity, p: null }).p;
   respawnCar(at ? at.x : CITY_CENTRE.x, at ? at.y + 12 : CITY_CENTRE.z);
-  if (onFoot.active) onFoot.enter();
+  /* You wake up ON FOOT at the hospital doors, the car parked at the kerb
+     beside you with whatever body it had (a stolen one stays stolen -- the
+     chop shop is still the only way to turn it into cash). Getting back in
+     is the same F as always. No hospital on the map: the old in-car respawn. */
+  if (at) {
+    onFoot.exit(car, (x, z) => Math.max(world.district?.elevationAt?.(x, z) ?? 0, groundHeightAt(x, z)));
+    car.throttle = 0; car.brake = 1; car.hand = 1;
+  } else if (onFoot.active) onFoot.enter();
   hero.visible = true;
+  drowning = 0;
   chase.shake = 0;
 }
 
 function onBust() {
+  if (wastedAnim !== 0 || dying > 0) return;   // you are dying, not surrendering: the WASTED path owns this respawn
   /* The station takes your guns (GTA's classic): reserves to zero, grenades
      gone, armour off; you walk out with the pistol and one magazine. Cash
      stays -- the fine is the confiscation. */
@@ -468,6 +504,7 @@ const grenades = new Grenades(scene, weapon.light);   // shares the muzzle-flash
 let held = 'gun', punchCool = 0;
 let wasReloading = false;
 let lastArsKey = '';
+let wastedTimer = 0;  // the clip's respawn timer, so a bust or a second death cannot double it
 let wastedAnim = 0;   // 0 idle, 1 Death clip playing, 2 clip done -> run the WASTED path once   // slot 0: bare hands. E swings at whoever is in front of you
 grenades.onBlast = (bx, by, bz) => {
   for (let i = 0; i < 10; i++) { const a = Math.random() * Math.PI * 2, rr = Math.random() * 1.6; puffs.puff(bx + Math.cos(a) * rr, by + 0.5 + Math.random(), bz + Math.sin(a) * rr, { r: 0.14, g: 0.13, b: 0.12, life: 2.4 + Math.random() * 1.5, vy: 1.4 + Math.random(), vx: Math.cos(a) * 1.2, vz: Math.sin(a) * 1.2 }); }
@@ -1050,13 +1087,12 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   for (const g of city.cells.values()) scene.remove(g);
   city.cells.clear();
   setBootProgress(70, 'Building the streets…');
-  world = new DistrictWorld(scene, assets, district, { day: DAY, catalogue });
+  world = new DistrictWorld(scene, assets, district, { day: DAY, catalogue, lite: isLite });
   window._world = world;
   world.camera = camera;                  // chunk-level frustum culling for the render bundles
   if (!DAY) {
     const n = +(new URLSearchParams(location.search).get('lights') ?? (isLite ? 4 : 6));
     lightPool = new LightPool(scene, world, { count: n });
-    grade.setNight?.(true);
   }
   debris.catalogue = catalogue;
   world.onBreakables = (k, tracked, solids, pools) => debris.registerChunk(k, tracked, solids, pools);
@@ -1345,6 +1381,21 @@ window.__warp = (x, z, yaw = 0) => {
 commands = new CommandEngine({
   car,
   traffic,
+  renderer,
+  stats,
+  get world() { return world; },
+  get isLite() { return isLite; },
+  gpuInfo,
+  setQuality: (mode) => {
+    try {
+      if (mode === 'default' || mode === 'auto') {
+        localStorage.removeItem('hb.quality');
+      } else {
+        localStorage.setItem('hb.quality', mode);
+      }
+    } catch (_) {}
+    location.reload();
+  },
   get garage() { return garage; },
   clock,
   damageModel,
@@ -1616,7 +1667,7 @@ const input = createInput((action) => {
   if (action === 'use') useVehicle();
   if (action === 'room') joinRoom(roomFromUrl());
   if (action === 'fire') pullTrigger();
-  if (action === 'run' && mission) {
+  if (action === 'run' && mission && !photo.on) {   // photo mode uses G to cycle grade filters (photo.js); the run toggle stays out of it
     if (!started) { started = true; hud.dismiss(); }
     if (net) {                                   // a room races; alone you work
       if (mission.active) mission.stop('RUN ABANDONED');
@@ -1664,6 +1715,7 @@ addEventListener('mousemove', (e) => {
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
+  renderer.setPixelRatio(renderScale(innerWidth, innerHeight, isLite));
   renderer.setSize(innerWidth, innerHeight, false);
   grade.resize(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio());
 });
@@ -2265,17 +2317,19 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   /* Halstead Bay is a harbour city and the car's ground plane is y=0
      everywhere, so without this you simply drive out to sea. Sink, then put
      the car back on the nearest quay -- the map already tags 79 of them. */
-  if (districtRef && !drowning && districtRef.inWater(car.x, car.z)) drowning = 0.001;
+  if (districtRef && !drowning && !onFoot.active && !dying && districtRef.inWater(car.x, car.z)) drowning = 0.001;
   if (drowning) {
     drowning += dt;
     car.throttle = 0; car.brake = 0;
     car.vx *= Math.exp(-dt * 2.2); car.vz *= Math.exp(-dt * 2.2);
     hero.position.y = -Math.min(3.4, drowning * 1.7);
-    if (drowning > 2.4) {
-      respawnCar(car.x, car.z, ['quay', 'cross']);
+    if (drowning > 2.4 && !dying) {
+      /* The sea is a death like any other (2026-09-11): the same blackout,
+         hospital fee, lost job and kept stars as a fireball. It used to hand
+         the car back on the nearest quay and forgive a star, which made the
+         harbour the safest place in the city to be wanted in. */
       hero.position.y = 0;
-      drowning = 0;
-      traffic.wanted = Math.max(0, traffic.wanted - 1);   // the sea settles some debts
+      dying = 0.01;        // next frame the dying block runs hud.blackout(onDeath)
     }
   }
 
