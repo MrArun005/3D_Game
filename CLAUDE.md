@@ -190,6 +190,34 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   far stand-ins; `setGlareRing` (called from #cullFar) zero-scales the ones
   inside the detailed ring, so the street lights run to the horizon
   (farglare1.jpg). One draw for the whole map.
+- **Night pass, 2026-09-12 (ultracode workflow: four implementers, four
+  skeptics, browser check by the maintainer)**: `world/streaks.js` --
+  GTA's anamorphic headlight streaks, one instanced Sprite (48) refilled
+  per frame from oncoming traffic/cruisers + the hero (lamp positions
+  measured from traffic.js:311 and model.js:331; pure `streakLamps` is
+  tested); `world/farTraffic.js` -- 220 phantom cars on the far road graph,
+  four sprites each in ONE draw, right-hand lane, re-seeded outside the
+  detailed ring, count 0 by day (a hidden Sprite is never warmed up by the
+  boot compile -- gate by `count`, not `visible`); `core/grade.js` --
+  `uFilmic` blends the NIGHT tone map toward a per-channel Hable curve
+  (AgX measured: (2,0,0) keeps 83% saturation, (2.4,0.3,0.9) only 47%;
+  Hable keeps 100%/63%), driven by the clock profiles' `filmic` key
+  (NIGHT 1, others 0 -- every profile must carry the key or blendVal is
+  NaN), and `bloomThresholdFor(t, exposure)` = t*1.15/exposure so the
+  bloom threshold is a display quantity (night 0.85 unchanged; a
+  day-booted session at night gets 0.93). `dispatch.requestTank/
+  requestHelicopter` exist now (featureTour called a missing method).
+  Post-pull crash fixed: commit 22c1c0c's constructor rewrite dropped
+  `this.parkedLod = new Map()` and every chunk build died on `.set` -- the
+  city never streamed ("chunk: none built since load", 0 bundled). When a
+  pull changes a constructor, diff the `this.* = new Map()` lines against
+  their consumers.
+- **Browser verification IS allowed (2026-09-05 onward)** when Arun asks
+  for a recording or reports a bug: `tools/record-tour.mjs` recipe (headed
+  Chrome for Testing under ~/Library/Caches/ms-playwright, `vite preview`
+  on :4173, `?debug` hooks `__warp/__time/__rain`, dismiss the title card
+  with `#hud.classList.add('gone')`). One `vite build` at a time. The older
+  "no Playwright" line below is about screenshot churn, not verification.
 - **Asphalt textures are real now (2026-09-05)**: the shipped `asphalt_*`
   set was the library's generic dot pattern; under the wet-road env boost
   every dot mirrored as a cobble. `tools/asphalt-textures.py` (numpy + PIL,

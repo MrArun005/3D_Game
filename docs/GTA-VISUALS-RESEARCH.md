@@ -86,7 +86,7 @@ Gaps, in the order they would change the frame most:
    `beamPool` cones and lamp caps, but no sprite glare, so distant lamps and
    headlights vanish instead of twinkling. One instanced quad pool per chunk;
    the sign heads and lamp caps already exist as positions (`headsByChunk`).
-2. **DONE 2026-09-05 (lamps; far headlights still open).** Distant light sprites. Beyond the 3×3 ring, traffic and lamps stop
+2. **DONE 2026-09-05 lamps, 2026-09-12 far headlights (`world/farTraffic.js`, 220 phantom cars, one draw).** Distant light sprites. Beyond the 3×3 ring, traffic and lamps stop
    existing. A 32×32 sprite per lamp head and two per far car along the
    road graph is the cheapest thing GTA does and the reason its city reads
    as alive to the horizon. Our far stand-ins carry masts and beacons; the
@@ -146,10 +146,10 @@ Gaps, in the order they would change the frame most:
    - **It is the same lever as the neon.** A tube at 8.0 keeps half its colour
      for exactly this reason: it is bright, not because it is red. Brightness
      is always paid for in chroma here.
-4. **Exposure-derived bloom threshold** rather than a fixed 0.85: night
+4. **DONE 2026-09-12 (`bloomThresholdFor`, T*ref/exposure, night 0.85 unchanged).** Exposure-derived bloom threshold rather than a fixed 0.85: night
    exposure 1.15 with a fixed threshold is why the day/night bloom retune is
    a manual pair of numbers.
-5. **Anamorphic streak sprite** on headlights within ~20° of the camera.
+5. **DONE 2026-09-12 (`world/streaks.js`).** Anamorphic streak sprite on headlights within ~20° of the camera.
    Cheap, and it is the single most recognisable GTA-night signature.
 6. **Light-shaft map** (half-res ray march against the sun shadow) for dusk;
    ours is a fog colour only.
