@@ -1142,6 +1142,16 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
      rather than on join, because the room can be joined before the district
      has loaded and there would be no mission to hang it on. */
   mission.addListener('finish', (t) => { if (net) net.race({ k: 'stop', t }); });
+  /* The brief's 'simple timed route': the seeded checkpoint course used to be
+     reachable only inside a multiplayer room (G is the jobs key alone). The
+     phone's SERVICES tab offers it solo; best time persists in hb.best. */
+  window._mission = mission;   // the phone's run card reads .active
+  window.__startRun = () => {
+    if (mission.active) { mission.stop('RUN ABANDONED'); return false; }
+    if (jobs?.job) jobs.toggle(car);   // one route marker at a time
+    mission.start(car);
+    return true;
+  };
   traffic.onShot = onShot;
   traffic.onBust = onBust;
   window.district = district;
@@ -1182,7 +1192,7 @@ car.type = 'car';
    H toggles High-Beam Rally Projectors. */
 car.headlights = true;
 car.headlightMode = 'low';
-const hero = buildCar(assets.carMats, 0x5b636d);
+const hero = buildCar(assets.carMats, 0xb3161c);   // the hero is the red sports car of the brief; garage resprays still override
 scene.add(hero);
 // the damage model marks the real bodywork, so it needs the real meshes
 // the hero's visible body is the kit's sports sedan over the lofted physics hull
@@ -1420,6 +1430,8 @@ const start = () => {
   audio.resume();
 };
 hud.overlay.addEventListener('click', start);
+// the ALL CONTROLS expander on the title card must not count as the first click
+for (const ev of ['click', 'pointerdown']) hud.overlay.querySelector('details')?.addEventListener(ev, (e) => e.stopPropagation());
 hud.overlay.addEventListener('pointerdown', start);   // a tap fires click late or not at all when the finger moves
 canvas.addEventListener('click', start);
 if (boot) boot.addEventListener('click', start);
@@ -1896,6 +1908,7 @@ function frameBody() {
   lerpPose(poseHas ? posePrev : car, car, physicsAccumulator / STEP, poseView);
   viewCar.x = poseView.x; viewCar.y = poseView.y; viewCar.z = poseView.z; viewCar.yaw = poseView.yaw;
   viewCar.heave = poseView.heave; viewCar.roll = poseView.roll; viewCar.pitch = poseView.pitch;
+  car.odo = (car.odo || 0) + Math.abs(car.fwdSpeed ?? car.speed ?? 0) * dt;   // trip odometer for the HUD (metres)
   const physMs = performance.now() - tPhys0;
   performance.mark('physics-end');
 

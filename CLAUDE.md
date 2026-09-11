@@ -136,6 +136,12 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   - **Smoothness**: `vehicle/interp.js` interpolates the 1/120 step for the
     hero and chase camera (alpha = accumulator/STEP; leftover beyond the
     4-step guard is dropped); `#streetFurniture`/`#signals` are generators.
+  - **Brief pass (2026-09-11, `docs/BRIEF-2026-09-11.md`)**: the game is
+    the first screen (light gradient card at the bottom, ALL CONTROLS in a
+    `<details>`), the hero is red (0xb3161c), the chase camera banks into
+    turns with speed (`camera.js` bank term opposes body roll), `car.odo`
+    trip odometer on the HUD, and the seeded checkpoint run is playable solo
+    from the phone (`window.__startRun`, best in `hb.best`).
   - **Mobile / touch** (`docs/MOBILE.md`, unverified on a device):
     `core/device.js` detection (`?mobile`/`?desktop`), `game/touch.js` overlay
     whose `read()` matches `createInput().read()` and merges via

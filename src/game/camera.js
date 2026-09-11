@@ -120,7 +120,15 @@ export class ChaseCamera {
       car.z - oz * aimD * flat + rz * look,
     );
     this.camera.lookAt(this.aim);
-    if (rig.tilt) this.camera.rotation.z += (car.roll || 0) * 0.35 - (car.yawRate || 0) * 0.018;
+    if (rig.tilt) {
+      /* Body roll leans the view OUT of a turn (the sprung mass rolls outward
+         under lateral load); at speed a GTA camera banks INTO it. lastAy is the
+         lateral acceleration the tyres produced this step (dynamics.js), same
+         sign as roll, so the bank term opposes the roll term and grows with
+         speed: nothing at a crawl, ~3 deg at 1 g and 150 km/h. */
+      const bank = Math.max(-0.06, Math.min(0.06, -((car.lastAy || 0) / 9.81) * 0.05 * speedK * Math.sqrt(speedK)));
+      this.camera.rotation.z += (car.roll || 0) * 0.35 - (car.yawRate || 0) * 0.018 + bank;
+    }
 
     const nosBoost = car.nosActive ? 11 : 0;
     // rig FOV at rest, +12 at ~150 km/h (speedK reaches 1.0). Every rig declared a fov; a hard-coded 62 ignored them.

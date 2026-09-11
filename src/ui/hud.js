@@ -7,6 +7,7 @@ export class Hud {
     this.dials = document.getElementById('dials').getContext('2d');
     this.map = document.getElementById('minimap').getContext('2d');
     this.kph = document.getElementById('kph');
+    this.trip = document.getElementById('trip');
     this.gear = document.getElementById('gear');
     this.stats = document.getElementById('stats');
     this.overlay = document.getElementById('hud');
@@ -94,6 +95,9 @@ export class Hud {
       this._lastKph = kphVal;
       this.kph.innerHTML = `${kphVal}<small>KM/H</small>`;
     }
+    // trip odometer (car.odo, metres, accumulated in main.js); one DOM write per 100 m
+    const tripKm = Math.round((car.odo || 0) / 100) / 10;
+    if (this.trip && tripKm !== this._lastTrip) { this._lastTrip = tripKm; this.trip.innerHTML = `TRIP <b>${tripKm.toFixed(1)}</b> KM`; }
     let gearStr = '';
     if (vehicleType === 'helicopter') {
       const alt = Math.round(altAboveGround || 0);

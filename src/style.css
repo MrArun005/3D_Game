@@ -21,6 +21,8 @@ body.filming #wanted, body.filming #mission, body.filming #gta-chat, body.filmin
 #kph small{font-size:15px;font-weight:400;letter-spacing:.20em;color:#7d8a9c;margin-left:7px}
 #gear{margin-top:10px;font-size:13px;letter-spacing:.30em;color:#8d9aac}
 #gear b{color:#e6c489;font-weight:600}
+#trip{margin-top:6px;font-size:11px;letter-spacing:.26em;color:#6e7a8c;font-variant-numeric:tabular-nums}
+#trip b{color:#9fb0c6;font-weight:500}
 
 #minimap{position:fixed;left:22px;bottom:22px;z-index:20;border-radius:6px;
   background:rgba(8,11,18,.62);border:1px solid rgba(150,170,200,.13);
@@ -28,17 +30,25 @@ body.filming #wanted, body.filming #mission, body.filming #gta-chat, body.filmin
 #stats{position:fixed;left:24px;top:18px;z-index:20;font-size:10.5px;letter-spacing:.16em;
   color:#5c6676;font-variant-numeric:tabular-nums}
 
-#hud{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
-  background:rgba(5,7,12,.80);backdrop-filter:blur(4px);transition:opacity .6s}
+/* The first screen is the game, not a landing page: the city renders and the
+   idle camera orbits behind a light gradient; the card sits low and gets out
+   of the way on the first click. The full key list folds into <details>. */
+#hud{position:fixed;inset:0;z-index:30;display:flex;align-items:flex-end;justify-content:center;
+  background:linear-gradient(to bottom,rgba(5,7,12,0) 45%,rgba(5,7,12,.82) 100%);transition:opacity .6s}
 #hud.gone{opacity:0;pointer-events:none}
-#hud .card{width:100%;padding:0 32px;text-align:center}
+#hud .card{width:100%;padding:0 32px 6vh;text-align:center}
+#hud details{margin-top:14px}
+#hud summary{cursor:pointer;font-size:11px;letter-spacing:.2em;color:#6e7a8c;list-style:none}
+#hud summary::-webkit-details-marker{display:none}
+#hud details[open] summary{color:#9fb0c6}
 #hud h1{font-size:clamp(30px,5.4vw,58px);font-weight:200;letter-spacing:.30em;
   text-transform:uppercase;color:#e8eef8;text-shadow:0 0 40px rgba(140,180,255,.28)}
 #hud p{margin-top:16px;font-size:14px;letter-spacing:.10em;color:#8b97a8}
-#hud .keys{margin-top:26px;font-size:12px;letter-spacing:.16em;color:#78859a;line-height:2.1}
+#hud .keys{margin-top:14px;font-size:12px;letter-spacing:.16em;color:#78859a;line-height:2.1}
+#hud .keys.all{font-size:11px;line-height:2;max-width:1100px;margin:10px auto 0}
 kbd{border:1px solid #39414f;border-radius:4px;padding:3px 8px;font-family:inherit;
   font-size:11px;color:#b3bfd0;background:rgba(255,255,255,.035)}
-#hud .go{margin-top:30px;color:#e6c489;letter-spacing:.20em;font-size:13px}
+#hud .go{margin-top:18px;color:#e6c489;letter-spacing:.20em;font-size:13px}
 
 /* ---------------------------------------------------------------------------
    Touch layout (body.touch, set by main.js when core/device.js sees a touch

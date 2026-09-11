@@ -310,6 +310,27 @@ export class Phone {
       };
       this.content.appendChild(tokyoCard);
 
+      // Checkpoint run: the seeded timed course, solo (main.js window.__startRun)
+      const runCard = document.createElement('div');
+      runCard.style.cssText = 'background: rgba(255, 194, 60, 0.12); border: 1px solid rgba(255, 194, 60, 0.45); border-radius: 12px; padding: 12px; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;';
+      let best = 0; try { best = +(localStorage.getItem('hb.best') || 0); } catch { /* private mode */ }
+      const running = !!(typeof window !== 'undefined' && window._mission?.active && !window._mission.isJob && !window._mission.isStory);
+      runCard.innerHTML = `
+        <div>
+          <div style="font-weight:800; font-size:13px; color:#ffc23c;">🏁 CHECKPOINT RUN</div>
+          <div style="font-size:11px; color:#ddd;">Eight rings across the city against the clock${best ? ` · BEST ${best.toFixed(1)}s` : ''}</div>
+        </div>
+        <button id="start-run-btn" style="padding:8px 14px; border-radius:8px; border:none; background:${running ? '#7f8c8d' : 'linear-gradient(135deg, #ffc23c, #ff7a00)'}; color:#111; font-weight:800; font-size:11px; cursor:pointer;">
+          ${running ? 'ABANDON' : 'START'}
+        </button>
+      `;
+      runCard.querySelector('#start-run-btn').onclick = (e) => {
+        e.stopPropagation();
+        if (typeof window !== 'undefined' && window.__startRun) window.__startRun();
+        this.toggle(false);
+      };
+      this.content.appendChild(runCard);
+
       // Halstead Lift Bridge GPS & Test Run
       const bridgeCard = document.createElement('div');
       bridgeCard.style.cssText = 'background: rgba(52, 152, 219, 0.12); border: 1px solid rgba(52, 152, 219, 0.45); border-radius: 12px; padding: 12px; display:flex; justify-content:space-between; align-items:center;';
