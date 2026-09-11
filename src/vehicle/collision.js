@@ -139,6 +139,15 @@ export function resolveObstacles(car, obstacles) {
     if (dxc * dxc + dzc * dzc > rough * rough) continue;
 
     const ofx = Math.cos(o.yaw), ofz = -Math.sin(o.yaw);
+    /* The other body's velocity. A traffic car is not a wall: measuring
+       "into" against the ground made a 40 km/h nudge alongside a 40 km/h car
+       read as a 40 km/h crash, zeroed OUR speed along the normal (a dead stop
+       in the lane), and every re-contact while catching up was another crash
+       -- the "whole game rumbles when you touch a vehicle" bug (2026-09-12).
+       Closing speed is relative; parked cars have none, so nothing changes
+       for them. */
+    const ov = (o.car && o.car.speed) || 0;
+    const ovx = ofx * ov, ovz = ofz * ov;
     for (const so of SELF_OFFSETS) {
       const sx = car.x + fx * so, sz = car.z + fz * so;
       for (const oo of o.offsets) {
@@ -153,24 +162,36 @@ export function resolveObstacles(car, obstacles) {
         // the parked car is immovable, so all of the correction lands on us
         car.x += nx * pen;
         car.z += nz * pen;
-        const into = -(car.vx * nx + car.vz * nz);
-          if (into > 0) {
-            if (into > 1.2) {
-              if (into > (car.impact || 0)) car.hitAt = { x: sx, z: sz };
-              car.impact = Math.max(car.impact || 0, into);
-              // who you hit decides whether anyone comes looking for you
-              if (into > (car.hitForce || 0)) { car.hitForce = into; car.hitTag = o.tag || 'prop'; car.hitRef = o.car || null; }   // hitRef: the traffic car behind the body, for ram damage
-              if (o.car) {
-                o.car.panic = 4.0;
-                o.car.speed = Math.max(0, o.car.speed - into * 0.4 * (car.ramForce || 1.0));
-              }
+        const rvx = car.vx - ovx, rvz = car.vz - ovz;   // our velocity relative to the body we hit
+        const into = -(rvx * nx + rvz * nz);              // closing speed along the contact normal
+        if (into > 0) {
+          /* impact is an EVENT: the closing speed this resolution cancels.
+             The camera, the dents and the sparks key off it once (main.js
+             decays it); a resting or sliding contact closes at ~0 and adds
+             nothing after the first step. */
+          if (into > 1.2) {
+            if (into > (car.impact || 0)) car.hitAt = { x: sx, z: sz };
+            car.impact = Math.max(car.impact || 0, into);
+            /* Who you hit decides whether anyone comes looking for you -- but
+               only if YOU drove into IT. `into` is relative, so a cruiser
+               PIT-ramming you or traffic rear-ending you at the lights closes
+               too; the ground-frame test (what the old code measured) keeps
+               their contact from becoming your crime and their ram from
+               costing THEIR engine (main.js damageVehicle on hitRef). */
+            const ours = -(car.vx * nx + car.vz * nz);
+            if (ours > 0 && into > (car.hitForce || 0)) { car.hitForce = into; car.hitTag = o.tag || 'prop'; car.hitRef = o.car || null; }   // hitRef: the traffic car behind the body, for ram damage
+            if (o.car) {
+              o.car.panic = 4.0;
+              o.car.speed = Math.max(0, o.car.speed - into * 0.4 * (car.ramForce || 1.0));
             }
+          }
           car.vx += nx * into * 1.05;    // a parked car gives a little, a wall none
           car.vz += nz * into * 1.05;
           // glancing blows should slew you, not stop you dead
           const armX = sx - car.x, armZ = sz - car.z;
           car.yawRate += (armX * nz - armZ * nx) * into * 0.05;
-          car.vx *= 0.9; car.vz *= 0.9;
+          // contact friction bleeds the RELATIVE velocity: riding alongside a moving car must not drag us to a halt
+          car.vx = ovx + (car.vx - ovx) * 0.9; car.vz = ovz + (car.vz - ovz) * 0.9;
         }
       }
     }

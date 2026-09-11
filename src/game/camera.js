@@ -15,6 +15,7 @@ export class ChaseCamera {
     this.pos = new THREE.Vector3(0, 4, -10);
     this.aim = new THREE.Vector3();
     this.shake = 0;
+    this.lastImpact = 0;   // impact seen last frame: shake is kicked by the RISE, not the standing value
     /* Free look. Without it the camera is welded behind the car, which is why
        a helicopter orbiting 60m overhead was invisible: there was no way to
        point the view at anything the car was not driving towards. */
@@ -85,7 +86,16 @@ export class ChaseCamera {
     this.pos.y += (ty - this.pos.y) * k;
     this.pos.z += (tz - this.pos.z) * k;
 
-    this.shake = this.shake * Math.exp(-dt * 6) + (car.impact || 0) * 0.022;
+    /* Shake is kicked once per impact EVENT and capped. It used to add
+       impact * 0.022 every FRAME while main.js let impact decay over half a
+       second: ~3.5x the kick, frame-rate dependent (twice as hard at 120 Hz),
+       and a 20 m/s wall threw the camera 2 m a frame. 0.07 per m/s of rise
+       lands a real crash about where it was at 60 fps; 1.6 m is the ceiling
+       whatever hits you. */
+    const impact = car.impact || 0;
+    const rise = Math.max(0, impact - this.lastImpact);
+    this.lastImpact = impact;
+    this.shake = Math.min(1.6, this.shake * Math.exp(-dt * 6) + rise * 0.07);
     const rumble = speedK * (car.kerb ? 0.028 : 0.008);
     const j = this.shake + rumble;
     this.camera.position.set(

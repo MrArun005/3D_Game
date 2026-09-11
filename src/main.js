@@ -2346,7 +2346,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     if (car.hitRef && (car.hitForce || 0) > 4.5) damageVehicle(car.hitRef, (car.hitForce || 0) > 9 ? 2 : 1, car.hitTag === 'police');
     car.hitTag = null; car.hitForce = 0; car.hitRef = null;
   }
-  if (car.impact > 2.4) damageModel.hit(car.impact, car.hitAt);
+  if (car.hitAt && car.impact > 2.4) damageModel.hit(car.impact, car.hitAt);   // once per contact event: collision.js sets hitAt only on a new-max hit this frame and it is cleared below -- un-gated, a 54 km/h wall wrote the car off over ~14 frames and every police round was charged twice
   if (car.impact > 3.2 && car.hitAt && !onFoot.active) {
     // the crash you see: sparks off the contact point and a burst of dust, scaled by the hit
     const k = Math.min(1, (car.impact - 3) / 12), hx = car.hitAt.x, hz = car.hitAt.z, gy = groundHeightAt(hx, hz);
