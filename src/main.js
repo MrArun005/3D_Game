@@ -211,7 +211,7 @@ if (new URLSearchParams(location.search).has('debug')) {
   window.__police = () => traffic.police.filter((c) => c.live).map((c) => ({ deployed: !!c.deployed, state: c.state, gun: c.gunKind, hp: c.hp, down: +c.down.toFixed(1), pose: c.pose, mode: c.mode, hunt: !!c.hunt, chase: !!c.chase, spd: +(c.speed || 0).toFixed(1), cruise: +(c.cruise || 0).toFixed(1), stale: +(c.stale || 0).toFixed(1), lost: +(c.lost || 0).toFixed(1), x: Math.round(c.x), z: Math.round(c.z), d: Math.round(Math.hypot(c.x - (onFoot.active ? onFoot.x : car.x), c.z - (onFoot.active ? onFoot.z : car.z))) }));
   window.__wanted = (n) => { traffic.wanted = n; };
   window.__hurt = (h) => { health = Math.max(0, health - (+h || 1)); hud.setHealth(health); if (health <= 0) onDeath(); };   // the death flow, on demand
-  window.__hud = hud; window.__dying = () => ({ dying, wastedAnim, drowning, holdFire: traffic.holdFire });
+  window.__hud = () => hud; window.__dying = () => ({ dying, wastedAnim, drowning, holdFire: traffic.holdFire });
   window.__time = (h) => { clock.hour = ((+h) % 24 + 24) % 24; };          // the recording harness sets the hour
   window.__cmd = (line) => (commands ? commands.execute(line) : false);   // and runs chat commands ('/time 22', '/tp ...')
   window.__rain = (v) => { rainForce = v; };   // true/false forces the weather on/off; null returns it to the spells
