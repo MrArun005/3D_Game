@@ -65,6 +65,9 @@ import { Tracers } from './game/tracers.js';
 import { Puffs } from './world/puffs.js';
 import { tokyoMaterial, setTokyoNight } from './world/tokyo.js';
 import { setGlareNight } from './world/glare.js';
+import { FarTraffic } from './world/farTraffic.js';
+import { HeadlightStreaks, setStreakNight } from './world/streaks.js';
+let streaks = null;   // anamorphic headlight streak pool, built on the first frame that needs it
 import { glow } from './core/additive.js';
 import { absorb } from './game/policeAi.js';
 import { SkidMarks } from './world/skidmarks.js';
@@ -223,6 +226,7 @@ let beach = null, water = null, crowd = null, heli = null, districtRef = null, d
 let districtFailed = false;
 let spawnSnap = false;        // the frame loop snaps the chase camera on its next update (chase is declared later; see the top-level awaits)   // lets the boot gate drop on the legacy grid if the district never lands
 let lightPool = null;
+let farTraffic = null;   // distant headlight sprites on the far road graph (world/farTraffic.js)
 let jobs = null, garage = null, story = null, phone = null, dispatch = null, reputation = null, intelScanner = null;
 let activeVehicle = null;
 let chat = null, chatter = null, commands = null;
@@ -1094,6 +1098,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
     const n = +(new URLSearchParams(location.search).get('lights') ?? (isLite ? 4 : 6));
     lightPool = new LightPool(scene, world, { count: n });
   }
+  farTraffic = new FarTraffic(scene, district, { count: isLite ? 120 : 220 });   // GTA's distant headlights: phantom cars on the far road graph, one draw, count 0 by day
   debris.catalogue = catalogue;
   world.onBreakables = (k, tracked, solids, pools) => debris.registerChunk(k, tracked, solids, pools);
   world.onBreakablesGone = (k) => debris.dropChunk(k);
@@ -2157,7 +2162,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     }
   }
   // Little Tokyo's windows, neon and kanban come up with the night (tokyo.js emissive attribute)
-  { const hr = clock.hour; const nk = hr >= 20.5 || hr < 5.2 ? 1 : hr >= 18 ? (hr - 18) / 2.5 : hr < 7.2 ? (7.2 - hr) / 2 : 0; setTokyoNight(nk); setGlareNight(nk); }
+  { const hr = clock.hour; const nk = hr >= 20.5 || hr < 5.2 ? 1 : hr >= 18 ? (hr - 18) / 2.5 : hr < 7.2 ? (7.2 - hr) / 2 : 0; setTokyoNight(nk); setGlareNight(nk); setStreakNight(nk); farTraffic?.update(dt, currentVehicle.x, currentVehicle.z, (world.radius + 0.5) * 256, nk); }
   if (weather) {
     // rain only at night (the clock's thresholds), in spells on the normal cycle, all night with ?night
     const nightNow = clock.hour >= 20.5 || clock.hour < 5.2;
@@ -2170,6 +2175,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     if (stars && car.wet > 0.05) stars.visible = false;   // no stars through cloud (the clock re-decides every frame)
   }
   lightPool?.update(dt, currentVehicle.x, currentVehicle.z, traffic);
+  (streaks ??= new HeadlightStreaks(scene)).update(camera, traffic, car);   // GTA anamorphic streaks on oncoming headlights (world/streaks.js)
   reputation?.update(dt, playerTarget.x, playerTarget.z, traffic, car, damageModel);
   intelScanner?.update(dt, camera, playerTarget, traffic, reputation?.safehouses);
   grade.setDrops(DAY ? 0 : chase.mode >= 2 ? 1.2 : 0.68);
