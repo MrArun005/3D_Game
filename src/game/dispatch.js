@@ -62,6 +62,11 @@ export class DispatchService {
     return heli;
   }
 
+  /* Free requests for the scripted tour (featureTour.js calls requestTank; it did
+     not exist, so the tank scene threw). Wanted 3 waives the Warstock fee. */
+  requestTank(pos, wanted = 0) { return this.dispatchTank(pos, Math.max(3, wanted)); }
+  requestHelicopter(pos) { const cash = this.garage.cash; this.garage.cash = Math.max(cash, 2500); const h = this.dispatchHelicopter(pos); this.garage.cash = cash; return h; }
+
   /**
    * Dispatches a 55-tonne Rhino Tank via heavy cargo drop.
    */
