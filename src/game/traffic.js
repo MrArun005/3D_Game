@@ -6,8 +6,10 @@ import { personGeometry } from '../world/beach.js';
 import { PAINT_COLOURS, BODY_KEYS, BODY_TYPES } from '../vehicle/config.js';
 import { groundHeightAt } from '../world/metrics.js';
 import { buildOfficer, poseOfficer, PoseBlender, lookAt, officerMaterial, dressOfficer } from '../world/officer.js';
+import { officerPool } from '../world/officerSkinned.js';
 import { buildWeaponMesh, ARSENAL } from './weapons.js';
-import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED, pickRooftops, coverSide, evasionDecay, searchRadius, crimeWitnessed, shouldFire } from './policeAi.js';
+import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED, pickRooftops, coverSide, evasionDecay, searchRadius, crimeWitnessed, shouldFire,
+  assignRoles, rushPlan, moveTarget, stepToward, fireControl, bystanderInLine, RUSH_COOL_S } from './policeAi.js';
 import { roofsNear } from '../world/districtWorld.js';
 import { glow } from '../core/additive.js';
 
@@ -256,6 +258,7 @@ export class Traffic {
       c.deployed = false;
       c.deployT = 0; c.holdT = 0;
       if (c.officer) c.officer.visible = false;
+      c.sk = officerPool(this.scene).release(c.sk);   // standDown fires on every arrest and on a repair below 3 stars: without this the rig is left standing in the road and the pool leaks a slot
     }
   }
 
@@ -1056,6 +1059,28 @@ export class Traffic {
     const want = this.#wantedCars();
     while (this.police.length < want) this.police.push(this.#makePolice());
     this._free = this.police.filter((q) => q.live && q.mode === 'free');   // was rebuilt per cruiser per frame
+    /* Bounding overwatch (policeAi.assignRoles): one man moves, the rest keep
+       your head down. Decided for the WHOLE squad once a frame -- per officer
+       it is a crowd, because nobody can see what anyone else is doing. */
+    const squad = this.police.filter((q) => q.live && q.deployed && !q.down);
+    this._rushing = 0;
+    this._mates = squad.map((q) => ({ x: q.coverX, z: q.coverZ, y: 1.0, r: 0.5 }));   // built ONCE a frame; bystanderInLine skips anything within 1.2 m of the shooter, so each officer excludes himself
+    if (squad.length) {
+      for (const q of squad) q.gap = Math.hypot(q.officer.position.x - player.x, q.officer.position.z - player.z);
+      const roles = assignRoles(squad, { wanted: Math.floor(this.wanted) });
+      squad.forEach((q, k) => { q.role = roles[k]; });
+      for (const q of squad) if (q.state === 'rush') this._rushing++;
+      // cover candidates, refreshed twice a second: the far side of every parked solid and every cruiser
+      this._coverT = (this._coverT ?? 0) - dt;
+      if (this._coverT <= 0 || !this._covers) {
+        this._coverT = 0.5;
+        const away = (x, z, r) => { const a = Math.atan2(z - player.z, x - player.x); return { x: x + Math.cos(a) * r, z: z + Math.sin(a) * r }; };
+        const solids = this.world?.nearbyParked ? this.world.nearbyParked(player.x, player.z) : [];
+        this._covers = [];
+        for (const s of solids) if (s.tag === 'parked') this._covers.push(away(s.x, s.z, (s.radius ?? 1) + 0.8));
+        for (const q of this.police) if (q.live) this._covers.push(away(q.x, q.z, 2.4));
+      }
+    }
     for (let i = 0; i < this.police.length; i++) {
       const c = this.police[i];
       if (i >= want) { c.live = false; c.mesh.visible = false; continue; }
@@ -1109,7 +1134,7 @@ export class Traffic {
         const lit = c.respondT > 0 && Math.floor(t * 6) % 2;
         if (c.bar) { c.bar[0].emissiveIntensity = lit ? 5.5 : 0.15; c.bar[1].emissiveIntensity = c.respondT > 0 && !lit ? 5.5 : 0.15; }
         if (c.pool) { c.pool.visible = c.respondT > 0; c.pool.material = poolMat(lit ? 0xff2a1c : 0x2f6dff); }
-        if (c.deployed) { c.deployed = false; c.officer.visible = false; }
+        if (c.deployed) { c.deployed = false; c.officer.visible = false; c.sk = officerPool(this.scene).release(c.sk); }
         c.mode = 'road'; c.best = Infinity; c.stale = 0; c.deployT = 0;
         if (gap > 320) { c.live = false; c.mesh.visible = false; continue; }
         this.#driveRoad(c, player, dt);
@@ -1182,6 +1207,8 @@ export class Traffic {
         }
         c.gun.geometry = buildWeaponMesh(c.gunKind).geometry;
         c.flash.position.x = ARSENAL[c.gunKind].muzzle;
+        c.sk = officerPool(this.scene, { max: 4 }).acquire(c.slot + 1, swat);   // null past the cap: he stays a primitive officer
+        c.sk?.takeOver(c.joints, c.gun);
         { const cs = coverSide(c.x, c.z, c.yaw, player.x, player.z); c.coverX = cs.x; c.coverZ = cs.z; }   // the door away from you, car between
         if (swat) {
           this.chatter?.radioPool?.('swat');
@@ -1192,6 +1219,7 @@ export class Traffic {
         c.deployed = false;
         c.officer.visible = false;
         c.holdT = 0;
+        c.sk = officerPool(this.scene).release(c.sk);
       }
 
       if (c.deployed) {
@@ -1207,9 +1235,10 @@ export class Traffic {
         if (c.down > 0) {
           c.down += dt;
           poseOfficer(c.joints, 'fall', Math.min(1, c.down / 0.6));
+          c.sk?.sync(dt, c.officer, 'fall', 0, 0, 0, 0);
           if (c.gun) c.gun.visible = false; if (c.flash) c.flash.visible = false;
           if (c.down > 10.5) c.officer.position.y -= dt * 0.9;   // the last seconds: the body sinks out of the street rather than blinking off
-          if (c.down > 12) { c.deployed = false; c.officer.visible = false; c.live = false; c.mesh.visible = false; c.mode = 'road'; }
+          if (c.down > 12) { c.deployed = false; c.officer.visible = false; c.live = false; c.mesh.visible = false; c.mode = 'road'; c.sk = officerPool(this.scene).release(c.sk); }
           continue;
         }
         const ty = (player.y ?? 0) + targetProfile(!!player.onFoot, !!player.crouch).y;
@@ -1235,7 +1264,13 @@ export class Traffic {
         }
         c.quietFor = (player.firedAt !== undefined && performance.now() - player.firedAt < 1500) ? 0 : c.quietFor + dt;
         c.stateT += dt;
-        const next = nextState({ state: c.state, hp: c.hp, gap, playerSpeed: player.speed ?? 0, quietFor: c.quietFor, canSee, burstLeft: c.burstLeft, t: c.stateT, playerOnFoot: !!player.onFoot });
+        // a mover with no plan gets one; rushPlan returns null when there is no cover worth crossing for, and then he simply does not rush
+        if ((c.role === 'rush' || c.role === 'flank') && c.state !== 'rush' && !c.dest && (c.rushCool ?? 0) <= 0) {
+          const plan = rushPlan(c, { px: player.x, pz: player.z, covers: this._covers || [] });   // reads c.coverX/coverZ: no per-frame copy of the officer
+          if (plan) { c.dest = plan; c.rushTime = plan.time; }
+        }
+        const next = nextState({ state: c.state, hp: c.hp, gap, playerSpeed: player.speed ?? 0, quietFor: c.quietFor, canSee, burstLeft: c.burstLeft, t: c.stateT, playerOnFoot: !!player.onFoot,
+          role: c.role, dest: c.dest, reloadLeft: c.reloadLeft, arrived: c.arrived, rushTime: c.rushTime });
         if (next !== c.state) {
           if (next === 'peek') {
             const b = burstFor(c.gunKind); c.burstLeft = b.shots; c.fireT = 0.12;
@@ -1251,11 +1286,20 @@ export class Traffic {
           else if (next === 'advance') this.chatter?.radioPool?.('advance');
           else if (next === 'arrest') this.chatter?.radioPool?.('arrest');
           else if (next === 'peek' && c.state === 'cover' && c.stateT > 3) this.chatter?.radioPool?.('pinned');
+          if (next === 'rush') { c.arrived = false; this.chatter?.radioPool?.('advance'); }
+          if (c.state === 'rush') { c.rushCool = RUSH_COOL_S; if (c.dest?.flank) c.flanks = (c.flanks ?? 0) + 1; c.dest = null; }
           c.state = next; c.stateT = 0;
         }
-        if (c.state === 'advance' && c.toX !== undefined) {
-          const k = Math.min(1, c.stateT);   // nextState ends the advance at t >= 1, so this is the whole walk
-          c.coverX = c.fromX + (c.toX - c.fromX) * k; c.coverZ = c.fromZ + (c.toZ - c.fromZ) * k;
+        /* He WALKS or RUNS to where he wants to be. coverX/coverZ is his position
+           (the mesh is placed from it below); moveTarget says where, stepToward
+           moves him, moveSpeed is what the model animates to -- 0 standing,
+           ~1.6 walking, 4.4+ running. */
+        c.rushCool = Math.max(0, (c.rushCool ?? 0) - dt);   // WITHOUT this every officer rushes exactly once and then stands still for the rest of the fight: assignRoles gates movers on rushCool <= 0
+        {
+          const m = moveTarget(c, { px: player.x, pz: player.z });   // reads c.coverX/coverZ, not the cruiser's c.x/c.z
+          const st = stepToward(c.coverX, c.coverZ, m.x, m.z, m.speed, dt);
+          c.coverX = st.x; c.coverZ = st.z; c.arrived = st.arrived;
+          c.moveSpeed = dt > 0 ? st.moved / dt : 0;
         }
         const sx = c.coverX, sz = c.coverZ;
         // he faces where he thinks you are: you, with a line; where he last had you, without one for a few seconds
@@ -1273,11 +1317,14 @@ export class Traffic {
            a sidearm, or bent over you with the cuffs out. */
         c.poseT += dt;
         const arresting = c.state === 'arrest';
-        const want = arresting ? 'cuff' : c.state === 'peek' ? 'peek' : c.state === 'advance' ? 'walk' : 'crouch';
+        const want = arresting ? 'cuff' : c.state === 'peek' ? 'peek' : (c.moveSpeed ?? 0) > 0.3 ? 'walk' : 'crouch';   // the pose follows the FEET, so rush, advance and arrest all walk
         if (want !== c.pose) c.pose = want;
-        c.blender.apply(c.joints, c.pose, c.state === 'advance' ? c.poseT * 6 : c.poseT, dt, c.pose === 'peek' ? 0.12 : 0.22);
+        // the stride clock ACCUMULATES the scaled dt: multiplying a running poseT by a speed factor snapped the phase by tens of seconds every time he started or stopped running
+        c.strideT = (c.strideT ?? 0) + dt * (1 + (c.moveSpeed ?? 0) * 1.9);
+        c.blender.apply(c.joints, c.pose, c.strideT, dt, c.pose === 'peek' ? 0.12 : 0.22);
         // eyes on you: the head turns toward the player within what a neck allows
         lookAt(c.joints, Math.atan2(-(fz - sz), fx - sx) - face);
+        c.sk?.sync(dt, c.officer, c.pose, fx, ty, fz, c.hitT);
         if (c.hitT > 0) {   // the stagger rides on top of whatever pose he is in
           c.hitT -= dt;
           const k = Math.max(0, c.hitT / 0.35);
@@ -1289,17 +1336,24 @@ export class Traffic {
         /* Fire only from 'peek', only with a line, one aimed shot per weapon
            cycle inside the burst. Each shot is a real ray with the officer's
            skill on top of the weapon's spread; a miss is heard, not felt. */
-        c.fireT -= dt;
         if (c.flash) c.flash.visible = c.fireT > -0.06 && c.fireT < 0 && c.state === 'peek';
-        if (c.reloading > 0) { c.reloading -= dt; c.burstLeft = 0; }   // a reload is a burst that never comes; he goes back to cover
-        if (c.state === 'peek' && c.burstLeft > 0 && c.fireT <= -0.06 && !this.holdFire && shouldFire(Math.floor(this.wanted), c.quietFor)) {   // one star: they come to cuff you, and shoot only if you have
-          const b = burstFor(c.gunKind);
-          c.fireT = b.gap;
-          c.burstLeft--;
-          if (c.burstLeft === 0) c.fireT = b.pause;
-          // a shotgun at street range is the whole spread of pellets, three pistol rounds' worth
-          const landed = canSee && this.fireAt(c.officer.position.x, gunY, c.officer.position.z, player, c.gunKind, Math.floor(this.wanted), 1, c.gunKind === 'shotgun' ? 3 : 1);
+        /* fireControl owns the trigger now: burst discipline, an aim settle before
+           the first round, a reload that costs time, and suppression while a
+           team-mate is crossing. No shooting through a civilian or through the
+           man who is rushing (this._mates is built once a frame, above). */
+        const inLine = bystanderInLine(c.coverX, gunY, c.coverZ, player.x, ty, player.z, this.crowd?.people ?? [])
+          || bystanderInLine(c.coverX, gunY, c.coverZ, player.x, ty, player.z, this._mates || []);
+        const f = fireControl(c, {
+          dt, canSee, blocked: !!inLine || !!this.holdFire,
+          stars: Math.floor(this.wanted), quietFor: c.quietFor,
+          suppressing: c.role === 'suppress' && this._rushing > 0,
+        });
+        c.fireT = f.fireT; c.burstLeft = f.burstLeft; c.ammo = f.ammo; c.settleLeft = f.settleLeft; c.reloadLeft = f.reloadLeft;
+        if (f.reloadStart) this.chatter?.radioPool?.('reload');   // magazine out: the shout, and the gun is down for ARSENAL[kind].reload
+        if (f.fire) {
+          const landed = this.fireAt(c.officer.position.x, gunY, c.officer.position.z, player, c.gunKind, Math.floor(this.wanted), 1, c.gunKind === 'shotgun' ? 3 : 1);
           this.crowd?.panic?.(c.officer.position.x, c.officer.position.z, 20);
+          c.sk?.kick();
           if (!landed && this.decals && player.onFoot) {
             // the round went somewhere: a mark in the road a stride from you says how close
             const a = this.rand() * Math.PI * 2, r = 0.6 + this.rand() * 1.6;

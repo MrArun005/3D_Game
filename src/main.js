@@ -59,6 +59,7 @@ import { Multiplayer, roomFromUrl, createRoom } from './game/multiplayer.js';
 import { Weapon } from './game/weapon.js';
 import { ARSENAL, WEAPON_KINDS, buildWeaponMesh, weaponMaterial } from './game/weapons.js';
 import { officerMaterial } from './world/officer.js';
+import { officerPool } from './world/officerSkinned.js';
 import { Modes } from './game/modes.js';
 import { Grenades, BLAST_R, KILL_R, HURT_R, blastFalloff } from './game/grenade.js';
 import { Crosshair, DecalPool, ADS, ADS_BLEND_S, spreadToPixels, spreadFor, recoilFor, firstBuildingHit, swayFor, swayPhaseStep, reloadPose, movementSpread, aimAssist } from './game/shooting.js';
@@ -212,6 +213,7 @@ if (new URLSearchParams(location.search).has('debug')) {
   // shooting-layer state the harness cannot otherwise see or set (pointer lock is refused headless)
   window.__dbg = () => ({ started, aiming, ads, crouch, burst, heat: weapon.heat, ready: weapon.ready, kind: weapon.kind, ammo: weapon.ammo, health });
   window.__aim = (v) => { aiming = !!v; };
+  window.__traffic = () => traffic;   // ?debug: squad roles and movement straight off the officers. A FUNCTION, not the value: this block runs long before `const traffic` and touching it here is a TDZ crash at boot
   window.__police = () => traffic.police.filter((c) => c.live).map((c) => ({ deployed: !!c.deployed, state: c.state, gun: c.gunKind, hp: c.hp, down: +c.down.toFixed(1), pose: c.pose, mode: c.mode, hunt: !!c.hunt, chase: !!c.chase, spd: +(c.speed || 0).toFixed(1), cruise: +(c.cruise || 0).toFixed(1), stale: +(c.stale || 0).toFixed(1), lost: +(c.lost || 0).toFixed(1), x: Math.round(c.x), z: Math.round(c.z), d: Math.round(Math.hypot(c.x - (onFoot.active ? onFoot.x : car.x), c.z - (onFoot.active ? onFoot.z : car.z))) }));
   window.__wanted = (n) => { traffic.wanted = n; };
   window.__hurt = (h) => { health = Math.max(0, health - (+h || 1)); hud.setHealth(health); if (health <= 0) onDeath(); };   // the death flow, on demand
@@ -1346,7 +1348,8 @@ beamPool.position.set(NOSE_X + 17, 0.05, 0);
 beamPool.renderOrder = 2;
 hero.add(beamPool);
 
-const traffic = new Traffic(scene, assets, DAY ? 36 : 40, !DAY);   // Phase 5: denser, and lit at night
+const traffic = new Traffic(scene, assets, DAY ? 36 : 40, !DAY);
+officerPool(scene);   // start the rig fetch at boot: acquire() returns null while it is in flight, and the first squad of a session would otherwise be the old boxes   // Phase 5: denser, and lit at night
 const chase = new ChaseCamera(camera);
 const weather = createWeather(scene, { hemi, dome: () => dome, onStrike: (delay) => audio.thunder?.(delay) });   // always built: rain comes in night spells (rainSpell) on the day cycle, and all night with ?night
 const hud = new Hud();
@@ -2213,7 +2216,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     if (scene.fog) scene.fog.density *= 1 + 0.5 * car.wet;   // rain thickens the air (1.9x washed the night out); multiplies the clock's per-frame value, so it never accumulates
     if (stars && car.wet > 0.05) stars.visible = false;   // no stars through cloud (the clock re-decides every frame)
   }
-  lightPool?.update(dt, currentVehicle.x, currentVehicle.z, traffic);
+  lightPool?.update(dt, photo?.on ? camera.position.x : currentVehicle.x, photo?.on ? camera.position.z : currentVehicle.z, traffic);
   (streaks ??= new HeadlightStreaks(scene)).update(camera, traffic, car);   // GTA anamorphic streaks on oncoming headlights (world/streaks.js)
   reputation?.update(dt, playerTarget.x, playerTarget.z, traffic, car, damageModel);
   intelScanner?.update(dt, camera, playerTarget, traffic, reputation?.safehouses);
