@@ -13,6 +13,7 @@ import { BREAK_CLASS } from './breakables.js';
 import { ZEBRA_DEPTH } from '../game/traffic.js';
 import { buildTokyoBuilding, frontRotation, tokyoMaterial, buildTokyoStreet, wireMaterial, buildShrine } from './tokyo.js';
 import { tileUv, SIGN_TILES } from './signs.js';
+import { buildDecals, decalMaterial, decalGeometry } from './decals.js';
 import { buildGlare, setGlareRing } from './glare.js';
 import { styleFor, buildArt, artMaterial, ART_CAP } from './artBuildings.js';
 
@@ -98,7 +99,7 @@ const DISTRICT_FORM = {
 const pickForm = (forms, r) => { let acc = 0; for (const [k, w] of Object.entries(forms)) { acc += w; if (r < acc) return k; } return 'slab'; };
 /* Foliage is never one green. These multiply the leaf material, so they read
    as the same planting in different light rather than as five paint pots. */
-const LEAF = [0xa8c48a, 0x8fae74, 0xc2cf92, 0x7f9e6c, 0xb6c88d, 0x9dbb85];
+const LEAF = [0x3d5a32, 0x4a6338, 0x2f4a28, 0x455c34, 0x3a522e, 0x486438];
 
 export class DistrictWorld {
   constructor(scene, assets, district, opts = {}) {
@@ -133,7 +134,8 @@ export class DistrictWorld {
     // city-wide BatchedMesh per material (catalogue.js) -- the draw-call fix of 2026-09-02
     if (this.catalogue?.multiDraw) this.catalogue.attach(scene);
     this.propGroups = new Map();
-    this.headsByChunk = new Map();     // chunk key -> [{x,y,z}] lamp heads (night light pool)
+    this.headsByChunk = new Map();
+    this.heroLightsByChunk = new Map();   // chunk key -> [{x,y,z,colour,intensity,range}] block hero lights (game/lighting.js)     // chunk key -> [{x,y,z}] lamp heads (night light pool)
     this.facadeGroups = new Map();
     this.parkedLod = new Map();        // chunk key -> { near, far, byBody } parked-car LOD sets (#cullFar swaps them; #buildSteps sets, releaseChunk deletes). Dropped by the lite/radius constructor edit in 22c1c0c and every chunk build died on .set -- keep it.
     this.isLite = !!opts.lite;
@@ -537,6 +539,7 @@ export class DistrictWorld {
         this.solidsByChunk.delete(k);
         this.poolsByChunk.delete(k);
         this.headsByChunk.delete(k);
+        this.heroLightsByChunk.delete(k);
         this.onBreakablesGone?.(k);
         this.#rerecordAll();
       }
@@ -1311,6 +1314,26 @@ export class DistrictWorld {
       const road = new THREE.Mesh(g, A.mat.tarmac);
       road.receiveShadow = true;
       group.add(road);
+      /* Road wear (world/decals.js): repairs, oil, rubber, kerb salt, gully
+         stains -- ONE instanced draw a chunk. Seeded per road SEGMENT and per
+         junction NODE, so the chunk next door generates the identical stream and
+         `bounds` keeps only its own half: no doubled wear at a seam. Built inside
+         the generator, so it lands before the bundle records. Measured district
+         wide: mean 111 a chunk, worst 308, cap 400, ~0.6 ms. */
+      const wear = buildDecals(segs.map((id) => this.district.segments[id]), this.district, 0x5ea1,
+        { bounds: { x0: ix * CHUNK, z0: iz * CHUNK, x1: (ix + 1) * CHUNK, z1: (iz + 1) * CHUNK } });
+      if (wear.count) {
+        const dg = decalGeometry();
+        dg.userData.owned = true;
+        const dm = new THREE.InstancedMesh(dg, decalMaterial(), wear.count);
+        wear.matrices.forEach((m, i) => dm.setMatrixAt(i, m));
+        dg.setAttribute('aTile', new THREE.InstancedBufferAttribute(wear.tiles, 2));
+        dg.setAttribute('aFade', new THREE.InstancedBufferAttribute(wear.fades, 1));
+        dm.instanceMatrix.needsUpdate = true;
+        dm.computeBoundingSphere();
+        dm.receiveShadow = true;       // no cast: a 12 mm quad's shadow is the road's own
+        group.add(dm);
+      }
     }
     yield;
 
@@ -1487,19 +1510,20 @@ export class DistrictWorld {
         const pz = s2.az + uz * t + nz * off * side;
         const yaw = Math.atan2(-nz * side, -nx * side);
         const ly = this.district.elevationAt(px, pz);
+        const onTarmac = this.district.tarmacDepth(px, pz) <= 0.2;
         /* With a catalogue loaded the authored lamp and its light pool come
            from dressing.js instead, placed by the same loop -- keeping both
-           would stand a box lamp inside every real one. */
-        if (dressed) continue;
-        // same junction rule as dressing.js: never on anyone's tarmac
-        if (this.district.tarmacDepth(px, pz) <= 0.2) continue;
-        lamps.push(mat4(px, KERB_H + ly, pz, -yaw, 1, 1, 1));
-        solidParked.push({ x: px, z: pz, yaw: 0, offsets: [0],
-                           radius: 0.22, reach: 0.6, tag: 'prop' });
-        heads.push(mat4(px, KERB_H + ly, pz, -yaw, 1, 1, 1));
-        const hx = px + Math.cos(yaw) * 1.42, hz = pz - Math.sin(yaw) * 1.42;
-        pools.push(flat(hx, 0.03 + ly, hz, 13));
-        if (hash(px, pz) < 0.35) {
+           would stand a box lamp inside every real one. Trees used to ride
+           that continue, so a dressed city only had the kit cube canopy. */
+        if (!dressed && !onTarmac) {
+          lamps.push(mat4(px, KERB_H + ly, pz, -yaw, 1, 1, 1));
+          solidParked.push({ x: px, z: pz, yaw: 0, offsets: [0],
+                             radius: 0.22, reach: 0.6, tag: 'prop' });
+          heads.push(mat4(px, KERB_H + ly, pz, -yaw, 1, 1, 1));
+          const hx = px + Math.cos(yaw) * 1.42, hz = pz - Math.sin(yaw) * 1.42;
+          pools.push(flat(hx, 0.03 + ly, hz, 13));
+        }
+        if (!onTarmac && hash(px, pz) < 0.35) {
           /* Species follows the street it stands on: formal poplars down the
              arterials, plane trees on the side streets, palms on the water
              boundary, pines where the map has nothing much else. */
@@ -1509,10 +1533,13 @@ export class DistrictWorld {
                    : r < 0.72 ? 'plane' : r < 0.88 ? 'poplar' : 'pine';
           const sc = 0.85 + hash(px, pz) * 0.45;
           const tx = px + nx * 2.2 * side, tz = pz + nz * 2.2 * side;
-          trees[sp].push(mat4(tx, KERB_H, tz, hash(pz, px) * 6.28, sc, sc * (0.9 + hash(px, pz) * 0.3), sc));
-          solidParked.push({ x: tx, z: tz, yaw: 0, offsets: [0],
-                             radius: 0.34, reach: 0.7, tag: 'prop' });
-          leafCol[sp].push(LEAF[Math.floor(r * LEAF.length)]);
+          if (this.district.tarmacDepth(tx, tz) > 0.2) {
+            const ty = KERB_H + this.district.elevationAt(tx, tz);
+            trees[sp].push(mat4(tx, ty, tz, hash(pz, px) * 6.28, sc, sc * (0.9 + hash(px, pz) * 0.3), sc));
+            solidParked.push({ x: tx, z: tz, yaw: 0, offsets: [0],
+                               radius: 0.34, reach: 0.7, tag: 'prop' });
+            leafCol[sp].push(LEAF[Math.floor(r * LEAF.length)]);
+          }
         }
       }
       // kerbside parking on the quieter streets
@@ -1547,6 +1574,32 @@ export class DistrictWorld {
             body: bk, index: parked[bk].length - 1, chunk: k,
             colour: parkedCol[bk][parkedCol[bk].length - 1],
           });
+        }
+      }
+    }
+
+    /* Parks: the kit tree_broadleaf is a chamfered box (lod1 reads as a cube).
+       Same species instances as the kerb, so a park does not add a draw. */
+    for (const bl of blocks) {
+      if (bl.type !== 'park') continue;
+      const ca = Math.cos(bl.angle), sa = Math.sin(bl.angle);
+      const step = 11;
+      for (let lx = -bl.w / 2 + 7; lx < bl.w / 2 - 7; lx += step) {
+        for (let lz = -bl.h / 2 + 7; lz < bl.h / 2 - 7; lz += step) {
+          const r = hash(bl.x + lx, bl.y + lz);
+          if (r > 0.55) continue;
+          const jx = lx + (hash(lz, lx) - 0.5) * step * 0.6;
+          const jz = lz + (hash(lx, lz) - 0.5) * step * 0.6;
+          const px = bl.x + jx * ca - jz * sa;
+          const pz = bl.y + jx * sa + jz * ca;
+          if (this.district.tarmacDepth(px, pz) <= 0.5) continue;
+          if (this.district.landmarkKeepOut?.(px, pz)) continue;   // not inside the bandstand or the palm house
+          const sp = r < 0.55 ? 'plane' : r < 0.78 ? 'poplar' : 'pine';
+          const sc = 1.05 + hash(pz, px) * 0.55;
+          const py = KERB_H + this.district.elevationAt(px, pz);
+          trees[sp].push(mat4(px, py, pz, hash(px, pz) * 6.28, sc, sc * (0.9 + hash(px, pz) * 0.25), sc));
+          leafCol[sp].push(LEAF[Math.floor(hash(px * 1.3, pz) * LEAF.length)]);
+          solidParked.push({ x: px, z: pz, yaw: 0, offsets: [0], radius: 0.38, reach: 0.8, tag: 'prop' });
         }
       }
     }
@@ -1610,6 +1663,15 @@ export class DistrictWorld {
         sm.instanceMatrix.needsUpdate = true;
         sm.computeBoundingSphere();
         sm.receiveShadow = true;
+        /* Phase 5: one warm doorway per ~12 shopfronts, pooled by game/lighting.js.
+           The sign boards ARE the shopfronts, so they are the cheapest honest
+           source of "a lit door someone walks out of". */
+        { const hero = this.heroLightsByChunk.get(k) ?? [];
+          for (let i = 3; i < signs.length; i += 12) {
+            const p = new THREE.Vector3().setFromMatrixPosition(signs[i].m);
+            hero.push({ x: p.x, y: Math.max(2.4, p.y - 1.0), z: p.z, colour: 0xffc07a, intensity: 26, range: 13 });
+          }
+          this.heroLightsByChunk.set(k, hero); }
         faces.add(sm);
       }
       if (windows.length) {

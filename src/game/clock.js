@@ -288,6 +288,7 @@ export class GameClock {
       // Stagger 1: Street lamps & sodium pools turn on at 35% dusk
       const lampOn = nightFactor > 0.35;
       if (assets.mat?.pool) assets.mat.pool.opacity = lampOn ? 0.88 * Math.min(1, (nightFactor - 0.35) / 0.3) : 0;
+      if (assets.mat?.lampCone) assets.mat.lampCone.opacity = lampOn ? 0.12 * Math.min(1, (nightFactor - 0.35) / 0.3) : 0;
       if (assets.mat?.lampGlow) assets.mat.lampGlow.emissiveIntensity = lampOn ? 0.15 + 2.0 * nightFactor : 0.15;
 
       // Stagger 2: Commercial neon signs ignite at 20% dusk

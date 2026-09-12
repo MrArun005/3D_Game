@@ -63,7 +63,7 @@ function placeBoard(x, y, z, yaw, w, h) {
  *  are the only mandatory row -- everything else is scattered, or the
  *  pavement turns into a showroom.
  * ------------------------------------------------------------------ */
-const KERB_ROWS = [
+export const KERB_ROWS = [
   { asset: 'props/lamp_arterial', every: 34, chance: 1.00, on: ['arterial', 'boundary'], offset: 1.6 },
   { asset: 'props/lamp_local',    every: 30, chance: 1.00, on: ['street', 'local'],      offset: 1.5 },
   { asset: 'props/bench',         every: 46, chance: 0.34, offset: 3.4 },
@@ -159,7 +159,7 @@ const rowStart = (row, s) => 10 + hash(s.ax * 1.7 + row.offset * 13.1, s.az * 0.
  * ------------------------------------------------------------------ */
 const OQ_PITCH = 15;
 
-const OQ_KIT = [
+export const OQ_KIT = [
   { asset: 'props/bin',            weight: 7, offset: 1.2, span: 0.6 },
   { asset: 'props/bike_rack',      weight: 6, offset: 2.4, span: 3.1 },
   { asset: 'props/parking_meter',  weight: 6, offset: 1.1, span: 0.3 },
@@ -242,7 +242,7 @@ const ROOF_KIT = [
   { asset: 'props/aerial_mast',     weight: 1 },
 ];
 
-const PARK_KIT = [
+export const PARK_KIT = [
   { asset: 'props/park_bench',      weight: 5 },
   { asset: 'props/shrub_mass',  weight: 6, scale: [0.8, 1.4] },
   { asset: 'props/flower_bed',      weight: 4 },
@@ -460,6 +460,7 @@ function blockDressing(batch, blocks, district, solids) {
           const jx = lx + (hash(lz, lx) - 0.5) * step * 0.7;
           const jz = lz + (hash(lx, lz) - 0.5) * step * 0.7;
           const [px, pz] = toWorld(jx, jz);
+          if (district.landmarkKeepOut?.(px, pz)) continue;   // world/landmarks.js: the ground a set piece stands on
           const k = pick(PARK_KIT, hash(px * 1.7, pz * 0.3));
           const sc = k.scale
             ? k.scale[0] + hash(pz, px) * (k.scale[1] - k.scale[0]) : 1;
@@ -521,6 +522,7 @@ function blockDressing(batch, blocks, district, solids) {
           const r = hash(bl.x + lx * 1.3, bl.y + lz * 0.7);
           if (r > (harbour ? 0.55 : 0.34)) continue;
           const [px, pz] = toWorld(lx, lz);
+          if (district.landmarkKeepOut?.(px, pz)) continue;   // world/landmarks.js: the ground a set piece stands on
           const k = pick(kit, hash(pz, px));
           batch.add(k.asset, place(px, KERB_H + district.elevationAt(px, pz), pz,
             Math.round(hash(px, pz) * 4) * (Math.PI / 2) + bl.angle), containerColour(px, pz, k.asset));

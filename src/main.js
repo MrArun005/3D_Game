@@ -6,7 +6,7 @@ import { autoResolution, createRenderer, createScene, createLights, DAY_SUN, ren
 import { detectGpuInfo, resolveQualityMode } from './core/gpu.js';
 import { createSky } from './core/sky.js';
 import { createGrade } from './core/grade.js';
-import { setAnisotropy } from './world/textures.js';
+import { setAnisotropy, wetTarmacLook } from './world/textures.js';
 import { createAssets } from './world/assets.js';
 import { loadVendorCars, loadHeroSkin, KENNEY_CARS } from './world/vendorCars.js';
 import { LightPool } from './game/lighting.js';
@@ -47,6 +47,7 @@ import { CG_X, WHEEL_R } from './vehicle/config.js';
 import { ChaseCamera } from './game/camera.js';
 import { createInput, padConnected, rumble } from './game/input.js';
 import { Traffic, policeMaterials } from './game/traffic.js';
+import { decalMaterial as wearDecalMaterial, decalGeometry as wearDecalGeometry } from './world/decals.js';
 import { Crowd } from './game/crowd.js';
 import { Helicopter } from './game/helicopter.js';
 import { OnFoot, makeSolver } from './game/onfoot.js';
@@ -65,6 +66,7 @@ import { Tracers } from './game/tracers.js';
 import { Puffs } from './world/puffs.js';
 import { tokyoMaterial, setTokyoNight } from './world/tokyo.js';
 import { setGlareNight } from './world/glare.js';
+import { setWindowNight, setSignNight } from './world/signs.js';
 import { FarTraffic } from './world/farTraffic.js';
 import { HeadlightStreaks, setStreakNight } from './world/streaks.js';
 let streaks = null;   // anamorphic headlight streak pool, built on the first frame that needs it
@@ -187,15 +189,14 @@ function daylightAssets(A) {
   A.mat.walk.color.setHex(0xb9b7ad);
   A.mat.leaf.color.setHex(0x4e6b3a);
   A.mat.bark.color.setHex(0x5b4a3a);
-  // the asphalt was painted for sodium light; at noon it reads as tar
-  A.mat.tarmac.color.setHex(0xb4b8bd);
-  /* Dry asphalt at noon is matte. At 0.42 roughness with envMapIntensity 0.8
-     the carriageway mirrored the sky, which is what flattened it: the sheen
-     washed straight over the albedo AND the new normal map. Wet tarmac under
-     sodium is the NIGHT look and keeps its gloss. */
-  A.mat.tarmac.roughness = 0.82;
+  // the asphalt was painted for sodium light; at noon it reads as tar.
+  // 0xb4b8bd was a silver sheet — a modest lift keeps grain without going concrete.
+  A.mat.tarmac.color.setHex(0x8e9298);
   A.mat.tarmac.metalness = 0.0;
-  A.mat.tarmac.envMapIntensity = 0.25;
+  const dry = wetTarmacLook(0);
+  A.mat.tarmac.roughness = dry.roughness;
+  A.mat.tarmac.envMapIntensity = dry.envMapIntensity;
+  A.mat.tarmac.normalScale.setScalar(dry.normalScale);
 }
 
 let world = new City(scene, assets);
@@ -452,7 +453,7 @@ function onDeath() {
      chop shop is still the only way to turn it into cash). Getting back in
      is the same F as always. No hospital on the map: the old in-car respawn. */
   if (at) {
-    onFoot.exit(car, (x, z) => Math.max(world.district?.elevationAt?.(x, z) ?? 0, groundHeightAt(x, z)));
+    exitCarOnFoot();
     car.throttle = 0; car.brake = 1; car.hand = 1;
   } else if (onFoot.active) onFoot.enter();
   hero.visible = true;
@@ -772,6 +773,16 @@ const walkSolid = makeSolver(
   getObstacles,
 );
 
+/** Supply OnFoot's safe-exit chooser with the live collision world. */
+function exitCarOnFoot(vehicle = car) {
+  return onFoot.exit(
+    vehicle,
+    (x, z) => Math.max(world.district?.elevationAt?.(x, z) ?? 0, groundHeightAt(x, z)),
+    walkSolid,
+    (x, z) => !world.district?.inWater?.(x, z),
+  );
+}
+
 /**
  * Get out, or get in.
  *
@@ -1064,7 +1075,10 @@ function useVehicle() {
       }
     }
     driverDoor(1.4);                       // step out; it swings shut behind you
-    onFoot.exit(car, (x, z) => Math.max(world.district?.elevationAt?.(x, z) ?? 0, groundHeightAt(x, z)));
+    if (!exitCarOnFoot()) {
+      hud.flash('NO SAFE PLACE TO EXIT');
+      return;
+    }
     hero.visible = true;
     car.throttle = 0; car.brake = 1; car.hand = 1;
   }
@@ -1094,6 +1108,11 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   world = new DistrictWorld(scene, assets, district, { day: DAY, catalogue, lite: isLite });
   window._world = world;
   world.camera = camera;                  // chunk-level frustum culling for the render bundles
+  /* Before the LightPool: it decides at construction whether to allocate hero
+     lights at all (lighting.js reads world.heroLightsByChunk), and Landmarks is
+     what fills that map; it also puts world.extraSolids in place before the
+     first chunk builds its box list. */
+  landmarks = new Landmarks(scene, district, world);   // Phase 6 skyline + gun shop, supermarket, street set (world/landmarks.js)
   if (!DAY) {
     const n = +(new URLSearchParams(location.search).get('lights') ?? (isLite ? 4 : 6));
     lightPool = new LightPool(scene, world, { count: n });
@@ -1140,7 +1159,6 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   traffic.hud = hud;
   roadblock = new Roadblock(scene, assets, district, world, traffic, hero);
   metro = new Metro(scene, district, assets);   // two elevated lines and their trains (world/metro.js)
-  landmarks = new Landmarks(scene, district);   // gun shop, supermarket, street set on their lots (world/landmarks.js)
   garage.restore();
   story = new StoryManager(mission, traffic, hud, garage, audio, navigation);
   dispatch = new DispatchService(scene, world, garage, traffic, debris, hud, audio, navigation);
@@ -1195,7 +1213,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   // now the car is on its spawn node, lay the film route from where it stands
   ROUTE = buildRoute(null, car.x, car.z);
   console.info(`Halstead Bay loaded — spawn at Little Tokyo (${car.x}, ${car.z})`);
-  setTimeout(() => { if (window.hud?.flash) window.hud.flash('🏮 LITTLE TOKYO · 新宿通り'); }, 600);
+  /* spawn is the city. No toast. */
 }).catch((e) => { districtFailed = true; console.warn('district not loaded, staying on the grid:', e.message); });
 
 // ---- the car ----
@@ -1203,8 +1221,9 @@ const car = createCarState();
 car.type = 'car';
 /* Headlights are active by default from spawn (crisp modern LED low beam).
    H toggles High-Beam Rally Projectors. */
-car.headlights = true;
+car.headlights = !DAY;
 car.headlightMode = 'low';
+car.lightsUser = false;
 const hero = buildCar(assets.carMats, 0x5b636d);
 scene.add(hero);
 // the damage model marks the real bodywork, so it needs the real meshes
@@ -1339,6 +1358,7 @@ window.stats = stats;
 window.renderer = renderer;
 window.scene = scene;
 photo = new Photo(camera, stats);
+  photo.useClock?.(clock);   // a district preset sets the hour that flatters it (photo.js PRESETS)
 window.photo = photo;
 
 const audio = createAudio();
@@ -1529,7 +1549,7 @@ const featureTour = new FeatureTour({
       }, (x, z) => Math.max(world.district?.elevationAt?.(x, z) ?? 0, groundHeightAt(x, z)));
       if (hero) hero.visible = true;
     } else if (!onFoot.active) {
-      onFoot.exit(car, (x, z) => Math.max(world.district?.elevationAt?.(x, z) ?? 0, groundHeightAt(x, z)));
+      exitCarOnFoot();
       if (hero) hero.visible = true;
       car.throttle = 0; car.brake = 1; car.hand = 1;
     }
@@ -1617,17 +1637,23 @@ const input = createInput((action) => {
   // C: cycle the chase camera; on foot it is the crouch toggle. (The handler was lost in a headlight edit; the key still sent 'camera'.)
   if (action === 'camera') { if (onFoot.active) { crouch = !crouch; onFoot.crouch = crouch; hud.flash(crouch ? 'CROUCH' : 'STAND'); } else chase.cycle(); }
   if (action === 'lights') {
-    if (!car.headlights || car.headlightMode === 'low') {
-      car.headlights = true;
-      car.headlightMode = 'high';
-      hud.flash('HEADLIGHTS · HIGH BEAM 🔆');
-    } else {
+    car.lightsUser = true;
+    if (!car.headlights) {
       car.headlights = true;
       car.headlightMode = 'low';
-      hud.flash('HEADLIGHTS · LOW BEAM 💡');
+      hud.flash('HEADLIGHTS · ON');
+    } else if (car.headlightMode === 'low') {
+      car.headlightMode = 'high';
+      hud.flash('HEADLIGHTS · HIGH');
+    } else {
+      car.headlights = false;
+      car.headlightMode = 'low';
+      hud.flash('HEADLIGHTS · OFF');
     }
   }
   if (action === 'photo') photo.toggle();
+  // \ : cinematic HUD -- speed and objective only (style.css body.cinematic)
+  if (action === 'cinematic' && started) hud.flash(hud.setCinematic() ? 'CINEMATIC HUD' : 'HUD RESTORED');
   if (action === 'tour') {
     if (featureTour.active) featureTour.stop();
     else window.startFeatureTour();
@@ -1900,6 +1926,11 @@ function frameBody() {
     0.5 + car.brake * 3.0 + (car.hand > 0.3 ? 1.2 : 0);
   // gear 0 is reverse (the HUD prints it as R)
   if (hero.userData.reverseMat) hero.userData.reverseMat.emissiveIntensity = car.gear === 0 ? 2.4 : 0;
+  if (!car.lightsUser) {
+    const night = clock.hour >= 18.2 || clock.hour < 6.4;
+    car.headlights = night;
+    if (night && car.headlightMode !== 'high') car.headlightMode = 'low';
+  }
   const isHighBeam = car.headlights && car.headlightMode === 'high';
   const headMat = hero.userData.headMat;
   if (headMat) {
@@ -2162,15 +2193,23 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     }
   }
   // Little Tokyo's windows, neon and kanban come up with the night (tokyo.js emissive attribute)
-  { const hr = clock.hour; const nk = hr >= 20.5 || hr < 5.2 ? 1 : hr >= 18 ? (hr - 18) / 2.5 : hr < 7.2 ? (7.2 - hr) / 2 : 0; setTokyoNight(nk); setGlareNight(nk); setStreakNight(nk); farTraffic?.update(dt, currentVehicle.x, currentVehicle.z, (world.radius + 0.5) * 256, nk); }
+  { const hr = clock.hour; const nk = hr >= 20.5 || hr < 5.2 ? 1 : hr >= 18 ? (hr - 18) / 2.5 : hr < 7.2 ? (7.2 - hr) / 2 : 0; setTokyoNight(nk); setGlareNight(nk); setStreakNight(nk); setWindowNight(nk); setSignNight(nk); farTraffic?.update(dt, currentVehicle.x, currentVehicle.z, (world.radius + 0.5) * 256, nk); }
   if (weather) {
     // rain only at night (the clock's thresholds), in spells on the normal cycle, all night with ?night
     const nightNow = clock.hour >= 20.5 || clock.hour < 5.2;
     weather.setEnabled(rainForce ?? (nightNow && (!DAY || rainSpell(now / 1000))));
-    weather.update(camera, currentVehicle, dt); car.wet = weather.amount ?? 1; traffic.wet = car.wet; if (crowd) crowd.rain = car.wet;
+    weather.update(camera, currentVehicle, dt); car.wet = weather.amount ?? 1; traffic.wet = car.wet; if (crowd) crowd.rain = car.wet; grade.setWet?.(car.wet);   // ?ssr: wet-street reflections follow the rain
     if (Math.abs((weather.amount ?? 1) - (rainHeard ?? -1)) > 0.05) { rainHeard = weather.amount; audio.setRain(rainHeard); }
-    // the road LOOKS wet: tarmac roughness drops and its reflection rises with the rain (uniforms only, no recompile; bundles carry uniform changes)
-    const tm = assets?.mat?.tarmac; if (tm) { tm.roughness = 0.48 - 0.34 * car.wet; tm.envMapIntensity = 1.1 + 2.6 * car.wet; tm.normalScale.setScalar(0.8 - 0.55 * car.wet); }   // water fills the asphalt's relief: at full wet the bump map fades, so the road mirrors instead of reading as wet cobbles   // the night environment is dark now, so a wet road needs more of it to mirror the neon
+    // the road LOOKS wet: uniforms only, no recompile. Dry must stay the day
+    // contract (matte, bump 0.28) — writing a half-wet gloss at wet=0 is what
+    // turned the asphalt grain into cobbles at noon.
+    const tm = assets?.mat?.tarmac;
+    if (tm) {
+      const look = wetTarmacLook(car.wet);
+      tm.roughness = look.roughness;
+      tm.envMapIntensity = look.envMapIntensity;
+      tm.normalScale.setScalar(look.normalScale);
+    }
     if (scene.fog) scene.fog.density *= 1 + 0.5 * car.wet;   // rain thickens the air (1.9x washed the night out); multiplies the clock's per-frame value, so it never accumulates
     if (stars && car.wet > 0.05) stars.visible = false;   // no stars through cloud (the clock re-decides every frame)
   }
@@ -2250,6 +2289,12 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     compileMats.add(grenades.ball.material); compileMats.add(grenades.mat);
     for (const m of policeMaterials()) compileMats.add(m);
     compileMats.add(tokyoMaterial());
+    /* Road wear (world/decals.js) is warmed by hand below, not through
+       compileMats: its colorNode reads aTile/aFade and getAttributes SKIPS an
+       attribute the geometry lacks, so warming it on the test box compiles a
+       variant the chunk mesh never uses. Calling it here also paints the
+       1024^2 atlas at boot instead of inside the first chunk build. */
+    wearDecalMaterial();
     /* The pipeline is keyed on the material AND the object kind: a
        PointsMaterial warmed on a Mesh compiles the wrong program, and an
        InstancedMesh's vertex stage differs from a Mesh's. Warm each on what
@@ -2262,6 +2307,14 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
       else if (mat.isLineBasicMaterial) dummyGroup.add(new THREE.LineSegments(pointsGeo, mat));
       else if (instanced.has(mat)) { const im = new THREE.InstancedMesh(testBox, mat, 1); im.setMatrixAt(0, new THREE.Matrix4().makeTranslation(0, -50, 0)); dummyGroup.add(im); }
       else dummyGroup.add(new THREE.Mesh(testBox, mat));
+    }
+    {
+      const dg = wearDecalGeometry();
+      dg.setAttribute('aTile', new THREE.InstancedBufferAttribute(new Float32Array(2), 2));
+      dg.setAttribute('aFade', new THREE.InstancedBufferAttribute(new Float32Array(1), 1));
+      const dwm = new THREE.InstancedMesh(dg, wearDecalMaterial(), 1);
+      dwm.setMatrixAt(0, new THREE.Matrix4().makeTranslation(0, -50, 0));
+      dummyGroup.add(dwm);
     }
     scene.add(dummyGroup);
 

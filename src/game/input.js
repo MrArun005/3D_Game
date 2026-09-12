@@ -158,6 +158,7 @@ export function createInput(onAction) {
     if (e.code === 'Digit6') onAction('weapon6');   // the sniper rifle (fifth gun; 5 stays grenades)
     if (e.code === 'Digit0' || e.code === 'Backquote') onAction('weapon0');   // fists
     if (e.code === 'KeyX') onAction('reload');
+    if (e.code === 'Backslash') onAction('cinematic');   // clean frame: speed + objective only
     if (e.code === 'KeyZ') onAction('intel');   // Astra tactical AI scanner toggle
   });
   addEventListener('keyup', (e) => {
