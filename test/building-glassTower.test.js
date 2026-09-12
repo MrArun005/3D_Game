@@ -11,7 +11,10 @@ test('glassTower: every part carries the artKit attribute set and a known materi
   assert.equal(STYLE, 'glassTower');
   for (const seed of seeds) {
     const { hw, hd, h } = footprint(seed), b = build(seed, hw, hd, h);
-    assert.ok(b.parts.length > 20, `seed ${seed}: parts ${b.parts.length}`);
+    /* Parts are merged per material key before return, so the count is 5-8 by
+       design -- it is no longer a proxy for detail. Assert the TRIANGLES instead,
+       which is what the old count stood in for. */
+    assert.ok(b.parts.reduce((n, { geo }) => n + triCount(geo), 0) > 800, `seed ${seed}: parts ${b.parts.length}`);
     for (const { geo, mat } of b.parts) {
       assert.ok(MAT_KEYS.includes(mat), `seed ${seed}: material ${mat}`);
       for (const a of ['position', 'normal', 'uv', 'color', 'emit']) assert.ok(geo.attributes[a], `seed ${seed}: ${mat} lacks ${a}`);

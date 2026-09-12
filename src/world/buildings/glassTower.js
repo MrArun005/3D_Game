@@ -1,3 +1,4 @@
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 /**
  * CBD glass tower -- the board is assets/art/building_cbd_glass_tower.jpg:
  * "HALSTEAD BAY FINANCIAL". Twelve to twenty-four storeys of dark curtain
@@ -165,5 +166,21 @@ export function build(seed, hw, hd, h) {
 
   let tris = 0;
   for (const { geo } of P.list) tris += geo.index ? geo.index.count / 3 : geo.attributes.position.count / 3;
-  return { parts: P.list, boards, lamps, height: H, floors, tris };
+
+  /* Merge per material key before returning. These three shipped their raw
+     part list -- 686 to 845 separate geometries a building -- and districtWorld
+     applies a matrix to EVERY one and pushes it into a per-key array, per
+     footprint. Measured: one footprint's slice of the chunk build hit 79.5 ms,
+     which is five dropped frames as you drive into a new block. loft.js and
+     brickRow.js already did this and return 5 to 8. The chunk merges per key
+     anyway, so nothing downstream changes. */
+  const byMat = new Map();
+  for (const { mat, geo } of P.list) (byMat.get(mat) ?? byMat.set(mat, []).get(mat)).push(geo);
+  const parts = [];
+  for (const [mat, geos] of byMat) {
+    const geo = mergeGeometries(geos, false);
+    for (const g of geos) g.dispose();
+    if (geo) parts.push({ geo, mat });
+  }
+  return { parts: parts, boards, lamps, height: H, floors, tris };
 }

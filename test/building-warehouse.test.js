@@ -11,7 +11,10 @@ test('warehouse: every part carries the attribute set and a known material key',
   assert.equal(STYLE, 'warehouse');
   for (const c of CASES) {
     const b = build(c.seed, c.hw, c.hd, c.h);
-    assert.ok(b.parts.length > 50, `seed ${c.seed}: ${b.parts.length} parts`);
+    /* Parts are merged per material key before return, so the count is 5-8 by
+       design -- it is no longer a proxy for detail. Assert the TRIANGLES instead,
+       which is what the old count stood in for. */
+    assert.ok(b.parts.reduce((n, { geo }) => n + (geo.index ? geo.index.count / 3 : geo.attributes.position.count / 3), 0) > 800, `seed ${c.seed}: ${b.parts.length} parts`);
     for (const { geo, mat } of b.parts) {
       assert.ok(MAT_KEYS.includes(mat), `material key ${mat}`);
       for (const a of ['position', 'normal', 'uv', 'color', 'emit']) assert.ok(geo.attributes[a], `seed ${c.seed}: ${mat} part lacks ${a}`);

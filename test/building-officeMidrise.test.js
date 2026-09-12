@@ -10,7 +10,10 @@ const CASES = Array.from({ length: 20 }, (_, i) => ({ seed: i * 7 + 1, hw: 8 + (
 test(`${STYLE}: every part carries the attribute set, a known material key, and stays inside the footprint`, () => {
   for (const { seed, hw, hd, h } of CASES) {
     const b = build(seed, hw, hd, h);
-    assert.ok(b.parts.length > 20, 'parts');
+    /* Parts are merged per material key before return, so the count is 5-8 by
+       design -- it is no longer a proxy for detail. Assert the TRIANGLES instead,
+       which is what the old count stood in for. */
+    assert.ok(b.parts.reduce((n, { geo }) => n + (geo.index ? geo.index.count / 3 : geo.attributes.position.count / 3), 0) > 800, 'triangles');
     let total = 0;
     for (const { geo, mat } of b.parts) {
       assert.ok(MAT_KEYS.includes(mat), `material key ${mat}`);
