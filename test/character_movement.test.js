@@ -80,6 +80,19 @@ test('3. OnFoot WASD movement is camera-relative and omnidirectional', () => {
   assert.ok(onFoot.vz > 2.0, `Strafe D (right) should accelerate +vz, got ${onFoot.vz}`);
 });
 
+test('3b. Vehicle exit uses the passenger side when the driver door is blocked', () => {
+  const scene = new THREE.Scene();
+  const onFoot = new OnFoot(scene);
+  const car = { x: 10, z: 20, yaw: 0, y: 0.62 };
+
+  // With yaw 0 the driver's door is at negative Z. Simulate a wall there.
+  onFoot.exit(car, () => 0, null, (_x, z) => z >= 20);
+
+  assert.equal(onFoot.active, true);
+  assert.ok(Math.abs(onFoot.x - 10) < 1e-8, `Exit should stay beside the car, got x=${onFoot.x}`);
+  assert.ok(onFoot.z > 21.8, `Exit should use the passenger side, got z=${onFoot.z}`);
+});
+
 test('4. OnFoot sprinting accelerates up to ~7.0 m/s with Shift key', () => {
   const scene = new THREE.Scene();
   const onFoot = new OnFoot(scene);

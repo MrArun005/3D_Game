@@ -78,23 +78,49 @@ export class OnFoot {
     this.character.onReady = () => { this.group.visible = false; this.character.show(this.active); };
   }
 
-  /** Step out of the car, standing at the driver's door. */
-  exit(car, elevationAt = null) {
-    const side = car.yaw + Math.PI / 2;     // left of travel
-    this.x = car.x + Math.cos(side) * 1.85;
-    this.z = car.z - Math.sin(side) * 1.85;
+  /**
+   * Step out without materialising inside a wall or another car. A blocked
+   * driver's door falls back to the passenger side, then behind the vehicle.
+   */
+  exit(car, elevationAt = null, resolvePosition = null, canStandAt = null) {
+    const yaw = car.yaw || 0;
+    const side = yaw + Math.PI / 2; // driver's side (the hero uses doorFR)
+    const candidates = [
+      { x: car.x + Math.cos(side) * 1.85, z: car.z - Math.sin(side) * 1.85 },
+      { x: car.x - Math.cos(side) * 1.85, z: car.z + Math.sin(side) * 1.85 },
+      { x: car.x - Math.cos(yaw) * 2.55, z: car.z + Math.sin(yaw) * 2.55 },
+    ];
+    let chosen = null;
+    let fallback = null;
+    for (const candidate of candidates) {
+      if (canStandAt && !canStandAt(candidate.x, candidate.z)) continue;
+      const resolved = resolvePosition ? resolvePosition(candidate.x, candidate.z, RADIUS) : [candidate.x, candidate.z];
+      const x = resolved[0], z = resolved[1];
+      const correction = Math.hypot(x - candidate.x, z - candidate.z);
+      if (!fallback || correction < fallback.correction) fallback = { x, z, correction };
+      // Kerbs may require a tiny correction; a larger correction means this
+      // lane is occupied, so try the next exit position.
+      if (correction <= 0.18) { chosen = { x, z }; break; }
+    }
+    // A vehicle in water may have no valid dismount point at all. Leave the
+    // player in it rather than spawning them into water.
+    if (!chosen && !fallback && canStandAt) return false;
+    chosen ||= fallback || candidates[0];
+    this.x = chosen.x;
+    this.z = chosen.z;
     this.groundY = elevationAt ? elevationAt(this.x, this.z) : (car.y !== undefined ? car.y - 0.62 : 0);
     this.y = this.groundY;
     this.vy = 0;
     this.isGrounded = true;
-    this.yaw = car.yaw;
-    this.camYaw = car.yaw;
+    this.yaw = yaw;
+    this.camYaw = yaw;
     this.camPitch = 0.08;
     this.vx = 0; this.vz = 0;
     this.active = true;
     this.camSnap = true;
     if (this.character.ready) this.character.show(true);
     else this.group.visible = true;
+    return true;
   }
 
   /** Mouse delta, in pixels -- the same free look the chase camera has. */
