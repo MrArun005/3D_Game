@@ -15,6 +15,8 @@ import { buildTokyoBuilding, frontRotation, tokyoMaterial, buildTokyoStreet, wir
 import { tileUv, SIGN_TILES } from './signs.js';
 import { buildDecals, decalMaterial, decalGeometry } from './decals.js';
 import { buildGlare, setGlareRing } from './glare.js';
+import { buildSpan, signatureBridge } from './spans.js';
+import { skirtFoot } from './district.js';
 import { styleFor, buildArt, artMaterial, ART_CAP } from './artBuildings.js';
 
 /**
@@ -1197,6 +1199,7 @@ export class DistrictWorld {
        fight they provoke is invisible — far cheaper than mitring every join. */
     const D = this.district;
     const boxes = [];              // solid obstacles and footprints in this chunk
+    const spanParts = new Map(), spanHeads = [];   // world/spans.js: pier/fascia/railing/soffit geo by material key, and its lamp heads
     const segs = this.segByChunk.get(k) ?? [];
     if (segs.length) {
       const pos = [], nor = [], uv = [];
@@ -1208,8 +1211,6 @@ export class DistrictWorld {
          ramp nor exists on it. Both are emitted HERE, per segment, from the
          same corner heights the tarmac uses, so they cannot disagree with it. */
       const sk = [], skN = [], skUv = [];      // skirt: deck edge down to ground
-      const pp = [], ppN = [], ppUv = [];      // parapet: 1.0m wall riding the edge
-      const PARAPET_H = 1.0, PARAPET_T = 0.38;
       /* Every quad here is emitted through `face`, which checks the geometric
          normal of the first triangle against the normal the caller INTENDS and
          reverses the corner order if they disagree. The two edges of a road
@@ -1281,36 +1282,43 @@ export class DistrictWorld {
         const e0 = deckY(q[0][0], q[0][1]), e1 = deckY(q[1][0], q[1][1]);
         const e3 = deckY(q[3][0], q[3][1]), e2 = deckY(q[2][0], q[2][1]);
         if (Math.max(e0, e1, e2, e3) > 0.12) {
+          /* Piers, fascia, railing, soffit, lamps, joints, abutment --
+             world/spans.js. Clipped to this chunk so the neighbour builds the
+             other half. NOT on the signature bridge: world/liftBridge.js
+             builds that one whole, its own piers and railings included. */
+          const sp = signatureBridge(s, D) ? null : buildSpan(s, D, {
+            bounds: { x0: ix * CHUNK, z0: iz * CHUNK, x1: (ix + 1) * CHUNK, z1: (iz + 1) * CHUNK },
+          });
+          if (sp) {
+            for (const p of sp.parts) (spanParts.get(p.mat) ?? spanParts.set(p.mat, []).get(p.mat)).push(p.geo);
+            for (const lp of sp.lamps) spanHeads.push(lp);
+            for (const b of sp.solids) boxes.push(b);
+          }
           const ground = (px, pz) => (D.inWater && D.inWater(px, pz) ? -2.6 : 0);
           for (const [a, b, ox, oz] of [
             [q[0], q[1],  nx / s.half,  nz / s.half],   // one edge, facing out
             [q[3], q[2], -nx / s.half, -nz / s.half],   // the other
           ]) {
             const ya = deckY(a[0], a[1]), yb = deckY(b[0], b[1]);   // the deck's own height, so the skirt and parapet cannot disagree with the tarmac
-            wall(sk, skN, skUv, a[0], ya, a[1], b[0], yb, b[1], ground(a[0], a[1]), ground(b[0], b[1]), ox, oz);
-            // parapet: outer face, cap, inner face
-            wall(pp, ppN, ppUv, a[0], ya + PARAPET_H, a[1], b[0], yb + PARAPET_H, b[1], ya, yb, ox, oz);
-            top(pp, ppN, ppUv, a[0], ya + PARAPET_H, a[1], b[0], yb + PARAPET_H, b[1], ox, oz, PARAPET_T);
-            const ix = -ox * PARAPET_T, iz = -oz * PARAPET_T;
-            wall(pp, ppN, ppUv, b[0] + ix, yb + PARAPET_H, b[1] + iz, a[0] + ix, ya + PARAPET_H, a[1] + iz, yb, ya, -ox, -oz);
-
-            // solid barrier collision box along elevated parapet edge
-            const segDx = b[0] - a[0], segDz = b[1] - a[1];
-            const segL = Math.hypot(segDx, segDz);
-            if (segL > 0.5) {
-              boxes.push({
-                x: (a[0] + b[0]) / 2 + (ox * PARAPET_T * 0.5),
-                z: (a[1] + b[1]) / 2 + (oz * PARAPET_T * 0.5),
-                hw: segL / 2,
-                hd: PARAPET_T * 0.5 + 0.15,
-                angle: Math.atan2(segDz, segDx),
-              });
-            }
+            /* Over water, or wherever spans.js carries this deck on piers, the
+               skirt is the 0.9 m soffit band those piers hold up -- not a dam to
+               the riverbed, and not a wall with the piers hidden inside it. On a
+               land embankment it stays a wall. `carried` is the UNCLIPPED answer,
+               so every chunk drawing this segment's skirt agrees which it is. */
+            const carried = !!(sp && sp.carried);
+            wall(sk, skN, skUv, a[0], ya, a[1], b[0], yb, b[1],
+                 skirtFoot(ya, carried || D.inOpenWater?.(a[0], a[1]), s.cls),
+                 skirtFoot(yb, carried || D.inOpenWater?.(b[0], b[1]), s.cls), ox, oz);
+            /* The parapet used to be a blank 1 m wall along this edge -- the
+               single worst thing about a bridge here. world/spans.js builds a
+               low upstand and a post-and-rail railing you can see the water
+               through, and returns the matching collision boxes in sp.solids,
+               so both the geometry and the barrier come from one place. */
           }
         }
       }
       const concrete = this.catalogue?.materials.get('concrete_cast') ?? A.mat.kerbFace;
-      for (const [arr, nrm, uvs] of [[sk, skN, skUv], [pp, ppN, ppUv]]) {
+      for (const [arr, nrm, uvs] of [[sk, skN, skUv]]) {
         if (!arr.length) continue;
         const sg = new THREE.BufferGeometry();
         sg.userData.owned = true;
@@ -1643,9 +1651,9 @@ export class DistrictWorld {
       // emissive caps on the authored lamps, so the heads bloom at night
       for (const hd of dressHeads) heads.push(mat4(hd.x, hd.y, hd.z, -hd.yaw, 1, 1, 1));
       // lamp-head positions for game/lighting.js: the pool of real lights follows the nearest
-      this.headsByChunk.set(k, [...dressHeads.map((hd) => ({ x: hd.x, y: hd.y, z: hd.z })), ...tokyoHeads]);
+      this.headsByChunk.set(k, [...dressHeads.map((hd) => ({ x: hd.x, y: hd.y, z: hd.z })), ...tokyoHeads, ...spanHeads]);
       // glare sprites on every head (GTA-style; world/glare.js): one instanced Sprite per chunk, fades in with the night
-      { const gl = buildGlare([...dressHeads, ...tokyoHeads], ix * 31 + iz); if (gl) group.add(gl); }
+      { const gl = buildGlare([...dressHeads, ...tokyoHeads, ...spanHeads], ix * 31 + iz); if (gl) group.add(gl); }
       yield;
       // sliced: one big dressRoofs was a 10+ ms step against a 4 ms budget
       const dressable = boxes.filter((b) => !b.tokyo && !b.art);   // Little Tokyo and the self-built styles dress themselves (tokyo.js, artBuildings.js)
@@ -1764,6 +1772,8 @@ export class DistrictWorld {
        their windows light with the same night factor. Every part carries the
        same attribute set (artKit paint: position/normal/uv/color/emit/flick),
        which mergeGeometries needs. */
+    // span structure rides the self-built styles' per-key meshes: 0 extra draws
+    for (const [key, geos] of spanParts) (artParts.get(key) ?? artParts.set(key, []).get(key)).push(...geos);
     for (const [key, geos] of artParts) {
       const merged = mergeGeometries(geos, false);
       for (const g of geos) g.dispose();
