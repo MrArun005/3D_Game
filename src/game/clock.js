@@ -40,9 +40,9 @@ const DIURNAL_PROFILES = {
     slope: [1.07, 1.02, 0.95],
     offset: [-0.018, -0.016, -0.010],
     power: [1.02, 1.03, 1.04],
-    bloomStrength: 0.62,
-    bloomRadius: 0.52,
-    bloomThreshold: 0.74,
+    bloomStrength: 0.40,   // same reason as NIGHT below: far more emissive area than this was tuned against
+    bloomRadius: 0.40,
+    bloomThreshold: 0.95,
     vignette: 0.48,
     grain: 0.018,
     filmic: 0.5,
@@ -58,9 +58,17 @@ const DIURNAL_PROFILES = {
     slope: [1.01, 1.0, 1.04],
     offset: [-0.01, -0.01, -0.005],
     power: [1.03, 1.03, 1.02],
-    bloomStrength: 0.95,
-    bloomRadius: 0.55,
-    bloomThreshold: 0.85,
+    /* Retuned 2026-09-13. 0.95 / 0.55 / 0.85 was correct when a building
+       carried ~8 lit sign panels; the Little Tokyo signage pass took that to
+       ~40, and bloom scales with EMISSIVE AREA, not with how bright any one
+       sign is. The street went milky -- "fog settled on the lights". Proved it
+       with ?nobloom, which is crisp. The fix is to raise the threshold so only
+       the hot tubes (emissive 2.4) bloom and the sign faces (~1.0) do not,
+       and to cut strength to match. Same direction the 1.35/0.72/0.72 -> 0.95
+       retune went, just further, because there is far more emitter now. */
+    bloomStrength: 0.48,
+    bloomRadius: 0.40,
+    bloomThreshold: 1.05,
     vignette: 0.62,
     grain: 0.030,
     filmic: 1.0,   // per-channel Hable tone map (grade.js): neon keeps its chroma
