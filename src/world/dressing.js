@@ -84,11 +84,143 @@ const KERB_ROWS = [
   { asset: 'props/junction_box',  every: 104, chance: 0.22, offset: 2.2 },
   { asset: 'props/street_sign',   every: 70, chance: 0.30, offset: 1.4 },
   { asset: 'props/sign_projecting', every: 78, chance: 0.22, offset: 4.4 },
-  { asset: 'props/tree_broadleaf', every: 40, chance: 0.42, offset: 3.0, scale: [0.85, 1.35] },
   { asset: 'props/shrub_mass', every: 54, chance: 0.26, offset: 3.8, scale: [0.8, 1.2] },
   { asset: 'props/railing',       every: 8,  chance: 0.14, on: ['arterial'], offset: 2.5, align: true },
   { asset: 'props/hedge_run',     every: 10, chance: 0.10, on: ['street'],   offset: 4.6, align: true },
 ];
+
+/**
+ * Where a row's first prop goes on a segment.
+ *
+ * Every row used to start at t = 10, so two rows with the SAME `offset` --
+ * bus_shelter and a_frame_sign are both 3.6, phone_box and notice_board both
+ * 2.6 -- put their first prop at exactly the same point on every segment that
+ * passed both chances. A bus shelter growing out of an A-board. Each row now
+ * takes its own seeded phase (capped at 14 m so a long-pitch row is not phased
+ * off the end of a short street and lost). farLampHeads() replays this too, or
+ * the far glare sprites would sit where the lamps used to be.
+ *
+ * Measured over the brief's Old Quarter bounds (x 1044-1907, z 960-1845),
+ * replaying dressChunk against the real district file: exactly-coincident
+ * pairs 20 -> 0, and pairs interpenetrating by more than 15 cm (plan-view
+ * footprint radii) 1028 of 1841 props -> 214 of 4223. That de-stacking is the
+ * larger visual win here, and it lands district-wide. Side effects, both
+ * checked: 273 fewer props city-wide (a phased row can lose its last slot to
+ * the `t < L - 8` gate) and 5247 -> 5171 lamps, with farLampHeads still
+ * matching every kerbside lamp within 2 m (5171/5171).
+ */
+const rowStart = (row, s) => 10 + hash(s.ax * 1.7 + row.offset * 13.1, s.az * 0.6 + row.every) * Math.min(row.every, 14);
+
+/* ------------------------------------------------------------------ *
+ *  Old Quarter street life  (VISUAL-BRIEF Phase 4, hero block)
+ *
+ *  KERB_ROWS above is an EVEN sprinkle: every row walks the whole segment at
+ *  its own pitch, so what lands is a thin uniform dusting. That reads as
+ *  wallpaper on a 14 m street where you pass within three metres of
+ *  everything, and it still leaves long blank pavements.
+ *
+ *  The gate below is districtAt() on the segment MIDPOINT, so the pass runs
+ *  on 100 segments -- 25.2 km of centreline, 50.4 km of kerb: 41 `street`,
+ *  56 `arterial`, 3 `boundary`. Not just the short interior lanes. Replaying
+ *  dressChunk over the brief's bounds: 2487 -> 4851 props, 4.94 -> 9.63 per
+ *  100 m of kerb.
+ *
+ *  COST, measured the same way and stated because hard rule 1 asks for it:
+ *  +2421 props / +229,716 lod1 triangles district-wide; worst single chunk
+ *  (5,5) +692 props / +64,896 tris; worst 3x3 detailed ring +175,300 tris,
+ *  4.4% of the 4.0M budget. Draws are unchanged -- the prop batch buckets by
+ *  MATERIAL and the kit's material set stays at 14, so the three assets new
+ *  to the kerbside (crates, pallet_stack, litter_bin_park) ride buckets that
+ *  already exist. What is NOT free is the build step: kerbside+roads for
+ *  chunk 5,5 goes 3.35 -> 7.28 ms, and dressChunk is one un-sliced step
+ *  between two yields in districtWorld. OQ_PITCH is the lever if that hitches.
+ *
+ *  Real pavements CLUMP. A bin, a bike rack and a meter by one doorway, then
+ *  twenty metres of nothing, then a stack of delivery crates. So the hero
+ *  block gets a second pass on top of the rows: a seeded cluster centre every
+ *  OQ_PITCH metres, kept or dropped on a hash (the gaps are the point), 2-4
+ *  props each drawn from the weighted table below, laid out shoulder to
+ *  shoulder along the kerb by their own width.
+ *
+ *  Scoped to OLD QUARTER on purpose -- the brief dresses one block, judges
+ *  it, and only then scales. The district comes off the nearest BLOCK
+ *  (segments carry no district of their own), memoised on the segment.
+ *
+ *  `offset` is the centre's distance out from the kerb line; the pavement is
+ *  4.8 m wide, and what has to fit across it is the prop's authored DEPTH,
+ *  not its span -- offset + depth/2 is under 4.2 for every row here except
+ *  cafe_umbrella (4.85), whose canopy overhangs the frontage above head
+ *  height on purpose. Street trees are the procedural species in
+ *  districtWorld, not the kit cube. `span` is the prop's
+ *  width ALONG the kerb (its authored X, since a road-facing yaw lays local
+ *  +X along the kerb) and is what stops a 3 m bike rack landing inside a
+ *  bench. `loose` items are dumped rather than installed, so they get a wide
+ *  yaw jitter.
+ * ------------------------------------------------------------------ */
+const OQ_PITCH = 15;
+
+const OQ_KIT = [
+  { asset: 'props/bin',            weight: 7, offset: 1.2, span: 0.6 },
+  { asset: 'props/bike_rack',      weight: 6, offset: 2.4, span: 3.1 },
+  { asset: 'props/parking_meter',  weight: 6, offset: 1.1, span: 0.3 },
+  { asset: 'props/bollard',        weight: 5, offset: 0.8, span: 0.3 },
+  { asset: 'props/planter',        weight: 4, offset: 2.2, span: 1.6 },
+  { asset: 'props/bench',          weight: 4, offset: 2.9, span: 1.8 },
+  { asset: 'props/junction_box',   weight: 4, offset: 3.6, span: 0.9 },
+  { asset: 'props/street_sign',    weight: 4, offset: 1.0, span: 1.1 },
+  { asset: 'props/crates',         weight: 4, offset: 3.0, span: 2.4, loose: true },
+  { asset: 'props/a_frame_sign',   weight: 4, offset: 3.2, span: 0.7, loose: true },
+  { asset: 'props/hydrant',        weight: 3, offset: 1.2, span: 0.5 },
+  { asset: 'props/notice_board',   weight: 3, offset: 3.4, span: 1.9 },
+  { asset: 'props/post_box',       weight: 3, offset: 1.4, span: 0.7 },
+  { asset: 'props/pallet_stack',   weight: 3, offset: 3.3, span: 1.2, loose: true },
+  { asset: 'props/shrub_mass',     weight: 3, offset: 3.4, span: 1.1, scale: [0.7, 1.05] },
+  { asset: 'props/cafe_umbrella',  weight: 2, offset: 3.3, span: 3.1 },
+  { asset: 'props/litter_bin_park', weight: 2, offset: 2.0, span: 0.7 },
+  { asset: 'props/barrier',        weight: 2, offset: 1.4, span: 2.0, loose: true },
+  { asset: 'props/cone',           weight: 2, offset: 1.1, span: 0.4, loose: true },
+];
+
+/**
+ * One segment's worth of Old Quarter clusters. Same guards as kerbside():
+ * nothing stands on the tarmac of ANY road, everything is seeded off world
+ * position, and the one prop big enough to stop a car pushes a solid.
+ */
+function oldQuarterClusters(batch, s, L, ux, uz, nx, nz, district, solids) {
+  for (let t = 12, ci = 0; t < L - 10; t += OQ_PITCH, ci++) {
+    if (hash(s.ax + t * 2.17, s.az - t * 1.41) > 0.85) continue;   // the deliberate empty stretch
+    /* Successive clusters mostly alternate sides. Picking the side purely at
+       random leaves one pavement of a short street bare; alternating keeps
+       both sides worked without making the street symmetrical. */
+    const side = (ci % 2 ? 1 : -1) * (hash(s.bx + t, s.az - t) < 0.75 ? 1 : -1);
+    const n = 2 + Math.floor(hash(s.az + t * 0.3, s.bx + t) * 3);   // 2-4
+
+    const picks = [];
+    let width = 0;
+    for (let i = 0; i < n; i++) {
+      const k = pick(OQ_KIT, hash(s.ax + t * 1.7 + i * 9.13, s.bz + t * 0.9 - i * 4.7));
+      picks.push(k);
+      width += k.span + 0.45;                                      // 0.45 m of air between neighbours
+    }
+
+    let along = t - width / 2;
+    for (let i = 0; i < picks.length; i++) {
+      const k = picks[i];
+      along += k.span / 2;
+      const r = hash(t + i * 3.1, s.ax + i);
+      const off = (s.half + k.offset + (r - 0.5) * 0.5) * side;
+      const px = s.ax + ux * along + nx * off;
+      const pz = s.az + uz * along + nz * off;
+      along += k.span / 2 + 0.45;
+      if (district.tarmacDepth(px, pz) <= 0.2) continue;
+      const yaw = Math.atan2(nx * -side, nz * -side)
+        + (hash(s.bz + i, t * 1.3) - 0.5) * (k.loose ? 2.4 : 0.5);
+      const sc = k.scale ? k.scale[0] + r * (k.scale[1] - k.scale[0]) : 1;
+      batch.add(k.asset, place(px, KERB_H + district.elevationAt(px, pz), pz, yaw, sc));
+      if (k.solid) solids.push({ x: px, z: pz, yaw: 0, offsets: [0], radius: k.solid, reach: 2.0, tag: 'prop' });
+    }
+  }
+}
 
 /** Things in the kerb gutter, away from vehicle tyre paths (no black road patches). */
 const ROAD_ROWS = [
@@ -112,7 +244,6 @@ const ROOF_KIT = [
 
 const PARK_KIT = [
   { asset: 'props/park_bench',      weight: 5 },
-  { asset: 'props/tree_broadleaf',   weight: 9, scale: [1.0, 1.8] },
   { asset: 'props/shrub_mass',  weight: 6, scale: [0.8, 1.4] },
   { asset: 'props/flower_bed',      weight: 4 },
   { asset: 'props/hedge_run',       weight: 3 },
@@ -186,6 +317,12 @@ function kerbside(batch, segments, district, solids, pools, heads) {
     const ux = dx / L, uz = dz / L;
     const nx = -uz, nz = ux;
 
+    /* The hero block's street life, on top of the even rows below. Segments
+       carry no district, so it comes from the nearest block; memoised on the
+       segment because segments are shared between chunks and never move. */
+    if (s._district === undefined) s._district = district.districtAt?.((s.ax + s.bx) / 2, (s.az + s.bz) / 2) ?? null;
+    if (s._district === 'OLD QUARTER') oldQuarterClusters(batch, s, L, ux, uz, nx, nz, district, solids);
+
     /* One roadworks site per long segment, seeded -- clustered, because a
        single cone on an empty street reads as a mistake rather than as work. */
     const works = hash(s.ax * 0.7, s.bz * 1.3) < 0.08 && L > 70
@@ -193,7 +330,7 @@ function kerbside(batch, segments, district, solids, pools, heads) {
 
     for (const row of KERB_ROWS) {
       if (row.on && !row.on.includes(s.cls)) continue;
-      for (let t = 10; t < L - 8; t += row.every) {
+      for (let t = rowStart(row, s); t < L - 8; t += row.every) {
         const seed = hash(s.ax + t * 1.31, s.az + t * 0.77);
         if (seed > row.chance) continue;
         const side = hash(s.az + t, s.ax) < 0.5 ? 1 : -1;
@@ -717,7 +854,7 @@ export function farLampHeads(district) {
       if (row.on && !row.on.includes(s.cls)) continue;
       const arterial = row.asset.includes('arterial');
       const reach = arterial ? 1.55 : 0.30, h = arterial ? 8.2 : 6.02;
-      for (let t = 10; t < L - 8; t += row.every) {
+      for (let t = rowStart(row, s); t < L - 8; t += row.every) {
         const seed = hash(s.ax + t * 1.31, s.az + t * 0.77);
         if (seed > row.chance) continue;
         const side = hash(s.az + t, s.ax) < 0.5 ? 1 : -1;
