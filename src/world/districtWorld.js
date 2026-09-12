@@ -1252,9 +1252,24 @@ export class DistrictWorld {
           [s.bx - nx, s.bz - nz], [s.ax - nx, s.az - nz],
         ];
         const tri = [q[0], q[1], q[2], q[0], q[2], q[3]];
-        // sample the deck height per corner so a bridge is a ramp, not a decal
+        /* Deck height: sampled at the two END CENTRES, then applied flat across
+           the width. Sampling each CORNER instead made a road ramp along AND
+           bank across, and spanHeight is a cliff -- full height inside a band
+           of half+5.5 about the bridge polyline, zero outside it. Where the
+           road graph does not sit exactly on that polyline (on HALSTEAD LIFT
+           BRIDGE it runs ~16 m west of it) one kerb landed inside the band and
+           the other outside, so the signature bridge was banked 7.6 m across
+           its 28 m width for 480 m, with one kerb on the ground. 51 of the
+           163 elevated segments had their two long edges more than a metre
+           apart. A real deck is flat across and ramped along, which is exactly
+           what sampling the centreline gives. */
+        const decA = D.elevationAt(s.ax, s.az), decB = D.elevationAt(s.bx, s.bz);
+        const deckY = (px, pz) => {
+          const t = L > 0.001 ? Math.max(0, Math.min(1, ((px - s.ax) * dx + (pz - s.az) * dz) / (L * L))) : 0;
+          return decA + (decB - decA) * t;
+        };
         for (const [px, pz] of tri) {
-          pos.push(px, D.elevationAt(px, pz), pz);
+          pos.push(px, deckY(px, pz), pz);
           nor.push(0, 1, 0);
         }
         // the tile is 18.4m square; stretching one across a 34m carriageway is
@@ -1263,15 +1278,15 @@ export class DistrictWorld {
         uv.push(0, 0, v, 0, v, u, 0, 0, v, u, 0, u);
 
         // elevated? then this segment gets sides
-        const e0 = D.elevationAt(q[0][0], q[0][1]), e1 = D.elevationAt(q[1][0], q[1][1]);
-        const e3 = D.elevationAt(q[3][0], q[3][1]), e2 = D.elevationAt(q[2][0], q[2][1]);
+        const e0 = deckY(q[0][0], q[0][1]), e1 = deckY(q[1][0], q[1][1]);
+        const e3 = deckY(q[3][0], q[3][1]), e2 = deckY(q[2][0], q[2][1]);
         if (Math.max(e0, e1, e2, e3) > 0.12) {
           const ground = (px, pz) => (D.inWater && D.inWater(px, pz) ? -2.6 : 0);
           for (const [a, b, ox, oz] of [
             [q[0], q[1],  nx / s.half,  nz / s.half],   // one edge, facing out
             [q[3], q[2], -nx / s.half, -nz / s.half],   // the other
           ]) {
-            const ya = D.elevationAt(a[0], a[1]), yb = D.elevationAt(b[0], b[1]);
+            const ya = deckY(a[0], a[1]), yb = deckY(b[0], b[1]);   // the deck's own height, so the skirt and parapet cannot disagree with the tarmac
             wall(sk, skN, skUv, a[0], ya, a[1], b[0], yb, b[1], ground(a[0], a[1]), ground(b[0], b[1]), ox, oz);
             // parapet: outer face, cap, inner face
             wall(pp, ppN, ppUv, a[0], ya + PARAPET_H, a[1], b[0], yb + PARAPET_H, b[1], ya, yb, ox, oz);

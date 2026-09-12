@@ -235,6 +235,20 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   on :4173, `?debug` hooks `__warp/__time/__rain`, dismiss the title card
   with `#hud.classList.add('gone')`). One `vite build` at a time. The older
   "no Playwright" line below is about screenshot churn, not verification.
+- **Bridges were banked, not flat (2026-09-12)**: the owner said "bridgeee is
+  shit" and the cause was upstream of every bridge asset. `district.js`
+  `spanHeight` is a CLIFF -- full height inside a band of `half + 5.5` about
+  the bridge POLYLINE, zero outside -- while districtWorld sampled the deck at
+  each of the road quad's four CORNERS. Where the road graph does not sit on
+  the polyline (on HALSTEAD LIFT BRIDGE it runs ~16 m west of it) one kerb
+  landed inside the band and the other outside: the signature bridge was
+  banked **7.6 m across its 28 m width for 480 m**, one kerb on the ground.
+  51 of 163 elevated segments had >1 m of cross-fall, worst 9.4 m. Fixed by
+  sampling the deck at the two END CENTRES and applying it FLAT across the
+  width (ramped along, flat across, which is what a deck is); the skirt and
+  parapet read the same `deckY`, so they cannot disagree with the tarmac.
+  Anything new that stands on a deck (piers, railings, lamps) must use the
+  segment's own deckY, never `elevationAt` at its own position.
 - **Resolution / 4K (2026-09-12)**: `renderScale()` caps the drawing buffer
   at the 60 fps floor's pixel count (1.24 MP full, 0.78 MP lite) and lets the
   browser upscale. Escape hatches, in precedence: `?res=N` draws at N device
