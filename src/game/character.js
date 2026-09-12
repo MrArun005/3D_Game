@@ -400,7 +400,13 @@ export class Character {
           this.play('jump', 0.12);
         }
       } else {
-        this.play(speed > 4.2 ? 'run' : speed > 0.35 ? 'walk' : 'idle', 0.2);
+        /* The walk clip is authored for ~1.9 m/s and the run clip for ~5.2.
+           Default movement here is 3.2 m/s -- a jog in real terms -- so picking
+           'walk' for it forced playback to 1.68x (the old clamp ceiling) and the
+           character speed-walked. Anything above a crouch/ADS gait now takes the
+           RUN clip and simply plays it slower: 3.2 m/s reads as a relaxed jog at
+           0.62x, sprint lands near 1.15x. Measured in the browser 2026-09-12. */
+        this.play(speed > 2.4 ? 'run' : speed > 0.35 ? 'walk' : 'idle', 0.2);
       }
     }
     // the clips are authored at their own pace; nudge playback so the feet
@@ -409,7 +415,7 @@ export class Character {
       if (this.current === this.actions.jump || this.current === this.actions.runningJump) {
         this.current.timeScale = 1.05;
       } else {
-        this.current.timeScale = speed > 0.35 ? Math.max(0.6, Math.min(1.7, speed / (speed > 4.2 ? 5.2 : 1.9))) : 1;
+        this.current.timeScale = speed > 0.35 ? Math.max(0.55, Math.min(1.45, speed / (speed > 2.4 ? 5.2 : 1.9))) : 1;
       }
     }
     this.mixer.update(dt);

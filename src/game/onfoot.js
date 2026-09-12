@@ -16,7 +16,7 @@ import { Character, CHARACTERS } from '../game/character.js';
  */
 
 const WALK = 3.2;
-const RUN = 7.0;
+const RUN = 6.0;        // 21.6 km/h: still a clear sprint, and the run clip plays at ~1.15x instead of 1.35x (character.js)
 const ACCEL = 32;
 const RADIUS = 0.42;
 const GRAVITY = 18.0;
