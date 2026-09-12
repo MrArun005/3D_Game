@@ -210,16 +210,20 @@ export class LightPool {
       this.next = this.t + 0.25;
       this.#hero(x, z);
       const cands = this.#candidates(x, z);
-      const owned = new Set(this.lights.map((s) => s.head).filter(Boolean));
+      /* A slot claims its NEXT head as `want` and keeps lighting `head` until
+         it has dimmed out -- see the crossfade below. Ownership is checked
+         against both, or two slots grab the same lamp while one is fading. */
+      const owned = new Set();
+      for (const s of this.lights) { if (s.head) owned.add(s.head); if (s.want) owned.add(s.want); }
       const free = cands.filter((c) => !owned.has(c.h));
       for (const slot of this.lights) {
+        if (slot.want && slot.want !== slot.head) continue;   // already handing over
         const cur = slot.head ? headScore(slot.head, x, z) : Infinity;
         const best = free[0];
         if (!best) break;
         // hysteresis: 20% closer (on the biased score), and the owner has had its second
         if (slot.head && !(best.score < cur * 0.8 && this.t - slot.since > 1.0)) continue;
-        slot.from = slot.head; slot.head = best.h; slot.since = this.t; slot.fade = 0;
-        slot.light.color.setHex(best.h.colour ?? this.colour);
+        slot.want = best.h; slot.since = this.t;
         owned.add(best.h); free.shift();
       }
     }
@@ -244,12 +248,24 @@ export class LightPool {
       const s = this.lights[i];
       const l = s.light;
       const corona = this.coronas[i];
+      /* Crossfade, the same shape the hero slots use. The re-rank used to set
+         `head` and `fade = 0` together, so the lamp a slot was leaving went
+         BLACK on that frame and the new one lit from nothing: driving down a
+         street popped a lamp off every time the ranking changed. Now a slot
+         dims where it stands, and only moves once it is dark. */
+      if (s.want && s.want !== s.head) {
+        s.fade = Math.max(0, s.fade - dt / 0.35);
+        if (s.fade === 0) {
+          s.head = s.want;
+          l.color.setHex(s.head.colour ?? this.colour);
+        }
+      }
       if (!s.head) {
         l.intensity = 0;
         if (corona) corona.visible = false;
         continue;
       }
-      s.fade = Math.min(1, s.fade + dt / 0.4);
+      if (!s.want || s.want === s.head) s.fade = Math.min(1, s.fade + dt / 0.4);
       // the light sits a little below the head so the pool lands on the pavement, not the lamp
       l.position.set(s.head.x, s.head.y - 0.4, s.head.z);
       l.intensity = (s.head.intensity ?? this.intensity) * s.fade;
