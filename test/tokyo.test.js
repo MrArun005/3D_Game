@@ -22,9 +22,9 @@ test('a Tokyo building is one geometry with colour, emit and UVs, under 1600 tri
      and the max 10208 -> 10446: the extra is a dozen sign boxes, not a new
      class of geometry. The board count is instanced atlas quads, so it costs
      instances and no draws -- hence the much looser bound below. */
-  assert.ok(b.tris > 200 && b.tris < 2200, `triangles ${b.tris}`);
+  assert.ok(b.tris > 200 && b.tris < 2400, `triangles ${b.tris}`);
   assert.ok(Math.abs(b.height - (GROUND_H + (b.floors - 1) * FLOOR_H)) < 1e-9, 'height is whole storeys');
-  assert.ok(b.boards.length >= 1 && b.boards.length <= 72, `sign boards ${b.boards.length}`);
+  assert.ok(b.boards.length >= 1 && b.boards.length <= 120, `sign boards ${b.boards.length}`);
   const em = b.geo.attributes.emit.array; let lit = 0; for (let i = 0; i < em.length; i += 3) if (em[i] + em[i + 1] + em[i + 2] > 0) lit++;
   assert.ok(lit > 0, 'something glows at night');
 });

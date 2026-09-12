@@ -43,8 +43,8 @@ export const FLOOR_H = 3.1;    // every storey above
    charcoal render and dark tile -- ~0.30-0.40. Dark walls are what make the
    kanban the brightest thing in frame, by day and by night. */
 const WALLS = [
-  [0x4a423b, 0x362f2a], [0x393e43, 0x2a2e33], [0x53463c, 0x3d332c], [0x333a40, 0x262c31],
-  [0x2f4447, 0x223335], [0x5a5249, 0x433d36], [0x5c463c, 0x45342d], [0x414a52, 0x30373d],
+  [0x3a342e, 0x2a2521], [0x2e3237, 0x22262a], [0x40362e, 0x2f2822], [0x2a3036, 0x1f2429],
+  [0x26383a, 0x1b292b], [0x443e37, 0x322d28], [0x46352d, 0x342722], [0x343c43, 0x272d33],
 ];
 const MAGENTA = [1.0, 0.25, 0.75], CYAN = [0.2, 0.9, 1.0];
 // weighted by repetition: the cover art is six parts magenta/cyan to four of everything else
@@ -243,7 +243,11 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
      ONE box whatever its height, and the panels are instanced atlas quads, so
      going full height costs 0 draws and ~2 triangles a panel. */
   const colH = Math.max(0, H - 5.5) * (0.74 + rnd() * 0.26);
-  if (colH > 3.5) {
+  /* 3.5 m was the gate when the column was a 6-14 m stub bolted on at 4.6 m.
+     Now that it is sized from the facade, that gate silently stripped every
+     short building of ALL vertical signage -- the blank three-storey boxes on
+     the street. A two-storey shop still carries a kanban in Shibuya. */
+  if (colH > 2.0) {
     for (const side of [-1, 1]) {
       if (rnd() < 0.15) continue;
       const cz = side * (hd - 0.55);
@@ -301,6 +305,29 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
       colour: _c.setRGB(neon[0], neon[1], neon[2]).getHex(),
       neon: true, intensity: 160, range: 30, glare: 2.4,
     });
+  }
+
+  /* THE SIDE FACES. Until now every sign hung on `front`, so a building seen
+     from the cross street -- or any corner plot, which is half of them -- showed
+     a blank wall with balconies on it. Checked in the browser against the
+     reference: no wall in Shibuya is blank. Each side gets a kanban column at
+     its STREET end (s = t[0] * (hw - 0.6) lands on the +X end in either side's
+     tangent frame) and, if the building carries a tube colour, the floor-edge
+     ribbons the front already had. Same cost shape as the front: one box per
+     column, instanced quads for the panels. */
+  for (const f of [F[2], F[3]]) {
+    if (colH <= 2.0 || rnd() < 0.3) continue;
+    const sEnd = f.t[0] * (hw - 0.6);
+    const cc = neon ?? [0.9, 0.9, 0.9];
+    const [cx, cz] = onFace(f, sEnd, 0.18);
+    parts.push(at(box(0.95, colH, 0.28, 0xf2f2f2, cc, 1.25, flickerOf(rnd)), cx, 4.6 + colH / 2, cz));
+    const panelH = 2.6, n = Math.max(1, Math.floor((colH - 0.2) / (panelH + 0.1)));
+    const [px, pz] = onFace(f, sEnd, 0.335);
+    for (let i = 0; i < n; i++) boards.push({ x: px, y: 4.6 + 0.1 + panelH / 2 + i * (panelH + 0.1), z: pz, yaw: f.yaw, w: 0.9, h: panelH, vertical: true });
+    if (neon) for (let st = 1; st < floors; st += 2 + Math.floor(rnd() * 2)) {
+      const [nx, nz] = onFace(f, 0, 0.07);
+      parts.push(at(box(f.w * 0.96, 0.18, 0.14, 0x222222, neon, 2.4, flickerOf(rnd)), nx, floorY(st) + 0.2, nz));
+    }
   }
 
   // the roof: parapet, tank, antenna, stair bulkhead, and a billboard frame on a third
