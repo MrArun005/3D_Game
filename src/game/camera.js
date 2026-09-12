@@ -33,6 +33,24 @@ const RIGS = [
   { back: 4.7, up: 1.92, aim: 8.2, fov: 63, lag: 6.0, tilt: 1 },
   { back: -1.3, up: 1.28, aim: 14.0, fov: 62, lag: 22.0, tilt: 0 },
   { back: -0.55, up: 1.3, aim: 16.0, fov: 55, lag: 26.0, tilt: 0 },
+  /* COCKPIT. Every number here was found by putting the camera there and
+     LOOKING, not by reading model.js -- the interior's local coordinates
+     (dash at x 1.88, headrest 2.70) do not sit in the frame this rig works in,
+     and reasoning from them put the eye on the bonnet. Swept: back 0.4 is on
+     the nose, 1.2 straddles the windscreen, 2.0 sits on the roof; at back 1.9,
+     up 0.40 climbs back onto the bodywork and 0.30 is inside the cabin. Side
+     0.72 buries the eye in the door, -0.36 throws the wheel to the far left.
+     Three things this rig needs that no chase rig does:
+       rigid  the camera is BOLTED to the shell. Any follow lag and the dash and
+              wheel, which are children of that shell, swim against their own
+              car -- the one place the follower is wrong rather than soft.
+       near   the default near plane is 0.5 m (main.js) and the dash is closer
+              than that, so it would be sliced open. 0.15 costs some far-field
+              depth precision, and only while you sit here.
+       fov    70: an interior camera has to hold the dash, the mirrors and the
+              road. 55 through a windscreen is a letterbox.
+     `side` is the first lateral offset any rig has asked for. */
+  { back: 1.9, up: 0.30, side: 0.36, aim: 18.0, fov: 70, lag: 26.0, tilt: 1, rigid: 1, near: 0.15 },
 ];
 
 export class ChaseCamera {
@@ -76,6 +94,9 @@ export class ChaseCamera {
   recentre() { this.lookYaw = 0; this.lookPitch = 0; this.looking = false; this.mouseIdle = 0; }
 
   cycle() { this.mode = (this.mode + 1) % RIGS.length; }
+  /** True while the eye is inside the cabin: main.js hides the modelled driver,
+      whose head is otherwise exactly where the camera now is. */
+  get interior() { return !!RIGS[this.mode].side; }   // car.customRig is a cinematic override; those keep the driver
   /** Put the camera where it would settle, now. For spawns and respawns: the
       follow lag is what sends it flying across the city after a 2 km jump. */
   snap(car) { this.update(car, 60); }
@@ -127,10 +148,11 @@ export class ChaseCamera {
     const flat = Math.cos(this.lookPitch);
     const ox = Math.cos(ly) * (-cy) - Math.sin(ly) * (sy);
     const oz = Math.sin(ly) * (-cy) + Math.cos(ly) * (sy);
-    const tx = car.x + ox * back * flat;
-    const tz = car.z + oz * back * flat;
+    const side = rig.side ?? 0;
+    const tx = car.x + ox * back * flat + rx * side;
+    const tz = car.z + oz * back * flat + rz * side;
     const ty = targetY + rig.up + lift * back * 1.15;
-    const k = 1 - Math.pow(0.0016, dt * (rig.lag / 3.4));
+    const k = rig.rigid ? 1 : 1 - Math.pow(0.0016, dt * (rig.lag / 3.4));
     this.pos.x += (tx - this.pos.x) * k;
     this.pos.y += (ty - this.pos.y) * k;
     this.pos.z += (tz - this.pos.z) * k;
@@ -195,9 +217,9 @@ export class ChaseCamera {
       }
     }
     this.aim.set(
-      car.x - ox * aimD * flat + rx * look + slipX,
+      car.x - ox * aimD * flat + rx * (look + side) + slipX,
       targetY + 0.95 - lift * aimD * 0.4,
-      car.z - oz * aimD * flat + rz * look + slipZ,
+      car.z - oz * aimD * flat + rz * (look + side) + slipZ,
     );
     this.camera.lookAt(this.aim);
     if (rig.tilt) this.camera.rotation.z += (car.roll || 0) * 0.35 - (car.yawRate || 0) * 0.018;
@@ -209,9 +231,11 @@ export class ChaseCamera {
        every driving game agrees on (art of rally: "we expand the FOV when
        you're going faster"): +12 deg by ~150 km/h, and the nitrous kick on top. */
     const fov = (rig.fov ?? 62) + speedK * 12 + nosBoost;
-    if (Math.abs(this.camera.fov - fov) > 0.01) {
-      this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 5.5);
-      this.camera.updateProjectionMatrix();
-    }
+    const near = rig.near ?? 0.5;
+    let reproject = false;
+    if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 5.5); reproject = true; }
+    // stepped, not eased: the near plane is not a look, and easing it would crawl the whole far field
+    if (this.camera.near !== near) { this.camera.near = near; reproject = true; }
+    if (reproject) this.camera.updateProjectionMatrix();
   }
 }

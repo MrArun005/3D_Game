@@ -35,10 +35,16 @@ import { mulberry32 } from '../core/rng.js';
 export const GROUND_H = 4.2;   // shopfront storey
 export const FLOOR_H = 3.1;    // every storey above
 
-// facade palettes: [wall, band], Tokyo's tile and render greys and creams with the odd brown or teal
+/* Facade palettes: [wall, band]. These were Tokyo's daylight creams and tile
+   greys (0xd9d4c7, 0xe8e2d3) and they were the reason the street never looked
+   like the reference: a cream wall at ~0.85 albedo is BRIGHTER than most of the
+   neon on it, so the signage read as decoration on a pale block instead of the
+   only light source on a dark one. Shibuya's facades are soot-darkened brick,
+   charcoal render and dark tile -- ~0.30-0.40. Dark walls are what make the
+   kanban the brightest thing in frame, by day and by night. */
 const WALLS = [
-  [0xd9d4c7, 0xbcb6a8], [0xb8b2a6, 0x9b958a], [0x8c8f93, 0x6f7276], [0x6b4f3a, 0x52392a],
-  [0x4b6a6e, 0x3a5457], [0xe8e2d3, 0xcfc8b8], [0x9d7b6a, 0x7d5f50], [0x7a8794, 0x5f6b77],
+  [0x4a423b, 0x362f2a], [0x393e43, 0x2a2e33], [0x53463c, 0x3d332c], [0x333a40, 0x262c31],
+  [0x2f4447, 0x223335], [0x5a5249, 0x433d36], [0x5c463c, 0x45342d], [0x414a52, 0x30373d],
 ];
 const MAGENTA = [1.0, 0.25, 0.75], CYAN = [0.2, 0.9, 1.0];
 // weighted by repetition: the cover art is six parts magenta/cyan to four of everything else
@@ -189,14 +195,28 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
     const [dx1, dz1] = onFace(front, ds, 0.09);
     parts.push(at(quad(1.0, 2.2, 0x3c4a5a, [0.95, 0.9, 0.8], 0.22), dx1, 1.15, dz1, front.yaw));
   }
-  // projecting signs: a small box out from the wall at first-floor height with a board on each face, on three in five
-  if (rnd() < 0.6) {
-    const s = -front.w / 2 + 1.2 + rnd() * Math.max(0.5, front.w - 2.4);
-    const [px, pz] = onFace(front, s, 0.75);
-    parts.push(at(box(1.3, 0.55, 0.12, 0x26292e, [0.8, 0.8, 0.8], 0.35), px, 5.1, pz, front.yaw + Math.PI / 2));   // the box, its long axis out from the wall
-    for (const side of [-1, 1]) {
-      const [bx, bz] = onFace(front, s + side * 0.075, 0.75);
-      boards.push({ x: bx, y: 5.1, z: bz, yaw: front.yaw + side * Math.PI / 2, w: 1.2, h: 0.5 });
+  /* Projecting tenant signs: boxes standing out from the wall with a lit board
+     on each face. There used to be exactly ONE, at first-floor height. In the
+     reference these are the things that build the canyon -- every floor of every
+     building hangs one into the street, and reading them edge-on down the block
+     is most of what makes it Tokyo. Stack one every ~2 storeys up the facade,
+     alternating which end of the frontage they hang from. Each is 1 box (12
+     tris) and 2 instanced atlas quads, so a 6-high stack is ~70 tris and 0 draws. */
+  {
+    const rise = FLOOR_H * 2, top = Math.max(5.1, H - 3.0);
+    const n = Math.min(7, Math.max(1, Math.floor((top - 5.1) / rise) + 1));
+    for (let i = 0; i < n; i++) {
+      if (i > 0 && rnd() < 0.25) continue;   // gaps: a solid column of signs reads as a fence
+      const y = 5.1 + i * rise;
+      // alternate ends, with a little jitter, so the stack zig-zags instead of lining up in a rail
+      const end = (i % 2 ? -1 : 1) * (front.w / 2 - 1.2);
+      const sAt = end * (0.7 + rnd() * 0.3);
+      const [px, pz] = onFace(front, sAt, 0.75);
+      parts.push(at(box(1.3, 0.55, 0.12, 0x26292e, [0.8, 0.8, 0.8], 0.35), px, y, pz, front.yaw + Math.PI / 2));
+      for (const side of [-1, 1]) {
+        const [bx, bz] = onFace(front, sAt + side * 0.075, 0.75);
+        boards.push({ x: bx, y, z: bz, yaw: front.yaw + side * Math.PI / 2, w: 1.2, h: 0.5 });
+      }
     }
   }
   const awningCol = pick([0xc0392b, 0x2e86de, 0xf1c40f, 0xecf0f1, 0x27ae60]);
@@ -216,7 +236,13 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
     }
   }
   boards.push({ x: front.off + 0.16, y: 3.85, z: 0, yaw: front.yaw, w: front.w * 0.82, h: 0.85 });   // the fascia
-  const colH = Math.min(H - 5.5, 6 + rnd() * 8);
+  /* The kanban column runs the FULL facade. It used to stop at 6-14 m, so
+     signage petered out around the third storey and every street above that was
+     bare wall -- the exact opposite of the reference, where the tenant stacks
+     run to the roofline and the canyon is signs all the way up. The column is
+     ONE box whatever its height, and the panels are instanced atlas quads, so
+     going full height costs 0 draws and ~2 triangles a panel. */
+  const colH = Math.max(0, H - 5.5) * (0.74 + rnd() * 0.26);
   if (colH > 3.5) {
     for (const side of [-1, 1]) {
       if (rnd() < 0.15) continue;
@@ -258,9 +284,18 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
   // a projecting neon blade — a plane of colour, not a 6 cm tube. This is what
   // the cover art is made of; the floor-edge ribbons alone never won the frame.
   if (neon && rnd() < 0.72) {
+    /* Blades, plural. One 3.8 m blade at 6.4 m left the upper facade unlit; the
+       reference runs colour the whole height. Only the lowest one gets a real
+       point light -- the pool is 6 lights for the whole city (lighting.js), so
+       every head above street level is spending a slot on something the player
+       never drives past. */
     const s = (rnd() < 0.5 ? -1 : 1) * Math.max(0.6, front.w / 2 - 0.8);
     const [bx, bz] = onFace(front, s, 0.62);
-    parts.push(at(box(0.12, 3.8, 0.62, 0x141418, neon, 2.5, flickerOf(rnd)), bx, 6.4, bz, front.yaw));
+    const n = Math.min(4, Math.max(1, Math.floor((H - 6.4) / 5.2)));
+    for (let i = 0; i < n; i++) {
+      const c = i === 0 ? neon : pick(NEON);   // a stack of one colour reads as a stripe; a real facade is several tenants
+      parts.push(at(box(0.12, 3.8, 0.62, 0x141418, c, 2.5, flickerOf(rnd)), bx, 6.4 + i * 5.2, bz, front.yaw));
+    }
     lamps.push({
       x: bx + front.n[0] * 0.4, y: 2.6, z: bz + front.n[1] * 0.4,
       colour: _c.setRGB(neon[0], neon[1], neon[2]).getHex(),
@@ -405,8 +440,9 @@ export function wireMaterial() { return (WIRE_MAT ??= new THREE.LineBasicMateria
 let MAT = null;
 export function tokyoMaterial() {
   if (MAT) return MAT;
-  const m = new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.84, metalness: 0.02, emissive: 0xffffff, emissiveIntensity: 1.0 });
+  const m = new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.60, metalness: 0.06, emissive: 0xffffff, emissiveIntensity: 1.0 });
   m.name = 'tokyo_facade';
+  m.envMapIntensity = 0.85;
   /* The buzz: a part with flick > 0 drops to 45% for a beat when a fast sine
      (its own phase) crosses a threshold -- the stutter of a tube on its way
      out. Steady parts multiply by 1. */

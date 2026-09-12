@@ -210,6 +210,9 @@ const debris = new Debris(scene);
 if (new URLSearchParams(location.search).has('debug')) {
   window.__car = () => car;
   window.__camera = camera;
+  // the chase rig and the car shell: functions, so this block can run before either is constructed
+  window.__chase = () => chase;
+  window.__hero = () => hero;
   // shooting-layer state the harness cannot otherwise see or set (pointer lock is refused headless)
   window.__dbg = () => ({ started, aiming, ads, crouch, burst, heat: weapon.heat, ready: weapon.ready, kind: weapon.kind, ammo: weapon.ammo, health });
   window.__aim = (v) => { aiming = !!v; };
@@ -1638,7 +1641,20 @@ applyPerk(NAMED_CHARACTERS[0]);
 const input = createInput((action) => {
   idleT = 0;
   // C: cycle the chase camera; on foot it is the crouch toggle. (The handler was lost in a headlight edit; the key still sent 'camera'.)
-  if (action === 'camera') { if (onFoot.active) { crouch = !crouch; onFoot.crouch = crouch; hud.flash(crouch ? 'CROUCH' : 'STAND'); } else chase.cycle(); }
+  if (action === 'camera') {
+    if (onFoot.active) { crouch = !crouch; onFoot.crouch = crouch; hud.flash(crouch ? 'CROUCH' : 'STAND'); }
+    else {
+      chase.cycle();
+      /* The cockpit rig puts the eye where the modelled driver's head is, so he
+         has to go -- otherwise you are looking at the inside of your own skull.
+         `visible = false` drops him from the shadow pass too, which is fine:
+         from inside the cabin nobody can see the driver-shaped shadow he was
+         casting on his own floor. */
+      const d = hero?.userData?.driver;
+      if (d) d.visible = !chase.interior;
+      if (chase.interior) hud.flash('COCKPIT');
+    }
+  }
   if (action === 'lights') {
     car.lightsUser = true;
     if (!car.headlights) {
