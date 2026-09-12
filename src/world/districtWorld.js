@@ -14,6 +14,7 @@ import { ZEBRA_DEPTH } from '../game/traffic.js';
 import { buildTokyoBuilding, frontRotation, tokyoMaterial, buildTokyoStreet, wireMaterial, buildShrine } from './tokyo.js';
 import { tileUv, SIGN_TILES } from './signs.js';
 import { buildGlare, setGlareRing } from './glare.js';
+import { styleFor, buildArt, artMaterial, ART_CAP } from './artBuildings.js';
 
 /**
  * Halstead Bay in three dimensions.
@@ -1294,6 +1295,7 @@ export class DistrictWorld {
     const blocks = this.blkByChunk.get(k) ?? [];
     const kitPlaced = {};          // kit -> [geometry with matrix applied] (whole Kenney buildings)
     const tokyoParts = [], tokyoBoards = [], tokyoProps = [], tokyoHeads = [];   // Little Tokyo: our own buildings (world/tokyo.js), one mesh per chunk
+    const artParts = new Map();    // the self-built styles (world/artBuildings.js): material key -> [geo], one mesh per key per chunk; boards and lamps ride tokyoBoards / tokyoHeads
     const slabs = { block: [], park: [], lot: [], vacant: [] };
     const facades = {}, bases = {};
     const roofs = [], glassRoofs = [], crowns = [], masts = [], gables = [];
@@ -1371,6 +1373,42 @@ export class DistrictWorld {
             if (r0 < 0.45) put('props/a_frame_sign', fhw + 1.3, -fw * 0.3);
             if (r0 > 0.7 && fw > 3) put('props/market_stall', fhw + 1.9, 0.6);
           }
+          continue;
+        }
+        /* The self-built styles (world/buildings/*, dispatched by
+           world/artBuildings.js) take the Tokyo route: built facing +X, turned
+           onto the street side, then through the block's frame. Parts are kept
+           per material key so a wall can wear the library's brick PBR; boards
+           and lamps join the chunk's atlas quads and light heads like the
+           kanban. A plot bigger than the style's envelope is clipped to it
+           with the street face left where it is (the rest of the plot is
+           apron); the collision box is the built footprint. ?noart / ?artall. */
+        const style = styleFor(bl, g, hash(wx * 0.53, wz * 0.91));
+        if (style) {
+          const toWorld = (lx, lz) => [wx + lx * ca - lz * sa, wz + lx * sa + lz * ca];
+          const rot = frontRotation((x, z) => this.district.tarmacDepth(x, z), toWorld, g.w / 2, g.d / 2);
+          const swap = Math.abs(rot) > Math.PI / 4 && Math.abs(Math.abs(rot) - Math.PI) > 1e-6;   // a +/-90 turn swaps the footprint axes
+          const [cw, cd] = ART_CAP[style];
+          const fhw = swap ? g.d / 2 : g.w / 2, fhd = swap ? g.w / 2 : g.d / 2;   // the plot's half sizes in the building's frame (+X street)
+          const bhw = Math.min(fhw, cw), bhd = Math.min(fhd, cd);
+          const b = buildArt(style, Math.floor(hash(wx * 0.71, wz * 0.29) * 1e9), bhw, bhd, h);
+          const M = new THREE.Matrix4().makeRotationY(-bl.angle).multiply(new THREE.Matrix4().makeRotationY(rot));
+          M.setPosition(wx, KERB_H, wz);
+          if (fhw > bhw) M.multiply(new THREE.Matrix4().makeTranslation(fhw - bhw, 0, 0));   // clipped: slide the building up to the street edge
+          for (const p of b.parts) { p.geo.applyMatrix4(M); (artParts.get(p.mat) ?? artParts.set(p.mat, []).get(p.mat)).push(p.geo); }
+          const _p = new THREE.Vector3();
+          for (const lp of b.lamps ?? []) { _p.set(lp.x, lp.y, lp.z).applyMatrix4(M); tokyoHeads.push({ x: _p.x, y: _p.y, z: _p.z, colour: lp.colour }); }
+          for (const bd of b.boards ?? []) {   // same as the Tokyo branch above
+            _p.set(bd.x, bd.y, bd.z).applyMatrix4(M);
+            const yaw = bd.yaw + rot - bl.angle;
+            const [u, v] = tileUv(Math.floor(hash(_p.x * 0.37 + bd.y, _p.z * 1.3) * SIGN_TILES), true);
+            if (bd.vertical) {
+              const m = new THREE.Matrix4().compose(_p.clone(), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, Math.PI / 2, 'YXZ')), new THREE.Vector3(bd.h, bd.w, 1));
+              tokyoBoards.push({ m, u, v });
+            } else tokyoBoards.push({ m: mat4(_p.x, _p.y, _p.z, -yaw, bd.w, bd.h, 1), u, v });
+          }
+          _p.set(0, 0, 0).applyMatrix4(M);   // the built footprint's centre (moved if clipped), half sizes back in the block's frame
+          boxes.push({ x: _p.x, z: _p.z, angle: bl.angle, hw: swap ? bhd : bhw, hd: swap ? bhw : bhd, height: b.height, district: bl.district, art: true });
           continue;
         }
         const noKit = typeof location !== 'undefined' && new URLSearchParams(location.search).has('nokit');
@@ -1519,7 +1557,7 @@ export class DistrictWorld {
       { const gl = buildGlare([...dressHeads, ...tokyoHeads], ix * 31 + iz); if (gl) group.add(gl); }
       yield;
       // sliced: one big dressRoofs was a 10+ ms step against a 4 ms budget
-      const dressable = boxes.filter((b) => !b.tokyo);   // Little Tokyo dresses itself (tokyo.js)
+      const dressable = boxes.filter((b) => !b.tokyo && !b.art);   // Little Tokyo and the self-built styles dress themselves (tokyo.js, artBuildings.js)
       for (let i = 0; i < dressable.length; i += 24) { dressRoofs(batch, dressable.slice(i, i + 24), this.district); yield; }
 
       /* Facades are their own batch and their own group. They are far and away
@@ -1620,6 +1658,24 @@ export class DistrictWorld {
         tm.layers.enable(SHADOW_FAR_LAYER);
         group.add(tm);
       }
+    }
+    /* The self-built styles: one mesh per material key per chunk (<= 8), the
+       textured keys on the library PBR sets, 'emit' on the Tokyo material so
+       their windows light with the same night factor. Every part carries the
+       same attribute set (artKit paint: position/normal/uv/color/emit/flick),
+       which mergeGeometries needs. */
+    for (const [key, geos] of artParts) {
+      const merged = mergeGeometries(geos, false);
+      for (const g of geos) g.dispose();
+      if (!merged) continue;
+      merged.userData.owned = true;
+      merged.computeBoundingSphere();
+      const am = new THREE.Mesh(merged, artMaterial(key));
+      am.castShadow = true; am.receiveShadow = true;
+      am.frustumCulled = false;                       // bundle contents are culled at record time (see the header)
+      am.userData.shell = true;                       // casts into the far cascades like a shell
+      am.layers.enable(SHADOW_FAR_LAYER);
+      group.add(am);
     }
     // one merged mesh per kit per chunk: the whole Kenney buildings placed above
     for (const [kitName, geos] of Object.entries(kitPlaced)) {
