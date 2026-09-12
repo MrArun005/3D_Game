@@ -44,7 +44,7 @@ export function createCarState() {
     slip: 0, offRoad: 0, kerb: 0,
     wantsForward: false, wantsReverse: false,
     speed: 0, fwdSpeed: 0, lastAx: 0, lastAy: 0,
-    headlights: true, impact: 0,
+    headlights: false, impact: 0, lightsUser: false,
   };
   return car;
 }
