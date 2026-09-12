@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { additive } from '../core/additive.js';
-import { texAsphalt, texWalk, texPool, toTex, cv, normalFromCanvas } from './textures.js';
+import { texAsphalt, texWalk, texPool, toTex, cv, normalFromCanvas, anisotropyOf } from './textures.js';
 import { buildFacadeMaterials, buildBaseMaterials, BASE_H } from './facades.js';
 import { makeTileable } from './city.js';
 import { texSignAtlas, buildSignMaterial, signGeometry, buildWindowMaterial } from './signs.js';
@@ -80,7 +80,7 @@ export function createAssets() {
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.repeat.set(tile, tile);
     t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-    t.anisotropy = 8;
+    t.anisotropy = anisotropyOf();   // the device max (main.js sets it): the road is the one surface always seen at a grazing angle, where 8 samples still shimmer
     return t;
   };
   const setORM = (m, ormTex) => {

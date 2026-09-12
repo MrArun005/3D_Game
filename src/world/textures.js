@@ -67,33 +67,21 @@ export function texAsphalt(kind) {
   const W = ROAD_HALF * 2;
   const px = S / W;
 
-  g.fillStyle = '#25272b'; g.fillRect(0, 0, S, S);
-  noiseWash(g, S, S, 900, 0.1, '14,15,18');
-  noiseWash(g, S, S, 500, 0.07, '76,80,88');
-  for (let i = 0; i < 240; i++) {
-    g.fillStyle = `rgba(${ri(110, 155)},${ri(110, 155)},${ri(115, 160)},${rr(0.04, 0.12)})`;
-    g.fillRect(rp() * S, rp() * S, rr(1, 3), rr(1, 3));
-  }
-  for (let i = 0; i < 26; i++) {
-    g.fillStyle = `rgba(18,19,22,${rr(0.2, 0.45)})`;
-    g.beginPath();
-    g.ellipse(rp() * S, rp() * S, rr(20, 90), rr(10, 50), rp() * 3, 0, 7);
-    g.fill();
-  }
-  g.strokeStyle = 'rgba(14,15,18,0.55)'; g.lineWidth = 2.5;
-  for (let i = 0; i < 8; i++) {
-    const y = rp() * S;
-    g.beginPath(); g.moveTo(0, y);
-    g.bezierCurveTo(S * 0.3, y + rr(-40, 40), S * 0.7, y + rr(-40, 40), S, y + rr(-30, 30));
-    g.stroke();
+  // Clean, dark, high-grade asphalt with fine mineral aggregate (zero dirty blobs or oil patches)
+  g.fillStyle = '#202226'; g.fillRect(0, 0, S, S);
+  noiseWash(g, S, S, 140, 0.035, '15,16,18');
+  for (let i = 0; i < 650; i++) {
+    g.fillStyle = `rgba(${ri(130, 165)},${ri(130, 165)},${ri(135, 170)},${rr(0.03, 0.07)})`;
+    g.fillRect(rp() * S, rp() * S, rr(1, 2), rr(1, 2));
   }
 
-  const paint = 'rgba(206,208,202,0.78)';
+  const paint = 'rgba(240,242,246,0.92)';
+  const yellowPaint = 'rgba(235,195,55,0.94)';
   const line = (xm, wm, dash) => {
     g.fillStyle = paint;
     const x = xm * px, w2 = wm * px;
     if (!dash) { g.fillRect(x - w2 / 2, 0, w2, S); return; }
-    const segment = 3.0 * px, gap = 4.5 * px;
+    const segment = 3.2 * px, gap = 4.2 * px;
     for (let y = 0; y < S; y += segment + gap) g.fillRect(x - w2 / 2, y, w2, segment);
   };
 
@@ -106,9 +94,10 @@ export function texAsphalt(kind) {
     line(W - PARKING - 0.06, 0.12, false);
     line(PARKING + LANE, 0.12, true);
     line(W - PARKING - LANE, 0.12, true);
-    g.fillStyle = paint;
-    g.fillRect((W / 2) * px - 0.3 * px, 0, 0.12 * px, S);
-    g.fillRect((W / 2) * px + 0.18 * px, 0, 0.12 * px, S);
+    // Double solid center line in highway yellow
+    g.fillStyle = yellowPaint;
+    g.fillRect((W / 2) * px - 0.26 * px, 0, 0.12 * px, S);
+    g.fillRect((W / 2) * px + 0.14 * px, 0, 0.12 * px, S);
     g.globalAlpha = 0.32;
     for (let y = 0; y < S; y += 5.6 * px) {
       g.fillRect(0, y, PARKING * px * 0.55, 0.11 * px);
@@ -327,8 +316,12 @@ export function wetTarmacLook(wet, night = 0) {
   const w = Math.max(0, Math.min(1, +wet || 0));
   const n = Math.max(0, Math.min(1, +night || 0));
   return {
-    // night-dry ~0.44 so coloured point lights spec on the road; wet 0.14
-    roughness: (0.82 - 0.38 * n) * (1 - w) + 0.14 * w,
+    /* night-dry ~0.44 so coloured point lights spec on the road. The wet floor
+       is 0.22, not 0.14: at 0.14 the highlight is a mirror, and a mirror-sharp
+       highlight on a normal-mapped surface seen at a grazing angle aliases --
+       that is the road FLICKERING as you drive, not a texture problem. 0.22
+       still mirrors the neon, it just resolves. */
+    roughness: (0.82 - 0.38 * n) * (1 - w) + 0.22 * w,
     envMapIntensity: 0.25 + 3.45 * w,
     normalScale: 0.28 - 0.13 * w,
   };
