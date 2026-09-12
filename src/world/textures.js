@@ -323,10 +323,12 @@ export function texSky(day = false, sunDir = null) {
  * Dry: matte, almost-flat bump, env barely there.
  * Wet: roughness 0.14, env 3.7, bump faded so water fills the grain.
  */
-export function wetTarmacLook(wet) {
+export function wetTarmacLook(wet, night = 0) {
   const w = Math.max(0, Math.min(1, +wet || 0));
+  const n = Math.max(0, Math.min(1, +night || 0));
   return {
-    roughness: 0.82 - 0.68 * w,
+    // night-dry ~0.44 so coloured point lights spec on the road; wet 0.14
+    roughness: (0.82 - 0.38 * n) * (1 - w) + 0.14 * w,
     envMapIntensity: 0.25 + 3.45 * w,
     normalScale: 0.28 - 0.13 * w,
   };

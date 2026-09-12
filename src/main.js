@@ -2205,7 +2205,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     // turned the asphalt grain into cobbles at noon.
     const tm = assets?.mat?.tarmac;
     if (tm) {
-      const look = wetTarmacLook(car.wet);
+      const look = wetTarmacLook(car.wet, (clock.hour >= 20.5 || clock.hour < 5.2) ? 1 : clock.hour >= 18 ? (clock.hour - 18) / 2.5 : clock.hour < 7.2 ? (7.2 - clock.hour) / 2 : 0);
       tm.roughness = look.roughness;
       tm.envMapIntensity = look.envMapIntensity;
       tm.normalScale.setScalar(look.normalScale);
