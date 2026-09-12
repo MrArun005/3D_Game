@@ -205,6 +205,32 @@ export function bloomThresholdFor(threshold, exposure, ref = NIGHT_EXPOSURE) {
   return threshold * ref / exposure;
 }
 
+/**
+ * The high-pass KNEE (BloomNode's `smoothWidth`), in the same HDR units.
+ *
+ * BloomNode's filter is `mix(0, texel, smoothstep(T, T + w, luminance))` and
+ * `w` defaults to 0.01 -- a cliff, and it passes the WHOLE texel, not the
+ * excess over T. So at night (T = 0.85) a lit facade window at luminance ~1.0
+ * dumps 100% of a large area into the blur and the whole window glows, which
+ * is exactly the "lifeless haze" the brief rules out; the sign's letters at
+ * ~2.0 pass the same 100%, and area does the rest.
+ *
+ * A knee of 0.65 x T keeps every genuine hot core at full weight and all but
+ * removes the large dim ones (night, T = 0.85, band 0.85 -> 1.40):
+ *
+ *   facade window / window quad  0.79-1.00  ->  0-19%   (was 100%)
+ *   Tokyo lit window     1.35 x 0.55 = 0.74 ->  0%      (unchanged: under T)
+ *   sign ink       2.46 x 0.8  = ~2.0       ->  100%
+ *   lamp head glow             ~2.15        ->  100%
+ *   Tokyo neon     1.35 x 1.4  = 1.89       ->  100%
+ *   headlamp lens               4.8         ->  100%
+ *
+ * It is strictly a tightening: nothing blooms that did not before. The soft
+ * edge also stops a source sitting on T from strobing in and out of the blur.
+ */
+export const BLOOM_KNEE = 0.65;
+export function bloomKnee(hdrThreshold) { return Math.max(0.01, hdrThreshold * BLOOM_KNEE); }
+
 /* Hable / Uncharted 2 filmic curve. One function serves the shader and the
    tests: with a number it does arithmetic, with a TSL node it builds nodes,
    so the maths is written once. Constants are Hable's GDC 2010 set; BIAS is
@@ -328,6 +354,7 @@ export function createGrade(renderer, scene, camera, {
   let hdr = lit;
   if (withBloom) {
     bloomPass = bloom(emissiveTex, BLOOM_STRENGTH, 0.35, 0.25);
+    bloomPass.smoothWidth.value = bloomKnee(0.25);   // before the first profile lands
     hdr = lit.add(bloomPass);
   }
 
@@ -453,7 +480,9 @@ export function createGrade(renderer, scene, camera, {
       if (p.bloomStrength !== undefined) bloomPass.strength.value = p.bloomStrength;
       if (p.bloomRadius !== undefined) bloomPass.radius.value = p.bloomRadius;
       if (p.bloomThreshold !== undefined) {
-        bloomPass.threshold.value = bloomThresholdFor(p.bloomThreshold, renderer.toneMappingExposure);
+        const t = bloomThresholdFor(p.bloomThreshold, renderer.toneMappingExposure);
+        bloomPass.threshold.value = t;
+        bloomPass.smoothWidth.value = bloomKnee(t);   // only tiny bright cores: see bloomKnee()
       }
     }
   }

@@ -16,9 +16,16 @@ import * as THREE from 'three';
  * Painted pools stay for the rest of the city; this is the near field only.
  * Costs N point lights in the forward pass -- tune with ?lights=N.
  */
+/** Rank key for the night pool. Neon kanban are biased in so a closer
+ *  sodium lamp on the arterial does not steal every slot in Little Tokyo. */
+export function headScore(h, x, z) {
+  const d2 = (h.x - x) ** 2 + (h.z - z) ** 2;
+  return d2 * (h.neon ? 0.12 : 1);
+}
+
 export class LightPool {
-  constructor(scene, world, { count = 6, radius = 60, colour = 0xffba75, intensity = 60, range = 26 } = {}) {
-    this.scene = scene; this.world = world; this.radius = radius;
+  constructor(scene, world, { count = 6, radius = 60, colour = 0xffba75, intensity = 60, range = 26, hero = 3, heroRadius = 85 } = {}) {
+    this.scene = scene; this.world = world; this.radius = radius; this.heroRadius = heroRadius;
     this.lights = [];
 
     const coronaTex = (() => {
@@ -70,6 +77,30 @@ export class LightPool {
       scene.add(sp, sp.target);
       this.spots.push(sp);
     }
+    /* BLOCK HERO lights (Phase 5): a glowing doorway, a laundromat's spill on
+       the pavement, a harbour floodlight -- the two or three lights per block
+       that say someone is inside. The world hands positions over in
+       `world.heroLightsByChunk` (same shape as headsByChunk, one entry per
+       chunk key), each { x, y, z, colour?, intensity?, range? }, so a doorway
+       is a small warm 12 m light and a dock floodlight a cold 40 m one.
+       Created HERE, at boot, with the rest of the pool: adding a light to a
+       live WebGPU scene recompiles every pipeline and stalls the frame ~2 s.
+       They are not lamp heads -- no corona, no hysteresis, they sit still. */
+    /* ponytail: no world.heroLightsByChunk, no lights. Three PointLights at
+       intensity 0 are NOT free -- three's WebGPU forward pass has no light
+       clustering, so they run the full attenuation loop per lit fragment
+       (6 -> 9 heads is ~+50% on it) for nothing until districtWorld fills the
+       map. DistrictWorld is constructed before the pool (main.js), so the day
+       that hook lands these appear on the next reload. */
+    this.heroes = [];
+    const heroN = world?.heroLightsByChunk ? hero : 0;
+    for (let i = 0; i < heroN; i++) {
+      const l = new THREE.PointLight(0xffb060, 0, 14, 2);
+      l.castShadow = false;
+      scene.add(l);
+      this.heroes.push({ light: l, src: null, want: null, fade: 0 });
+    }
+
     /* One real light for the nearest hunting cruiser's bar, red/blue with its
        flash: the wash on the buildings around you that the pool disc on the
        tarmac cannot give. One point light, 30 m, off when nobody is hunting. */
@@ -129,12 +160,46 @@ export class LightPool {
     }
   }
 
+  /**
+   * Re-rank the hero sources on the pool's own 0.25 s tick. A slot only lets
+   * its source go when that source drops out of the nearest N+1 -- ordering
+   * swaps inside the set change nothing, so driving past a parade of shops
+   * does not strobe the lights. The hand-over is a crossfade in update().
+   */
+  #hero(x, z) {
+    const by = this.world?.heroLightsByChunk;
+    if (!by || !this.heroes.length) return;
+    const r2 = this.heroRadius * this.heroRadius, best = [];
+    for (const list of by.values()) {
+      for (const p of list) {
+        const d2 = (p.x - x) ** 2 + (p.z - z) ** 2;
+        if (d2 < r2) best.push({ p, d2 });
+      }
+    }
+    best.sort((a, b) => a.d2 - b.d2);
+    const n = this.heroes.length;
+    const keep = new Set(best.slice(0, n + 1).map((e) => e.p));   // hysteresis: one place of slack
+    const taken = new Set();
+    for (const slot of this.heroes) {
+      if (slot.want && keep.has(slot.want)) taken.add(slot.want); else slot.want = null;
+    }
+    for (const slot of this.heroes) {
+      if (slot.want) continue;
+      const e = best.slice(0, n).find((c) => !taken.has(c.p));
+      if (!e) break;
+      slot.want = e.p; taken.add(e.p);
+    }
+  }
+
   #candidates(x, z) {
     const out = [], r2 = this.radius * this.radius;
     for (const heads of this.world.headsByChunk.values()) {
-      for (const h of heads) { const d2 = (h.x - x) ** 2 + (h.z - z) ** 2; if (d2 < r2) out.push({ h, d2 }); }
+      for (const h of heads) {
+        const d2 = (h.x - x) ** 2 + (h.z - z) ** 2;
+        if (d2 < r2) out.push({ h, d2, score: headScore(h, x, z) });
+      }
     }
-    out.sort((a, b) => a.d2 - b.d2);
+    out.sort((a, b) => a.score - b.score);
     return out;
   }
 
@@ -143,19 +208,37 @@ export class LightPool {
     this.#traffic(traffic, x, z);
     if (this.t >= this.next) {
       this.next = this.t + 0.25;
+      this.#hero(x, z);
       const cands = this.#candidates(x, z);
       const owned = new Set(this.lights.map((s) => s.head).filter(Boolean));
       const free = cands.filter((c) => !owned.has(c.h));
       for (const slot of this.lights) {
-        const cur = slot.head ? (slot.head.x - x) ** 2 + (slot.head.z - z) ** 2 : Infinity;
+        const cur = slot.head ? headScore(slot.head, x, z) : Infinity;
         const best = free[0];
         if (!best) break;
-        // hysteresis: 20% closer, and the owner has had its second
-        if (slot.head && !(best.d2 < cur * 0.8 && this.t - slot.since > 1.0)) continue;
+        // hysteresis: 20% closer (on the biased score), and the owner has had its second
+        if (slot.head && !(best.score < cur * 0.8 && this.t - slot.since > 1.0)) continue;
         slot.from = slot.head; slot.head = best.h; slot.since = this.t; slot.fade = 0;
         slot.light.color.setHex(best.h.colour ?? this.colour);
         owned.add(best.h); free.shift();
       }
+    }
+    /* Crossfade: a slot dims out where it stands, THEN moves. Half a second
+       either way -- a hero light that teleports across the street is worse
+       than one that is briefly out. */
+    for (const s of this.heroes) {
+      if (s.src !== s.want) {
+        s.fade = Math.max(0, s.fade - dt / 0.5);
+        if (s.fade === 0) {
+          s.src = s.want;
+          if (s.src) {
+            s.light.position.set(s.src.x, s.src.y, s.src.z);
+            s.light.color.setHex(s.src.colour ?? 0xffb060);
+            s.light.distance = s.src.range ?? 14;
+          }
+        }
+      } else if (s.src) s.fade = Math.min(1, s.fade + dt / 0.5);
+      s.light.intensity = s.src ? (s.src.intensity ?? 22) * s.fade : 0;
     }
     for (let i = 0; i < this.lights.length; i++) {
       const s = this.lights[i];
@@ -169,10 +252,14 @@ export class LightPool {
       s.fade = Math.min(1, s.fade + dt / 0.4);
       // the light sits a little below the head so the pool lands on the pavement, not the lamp
       l.position.set(s.head.x, s.head.y - 0.4, s.head.z);
-      l.intensity = this.intensity * s.fade;
+      l.intensity = (s.head.intensity ?? this.intensity) * s.fade;
+      l.distance = s.head.range ?? 26;
       if (corona) {
         corona.position.set(s.head.x, s.head.y - 0.15, s.head.z);
         corona.visible = true;
+        corona.material.color.setHex(s.head.colour ?? this.colour);
+        const g = s.head.neon ? 5.4 : 4.2;
+        corona.scale.set(g, g, 1);
         corona.material.opacity = 0.85 * s.fade;
       }
     }
