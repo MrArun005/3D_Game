@@ -29,7 +29,17 @@ export function lensDrops({ wet = 0, mode = 0, onFoot = false, roof = true } = {
    comes in with it so the horizon does not ride up. The close rig follows by
    the same proportion. */
 const RIGS = [
-  { back: 6.5, up: 2.62, aim: 7.2, fov: 58, lag: 3.4, tilt: 1 },
+  /* Default rig. Measured against the reference frame at 1440x860: stopped, the
+     car's wheels were clipped off the bottom edge (aim 7.2 m ahead at 0.95 m up
+     tilts the lens down past the bumper); at 86 km/h it was HALF its stopped
+     pixel width -- a toy in the middle of the road. Closer, a touch lower, aim
+     nearer so the car rides at ~2/3 frame height with the bumper clear. */
+  /* With the lead above, these are the numbers you see at EVERY speed. By
+     geometry at 56 deg vertical FOV (half 28): camera (-6.4, 2.15) aiming at
+     (6.2, 1.35) pitches -3.6 deg; the rear wheels at (-2.3, 0) then sit 24 deg
+     below the axis -- inside the frame with margin -- and the car spans ~64-93%
+     of frame height. aimUp 1.35 (was the shared 0.95) is what lifts it clear. */
+  { back: 6.4, up: 2.15, aim: 6.2, aimUp: 1.35, fov: 56, lag: 3.4, tilt: 1 },
   { back: 4.7, up: 1.92, aim: 8.2, fov: 63, lag: 6.0, tilt: 1 },
   { back: -1.3, up: 1.28, aim: 14.0, fov: 62, lag: 22.0, tilt: 0 },
   { back: -0.55, up: 1.3, aim: 16.0, fov: 55, lag: 26.0, tilt: 0 },
@@ -106,7 +116,12 @@ export class ChaseCamera {
     const cy = Math.cos(car.yaw), sy = Math.sin(car.yaw);
     const rx = sy, rz = cy;
     const speedK = Math.min(1, (car.speed || 0) / 42);
-    let back = rig.back * (1 + speedK * 0.18);
+    /* Speed used to pull the camera back 18%, widen the lens 12 degrees AND push
+       the aim 55% further ahead, all at once -- three zoom-outs compounding, and
+       the car shrank to half its width by 86 km/h ("everything is small"). GTA V
+       does almost none of this: the camera stays glued and the world streams
+       past. Keep a whisper of each for feel, nothing that changes the car's size. */
+    let back = rig.back * (1 + speedK * 0.05);
 
     /* Suspension. The follow lag below smooths car.y, but it smooths the BODY
        and the springs equally: over a kerb the camera copied the axles. Take
@@ -126,7 +141,12 @@ export class ChaseCamera {
     // Don't let a chase camera reverse into a building. Walk it in until the
     // point it wants to occupy is over tarmac or pavement. Only apply near ground (< 5m).
     if (rig.back > 0 && targetY < 5) {
-      for (let i = 0; i < 6; i++) {
+      /* Three steps, not six. Six let `back` fall to 23% of the rig -- parked
+         by a kerb the camera sat 1.3 m off the bumper and the car's wheels were
+         clipped off the bottom of the frame ("I don't see the car fully"). 0.47
+         of the rig is as close as it goes; past that the camera clips through
+         the wall for a moment rather than making the car unreadable. */
+      for (let i = 0; i < 3; i++) {
         const tx = car.x - cy * back, tz = car.z + sy * back;
         if (roadDepth(tx, tz) < WALK_W - 0.5) break;
         back *= 0.78;
@@ -149,8 +169,20 @@ export class ChaseCamera {
     const ox = Math.cos(ly) * (-cy) - Math.sin(ly) * (sy);
     const oz = Math.sin(ly) * (-cy) + Math.cos(ly) * (sy);
     const side = rig.side ?? 0;
-    const tx = car.x + ox * back * flat + rx * side;
-    const tz = car.z + oz * back * flat + rz * side;
+    /* Velocity feed-forward. The follower below is a first-order lag with rate
+       lambda = -ln(0.0016) * lag / 3.4 per second (6.4/s on the default rig), so
+       at a steady 24 m/s it trails its target by v / lambda = 3.7 m. That is
+       why the car was one size stopped and half that size at 90 km/h: at speed
+       you were 4 m further back without anyone asking for it, and every rig
+       had been tuned against the moving frame -- so at rest it clipped the
+       wheels off the bottom. Lead the target by 70% of the trail: transients
+       stay soft, steady-state distance stays what the rig says, and the last
+       30% keeps a touch of hang-back for the sense of speed. Not for rigid
+       rigs -- they have no lag to compensate. */
+    const lambda = 6.44 * (rig.lag / 3.4);
+    const lead = rig.rigid ? 0 : 0.7 / lambda;
+    const tx = car.x + ox * back * flat + rx * side + (car.vx || 0) * lead;
+    const tz = car.z + oz * back * flat + rz * side + (car.vz || 0) * lead;
     const ty = targetY + rig.up + lift * back * 1.15;
     const k = rig.rigid ? 1 : 1 - Math.pow(0.0016, dt * (rig.lag / 3.4));
     this.pos.x += (tx - this.pos.x) * k;
@@ -196,7 +228,7 @@ export class ChaseCamera {
        your own car; at speed you need the corner. Same principle every racing
        camera uses, and the reason GTA players complain they cannot see through
        a turn. */
-    const aimAhead = 1 + speedK * 0.55;
+    const aimAhead = 1 + speedK * 0.20;
     // when free-looking or looking behind, aim through the car rather than down the road
     const aimD = (this.looking || this.lookBehind) ? 2.0 : rig.aim * aimAhead;
     /* Sliding: the car POINTS one way and TRAVELS another, and a camera locked
@@ -218,7 +250,7 @@ export class ChaseCamera {
     }
     this.aim.set(
       car.x - ox * aimD * flat + rx * (look + side) + slipX,
-      targetY + 0.95 - lift * aimD * 0.4,
+      targetY + (rig.aimUp ?? 0.95) - lift * aimD * 0.4,
       car.z - oz * aimD * flat + rz * (look + side) + slipZ,
     );
     this.camera.lookAt(this.aim);
@@ -230,7 +262,7 @@ export class ChaseCamera {
        cockpit views felt wide and far. Widening with speed is the one thing
        every driving game agrees on (art of rally: "we expand the FOV when
        you're going faster"): +12 deg by ~150 km/h, and the nitrous kick on top. */
-    const fov = (rig.fov ?? 62) + speedK * 12 + nosBoost;
+    const fov = (rig.fov ?? 62) + speedK * 4 + nosBoost;   // was 12: the speed zoom-out is the car shrinking, not the sensation of speed
     const near = rig.near ?? 0.5;
     let reproject = false;
     if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 5.5); reproject = true; }
