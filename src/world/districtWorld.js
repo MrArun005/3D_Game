@@ -578,6 +578,7 @@ export class DistrictWorld {
     const stage = (y, hh, k) => {
       fb.m.push(mat4(wx, y, wz, angle, w * k, hh, d * k));
       fb.uv.push((w * k) / tileW, hh / tileH);
+      relief(y, hh, w * k, d * k);
     };
     // a stage of its own footprint (sw x sd), offset (ox, oz) on the block axes
     const stageAt = (y, hh, sw, sd, ox, oz) => {
@@ -585,11 +586,33 @@ export class DistrictWorld {
       fb.m.push(mat4(px, y, pz, angle, sw, hh, sd));
       fb.uv.push(sw / tileW, hh / tileH);
       (glassTop ? out.glassRoofs : out.roofs).push(mat4(px, y + hh - SINK, pz, angle, sw + 0.1, 0.7 + SINK, sd + 0.1));
+      relief(y, hh, sw, sd, ox, oz);
     };
     const cap = (y, hh, k, pad) =>
       (glassTop ? out.glassRoofs : out.roofs).push(
         mat4(wx, y, wz, angle, w * k + pad, hh, d * k + pad));
 
+    /* Relief: the shells were one scaled box wearing a tiled canvas facade, so
+       a 60 m wall took ONE light value and cast no shadow on itself -- the
+       "extruded cardboard" look. Belt courses every few storeys and pilasters
+       at the corners give the sun something to catch: crisp horizontal and
+       vertical shadow lines down the face. They ride the roof/trim bucket,
+       which is already instanced, so the draw count does not move; the cost is
+       ~10 boxes (120 triangles) a building. Self-built styles (world/buildings)
+       carry their own relief and never come through here. */
+    const relief = (y, hh, sw, sd, ox = 0, oz = 0) => {
+      if (hh < 6 || sw < 5 || sd < 5) return;                   // a shed gets none
+      const band = hh > 40 ? 12 : hh > 20 ? 9 : 6.5;            // a tower's courses sit further apart
+      const [cx, cz] = at(ox, oz);
+      for (let by = y + band; by < y + hh - 1.2; by += band) {
+        out.roofs.push(mat4(cx, by, cz, angle, sw + 0.34, 0.26, sd + 0.34));   // belt course, 0.17 m proud
+      }
+      const pw = Math.min(1.1, sw * 0.12), pd = Math.min(1.1, sd * 0.12), pr = 0.16;
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) {     // corner pilasters, full height
+        const [px, pz] = at(ox + sx * (sw / 2 - pw / 2 + pr * 0.5), oz + sz * (sd / 2 - pd / 2 + pr * 0.5));
+        out.roofs.push(mat4(px, y, pz, angle, pw + pr, hh, pd + pr));
+      }
+    };
     let topK = 1, pitched = false;
     /* A parapet lip round a flat roof: 0.6 m up, 0.3 m thick, four boxes in
        the roof bucket. From the street it IS the roofline; without it the top
