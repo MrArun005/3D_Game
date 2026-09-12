@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated": "2026-09-01T20:28:10.263Z",
+  "generated": "2026-09-12T05:22:33.428Z",
   "assets": {
     "characters/hero": {
       "url": "/models/characters/hero.glb",
@@ -3498,6 +3498,255 @@
         "roof",
         "plant",
         "landmark"
+      ]
+    },
+    "props/helipad": {
+      "url": "/models/props/helipad.glb",
+      "lods": [
+        "/models/props/helipad.lod1.glb",
+        "/models/props/helipad.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -5.4,
+          0,
+          -5.4
+        ],
+        "max": [
+          5.4,
+          0.76,
+          5.4
+        ]
+      },
+      "tris": {
+        "lod0": 372,
+        "lod1": 224,
+        "lod2": 176
+      },
+      "materials": [
+        "concrete_cast",
+        "asphalt",
+        "plastic_signage",
+        "metal_painted",
+        "alloy_polished"
+      ],
+      "tags": [
+        "roof",
+        "infrastructure",
+        "helipad"
+      ]
+    },
+    "props/roadblock_jersey": {
+      "url": "/models/props/roadblock_jersey.glb",
+      "lods": [
+        "/models/props/roadblock_jersey.lod1.glb",
+        "/models/props/roadblock_jersey.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.2,
+          0,
+          -0.32
+        ],
+        "max": [
+          1.2,
+          1.2,
+          0.32
+        ]
+      },
+      "tris": {
+        "lod0": 244,
+        "lod1": 80,
+        "lod2": 80
+      },
+      "materials": [
+        "concrete_precast",
+        "plastic_signage",
+        "metal_galv"
+      ],
+      "tags": [
+        "roadworks",
+        "police",
+        "street"
+      ]
+    },
+    "props/tactical_crate": {
+      "url": "/models/props/tactical_crate.glb",
+      "lods": [
+        "/models/props/tactical_crate.lod1.glb",
+        "/models/props/tactical_crate.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -0.59,
+          0,
+          -0.41
+        ],
+        "max": [
+          0.59,
+          0.75,
+          0.44
+        ]
+      },
+      "tris": {
+        "lod0": 264,
+        "lod1": 72,
+        "lod2": 72
+      },
+      "materials": [
+        "metal_painted",
+        "alloy_polished",
+        "metal_galv",
+        "plastic_signage"
+      ],
+      "tags": [
+        "clutter",
+        "industrial",
+        "police",
+        "loot"
+      ]
+    },
+    "facade/ground_retail": {
+      "url": "/models/facade/ground_retail.glb",
+      "lods": [
+        "/models/facade/ground_retail.lod1.glb",
+        "/models/facade/ground_retail.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.8,
+          0,
+          -1.15
+        ],
+        "max": [
+          1.8,
+          4.2,
+          0.11
+        ]
+      },
+      "tris": {
+        "lod0": 880,
+        "lod1": 240,
+        "lod2": 240
+      },
+      "materials": [
+        "concrete_cast",
+        "glass_shop",
+        "metal_painted",
+        "stone_dressed",
+        "alloy_polished",
+        "plastic_signage",
+        "fabric_awning"
+      ],
+      "tags": [
+        "ground",
+        "retail",
+        "tokyo"
+      ]
+    },
+    "facade/bay_modern": {
+      "url": "/models/facade/bay_modern.glb",
+      "lods": [
+        "/models/facade/bay_modern.lod1.glb",
+        "/models/facade/bay_modern.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.8,
+          0,
+          -0.45
+        ],
+        "max": [
+          1.8,
+          3.2,
+          0.18
+        ]
+      },
+      "tris": {
+        "lod0": 616,
+        "lod1": 168,
+        "lod2": 168
+      },
+      "materials": [
+        "plaster_worn",
+        "glass_curtain",
+        "alloy_polished",
+        "stone_dressed",
+        "metal_painted",
+        "concrete_precast"
+      ],
+      "tags": [
+        "bay",
+        "commercial",
+        "tokyo"
+      ]
+    },
+    "facade/bay_residential": {
+      "url": "/models/facade/bay_residential.glb",
+      "lods": [
+        "/models/facade/bay_residential.lod1.glb",
+        "/models/facade/bay_residential.lod2.glb"
+      ],
+      "lodDistances": [
+        0,
+        40,
+        110
+      ],
+      "bounds": {
+        "min": [
+          -1.8,
+          0,
+          -0.68
+        ],
+        "max": [
+          1.8,
+          2.9,
+          0.25
+        ]
+      },
+      "tris": {
+        "lod0": 792,
+        "lod1": 216,
+        "lod2": 216
+      },
+      "materials": [
+        "brick_painted",
+        "glass_shop",
+        "timber_painted",
+        "stone_dressed",
+        "concrete_precast",
+        "metal_painted",
+        "metal_galv"
+      ],
+      "tags": [
+        "bay",
+        "residential",
+        "tokyo"
       ]
     }
   }
