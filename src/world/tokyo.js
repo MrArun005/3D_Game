@@ -129,10 +129,10 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
     for (let s = 1; s < floors; s++) {
       for (let b = 0; b < bays; b++) {
         const along = -f.w / 2 + pitch * (b + 0.5);
-        const lit = rnd() < 0.38;   // fewer, dimmer windows than the first cut: on the cover the neon owns the night, the windows are a texture behind it
+        const lit = rnd() < 0.22;   // fewer, dimmer windows: on the cover the neon owns the night, the windows are a texture behind it
         const em = lit ? (rnd() < 0.7 ? WARM : COOL) : null;
         const [x, z] = onFace(f, along, 0.035);
-        parts.push(at(quad(Math.min(1.4, pitch * 0.55), 1.5, 0x131a24, em, 0.55), x, floorY(s) + 1.55, z, f.yaw));
+        parts.push(at(quad(Math.min(1.4, pitch * 0.55), 1.5, 0x131a24, em, 0.16), x, floorY(s) + 1.55, z, f.yaw));
         // balconies: residential backs and sides, one storey in two
         if (residential && f.name !== 'front' && s >= 2 && rnd() < 0.5) {
           const [bx, bz] = onFace(f, along, 0.5);
@@ -173,7 +173,13 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
   } else {
     // konbini white or izakaya warm: the two lights every Tokyo street is made of
     const konbini = rnd() < 0.35;
-    parts.push(at(quad(front.w - 0.6, 2.7, konbini ? 0x2a3038 : 0x1c2430, konbini ? [0.9, 0.95, 1.0] : WARM, konbini ? 0.75 : 0.5), gx, 1.65, gz, front.yaw));
+    const shop = konbini ? [0.9, 0.95, 1.0] : WARM;
+    parts.push(at(quad(front.w - 0.6, 2.7, konbini ? 0x2a3038 : 0x1c2430, shop, konbini ? 1.05 : 0.85), gx, 1.65, gz, front.yaw));
+    lamps.push({
+      x: hw + 1.2, y: 1.7, z: 0,
+      colour: _c.setRGB(shop[0], shop[1], shop[2]).getHex(),
+      neon: true, intensity: 80, range: 20, glare: 1.8,
+    });
   }
   // the door: a dark frame and a lit sliding-door panel at one end of the shopfront, so the ground floor reads as a shop you could enter
   {
@@ -181,7 +187,7 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
     const [dx0, dz0] = onFace(front, ds, 0.06);
     parts.push(at(box(0.06, 2.5, 1.25, 0x2a2d33), dx0, 1.25, dz0));
     const [dx1, dz1] = onFace(front, ds, 0.09);
-    parts.push(at(quad(1.0, 2.2, 0x3c4a5a, [0.95, 0.9, 0.8], 0.35), dx1, 1.15, dz1, front.yaw));
+    parts.push(at(quad(1.0, 2.2, 0x3c4a5a, [0.95, 0.9, 0.8], 0.22), dx1, 1.15, dz1, front.yaw));
   }
   // projecting signs: a small box out from the wall at first-floor height with a board on each face, on three in five
   if (rnd() < 0.6) {
@@ -217,11 +223,11 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
       const cz = side * (hd - 0.55);
       // the column glows in the building's neon (or white), a tinted backing for the tenant panels
       const cc = neon ?? [0.9, 0.9, 0.9];
-      parts.push(at(box(0.28, colH, 0.95, 0xf2f2f2, cc, 0.55, flickerOf(rnd)), hw + 0.18, 4.6 + colH / 2, cz));
-      parts.push(at(box(0.05, colH + 0.2, 0.06, 0x222222, cc, 1.9), hw + 0.33, 4.6 + colH / 2, cz + 0.5), at(box(0.05, colH + 0.2, 0.06, 0x222222, cc, 1.9), hw + 0.33, 4.6 + colH / 2, cz - 0.5));   // tube edges either side of the column
-      { const nc = pick(NEON); lamps.push({ x: hw + 1.4, y: 4.6 + colH * 0.45, z: cz, colour: _c.setRGB(nc[0], nc[1], nc[2]).getHex() }); }
+      parts.push(at(box(0.28, colH, 0.95, 0xf2f2f2, cc, 1.25, flickerOf(rnd)), hw + 0.18, 4.6 + colH / 2, cz));
+      parts.push(at(box(0.08, colH + 0.2, 0.1, 0x222222, cc, 2.4), hw + 0.33, 4.6 + colH / 2, cz + 0.5), at(box(0.08, colH + 0.2, 0.1, 0x222222, cc, 2.4), hw + 0.33, 4.6 + colH / 2, cz - 0.5));   // tube edges either side of the column
+      { const nc = pick(NEON); lamps.push({ x: hw + 1.4, y: 4.6 + colH * 0.45, z: cz, colour: _c.setRGB(nc[0], nc[1], nc[2]).getHex(), neon: true, intensity: 110, range: 32, glare: 2.6 }); }
       // the column's spill on the pavement: a flat emissive patch in the same colour, so the neon reads at street level (wet or dry)
-      { const g = quad(2.4, 1.7, 0x2a2a2e, cc, 0.32); g.applyMatrix4(_m.makeRotationX(-Math.PI / 2)); parts.push(at(g, hw + 1.35, 0.03, cz)); }
+      { const g = quad(2.8, 2.0, 0x2a2a2e, cc, 0.85); g.applyMatrix4(_m.makeRotationX(-Math.PI / 2)); parts.push(at(g, hw + 1.35, 0.03, cz)); }
       /* A kanban is a stack of tenants. The atlas tiles are 4:1 landscape, so a
          panel is `vertical`: the caller rolls the quad 90 degrees and the tile
          runs UP the column (rotated lettering, as real kanban often carry).
@@ -246,8 +252,20 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
     }
   }
   if (neon) for (let s = 1; s < floors; s += 1 + Math.floor(rnd() * 2)) {
-    const [nx, nz] = onFace(front, 0, 0.06);
-    parts.push(at(box(0.06, 0.07, front.w * 0.96, 0x222222, neon, 1.9, flickerOf(rnd)), nx, floorY(s) + 0.2, nz));
+    const [nx, nz] = onFace(front, 0, 0.07);
+    parts.push(at(box(0.14, 0.18, front.w * 0.96, 0x222222, neon, 2.4, flickerOf(rnd)), nx, floorY(s) + 0.2, nz));
+  }
+  // a projecting neon blade — a plane of colour, not a 6 cm tube. This is what
+  // the cover art is made of; the floor-edge ribbons alone never won the frame.
+  if (neon && rnd() < 0.72) {
+    const s = (rnd() < 0.5 ? -1 : 1) * Math.max(0.6, front.w / 2 - 0.8);
+    const [bx, bz] = onFace(front, s, 0.62);
+    parts.push(at(box(0.12, 3.8, 0.62, 0x141418, neon, 2.5, flickerOf(rnd)), bx, 6.4, bz, front.yaw));
+    lamps.push({
+      x: bx + front.n[0] * 0.35, y: 6.4, z: bz + front.n[1] * 0.35,
+      colour: _c.setRGB(neon[0], neon[1], neon[2]).getHex(),
+      neon: true, intensity: 95, range: 28, glare: 2.5,
+    });
   }
 
   // the roof: parapet, tank, antenna, stair bulkhead, and a billboard frame on a third
@@ -401,5 +419,5 @@ export function tokyoMaterial() {
 
 /** 0 by day, 1 at night: the windows, neon and kanban faces come up with it. */
 export function setTokyoNight(k) {
-  if (MAT) MAT.emissiveIntensity = 0.05 + 1.3 * Math.max(0, Math.min(1, k));   // windows lit, neon (emit 1.4x) blooming, not the whole facade
+  if (MAT) MAT.emissiveIntensity = 0.05 + 1.45 * Math.max(0, Math.min(1, k));   // windows stay a texture (emit 0.16); neon at 2.4x blooms
 }
