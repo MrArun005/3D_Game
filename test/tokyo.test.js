@@ -50,7 +50,7 @@ test('kanban lamps are coloured neon the light pool can prefer', () => {
   for (let s = 1; s <= 20; s++) {
     const b = buildTokyoBuilding(s * 13, 6, 8, 30);
     for (const lp of b.lamps ?? []) {
-      if (lp.neon && lp.colour && lp.intensity > 60 && lp.range > 26) n++;
+      if (lp.neon && lp.colour && lp.intensity >= 150 && lp.range >= 28 && lp.y < 3.5) n++;
     }
   }
   assert.ok(n >= 8, `neon heads across 20 buildings: ${n}`);

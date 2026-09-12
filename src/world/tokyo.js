@@ -176,9 +176,9 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
     const shop = konbini ? [0.9, 0.95, 1.0] : WARM;
     parts.push(at(quad(front.w - 0.6, 2.7, konbini ? 0x2a3038 : 0x1c2430, shop, konbini ? 1.05 : 0.85), gx, 1.65, gz, front.yaw));
     lamps.push({
-      x: hw + 1.2, y: 1.7, z: 0,
+      x: hw + 1.2, y: 1.8, z: 0,
       colour: _c.setRGB(shop[0], shop[1], shop[2]).getHex(),
-      neon: true, intensity: 80, range: 20, glare: 1.8,
+      neon: true, intensity: 170, range: 28, glare: 1.8,
     });
   }
   // the door: a dark frame and a lit sliding-door panel at one end of the shopfront, so the ground floor reads as a shop you could enter
@@ -225,7 +225,7 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
       const cc = neon ?? [0.9, 0.9, 0.9];
       parts.push(at(box(0.28, colH, 0.95, 0xf2f2f2, cc, 1.25, flickerOf(rnd)), hw + 0.18, 4.6 + colH / 2, cz));
       parts.push(at(box(0.08, colH + 0.2, 0.1, 0x222222, cc, 2.4), hw + 0.33, 4.6 + colH / 2, cz + 0.5), at(box(0.08, colH + 0.2, 0.1, 0x222222, cc, 2.4), hw + 0.33, 4.6 + colH / 2, cz - 0.5));   // tube edges either side of the column
-      { const nc = pick(NEON); lamps.push({ x: hw + 1.4, y: 4.6 + colH * 0.45, z: cz, colour: _c.setRGB(nc[0], nc[1], nc[2]).getHex(), neon: true, intensity: 110, range: 32, glare: 2.6 }); }
+      { const nc = pick(NEON); lamps.push({ x: hw + 1.5, y: 2.4, z: cz, colour: _c.setRGB(nc[0], nc[1], nc[2]).getHex(), neon: true, intensity: 200, range: 34, glare: 2.6 }); }
       // the column's spill on the pavement: a flat emissive patch in the same colour, so the neon reads at street level (wet or dry)
       { const g = quad(2.8, 2.0, 0x2a2a2e, cc, 0.85); g.applyMatrix4(_m.makeRotationX(-Math.PI / 2)); parts.push(at(g, hw + 1.35, 0.03, cz)); }
       /* A kanban is a stack of tenants. The atlas tiles are 4:1 landscape, so a
@@ -262,9 +262,9 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
     const [bx, bz] = onFace(front, s, 0.62);
     parts.push(at(box(0.12, 3.8, 0.62, 0x141418, neon, 2.5, flickerOf(rnd)), bx, 6.4, bz, front.yaw));
     lamps.push({
-      x: bx + front.n[0] * 0.35, y: 6.4, z: bz + front.n[1] * 0.35,
+      x: bx + front.n[0] * 0.4, y: 2.6, z: bz + front.n[1] * 0.4,
       colour: _c.setRGB(neon[0], neon[1], neon[2]).getHex(),
-      neon: true, intensity: 95, range: 28, glare: 2.5,
+      neon: true, intensity: 160, range: 30, glare: 2.4,
     });
   }
 
