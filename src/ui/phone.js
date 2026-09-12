@@ -104,8 +104,9 @@ export class Phone {
       font-weight: 800; font-size: 13px; letter-spacing: 1px; cursor: pointer;
       box-shadow: 0 4px 18px rgba(0,0,0,0.5);
     `;
-    trigger.textContent = '📱 PHONE (M)';
+    trigger.textContent = 'PHONE';
     trigger.onclick = () => this.toggle();
+    trigger.style.display = 'none';
     document.body.appendChild(trigger);
   }
 

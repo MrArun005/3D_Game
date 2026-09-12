@@ -51,11 +51,7 @@ export class Jobs {
       mission.onFinish = (t) => { if (prev) prev(t); this.#finish(t); };
     }
     this.#show();
-    if (grantedBonus && this.hud) {
-      setTimeout(() => {
-        if (this.hud?.flash) this.hud.flash('💰 +$50,000 TEST FUNDS CREDITED! OPEN PHONE [M] TO CALL HELI / TANK');
-      }, 1500);
-    }
+    void grantedBonus;
   }
 
   #districtAt(x, z) {
@@ -224,8 +220,9 @@ export class Jobs {
 
   #show() {
     const j = this.job;
-    const line = j ? `${j.kind.toUpperCase()} · $${j.pay}${j.limit < Infinity ? ` · ${Math.max(0, Math.round(j.limit - j.t))}s` : ''}` : `G — TAKE A JOB · ${this.done} DONE`;
-    this.hud.setJob(`$${this.cash.toLocaleString()}   ${line}`);
+    if (!j) { this.hud.setJob(null); return; }
+    const clock = j.limit < Infinity ? ` · ${Math.max(0, Math.round(j.limit - j.t))}s` : '';
+    this.hud.setJob(`${j.kind.toUpperCase()} · $${j.pay}${clock}`);
   }
 }
 
