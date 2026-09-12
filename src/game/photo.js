@@ -25,6 +25,26 @@ export const PRESETS = {
   'bridge-west':     { pos: [1480, 10, 1010],   look: [1640, 8, 1200] },
   'harbour':         { pos: [2100, 14, 2300],   look: [1950, 8, 2500] },
   'aerial':          { pos: [2200, 160, 1150],  look: [2420, 0, 1400] },
+
+  /* One per district, docs/VISUAL-BRIEF.md. Every position is a point ON a
+     road centreline inside that district's own boundary (picked out of
+     public/halstead-bay.district.json in node, then checked: each is <0.5 m
+     from the centreline, inside exactly one district polygon, and clear of
+     every bridge approach), looking 100-270 m down a straight run with the
+     look point at y 7 so the roofline is in frame. `hour` is the light the
+     brief asks that district to be judged in -- goto() sets the clock when
+     one is wired (main.js: photo.useClock(clock)). The brief's own test light
+     is overcast noon, which is why the hero block sits at 12.0. */
+  'ashmoor':         { pos: [766, 2.4, 539],   look: [868, 7, 529],   hour: 16.5 },  // NORTHGATE; cream render + red tile want a low warm sun
+  'greenfell-park':  { pos: [1150, 2.4, 876],  look: [1420, 7, 887],  hour: 9.0 },   // street along the south park block: long morning shadows over grass
+  'northline':       { pos: [3414, 2.4, 546],  look: [3525, 7, 552],  hour: 6.8 },   // NORTHGATE at the rail land; soot brick and ballast read at dawn
+  'marrow-hill':     { pos: [543, 2.4, 1647],  look: [666, 7, 1609],  hour: 18.4 },  // MARROW ROAD; dusk on brick terraces and slate
+  'old-quarter':     { pos: [1161, 2.4, 1430], look: [1251, 7, 1378], hour: 12.0 },  // THE HERO BLOCK, in the brief's own test light
+  'kingsway-ave':    { pos: [2200, 2.4, 1340], look: [2209, 7, 1456], hour: 17.8 },  // HALSTEAD AVENUE north; late sun rakes the tower setbacks
+  'the-flats':       { pos: [584, 2.4, 2591],  look: [686, 7, 2506],  hour: 11.0 },  // BROADWAY; sun-bleached signage wants flat bright midday
+  'vellery-row':     { pos: [1428, 2.4, 2378], look: [1553, 7, 2384], hour: 22.5 },  // DOCK ROAD through the nightlife blocks: the district IS its signs
+  'harbour-point':   { pos: [2371, 2.4, 2463], look: [2498, 7, 2480], hour: 21.4 },  // DOCK ROAD east; floodlights and puddles
+  'steelgate':       { pos: [3705, 2.4, 1219], look: [3792, 7, 1214], hour: 20.8 },  // STEEL MILE; sodium on rust
 };
 
 const _fwd = new THREE.Vector3(), _right = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
@@ -61,6 +81,9 @@ export class Photo {
     }, { passive: true });
   }
 
+  /** The game clock, so a district preset can bring its own light with it. */
+  useClock(clock) { this.clock = clock; }
+
   toggle() { this.on ? this.exit() : this.enter(); }
 
   enter() {
@@ -91,6 +114,15 @@ export class Photo {
     if (!p) return false;
     if (!this.on) this.enter();
     this.preset = name;
+    /* The presets that carry a mood carry its light. A preset with NO hour
+       puts the clock back where it was before any preset touched it -- without
+       that, `[`/`]` off vellery-row (22.5) left kingsway-corner at night and
+       every budget figure measured from it was a night figure. Order-
+       independent now. Override either with window.__time(h) (main.js). */
+    if (this.clock) {
+      this.baseHour ??= this.clock.hour;
+      this.clock.hour = p.hour ?? this.baseHour;
+    }
     this.camera.position.set(...p.pos);
     this.camera.lookAt(...p.look);
     this.camera.updateMatrixWorld();

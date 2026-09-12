@@ -18,7 +18,6 @@ export class Chat {
     this.historyIndex = -1;
 
     this.#build();
-    this.post('SYSTEM', 'Welcome to Halstead Bay. Press [Enter] to chat or /help for commands.');
   }
 
   #build() {

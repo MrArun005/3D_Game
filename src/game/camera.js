@@ -1,6 +1,28 @@
 import * as THREE from 'three';
 import { roadDepth, WALK_W } from '../world/metrics.js';
 
+/**
+ * How much rain the LENS carries, 0..1.
+ *
+ * It used to be `DAY ? 0 : mode >= 2 ? 1.2 : 0.68` in main.js -- every night,
+ * rain or not, and just as heavy sitting dry inside a hard-top. Drops belong
+ * on glass you are looking through or on a lens out in the weather:
+ *   - nothing when it is not raining,
+ *   - the interior rigs (2, 3) look through the windscreen, so they keep the
+ *     heavier sheet, unless the vehicle says it is open-topped. (ponytail: no
+ *     vehicle sets `roof` yet, so today this branch is always the roofed one;
+ *     it is the one-word hook for when a convertible lands.)
+ *   - the chase rigs are a camera out in it: lighter.
+ * Pure, so it is checkable without a browser.
+ */
+export function lensDrops({ wet = 0, mode = 0, onFoot = false, roof = true } = {}) {
+  const w = Math.max(0, Math.min(1, wet));
+  if (w < 0.05) return 0;
+  if (onFoot) return 0.55 * w;
+  const inside = mode >= 2 && roof;
+  return (inside ? 1.15 : 0.62) * w;
+}
+
 const RIGS = [
   { back: 7.6, up: 2.85, aim: 8.0, fov: 60, lag: 3.4, tilt: 1 },
   { back: 5.4, up: 2.05, aim: 9.0, fov: 66, lag: 6.0, tilt: 1 },
@@ -16,6 +38,14 @@ export class ChaseCamera {
     this.aim = new THREE.Vector3();
     this.shake = 0;
     this.lastImpact = 0;   // impact seen last frame: shake is kicked by the RISE, not the standing value
+    /* Suspension follower. car.heave is the body's displacement from nominal
+       ride height (dynamics.js), integrated from the springs -- the camera
+       rides a critically-damped copy of it, so a kerb pushes the camera and
+       lets it settle instead of welding it to the axles. */
+    this.heaveSm = 0;
+    this.heaveV = 0;
+    this.vibT = 0;         // vibration phase in seconds: sines of TIME, so the shake is the same at 60 and 120 Hz
+    this.drops = 0;        // 0..1 rain on the lens, read by main.js -> grade.setDrops
     /* Free look. Without it the camera is welded behind the car, which is why
        a helicopter orbiting 60m overhead was invisible: there was no way to
        point the view at anything the car was not driving towards. */
@@ -51,7 +81,21 @@ export class ChaseCamera {
     const rx = sy, rz = cy;
     const speedK = Math.min(1, (car.speed || 0) / 42);
     let back = rig.back * (1 + speedK * 0.18);
-    const targetY = car.y ?? 0;
+
+    /* Suspension. The follow lag below smooths car.y, but it smooths the BODY
+       and the springs equally: over a kerb the camera copied the axles. Take
+       the spring travel out of the target and add back a damped copy of it --
+       the part the follower has not caught up with is the bob, capped at
+       0.45 m so a ramp jump still tracks the car. w=9 rad/s, zeta=1. */
+    const heave = car.heave || 0;
+    if (dt > 0.25) { this.heaveSm = heave; this.heaveV = 0; }   // snap(): a 2 km teleport must not spring
+    else {
+      const h = Math.min(dt, 1 / 30), w = 9;
+      this.heaveV += (-(this.heaveSm - heave) * w * w - this.heaveV * 2 * w) * h;
+      this.heaveSm += this.heaveV * h;
+    }
+    const bob = Math.max(-0.45, Math.min(0.45, heave - this.heaveSm));
+    const targetY = (car.y ?? 0) - bob;
 
     // Don't let a chase camera reverse into a building. Walk it in until the
     // point it wants to occupy is over tarmac or pavement. Only apply near ground (< 5m).
@@ -96,13 +140,26 @@ export class ChaseCamera {
     const rise = Math.max(0, impact - this.lastImpact);
     this.lastImpact = impact;
     this.shake = Math.min(1.6, this.shake * Math.exp(-dt * 6) + rise * 0.07);
-    const rumble = speedK * (car.kerb ? 0.028 : 0.008);
-    const j = this.shake + rumble;
+    /* Speed vibration. The old `(Math.random()-0.5) * speedK * 0.008` per
+       FRAME buzzed twice as often at 120 Hz as at 60 -- same amplitude, a
+       different texture. Two incommensurate sines of accumulated TIME give
+       the same motion at any frame rate. Quadratic in speed so town driving
+       is still. 6 mm at 150 km/h, 22 mm over a kerb. */
+    this.vibT = (this.vibT + dt) % 3600;
+    const vib = speedK * speedK * (car.kerb ? 0.022 : 0.006);
+    const t = this.vibT;
+    const vx = (Math.sin(t * 61.3) + Math.sin(t * 43.1) * 0.6) * vib;
+    const vy = (Math.sin(t * 52.7 + 1.7) + Math.sin(t * 37.9) * 0.6) * vib * 0.7;
+    const vz = (Math.sin(t * 47.3 + 3.1) + Math.sin(t * 68.2) * 0.6) * vib;
+    const j = this.shake;   // the impact kick stays a random jolt: it is an impulse, not a tone
     this.camera.position.set(
-      this.pos.x + (Math.random() - 0.5) * j,
-      this.pos.y + (Math.random() - 0.5) * j * 0.55,
-      this.pos.z + (Math.random() - 0.5) * j,
+      this.pos.x + (Math.random() - 0.5) * j + vx,
+      this.pos.y + (Math.random() - 0.5) * j * 0.55 + vy,
+      this.pos.z + (Math.random() - 0.5) * j + vz,
     );
+
+    // rain on the lens, for main.js -> grade.setDrops (see lensDrops above)
+    this.drops = lensDrops({ wet: car.wet || 0, mode: this.mode, roof: car.roof !== false });
 
     /* Look-ahead has to be earned by speed. A fixed 2.4m of swing at a
        standstill turns the whole screen when the car itself cannot move,

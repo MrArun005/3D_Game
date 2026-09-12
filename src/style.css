@@ -25,7 +25,7 @@ body.filming #cluster, body.filming #minimap, body.filming #stats { opacity: 0; 
   background:rgba(8,11,18,.62);border:1px solid rgba(150,170,200,.13);
   box-shadow:0 6px 22px rgba(0,0,0,.5)}
 #stats{position:fixed;left:24px;top:18px;z-index:20;font-size:10.5px;letter-spacing:.16em;
-  color:#5c6676;font-variant-numeric:tabular-nums}
+  color:#5c6676;font-variant-numeric:tabular-nums;display:none}
 
 #hud{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
   background:rgba(5,7,12,.80);backdrop-filter:blur(4px);transition:opacity .6s}
@@ -50,3 +50,33 @@ kbd{border:1px solid #39414f;border-radius:4px;padding:3px 8px;font-family:inher
 #hud .mode.active{border-color:#e6c489;background:rgba(74,60,30,.55)}
 #hud .mode:focus-visible{outline:2px solid #39ffb0;outline-offset:2px}
 #hud .keys{margin-top:22px;font-size:11px;letter-spacing:.14em;color:#5f6c80;line-height:2}
+
+/* Cinematic HUD (hud.setCinematic / Backslash). Follows the idlecam fade in
+   main.js, but this one is a deliberate mode, so it is a stylesheet rule and
+   not an injected <style>.
+
+   Written as "hide every direct child of body except the three that stay",
+   not as a list of ids: the idlecam rule names its elements one by one and
+   has missed every overlay added since. The HUD appends its panels straight
+   to <body>, so a panel some other file adds tomorrow is hidden by default.
+   #gl is the canvas -- hiding it would hide the game. */
+/* --bar is the real 2.35:1 mask for THIS window, not a guess: 11vh was 2.15:1
+   at 1440x860 and a different ratio at every other size. max(0px,..) so an
+   already-wider-than-scope window gets no bars at all. Everything that has to
+   clear a bar measures from it. */
+body.cinematic{--bar:max(0px, calc((100vh - 100vw / 2.35) / 2))}
+/* #speed-lines is vfx.js's full-screen canvas -- a CAMERA effect, not an
+   instrument, so it stays. Everything else a file appends to <body> goes. */
+body.cinematic > *:not(#gl):not(#cluster):not(#mission):not(#speed-lines){opacity:0 !important;pointer-events:none !important}
+body.cinematic #dials, body.cinematic #gear{opacity:0}
+body.cinematic #cluster{right:38px;bottom:calc(var(--bar) + 18px)}
+body.cinematic #kph{font-size:34px;color:#dfe7f2;text-shadow:0 2px 14px rgba(0,0,0,.85)}
+body.cinematic #kph small{font-size:11px;color:#8794a6}
+/* #mission is styled inline by hud.js, so these have to shout */
+body.cinematic #mission{top:auto !important;bottom:calc(var(--bar) + 22px) !important;
+  font-size:13px !important;letter-spacing:3px !important;color:#e9d9ad !important}
+/* Pseudo-elements of body, so the :not() rule above cannot eat them. */
+body.cinematic::before, body.cinematic::after{content:'';position:fixed;left:0;right:0;
+  height:var(--bar);background:#05070c;z-index:90;pointer-events:none}
+body.cinematic::before{top:0}
+body.cinematic::after{bottom:0}

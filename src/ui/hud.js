@@ -2,6 +2,17 @@ import { V } from '../vehicle/config.js';
 import { searchRadius } from '../game/policeAi.js';
 import { CELL } from '../world/metrics.js';
 
+/* flash() timing. An identical line inside DEDUP_MS is dropped outright; a
+   different one queues behind whatever is on screen instead of erasing it. */
+const FLASH_MS = 3200;        // a message on its own
+const FLASH_QUEUED_MS = 1600; // one with others waiting behind it
+const FLASH_DEDUP_MS = 2500;
+
+/* Two messages that differ only in their numbers are the SAME message with a
+   new value ("GET OUT - 4.2s", "GRENADES . 3"). Those must update in place, or
+   a per-frame countdown fills the queue and the screen runs seconds behind. */
+const flashKey = (t) => t.replace(/[\d.,]+/g, '#');
+
 export class Hud {
   constructor() {
     this.dials = document.getElementById('dials').getContext('2d');
@@ -67,22 +78,7 @@ export class Hud {
     if (this.flightBanner) {
       this.flightBanner.style.display = vehicleType === 'helicopter' ? 'flex' : 'none';
     }
-    if (this.promptBar) {
-      if (vehicleType === 'helicopter') {
-        this.promptBar.style.display = 'none';
-      } else {
-        this.promptBar.style.display = 'flex';
-        const onFootActive = (typeof window !== 'undefined' && window.onFoot) ? !!window.onFoot.active : false;
-        if (onFootActive) {
-          this.promptBar.innerHTML = '<span style="color:#39ffb0">🏃 ON FOOT</span> · <span><b>WASD</b> Move</span> · <span><b>SHIFT</b> Sprint</span> · <span><b>SPACE</b> Jump</span> · <span><b>F</b> Enter Vehicle</span> · <span><b>M</b> Phone Heists</span> · <span><b>K</b> Switch Hero</span>';
-        } else if (mission?.active || this.jobLine) {
-          const mText = this.jobLine || mission?.prompt || 'MISSION IN PROGRESS';
-          this.promptBar.innerHTML = `<span style="color:#ffd23f">🎯 OBJECTIVE</span> · <span>${mText}</span> · <span><b>M</b> Phone</span> · <span><b>G</b> Abort</span>`;
-        } else {
-          this.promptBar.innerHTML = '<span style="color:#5bc0be">📱 [M] iFruit Phone (Heists & Little Tokyo GPS)</span> · <span>💡 [H] High Beams</span> · <span>💼 [G] Street Jobs</span> · <span>🏃 [F] Step Out</span> · <span>🗺️ [Tab] GPS Map</span>';
-        }
-      }
-    }
+    if (this.promptBar) this.promptBar.style.display = 'none';
     this.#drawWanted(traffic);
     this.#drawMission(mission);
     this.net = net;
@@ -114,7 +110,12 @@ export class Hud {
     this.#drawBigMap(car, mission, traffic);
   }
 
-  setStats(text) { this.stats.textContent = text; }
+  setStats(text) {
+    if (!this.stats) return;
+    const show = typeof location !== 'undefined' && new URLSearchParams(location.search).has('perf');
+    this.stats.style.display = show ? 'block' : 'none';
+    if (show) this.stats.textContent = text;
+  }
 
   /** Tab: the whole city on one canvas -- roads, you, the job markers. Click sets waypoint. */
   toggleMap() {
@@ -521,19 +522,65 @@ export class Hud {
     this.healthBar.style.width = `${Math.max(0, v) * 100}%`;
   }
 
-  /** A transient line under the mission text, unified with the multi-line chat feed. */
+  /**
+   * A transient line under the mission text, unified with the multi-line chat feed.
+   *
+   * De-duplicated and queued (2026-09-12). Callers fire from per-frame code,
+   * and the old flash() both overwrote whatever was on screen and posted
+   * another copy to chat -- the recorded tour caught nine identical VIGILANTE
+   * toasts in a row. Now:
+   *   - the same text again inside 2.5 s is dropped, screen AND chat;
+   *   - the same text with a different NUMBER updates in place (countdowns,
+   *     ammo and grenade counts), and does not re-post to chat;
+   *   - anything else queues and shows in turn, newest four kept.
+   */
   flash(text, channel = null) {
-    this.flashText = text;
-    this.flashUntil = performance.now() + 3200;
+    if (!text) { this.flashText = ''; this.flashUntil = 0; this.flashQ = []; return; }
+    const now = performance.now();
+    const seen = (this.flashSeen ??= new Map());
+    if (now - (seen.get(text) ?? -Infinity) < FLASH_DEDUP_MS) return;
+    seen.set(text, now);
+    if (seen.size > 64) for (const [k, t] of seen) if (now - t > FLASH_DEDUP_MS) seen.delete(k);
+
+    const key = flashKey(text);
+    this.flashQ ??= [];
+    if (this.flashUntil > now && flashKey(this.flashText || '') === key) {
+      this.flashText = text;                                     // same line, new number
+      this.flashUntil = Math.max(this.flashUntil, now + FLASH_QUEUED_MS);
+      return;
+    }
+    const q = this.flashQ.findIndex((t) => flashKey(t) === key);
+    if (q >= 0) { this.flashQ[q] = text; return; }                // ditto, but still waiting
+
+    this.flashQ.push(text);
+    if (this.flashQ.length > 4) this.flashQ.splice(0, this.flashQ.length - 4);
+    this.#pumpFlash(now);
     if (this.chat && text) {
       let ch = channel;
       if (!ch) {
         if (text.includes('📻')) ch = 'RADIO';
-        else if (text.includes('POLICE') || text.includes('10-') || text.includes('WANTED') || text.includes('HEAT')) ch = 'DISPATCH';
-        else ch = 'SYSTEM';
+        else if (/POLICE|WANTED|HEAT|10-/.test(text)) ch = 'DISPATCH';
       }
-      this.chat.post(ch, text.replace(/^📻\s*/, ''));
+      if (ch && ch !== 'SYSTEM') this.chat.post(ch, text.replace(/^📻\s*/, ''));
     }
+  }
+
+  /** Promote the next queued message once the one on screen has had its time. */
+  #pumpFlash(now = performance.now()) {
+    if (this.flashUntil > now || !this.flashQ?.length) return;
+    this.flashText = this.flashQ.shift();
+    this.flashUntil = now + (this.flashQ.length ? FLASH_QUEUED_MS : FLASH_MS);
+  }
+
+  /**
+   * Cinematic HUD: everything goes but the speed and the objective, with
+   * 2.35:1 bars. The CSS lives in style.css next to the idlecam rule it
+   * follows; this only owns the class.
+   */
+  setCinematic(on) {
+    this.cinematic = on === undefined ? !this.cinematic : !!on;
+    document.body.classList.toggle('cinematic', this.cinematic);
+    return this.cinematic;
   }
   /** Cash and the current job, first line of the mission drawer (jobs.js). */
   setJob(text) { this.jobLine = text; }
@@ -723,37 +770,23 @@ export class Hud {
       document.body.appendChild(el);
       this.missionEl = el;
     }
-    if (!mission) { this.missionEl.textContent = ''; return; }
-    const st = mission.status();
+    this.#pumpFlash();
+    const st = mission?.status?.();
     const lines = [];
     if (this.jobLine) lines.push(this.jobLine);
-    if (this.flashUntil > performance.now()) lines.push(this.flashText);
-    if (mission.messageFor > 0 && mission.message) lines.push(mission.message);
-
-    // Turn arrow within 60m
+    if (this.flashUntil > performance.now() && this.flashText) lines.push(this.flashText);
+    if (mission?.messageFor > 0 && mission.message) lines.push(mission.message);
     if (this.navigation?.turnInfo) {
-      lines.unshift(`🧭 ${this.navigation.turnInfo.arrow} ${this.navigation.turnInfo.dir} IN ${this.navigation.turnInfo.dist}m`);
+      lines.unshift(`${this.navigation.turnInfo.arrow} ${this.navigation.turnInfo.dir}  ${this.navigation.turnInfo.dist}m`);
     }
-
     if (st && st.time !== null) {
       lines.push(`CHECKPOINT ${st.line}   ${st.time.toFixed(1)}s`
         + (st.best ? `   BEST ${st.best.toFixed(1)}s` : ''));
-    } else if (!lines.length && st && st.best) {
-      lines.push(`G — START RUN   BEST ${st.best.toFixed(1)}s`);
-    } else if (!mission.active) {
-      // First-minute onboarding sequence (Task 1.7)
-      const elapsed = (performance.now() - (this.bootTime || (this.bootTime = performance.now()))) / 1000;
-      if (elapsed < 8) {
-        lines.push('🎮 DRIVE: WASD / Left Stick · SPACE: Handbrake · Q: Look Back');
-      } else if (elapsed < 16) {
-        lines.push('💼 MISSIONS: Press G or Start to take a contract');
-      } else if (elapsed < 24) {
-        lines.push('📍 GPS: Follow magenta route · TAB for City Map & Waypoints');
-      } else if (!lines.length) {
-        lines.push('G — TAKE A JOB');
-      }
     }
     this.missionEl.textContent = lines.join('\n');
+    this.missionEl.style.fontSize = '13px';
+    this.missionEl.style.letterSpacing = '1px';
+    this.missionEl.style.color = '#e8eef4';
   }
 
   /** Wanted level, as stars over the minimap. */
