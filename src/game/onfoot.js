@@ -33,6 +33,7 @@ export class OnFoot {
     this.active = false;
     this.bob = 0;
     this.camYaw = 0;
+    this.lookT = 99;      // seconds since the last mouse look; the camera only follows once you stop steering it
     this.camPitch = 0.08;
     this.camPos = new THREE.Vector3();
     /* The camera eases toward its over-the-shoulder target with a 0.002^dt
@@ -125,6 +126,7 @@ export class OnFoot {
 
   /** Mouse delta, in pixels -- the same free look the chase camera has. */
   look(dx, dy) {
+    if (dx || dy) this.lookT = 0;        // the player is steering the camera: auto-follow stands down
     this.camYaw -= dx * 0.0032;
     this.camPitch = Math.max(-0.6, Math.min(0.9, this.camPitch - dy * 0.0026));
   }
@@ -213,8 +215,19 @@ export class OnFoot {
 
     const speed = Math.hypot(this.vx, this.vz);
     this.speed = speed;                       // read by the weapon sway in main.js
+    /* Backing up: face the CAMERA, not the travel. Turning to face velocity is
+       right when you run somewhere, but on `S` it spun you 180 and ran you at
+       the lens -- you watched your own face and could not see where you were
+       going. Auto-rotating the camera instead is a trap: movement is
+       camera-relative, so the camera chasing your heading makes `back` become
+       `forward` and you spiral (test 3 catches exactly that). So we hold the
+       facing and let the character play its walk backwards. */
+    this.backing = false;
     if (speed > 0.2) {
-      const targetYaw = Math.atan2(-this.vz, this.vx);
+      const camFX = Math.cos(this.camYaw), camFZ = -Math.sin(this.camYaw);
+      const along = (this.vx * camFX + this.vz * camFZ) / speed;
+      this.backing = along < -0.35 && this.ads < 0.05;
+      const targetYaw = this.backing ? this.camYaw : Math.atan2(-this.vz, this.vx);
       let diff = targetYaw - this.yaw;
       while (diff < -Math.PI) diff += Math.PI * 2;
       while (diff > Math.PI) diff -= Math.PI * 2;
@@ -223,7 +236,7 @@ export class OnFoot {
     this.bob += dt * speed * 2.1;
 
     if (this.character.ready) {
-      this.character.update(dt, this.x, this.y, this.z, this.yaw, speed, this.isGrounded);
+      this.character.update(dt, this.x, this.y, this.z, this.yaw, this.backing ? -speed : speed, this.isGrounded);
     } else {
       this.group.position.set(this.x, this.y + Math.abs(Math.sin(this.bob)) * 0.055, this.z);
       this.group.rotation.y = -this.yaw + Math.PI / 2;

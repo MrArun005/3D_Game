@@ -385,7 +385,12 @@ export class Character {
     return ms;
   }
 
+  /* A NEGATIVE speed means backing up: the caller keeps you facing the camera
+     and we play the walk clip in reverse, which is what a backpedal is. Every
+     decision below reads the magnitude. */
   update(dt, x, y, z, yaw, speed, isGrounded = true) {
+    const backing = speed < 0;
+    speed = Math.abs(speed);
     if (!this.ready) return;
     this._bones = this._bones && this._bonesRoot === this.root.children[0] ? this._bones : (this._bonesRoot = this.root.children[0], new Map());
     this.root.position.set(x, y, z);
@@ -406,7 +411,7 @@ export class Character {
            character speed-walked. Anything above a crouch/ADS gait now takes the
            RUN clip and simply plays it slower: 3.2 m/s reads as a relaxed jog at
            0.62x, sprint lands near 1.15x. Measured in the browser 2026-09-12. */
-        this.play(speed > 2.4 ? 'run' : speed > 0.35 ? 'walk' : 'idle', 0.2);
+        this.play(backing ? 'walk' : speed > 2.4 ? 'run' : speed > 0.35 ? 'walk' : 'idle', 0.2);
       }
     }
     // the clips are authored at their own pace; nudge playback so the feet
@@ -415,7 +420,8 @@ export class Character {
       if (this.current === this.actions.jump || this.current === this.actions.runningJump) {
         this.current.timeScale = 1.05;
       } else {
-        this.current.timeScale = speed > 0.35 ? Math.max(0.55, Math.min(1.45, speed / (speed > 2.4 ? 5.2 : 1.9))) : 1;
+        const rate = speed > 0.35 ? Math.max(0.55, Math.min(1.45, speed / (!backing && speed > 2.4 ? 5.2 : 1.9))) : 1;
+        this.current.timeScale = backing ? -rate : rate;
       }
     }
     this.mixer.update(dt);
