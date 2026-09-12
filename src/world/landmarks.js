@@ -3,6 +3,8 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { buildLandmark } from './skyline.js';
 import { tokyoMaterial } from './tokyo.js';
+import { buildLiftBridge, LIFT_BRIDGE } from './liftBridge.js';
+import { artMaterial } from './artBuildings.js';
 import { SHADOW_FAR_LAYER } from '../core/renderer.js';
 
 /**
@@ -192,6 +194,45 @@ export class Landmarks {
   #buildSkyline() {
     const heads = [];
     let tris = 0;
+    /* The signature bridge: two lattice towers, sheaves, counterweights on
+       cables and a through-truss you drive inside (world/liftBridge.js). It is
+       built whole here rather than per chunk, because it is one object 381 m
+       long -- world/spans.js deliberately skips this bridge (signatureBridge)
+       so the two do not both build piers along it. Modelled span-DOWN: a
+       raised span would cut the road. Parts come back per material key, the
+       same keys the self-built styles use. */
+    try {
+      const lb = buildLiftBridge(LIFT_BRIDGE.a, LIFT_BRIDGE.b, LIFT_BRIDGE.width);
+      const byKey = new Map();
+      for (const p of lb.parts) (byKey.get(p.mat) ?? byKey.set(p.mat, []).get(p.mat)).push(p.geo);
+      for (const [key, geos] of byKey) {
+        const merged = mergeGeometries(geos, false);
+        for (const g of geos) g.dispose();
+        if (!merged) continue;
+        merged.computeBoundingSphere();
+        const m = new THREE.Mesh(merged, artMaterial(key));
+        m.name = `liftbridge_${key}`;
+        m.castShadow = true; m.receiveShadow = true;
+        m.layers.enable(SHADOW_FAR_LAYER);
+        this.scene.add(m);
+      }
+      /* Its solids come back in the bridge's own frame (local: true), so they
+         go through the same local-to-world turn the skyline pieces use. The
+         car must pass BETWEEN the legs, so these are per-leg clusters, never a
+         box across the deck. */
+      const ang = LIFT_BRIDGE.angle, ca = Math.cos(ang), sa = Math.sin(ang);
+      for (const b of lb.solids ?? []) {
+        const wx = LIFT_BRIDGE.x + b.x * ca - b.z * sa;
+        const wz = LIFT_BRIDGE.z + b.x * sa + b.z * ca;
+        this.solids.push({ x: wx, z: wz, hw: b.hw, hd: b.hd, angle: ang, height: b.height, district: LIFT_BRIDGE.district, landmark: true });
+      }
+      for (const l of lb.lamps ?? []) {
+        const wx = LIFT_BRIDGE.x + l.x * ca - l.z * sa;
+        const wz = LIFT_BRIDGE.z + l.x * sa + l.z * ca;
+        heads.push({ x: wx, y: l.y, z: wz, colour: l.colour ?? 0xffd9a0 });
+      }
+    } catch (e) { console.warn('lift bridge', e.message); }
+
     for (const s of SKYLINE) {
       let lm;
       try { lm = buildLandmark(s.kind, s.seed ?? 7); } catch (e) { console.warn('skyline', s.kind, e.message); continue; }
