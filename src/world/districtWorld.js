@@ -45,7 +45,14 @@ const DISTRICT_SCALE = {
   KINGSWAY: 1.7, NORTHLINE: 0.8, STEELGATE: 0.9, 'HARBOUR POINT': 0.85,
   'OLD QUARTER': 0.8, 'VELLERY ROW': 1.0, ASHMOOR: 0.85,
   'MARROW HILL': 0.8, 'THE FLATS': 0.95, 'GREENFELL PARK': 0.6,
-  'LITTLE TOKYO': 1.15,
+  /* 1.15 made Little Tokyo a low-rise: `row` blocks came out 9-15 m (three
+     storeys) and `mid` 18-35 m, against a 34 m carriageway. That is a
+     boulevard with shops on it, not Shibuya. The reference frames are a
+     continuous 10-20 storey wall either side of the street, so the land here
+     has to work at least as hard as Kingsway's 1.7. tokyo.js caps the result
+     (13 storeys on a wide footprint, 20 otherwise, 26 on a landmark), so this
+     raises the floor of the street without letting a single slab run away. */
+  'LITTLE TOKYO': 2.2,
 };
 const hash = (x, z) => {
   const n = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;

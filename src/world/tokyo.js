@@ -110,8 +110,18 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
      ~30 m on either side is a low-rise (max 7 storeys) or it reads as a wall
      of windows across the street; landmarks (up to 24) are the narrow tall
      footprints. */
+  /* Height caps. These used to be `wide ? 7 : h > 50 ? 24 : 14`, with the note
+     that a wide footprint must stay low "or it reads as a wall of windows
+     across the street". That was written for a different goal. A wall across
+     the street is EXACTLY what Shibuya is, and it is what the reference frames
+     are made of -- measured against the district file, Little Tokyo's only road
+     is HALSTEAD AVENUE at 34 m, so a 7-storey cap gave ~22 m walls on a 34 m
+     street: a 1.5:1 width-to-height ratio, which is a boulevard. The reference
+     sits nearer 1:3. Raising the wide cap to 13 and the normal one to 20 is the
+     single change that turns this street into a canyon; everything else in this
+     file is detail hung on walls that were too short to read. */
   const wide = Math.max(hw, hd) > 15;
-  const cap = wide ? 7 : h > 50 ? 24 : 14;
+  const cap = wide ? 13 : h > 50 ? 26 : 20;
   const floors = Math.max(2, Math.min(cap, Math.round((h - GROUND_H) / FLOOR_H) + 1));
   const H = GROUND_H + (floors - 1) * FLOOR_H;
   const floorY = (f) => (f === 0 ? 0 : GROUND_H + (f - 1) * FLOOR_H);   // bottom of storey f
