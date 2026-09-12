@@ -17,7 +17,7 @@ import * as THREE from 'three';
  */
 export const PRESETS = {
   'kingsway-corner': { pos: [2350, 3, 1348],    look: [2430, 1.5, 1348] },
-  'little-tokyo':    { pos: [2330, 2.4, 1357],  look: [2430, 5, 1357] },     // on the spawn road inside the district, looking down the kanban (2300,1412 was inside a building)
+  'little-tokyo':    { pos: [2354, 2.3, 1392],  look: [2342, 7, 1545], hour: 22.0 },  // ON the N-S street through the walk-ups, looking north into the kanban (the spawn arterial at z=1357 only sees the torii from outside)
   'kingsway-down':   { pos: [2352, 1.7, 1345],  look: [2552, 12, 1345] },
   // the Kingsway tower at (2425, 1404); the noon sun sits at (-190, 250, 120)
   // so its shadow falls towards +X/-Z, across this camera's foreground
