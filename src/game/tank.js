@@ -62,10 +62,10 @@ export class TankVehicle extends Vehicle {
       tilt: 0,
     };
 
-    this.#buildModel();
+    this.#buildModel(options.flash);
   }
 
-  #buildModel() {
+  #buildModel(sharedFlash) {
     const group = new THREE.Group();
     group.name = 'RhinoTank';
 
@@ -140,7 +140,8 @@ export class TankVehicle extends Vehicle {
     this.turretGroup = turretGroup;
 
     // Muzzle flash light
-    const flash = new THREE.PointLight(0xffaa33, 0, 16);
+    // shared with DispatchService when given: a new scene light recompiles every pipeline (see flight.js)
+    const flash = sharedFlash || new THREE.PointLight(0xffaa33, 0, 16);
     flash.position.set(6.0, 1.5, 0);
     group.add(flash);
     this.muzzleFlash = flash;
@@ -148,6 +149,11 @@ export class TankVehicle extends Vehicle {
     group.position.set(this.x, this.y, this.z);
     this.scene.add(group);
     this.mesh = group;
+  }
+
+  enter(player) {
+    super.enter(player);
+    if (this.muzzleFlash && this.mesh) this.mesh.add(this.muzzleFlash);   // the shared flash rides the tank being driven
   }
 
   update(input, dt, context = {}) {
