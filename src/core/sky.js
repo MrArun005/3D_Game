@@ -9,16 +9,48 @@ import { seed, rp, rr } from './rng.js';
  * car paint and glazing have a real horizon to reflect. Without this the paint
  * reads as flat plastic no matter how good the material is.
  */
-/** A low, hazy sun disc: hot core, warm corona, falling to nothing. */
+/** The sun: a hot core (~1/10 of the quad, so at parking distance it subtends
+    about what the real disc does) inside a wide warm corona. */
 function sunDisc() {
   const S = 256, c = cv(S, S), g = c.getContext('2d');
   const gr = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
-  gr.addColorStop(0.00, 'rgba(255,255,248,1)');
-  gr.addColorStop(0.09, 'rgba(255,244,212,0.96)');
-  gr.addColorStop(0.20, 'rgba(255,198,120,0.58)');
-  gr.addColorStop(0.44, 'rgba(255,146,70,0.20)');
-  gr.addColorStop(1.00, 'rgba(255,120,50,0)');
+  gr.addColorStop(0.00, 'rgba(255,255,250,1)');
+  gr.addColorStop(0.07, 'rgba(255,250,228,1)');
+  gr.addColorStop(0.11, 'rgba(255,214,150,0.80)');
+  gr.addColorStop(0.24, 'rgba(255,170,90,0.34)');
+  gr.addColorStop(0.50, 'rgba(255,130,60,0.11)');
+  gr.addColorStop(1.00, 'rgba(255,110,50,0)');
   g.fillStyle = gr; g.fillRect(0, 0, S, S);
+  return toTex(c);
+}
+
+/** Rays: a starburst of soft spokes, uneven in length so it reads as glare
+    through haze rather than a clip-art star. Drawn once, never rotated -- rays
+    from a fixed sun do not spin. */
+function sunRays() {
+  const S = 512, c = cv(S, S), g = c.getContext('2d');
+  g.translate(S / 2, S / 2);
+  /* Eight soft spokes, not fourteen hard ones -- the first pass drew a compass
+     rose. Real glare through haze is a few broad, faint shafts with a bright
+     halo, so: wide tapered spokes at low alpha, a soft radial halo under them,
+     and everything blurred by a shadow pass so no edge survives. */
+  g.shadowColor = 'rgba(255,200,140,0.9)'; g.shadowBlur = 28;
+  const halo = g.createRadialGradient(0, 0, 0, 0, 0, S * 0.36);
+  halo.addColorStop(0, 'rgba(255,214,160,0.30)'); halo.addColorStop(1, 'rgba(255,170,100,0)');
+  g.fillStyle = halo; g.beginPath(); g.arc(0, 0, S * 0.36, 0, 7); g.fill();
+  const n = 8;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + 0.31;
+    const len = (S / 2) * (i % 2 ? 0.62 : 0.96) * (0.88 + 0.12 * Math.sin(i * 2.7));
+    const w = i % 2 ? 22 : 34;
+    const gr = g.createLinearGradient(0, 0, len, 0);
+    gr.addColorStop(0.0, 'rgba(255,220,170,0.28)');
+    gr.addColorStop(0.4, 'rgba(255,190,120,0.10)');
+    gr.addColorStop(1.0, 'rgba(255,160,90,0)');
+    g.save(); g.rotate(a); g.fillStyle = gr;
+    g.beginPath(); g.moveTo(0, -w); g.lineTo(len, 0); g.lineTo(0, w); g.closePath(); g.fill();
+    g.restore();
+  }
   return toTex(c);
 }
 
@@ -69,14 +101,24 @@ export function createSky(scene, renderer, day = false) {
      glow(), not additive(): on a quad the zero-normal guard reads as full
      occlusion and GTAO paints a black square (core/additive.js). depthTest
      stays on so buildings and the mountain ring occlude it properly. */
-  const sunSprite = new THREE.Sprite(new THREE.SpriteNodeMaterial({
-    map: sunDisc(), transparent: true, depthWrite: false, depthTest: true,
-    blending: THREE.AdditiveBlending, fog: false,
-  }));
-  glow(sunSprite.material, 0.9);
-  sunSprite.scale.setScalar(760);
-  sunSprite.visible = false;      // clock.js turns it on for golden hour and dusk
-  scene.add(sunSprite);
+  const sunMat = (map, strength) => {
+    const m = new THREE.SpriteNodeMaterial({
+      map, transparent: true, depthWrite: false, depthTest: true,
+      blending: THREE.AdditiveBlending, fog: false,
+    });
+    glow(m, strength);
+    return m;
+  };
+  /* Two quads: the disc, and the rays behind it. glow() at 3.0 on the disc so
+     its core clears the night bloom threshold (1.05 since the signage retune)
+     by a wide margin -- at 0.9 it sat right at the line and did not bloom,
+     which is why the first version read as a flat orange dot. Rays at 1.2:
+     they should catch bloom softly, not become a second sun. */
+  const sunSprite = new THREE.Sprite(sunMat(sunDisc(), 3.0));
+  const sunRaySprite = new THREE.Sprite(sunMat(sunRays(), 1.2));
+  sunSprite.renderOrder = 1; sunRaySprite.renderOrder = 0;   // rays under the disc
+  sunSprite.visible = sunRaySprite.visible = false;   // clock.js turns them on for golden hour and dusk
+  scene.add(sunRaySprite, sunSprite);
 
   const pmrem = new THREE.PMREMGenerator(renderer);
   pmrem.compileEquirectangularShader();
@@ -106,5 +148,5 @@ export function createSky(scene, renderer, day = false) {
   }));
   scene.add(stars);
 
-  return { dome, stars, sunSprite };
+  return { dome, stars, sunSprite, sunRaySprite };
 }

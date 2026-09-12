@@ -40,6 +40,14 @@ export function buildSurrounds(scene, bounds, day = true) {
   const cx = bounds.w / 2, cz = bounds.h / 2;
   const APRON = 900;                     // flat ground between fence and foothills
   const RANGE = 3400;                    // depth of the mountain belt itself
+  /* Peak scale. At 1.0 the crests ran to ~2.3 km and, cresting ~4.5 km from
+     the Little Tokyo street, subtended ~24 degrees: a wall across the end of
+     every avenue, and one a 10 degree sunset sun could never clear -- the sun
+     sprite had to be parked IN FRONT of the range to be seen at all, which
+     is a sticker, not a sun. A real distant range subtends 5-10 degrees. 0.40
+     puts the crests near 900 m (~11 deg), so the sun sits on the ridge line
+     and the range silhouettes against it, the way it does in the reference. */
+  const PEAK = 0.40;
 
   /* No apron plate here: water.js owns the single ground surface, because it
      is the only place that knows where the bay and the river are cut out of
@@ -77,15 +85,16 @@ export function buildSurrounds(scene, bounds, day = true) {
       // no mountains to seaward: the east side of the map is open ocean
       const t = x > half.x * 0.92 ? 0 : Math.max(0, Math.min(1, d));
       const ramp = t * t * (3 - 2 * t);
-      const h = ramp * (420 + ridge(x / 760, z / 760) * 1850) - 2;
+      const h = ramp * (420 + ridge(x / 760, z / 760) * 1850) * PEAK - 2;
+      const hn = h / PEAK;   // the band and snow thresholds below were written at PEAK 1.0
       pos.push(cx + x, h, cz + z);
       ramps.push(ramp);
       const lit = ridge(x / 620, z / 620);
       /* Band by ALTITUDE first, then break the band with noise. Picking the
          colour from noise alone gave a range with no vertical structure --
          everything the same speckled grey, which is why it read as haze. */
-      const band = Math.min(rock.length - 1, Math.floor((h / 1500) * rock.length + lit * 1.1));
-      c.setHex(h > 1550 + lit * 320 ? snow : rock[Math.max(0, band)]);
+      const band = Math.min(rock.length - 1, Math.floor((hn / 1500) * rock.length + lit * 1.1));
+      c.setHex(hn > 1550 + lit * 320 ? snow : rock[Math.max(0, band)]);
       col.push(c.r, c.g, c.b);
     }
   }

@@ -134,7 +134,7 @@ const scene = createScene(DAY);
 window.scene = scene;
 const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.5, 14000);
 const { sun, hemi } = createLights(scene, DAY, isLite);
-const { dome, stars, sunSprite } = createSky(scene, renderer, DAY);
+const { dome, stars, sunSprite, sunRaySprite } = createSky(scene, renderer, DAY);
 
 setBootProgress(60, 'Initializing TSL post-processing pipeline…');
 const grade = createGrade(renderer, scene, camera, {
@@ -2171,7 +2171,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     if (!document.getElementById('idlecam-style')) { const st = document.createElement('style'); st.id = 'idlecam-style'; st.textContent = '#hud,#cluster,#minimap,#dials,#readout,#wanted,#crosshair,#stats,#gameplay-prompt-bar{transition:opacity .6s}.idlecam #hud,.idlecam #cluster,.idlecam #minimap,.idlecam #dials,.idlecam #readout,.idlecam #wanted,.idlecam #crosshair,.idlecam #stats,.idlecam #gameplay-prompt-bar{opacity:0 !important}'; document.head.appendChild(st); }
     document.body.classList.toggle('idlecam', idleCam);
   }
-  clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: currentVehicle, dome, stars, sunSprite });
+  clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: currentVehicle, dome, stars, sunSprite, sunRaySprite });
   // the rain audio follows the weather's breathing, and rain is grip: the physics reads car.wet
   // crossing into a district: the area name, GTA-style, and dispatch tracks you if you are wanted
   distT -= dt;

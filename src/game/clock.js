@@ -193,7 +193,7 @@ export class GameClock {
     this.hemiGround = new THREE.Color();
   }
 
-  update(dt, { sun, hemi, scene, grade, lightPool, heroLights, weatherSystem, assets, player, dome, stars, sunSprite } = {}) {
+  update(dt, { sun, hemi, scene, grade, lightPool, heroLights, weatherSystem, assets, player, dome, stars, sunSprite, sunRaySprite } = {}) {
     // 24 minutes real time = 24 game hours => dt / 60 hours per second
     this.hour = (this.hour + (dt / 60) * this.timeScale) % 24;
 
@@ -218,7 +218,7 @@ export class GameClock {
        runs ALONG the avenue nothing blocks it, so the sun can sit properly low
        -- ~10 deg -- which is what puts the disc at the vanishing point and rakes
        the facades at grazing incidence instead of lighting them from above. */
-    const sunFloor = (this.hour >= 16.0 && this.hour < 18.0) ? 80 : 30;
+    const sunFloor = (this.hour >= 16.0 && this.hour < 18.0) ? 95 : 30;   // ~12.7 deg: just above the ~11 deg ridge (surrounds.js PEAK), so the disc sits ON the skyline
     /* Golden hour also swings the AZIMUTH up the avenue. The solar arc is pure
        east-west and Little Tokyo's only street runs north-south, so at 16:00-18:00
        the sun was always square to the facades: every building stood in its
@@ -355,20 +355,30 @@ export class GameClock {
     if (sunSprite) {
       const show = goldenT > 0.01 || isDusk;
       sunSprite.visible = show;
+      if (sunRaySprite) sunRaySprite.visible = show;
       if (show) {
         const dx = this.sunPosition.x - px, dy = this.sunPosition.y, dz = this.sunPosition.z - pz;
-        /* INSIDE the mountain ring (surrounds.js puts the belt ~3.4 km out and
-           1.5 km high, which subtends ~24 deg -- a 10 deg sun parked beyond it
-           was simply behind the range and never visible). At 2400 the disc draws
-           in front of the ridge and sits in the middle of the road; buildings,
-           being far nearer, still occlude it correctly. */
-        const L = Math.hypot(dx, dy, dz) || 1, D = 2400;
-        sunSprite.position.set(px + (dx / L) * D, (dy / L) * D, pz + (dz / L) * D);
-        // lower sun, bigger and redder disc -- the atmosphere you cannot afford to simulate
+        /* BEHIND the mountain range, not in front of it. 7000 is past the belt's
+           outer edge (~5.8 km from the map centre), so the ridge silhouettes
+           against the disc and the corona spills over the skyline -- the first
+           version parked it at 2400, inside the ring, and it drew on top of the
+           mountains like a sticker. The ridge is low enough now (surrounds.js
+           PEAK) that a ~12 degree sun clears it. */
+        const L = Math.hypot(dx, dy, dz) || 1, D = 7000;
+        const sx = px + (dx / L) * D, sy = (dy / L) * D, sz = pz + (dz / L) * D;
+        sunSprite.position.set(sx, sy, sz);
+        // lower sun, bigger and redder: the atmosphere we do not simulate
         const low = 1 - Math.min(1, (dy / L) / 0.45);
-        sunSprite.scale.setScalar(300 + low * 250);   // smaller with the nearer parking distance
-        sunSprite.material.opacity = isDusk ? Math.max(0, 1 - (this.hour - 18.0) / 1.6) : Math.min(1, goldenT * 1.4);
+        const fade = isDusk ? Math.max(0, 1 - (this.hour - 18.0) / 1.6) : Math.min(1, goldenT * 1.4);
+        sunSprite.scale.setScalar(820 + low * 620);   // core is ~1/10 of the quad: ~0.7 deg at 7 km
+        sunSprite.material.opacity = fade;
         sunSprite.material.color.setRGB(1.0, 0.86 - low * 0.22, 0.66 - low * 0.34);
+        if (sunRaySprite) {
+          sunRaySprite.position.set(sx, sy, sz);
+          sunRaySprite.scale.setScalar(2600 + low * 1400);
+          sunRaySprite.material.opacity = fade * (0.95 + low * 0.45);   // rays strengthen as the sun reddens; the soft texture needs this much to read as shafts at all
+          sunRaySprite.material.color.copy(sunSprite.material.color);
+        }
       }
     }
     if (stars && stars.material) {
