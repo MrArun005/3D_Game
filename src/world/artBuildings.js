@@ -71,9 +71,10 @@ export const buildArt = (style, seed, hw, hd, h) => STYLES[style].build(seed, hw
 /* One material per key, shared by every chunk. The textured keys wear the
    library sets (public/textures/library.json) with vertexColors on so a
    part's hex tints them; the parts pass near-white unless they mean a tint.
-   `tile` is the set's metres per repeat from library.json; the parts' UVs
+   `tile` is the set's metres per repeat (library.json, except brick_red which
+   tools/asphalt-textures.py regenerates at 2 m per tile); the parts' UVs
    are in metres (artKit boxM/quadM), so repeat = 1/tile. */
-const LIBRARY = { brick: ['brick_red', 1], concrete: ['concrete_precast', 2.4], plaster: ['plaster_worn', 2], metal: ['metal_painted', 1], timber: ['timber_bare', 1] };
+const LIBRARY = { brick: ['brick_red', 2], concrete: ['concrete_precast', 2.4], plaster: ['plaster_worn', 2], metal: ['metal_painted', 1], timber: ['timber_bare', 1] };
 const MATS = new Map();
 let loader = null;
 function tex(path, srgb, tile) {

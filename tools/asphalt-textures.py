@@ -75,3 +75,42 @@ Image.fromarray((knrm * 255).astype(np.uint8), 'RGB').save('public/textures/kerb
 krough = np.clip(0.72 + 0.06 * (kp - 0.5) + 0.03 * (kg - 0.5), 0, 1)
 Image.fromarray((np.dstack([np.ones_like(kh), krough, np.zeros_like(kh)]) * 255).astype(np.uint8), 'RGB').save('public/textures/kerb_stone_orm.png')
 print('kerb set written')
+
+# ---- red brick: running bond courses. The shipped brick_red set was the dot
+# generator at (100,85,80) -- a grey-brown, so the harbour warehouse read pink.
+# 512 px = 2.0 m of wall (library tile 1 -> artBuildings repeats it per metre,
+# so make the brick the right size at that scale): a brick 215 x 65 mm + 10 mm
+# joint = 225 x 75 mm -> 57.6 x 19.2 px. Round to 64 x 19 (8 courses of 8).
+BW, BH, JOINT = 64, 19.2, 2.0
+rows = int(round(N / BH))
+bh = N / rows
+brick = np.zeros((N, N)); mortar = np.zeros((N, N)); tone = np.zeros((N, N))
+ys = np.arange(N)[:, None] * np.ones((1, N))
+xs = np.ones((N, 1)) * np.arange(N)[None, :]
+row = np.floor(ys / bh).astype(int)
+offset = (row % 2) * (BW / 2)                       # running bond: every other course slips half a brick
+col = np.floor((xs + offset) / BW).astype(int)
+inY = np.minimum(ys - row * bh, (row + 1) * bh - ys)
+inX = np.minimum((xs + offset) - col * BW, (col + 1) * BW - (xs + offset))
+mortar = np.minimum(inY / (JOINT / 2), inX / (JOINT / 2)).clip(0, 1)   # 0 in the joint, 1 inside a brick
+# each brick its own tone, seeded by its (row, col)
+h2 = np.sin(row * 12.9898 + col * 78.233) * 43758.5453
+tone = h2 - np.floor(h2)
+grit = rng.random((N, N))
+face = 0.26 + 0.10 * (tone - 0.5) + 0.03 * (grit - 0.5)   # linear red-brick value
+r = face * 1.00; g = face * 0.46; b = face * 0.37
+mj = 0.30 + 0.02 * (grit - 0.5)                            # pale grey mortar
+r = r * mortar + mj * (1 - mortar); g = g * mortar + mj * 0.97 * (1 - mortar); b = b * mortar + mj * 0.94 * (1 - mortar)
+soot = tile_noise(3, 2)                                    # weathering: soot and damp patches
+k = 0.82 + 0.22 * soot
+alb = np.clip(np.dstack([r * k, g * k, b * k]), 0, 1) ** (1 / 2.2)
+Image.fromarray((alb * 255).astype(np.uint8), 'RGB').save('public/textures/brick_red_albedo.png')
+# height: bricks proud, joints recessed, a little grit on the face
+bh_map = mortar * (0.7 + 0.2 * tone) + 0.12 * grit * mortar
+bdx = (np.roll(bh_map, -1, 1) - np.roll(bh_map, 1, 1)) * 2.6
+bdy = (np.roll(bh_map, -1, 0) - np.roll(bh_map, 1, 0)) * 2.6
+bl = np.sqrt(bdx * bdx + bdy * bdy + 1)
+Image.fromarray(((np.dstack([-bdx / bl, bdy / bl, 1 / bl]) * 0.5 + 0.5) * 255).astype(np.uint8), 'RGB').save('public/textures/brick_red_normal.png')
+brough = np.clip(0.86 - 0.10 * mortar + 0.05 * (soot - 0.5), 0, 1)   # mortar rougher than the fired face
+Image.fromarray((np.dstack([np.ones((N, N)) * 0.9 + 0.1 * mortar, brough, np.zeros((N, N))]) * 255).astype(np.uint8), 'RGB').save('public/textures/brick_red_orm.png')
+print('brick set written')
