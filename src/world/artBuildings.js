@@ -1,8 +1,9 @@
 /**
  * The self-built building styles, wired into the city.
  *
- * Four modules in world/buildings/ (warehouse, glassTower, officeMidrise,
- * loft) author a building in code from Arun's reference boards, the way
+ * Five modules in world/buildings/ (warehouse, glassTower, officeMidrise,
+ * loft, brickRow) author a building in code from the reference boards and the
+ * visual brief, the way
  * world/tokyo.js does for Little Tokyo -- no Kenney, no kit. This file is the
  * dispatcher districtWorld talks to:
  *
@@ -16,54 +17,117 @@
  *                                     for; districtWorld clips bigger plots to
  *                                     it and keeps the street face in place
  *
- * Where each style lands (block type x district; see districtWorld's
- * DISTRICT_FORM for the district characters):
- *   warehouse      yard blocks in the industrial districts (STEELGATE,
- *                  HARBOUR POINT, NORTHLINE) and the period yards
+ * Where each style lands is the brief's table (docs/VISUAL-BRIEF.md), one
+ * entry per district x block type in MAP below:
+ *   brickRow       the historic/residential brick rows -- OLD QUARTER (row and
+ *                  mid; the HERO BLOCK, so nearly every footprint takes one and
+ *                  the quarter reads as one place), MARROW HILL and ASHMOOR rows
+ *   loft           modern mixed-use over bars and shops: VELLERY ROW (nightlife)
+ *                  row and mid, THE FLATS (retail) row -- NOT the historic quarter
+ *   officeMidrise  mid blocks in the 'modern' districts: KINGSWAY, THE FLATS
  *   glassTower     KINGSWAY tower blocks (planner heights there are 58-133 m,
  *                  so the "h >= 40" rule in the brief is always true)
- *   officeMidrise  mid blocks in the 'modern' districts: KINGSWAY, THE FLATS
- *   loft           row blocks in the residential period districts: OLD
- *                  QUARTER, VELLERY ROW, ASHMOOR, MARROW HILL
+ *   warehouse      yard blocks in STEELGATE, HARBOUR POINT, NORTHLINE and the
+ *                  period yards of MARROW HILL and ASHMOOR
  * Little Tokyo never gets one (tokyo.js builds it). The roll is a hash of the
- * footprint's world position (districtWorld passes it in) against SHARE, so
- * the same seed gives the same city; ?noart turns the styles off, ?artall
- * gives every eligible footprint one for checking. The shares are tuned so
- * the whole district's art buildings stay near 600k triangles (measured in
- * node over the real district file, 2026-09-12 -- the lofts are the volume:
- * 2,500 eligible row footprints).
+ * footprint's world position (districtWorld passes it in) against the share in
+ * MAP, so the same seed gives the same city; ?noart turns the styles off,
+ * ?artall gives every eligible footprint one for checking. The shares are tuned
+ * against a district-wide census run in node over the real district file
+ * (2026-09-12): the hero block is bought by holding the other rows down.
  */
 import * as THREE from 'three';
 import * as warehouse from './buildings/warehouse.js';
 import * as glassTower from './buildings/glassTower.js';
 import * as officeMidrise from './buildings/officeMidrise.js';
 import * as loft from './buildings/loft.js';
+import * as brickRow from './buildings/brickRow.js';
 import { tokyoMaterial } from './tokyo.js';
 
-export const STYLES = { warehouse, glassTower, officeMidrise, loft };
+export const STYLES = { warehouse, glassTower, officeMidrise, loft, brickRow };
 
-/* Half-footprint the module is happy with (triangle budget and proportions
-   measured in node: warehouse 22x20 -> ~1,950 tris, glassTower 20x20 -> ~4,500,
-   officeMidrise 16x16 -> ~2,150, loft 6x11 -> ~2,500). Industrial yards run
-   83-197 m a side and a few KINGSWAY towers sit on 98 m plots; those are
-   clipped to the cap and the building keeps the street edge. */
-export const ART_CAP = { warehouse: [22, 20], glassTower: [20, 20], officeMidrise: [16, 16], loft: [6, 11] };
-const SHARE = { warehouse: 0.7, glassTower: 0.45, officeMidrise: 0.35, loft: 0.09 };
-const INDUSTRIAL = new Set(['STEELGATE', 'HARBOUR POINT', 'NORTHLINE', 'MARROW HILL', 'ASHMOOR']);
-const MODERN_MID = new Set(['KINGSWAY', 'THE FLATS']);
-const LOFT_ROW = new Set(['OLD QUARTER', 'VELLERY ROW', 'ASHMOOR', 'MARROW HILL']);
+/* Half-footprint the module is happy with, [along the building's local X, along
+   its local Z]. Per artKit's faces(): +X IS THE STREET FACE, so the FIRST number
+   is half the DEPTH back from the kerb and the SECOND is half the FRONTAGE along
+   the street. districtWorld clips a bigger plot to this and slides the building
+   back up to the street edge. Triangle budget and proportions measured in node:
+   warehouse 22x20 -> ~1,950 tris, glassTower 20x20 -> ~4,500, officeMidrise
+   16x16 -> ~2,150, loft 6x11 -> ~2,500. brickRow is a party-wall terrace, so
+   its cap is shallow and long: 24 m deep, up to 56 m of frontage. Note that in
+   the OLD QUARTER it never bites: re-measured over the district file
+   (2026-09-12) the 506 built footprints there run 6.9-18.8 m on BOTH axes,
+   median 9.2 m of frontage x 9.5 m deep, and 0 of 506 are clipped. So the cap
+   is a guard, not a shaper -- the terrace length is whatever the planner's
+   footprint is, and a run of houses only reads as a run where the planner
+   happens to have drawn a long plot. Industrial yards run 83-197 m a side and a
+   few KINGSWAY towers sit on 98 m plots; those ARE clipped and keep the street
+   edge. */
+export const ART_CAP = { warehouse: [22, 20], glassTower: [20, 20], officeMidrise: [16, 16], loft: [6, 11], brickRow: [12, 28] };
+
+/* district -> block type -> [style, share of footprints that take it].
+   OLD QUARTER is the HERO BLOCK: 0.86 on purpose -- a brick quarter with one
+   building in ten authored reads as noise, and consistency is the whole point
+   of a hero block. It buys that with the rest of the city. Census over the real
+   district file (node, 2026-09-12; the same harness reproduces the previous
+   mapping's 379 buildings / 572,846 tris exactly, so the numbers are comparable.
+   RE-MEASURED at review time -- brickRow.js grew after the first pass, so the
+   per-building mean moved 1,078 -> 1,207 and every brickRow row below with it.
+   Re-run the census after any change to a style module; these are that module's
+   numbers, not this file's):
+
+     OLD QUARTER  brickRow 506   610,568      MARROW HILL brickRow  38   44,758
+     THE FLATS    office   102   127,278      ASHMOOR     brickRow  26   32,424
+     VELLERY ROW  loft      19    35,212      THE FLATS   loft       7   10,818
+     KINGSWAY     office    21    31,468      KINGSWAY    glassTwr   9   22,184
+     warehouses (5 districts) 28  51,444
+     TOTAL 756 buildings / 966,154 triangles
+
+   That total is district-wide and only ~9 chunks are ever resident, so the
+   number hard rule 1 actually wants is the worst 256 m ring, and it is in the
+   OLD QUARTER: the worst single chunk goes 20,088 -> 126,166 triangles and the
+   worst 3x3 ring 105,962 -> 517,192 (+411k) against a 4.0 M frame budget. Draws
+   do not move -- the per-chunk merge is by material key, so it is <= 8 art
+   meshes a chunk either way (measured: median 7, max 8 over the 90 chunks that
+   carry any). The ring figure is unverified in a browser; measure it before
+   raising anything.
+
+   The hero block alone is 63% of the district total, which is why MARROW HILL,
+   ASHMOOR, VELLERY ROW and THE FLATS rows sit at 0.03-0.04 instead of the
+   0.30-0.35 their districts want: 1,630 eligible row footprints in MARROW HILL
+   + ASHMOOR at 0.35 would have been another 568k on its own. Raise them when
+   the budget does (brief step 7, "only then scale across the city"); do NOT buy
+   them by thinning OLD QUARTER. Two of those three are also a language
+   mismatch to settle first: ASHMOOR's brief is "inter-war semis, cream render,
+   red tile" and MARROW HILL's is "terraces climbing the hill, GABLE ends",
+   where brickRow is a flat-parapet Victorian terrace. VELLERY ROW is the one
+   the brief literally calls "narrow party-wall rows" and it went DOWN (loft
+   0.09 -> 0.03) to pay for the hero block. */
+/* One measured caveat on the OLD QUARTER 'mid' entry: brickRow clamps itself to
+   3-5 storeys, and the planner's OLD QUARTER mids ask for 13.4-23.9 m, so those
+   35 footprints build SHORTER than planned (median -2.8 m, worst -8.2 m) and
+   stand beside un-retargeted 24 m massing boxes in the same block. The rows go
+   the other way -- the 3-storey floor over-builds the shortest plots by up to
+   4.5 m (median +2.3). Both are brickRow's clamps; if the skyline reads wrong,
+   widen them there rather than dropping 'mid' from the hero block. */
+const MAP = {
+  'OLD QUARTER':   { row: ['brickRow', 0.86], mid: ['brickRow', 0.86] },
+  'MARROW HILL':   { row: ['brickRow', 0.04], yard: ['warehouse', 0.7] },
+  ASHMOOR:         { row: ['brickRow', 0.03], yard: ['warehouse', 0.7] },
+  'VELLERY ROW':   { row: ['loft', 0.03], mid: ['loft', 0.03] },
+  'THE FLATS':     { row: ['loft', 0.03], mid: ['officeMidrise', 0.35] },
+  KINGSWAY:        { mid: ['officeMidrise', 0.35], tower: ['glassTower', 0.45] },
+  STEELGATE:       { yard: ['warehouse', 0.7] },
+  'HARBOUR POINT': { yard: ['warehouse', 0.7] },
+  NORTHLINE:       { yard: ['warehouse', 0.7] },
+};
 
 const flag = (name) => typeof location !== 'undefined' && new URLSearchParams(location.search).has(name);
 
 export function styleFor(block, fp, roll) {
   if (block.district === 'LITTLE TOKYO' || fp.w < 6 || fp.d < 6 || flag('noart')) return null;
-  const d = block.district, t = block.type;
-  const style = t === 'yard' && INDUSTRIAL.has(d) ? 'warehouse'
-              : t === 'tower' && d === 'KINGSWAY' ? 'glassTower'
-              : t === 'mid' && MODERN_MID.has(d) ? 'officeMidrise'
-              : t === 'row' && LOFT_ROW.has(d) ? 'loft' : null;
-  if (!style) return null;
-  return flag('artall') || roll < SHARE[style] ? style : null;
+  const hit = MAP[block.district]?.[block.type];
+  if (!hit) return null;
+  return flag('artall') || roll < hit[1] ? hit[0] : null;
 }
 
 export const buildArt = (style, seed, hw, hd, h) => STYLES[style].build(seed, hw, hd, h);
