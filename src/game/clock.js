@@ -3,40 +3,49 @@ import * as THREE from 'three';
 // Diurnal color grade anchor profiles
 const DIURNAL_PROFILES = {
   DAY: {
-    sat: 1.05,
-    vibrance: 0.05,
-    contrast: 0.34,
-    split: 0.50,
-    shadowTint: [0.93, 0.98, 1.05],
+    sat: 1.10,
+    vibrance: 0.08,
+    contrast: 0.40,
+    split: 0.40,
+    shadowTint: [0.94, 0.97, 1.02],
     midTint: [1.0, 1.0, 1.0],
     highTint: [1.06, 1.01, 0.95],
-    slope: [1.0, 1.0, 1.0],
-    offset: [0.0, 0.0, 0.0],
-    power: [1.0, 1.0, 1.0],
-    bloomStrength: 0.55,
+    slope: [1.02, 1.01, 1.0],
+    offset: [-0.012, -0.012, -0.010],
+    power: [1.02, 1.02, 1.02],
+    bloomStrength: 0.35,
     bloomRadius: 0.35,
-    bloomThreshold: 0.25,
+    bloomThreshold: 0.85,
     vignette: 0.35,
-    grain: 0.015,
+    grain: 0.012,
     filmic: 0.0,
   },
+  /* Dusk is the hour this city looks best -- low sun down the long streets,
+     glass going gold on one face and blue on the other, signs just lighting --
+     and it was graded as a slightly weaker DAY. Now it splits hard: warm,
+     lifted highlights against genuinely blue shadows (that separation is what
+     makes a building read as two planes rather than one flat wall), more
+     saturation and contrast than day, and enough bloom that the first lit
+     windows and the sun off the glass bloom while the sky does not. `filmic`
+     comes half on so the sodium and the first neon keep their colour through
+     the tone map instead of washing toward white as AgX does. */
   DUSK: {
-    sat: 1.20,
-    vibrance: 0.18,
-    contrast: 0.32,
-    split: 0.85,
-    shadowTint: [0.89, 0.91, 1.08],
-    midTint: [1.03, 1.0, 0.98],
-    highTint: [1.14, 1.01, 0.88],
-    slope: [1.03, 1.01, 0.97],
-    offset: [0.0, 0.0, 0.0],
-    power: [1.01, 1.01, 1.03],
-    bloomStrength: 0.85,
-    bloomRadius: 0.50,
-    bloomThreshold: 0.45,
-    vignette: 0.50,
-    grain: 0.024,
-    filmic: 0.0,
+    sat: 1.34,
+    vibrance: 0.28,
+    contrast: 0.52,
+    split: 1.0,
+    shadowTint: [0.86, 0.92, 1.12],
+    midTint: [1.05, 1.0, 0.96],
+    highTint: [1.20, 1.03, 0.82],
+    slope: [1.07, 1.02, 0.95],
+    offset: [-0.018, -0.016, -0.010],
+    power: [1.02, 1.03, 1.04],
+    bloomStrength: 0.62,
+    bloomRadius: 0.52,
+    bloomThreshold: 0.74,
+    vignette: 0.48,
+    grain: 0.018,
+    filmic: 0.5,
   },
   NIGHT: {
     sat: 1.32,
@@ -89,10 +98,10 @@ export function interpolateGradeProfile(hour, weather) {
     const t = (hour - 7.5) / 2.0;
     wDawn = 1.0 - t;
     wDay = t;
-  } else if (hour >= 9.5 && hour < 17.0) {
+  } else if (hour >= 9.5 && hour < 16.0) {
     wDay = 1.0;
-  } else if (hour >= 17.0 && hour < 19.5) {
-    const t = (hour - 17.0) / 2.5;
+  } else if (hour >= 16.0 && hour < 19.5) {
+    const t = (hour - 16.0) / 3.5;
     wDay = 1.0 - t;
     wDusk = t;
   } else if (hour >= 19.5 && hour < 21.0) {
@@ -194,18 +203,28 @@ export class GameClock {
     // Determine diurnal phase weights
     const isNight = this.hour >= 20.5 || this.hour < 5.2;
     const isDusk = this.hour >= 18.0 && this.hour < 20.5;
+    const isGolden = this.hour >= 16.0 && this.hour < 18.0;
     const isDawn = this.hour >= 5.2 && this.hour < 7.2;
-    const isDay = !isNight && !isDusk && !isDawn;
+    const isDay = !isNight && !isDusk && !isDawn && !isGolden;
 
     let sunIntensity = 0;
     let hemiIntensity = 0.5;
 
-    if (isDay) {
+    if (isGolden) {
+      // Golden Hour (16:00 - 18:00) — Low, warm dramatic sun, long building shadows, golden road sheen
+      const t = (this.hour - 16.0) / 2.0; // 0 to 1
+      this.sunColor.setRGB(1.0, 0.86 - t * 0.22, 0.52 - t * 0.20);
+      this.hemiSky.setRGB(0.58 - t * 0.08, 0.68 - t * 0.22, 0.85 - t * 0.22);
+      this.hemiGround.setRGB(0.52 - t * 0.08, 0.46 - t * 0.12, 0.36 - t * 0.10);
+      this.fogColor.setRGB(0.44 - t * 0.12, 0.36 - t * 0.12, 0.40 - t * 0.10);
+      sunIntensity = 3.6 - t * 0.4;
+      hemiIntensity = 0.52 - t * 0.05;
+    } else if (isDay) {
       const dayFactor = Math.min(1, Math.max(0, sinH));
       this.sunColor.setRGB(1.0, 0.95, 0.86);
       this.hemiSky.setRGB(0.66, 0.77, 0.88);
       this.hemiGround.setRGB(0.56, 0.53, 0.45);
-      this.fogColor.setRGB(0.72, 0.79, 0.87);
+      this.fogColor.setRGB(0.55, 0.66, 0.80);
       sunIntensity = 2.8 + dayFactor * 0.8;
       hemiIntensity = 0.55;
     } else if (isDusk) {
@@ -213,7 +232,7 @@ export class GameClock {
       this.sunColor.setRGB(1.0, 0.52 - t * 0.2, 0.25);
       this.hemiSky.setRGB(0.48 - t * 0.3, 0.38 - t * 0.25, 0.55 - t * 0.3);
       this.hemiGround.setRGB(0.42 - t * 0.3, 0.30 - t * 0.2, 0.24 - t * 0.15);
-      this.fogColor.setRGB(0.78 - t * 0.55, 0.52 - t * 0.38, 0.42 - t * 0.28);
+      this.fogColor.setRGB(0.42 - t * 0.25, 0.28 - t * 0.18, 0.32 - t * 0.18);
       sunIntensity = Math.max(0.2, 3.0 * (1 - t * 0.85));
       hemiIntensity = 0.45 - t * 0.22;
     } else if (isDawn) {
@@ -221,7 +240,7 @@ export class GameClock {
       this.sunColor.setRGB(1.0, 0.75 + t * 0.2, 0.55 + t * 0.3);
       this.hemiSky.setRGB(0.35 + t * 0.3, 0.48 + t * 0.3, 0.68 + t * 0.2);
       this.hemiGround.setRGB(0.25 + t * 0.3, 0.28 + t * 0.25, 0.26 + t * 0.2);
-      this.fogColor.setRGB(0.55 + t * 0.2, 0.65 + t * 0.15, 0.78 + t * 0.1);
+      this.fogColor.setRGB(0.45 + t * 0.15, 0.52 + t * 0.15, 0.65 + t * 0.1);
       sunIntensity = 1.0 + t * 1.8;
       hemiIntensity = 0.32 + t * 0.23;
     } else {
@@ -252,10 +271,15 @@ export class GameClock {
     if (scene) {
       if (scene.fog) {
         scene.fog.color.copy(this.fogColor);
-        scene.fog.density = isNight ? 0.0028 : isDusk ? 0.00028 : 0.00018;
+        if (scene.fog.isFog) {
+          scene.fog.near = isNight ? 120 : (isGolden || isDay) ? 380 : 250;
+          scene.fog.far = isNight ? 1800 : 3800;
+        } else if (scene.fog.density !== undefined) {
+          scene.fog.density = isNight ? 0.0012 : isDusk ? 0.00012 : 0.00008;
+        }
       }
       // Phase 2 ownership: Sky radiance & HDRI environment intensity follows solar cycle
-      scene.environmentIntensity = isDay ? 1.15 : (isDusk || isDawn) ? 0.80 : 0.24;   // night: the cover art is ink, not slate
+      scene.environmentIntensity = (isDay || isGolden) ? 1.05 : (isDusk || isDawn) ? 0.80 : 0.24;   // night: the cover art is ink, not slate
     }
 
     // Phase 2 ownership: synchronize sky dome rotation & tint and stars visibility
