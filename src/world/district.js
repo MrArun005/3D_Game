@@ -231,7 +231,18 @@ export class District {
     for (const br of this.data.bridges) {
       if (nearPolyline(br.points, x, z) < br.width / 2 + 2.5) return false;
     }
-    if (x > this.bounds.w + 20) return true;                 // open sea
+    return this.inOpenWater(x, z);
+  }
+
+  /**
+   * Bay, river or sea, ignoring bridges. `inWater` treats a deck as land so
+   * you do not drown on it; the skirt used that and poured a 7.6 m dam into
+   * the river (the deck is "land"). A span over water wants a soffit, not a
+   * wall to y=0.
+   */
+  inOpenWater(x, z) {
+    const W = this.data.water;
+    if (x > this.bounds.w + 20) return true;
     if (nearPolyline(W.river.points, x, z) < W.river.width / 2) return true;
     return pointInPoly(W.bay, x, z);
   }
@@ -383,6 +394,23 @@ function spanDir(s, x, z) {
 }
 
 /** Height of one span at a point: 0 if the point is not over or approaching it. */
+/** Deck beam thickness. Skirt over water/flyover stops this far under the
+ *  tarmac instead of running to the riverbed. water.js piers meet this. */
+export const DECK_T = 0.9;
+
+/**
+ * Bottom of the concrete under a raised road.
+ * Over water or a flyover: a 0.9 m soffit (a beam). On a land ramp: a wall
+ * down to grade (an abutment). The old path used `inWater` (bridges win) and
+ * every river span became a dam.
+ */
+export function skirtFoot(deckY, overWater, cls) {
+  if (!(deckY > 0.12)) return 0;
+  if (overWater) return deckY - DECK_T;
+  if (cls === 'freeway' || cls === 'ramp') return Math.max(0, deckY - DECK_T);
+  return 0;
+}
+
 function spanHeight(s, x, z) {
   // 1. Check approach ramps first if not a continuous taper and ramp length > 0
   if (!s.taper && s.ramp) {

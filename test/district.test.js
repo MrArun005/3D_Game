@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { District } from '../src/world/district.js';
+import { District, skirtFoot, DECK_T } from '../src/world/district.js';
 
 const data = JSON.parse(readFileSync(new URL('../public/halstead-bay.district.json', import.meta.url)));
 const city = new District(data);
