@@ -28,6 +28,7 @@ import { styleFor, buildArt, artMaterial, ART_CAP } from './artBuildings.js';
  * and a chunk can be thrown away without consulting its neighbours.
  */
 const CHUNK = 256;
+const LOG_SLICES = typeof location !== 'undefined' && new URLSearchParams(location.search).has('slices');
 const BUILD_MS = 2.0;      // 2.0ms budget prevents micro-stutters and drops below 60fps
 const ck = (ix, iz) => `${ix},${iz}`;
 
@@ -1187,8 +1188,32 @@ export class DistrictWorld {
     const A = this.assets;
     const k = ck(ix, iz);
     let tLast = performance.now();
-    const tick = function* () {
-      if (performance.now() - tLast >= 1.8) {
+    /* A slice is the work BETWEEN two yields, and the budget only holds if
+       every step calls tick(). `label` names the step so the worst slice can
+       be attributed instead of guessed at: districtWorld.worstSlice keeps the
+       longest one seen, and `?slices` logs anything over 8 ms as it happens.
+       Costs one string compare per tick. */
+    const self = this;
+    let tLabel = 'start';
+    /* A hard break between phases. It must reset the clock too: a bare `yield`
+       left tLast pointing at the previous frame, so the next slice measured the
+       time the generator sat PARKED and every worst-slice number was fiction. */
+    const brk = function* (label) {
+      const now = performance.now();
+      const slice = now - tLast;
+      if (slice > (self.worstSlice?.ms ?? 0)) self.worstSlice = { ms: slice, step: tLabel, chunk: k };
+      if (LOG_SLICES && slice > 8) console.info(`[slice] ${slice.toFixed(1)}ms after ${tLabel} (chunk ${k})`);
+      if (label) tLabel = label;
+      yield;
+      tLast = performance.now();
+    };
+    const tick = function* (label) {
+      const now = performance.now();
+      const slice = now - tLast;
+      if (slice > (self.worstSlice?.ms ?? 0)) self.worstSlice = { ms: slice, step: tLabel, chunk: k };
+      if (LOG_SLICES && slice > 8) console.info(`[slice] ${slice.toFixed(1)}ms after ${tLabel} (chunk ${k})`);
+      if (label) tLabel = label;
+      if (slice >= 1.8) {
         yield;
         tLast = performance.now();
       }
@@ -1243,7 +1268,7 @@ export class DistrictWorld {
              [0, 1, 0], [[0, 0], [L, 0], [L, t / 2.4], [0, t / 2.4]]);
       };
       for (const id of segs) {
-        yield* tick();
+        yield* tick('roads+spans');
         const s = this.district.segments[id];
         const dx = s.bx - s.ax, dz = s.bz - s.az;
         const L = Math.hypot(dx, dz) || 1;
@@ -1358,7 +1383,7 @@ export class DistrictWorld {
         group.add(dm);
       }
     }
-    yield;
+    yield* brk('blocks');
 
     /* --- blocks: a raised slab is its own kerb, and buildings stand on it --- */
     const blocks = this.blkByChunk.get(k) ?? [];
@@ -1394,7 +1419,7 @@ export class DistrictWorld {
       if (!arch) continue;
       const range = HEIGHT[bl.type] || [10, 20];
       for (const g of this.district.buildingsOf(bl.id)) {
-        yield* tick();
+        yield* tick('massing/art/tokyo');
         const scale = DISTRICT_SCALE[bl.district] ?? 1;
         const h = (range[0] + hash(g.x + bl.x, g.y + bl.y) * (range[1] - range[0])) * scale;
         // local footprint -> world, through the block's own transform
@@ -1502,11 +1527,11 @@ export class DistrictWorld {
       }
     }
 
-    yield;
+    yield* brk('streetFurniture');
     this.#streetFurniture(this.edgeByChunk.get(k) ?? [], group);
-    yield;
+    yield* brk('signals');
     this.#signals(this.edgeByChunk.get(k) ?? [], group, k);
-    yield;
+    yield* brk('lamps');
 
     /* Lamps every 30m down each segment, alternating sides. The old procedural
        city got all its night light from these; the district world shipped
@@ -1519,7 +1544,7 @@ export class DistrictWorld {
     const trees = { plane: [], pine: [], poplar: [], palm: [] };
     const leafCol = { plane: [], pine: [], poplar: [], palm: [] };
     for (const id of segs) {
-      yield* tick();
+      yield* tick('lamp rows');
       const s2 = this.district.segments[id];
       if (s2.cls === 'freeway' || s2.cls === 'ramp') continue;
       const dx = s2.bx - s2.ax, dz = s2.bz - s2.az;
@@ -1642,7 +1667,7 @@ export class DistrictWorld {
          buffers, so world/breakables.js can knock them over (see its header) */
       batch.trackNames = BREAK_CLASS;
       const dressPools = [], dressHeads = [];
-      yield;
+      yield* brk('dressChunk');
       dressChunk(batch, {
         segments: segs.map((id) => this.district.segments[id]),
         blocks, district: this.district, solids: solidParked, pools: dressPools,
@@ -1654,10 +1679,16 @@ export class DistrictWorld {
       this.headsByChunk.set(k, [...dressHeads.map((hd) => ({ x: hd.x, y: hd.y, z: hd.z })), ...tokyoHeads, ...spanHeads]);
       // glare sprites on every head (GTA-style; world/glare.js): one instanced Sprite per chunk, fades in with the night
       { const gl = buildGlare([...dressHeads, ...tokyoHeads, ...spanHeads], ix * 31 + iz); if (gl) group.add(gl); }
-      yield;
+      yield* brk('dressRoofs');
       // sliced: one big dressRoofs was a 10+ ms step against a 4 ms budget
       const dressable = boxes.filter((b) => !b.tokyo && !b.art);   // Little Tokyo and the self-built styles dress themselves (tokyo.js, artBuildings.js)
-      for (let i = 0; i < dressable.length; i += 24) { dressRoofs(batch, dressable.slice(i, i + 24), this.district); yield; }
+      /* One building at a time, yielding on the CLOCK rather than on a count.
+         A fixed batch cannot know what it is about to cost: measured, 10
+         buildings of facade dressing took 25 ms in a single slice -- a dropped
+         frame every time you crossed into a dense chunk. tick() yields only
+         once 1.8 ms has actually gone, so cheap buildings still batch up and
+         an expensive one yields immediately. Same total work, spread. */
+      for (let i = 0; i < dressable.length; i++) { dressRoofs(batch, dressable.slice(i, i + 1), this.district); yield* tick('dressRoofs'); }
 
       /* Facades are their own batch and their own group. They are far and away
          the most expensive thing in the kit -- a dressed frontage is roughly a
@@ -1671,7 +1702,7 @@ export class DistrictWorld {
       const signs = [...tokyoBoards], windows = [];   // Little Tokyo's kanban and fascias ride the same atlas quads
       for (const p of tokyoProps) fbatch.add(p.name, placeAsset(p.x, KERB_H, p.z, p.yaw));   // and its kerbside props
       // sliced: the frontage walk (modules, signs, windows, side walls) was the worst step
-      for (let i = 0; i < dressable.length; i += 10) { dressFacades(fbatch, dressable.slice(i, i + 10), this.district, roadDepth, signs, windows); yield; }
+      for (let i = 0; i < dressable.length; i++) { dressFacades(fbatch, dressable.slice(i, i + 1), this.district, roadDepth, signs, windows); yield* tick('dressFacades'); }   // see dressRoofs above: yield on the clock, not on a count
       /* Phase 1: the shop signs, one instanced draw per chunk. Per-instance
          atlas cell in aTile; the quad's width/height ride the matrix. They
          live in the facade group so they share its tighter visibility ring.
@@ -1800,7 +1831,7 @@ export class DistrictWorld {
       km.layers.enable(SHADOW_FAR_LAYER);
       group.add(km);
     }
-    yield;
+    yield* brk('instancing');
     const inst = (geo, mat, list, shadow, colours) => {
       if (!list.length) return;
       const m = new THREE.InstancedMesh(geo, mat, list.length);
@@ -1865,13 +1896,13 @@ export class DistrictWorld {
       group.add(m);
     };
     slabMesh(slabs.block, A.mat.walkDistrict ?? A.mat.walk);
-    yield* tick();
+    yield* tick('slabs-park');
     slabMesh(slabs.park, A.mat.parkGround ?? A.mat.leaf);
-    yield* tick();
+    yield* tick('slabs-lot');
     slabMesh(slabs.lot, A.mat.kerb);
-    yield* tick();
+    yield* tick('slabs-vacant');
     slabMesh(slabs.vacant, A.mat.kerb);
-    yield;
+    yield* brk('lamp inst');
     inst(A.geo.lamp, A.mat.pole, lamps, true);
     /* Two head geometries share one list: the legacy lamp's head is offset to
        sit on its own arm; the authored lamps' cap is origin-centred because
@@ -1882,7 +1913,7 @@ export class DistrictWorld {
       inst(A.geo.species[sp].trunk, A.mat.bark, trees[sp], true);
       inst(A.geo.species[sp].canopy, A.mat.leaf, trees[sp], true, leafCol[sp]);
     }
-    yield;
+    yield* brk('parked fleet');
     /* No glazing on the parked fleet. There are ~390 of them in the streaming
        radius and nobody ever looks into a parked car; adding their windows
        took the scene from 4.9M triangles to 7.5M. */
@@ -1956,7 +1987,7 @@ export class DistrictWorld {
       const [arch, v] = key.split('|');
       tiled(A.facades[arch][+v], facades[key]);
     }
-    yield;
+    yield* brk('tiled bases');
     for (const key of Object.keys(bases)) tiled(A.base.materials[+key], bases[key]);
     inst(slabGeo, A.mat.roof, roofs);
     inst(A.geo.gable, A.mat.roofPitch, gables, true);   // pitched roofs cast: their shadow is half of what says "roof"
