@@ -197,7 +197,10 @@ const SKY_DAY = [
  * whole sky being pale.
  */
 function texDaySky(sunDir) {
-  const W = 1024, H = 512;
+  /* 2048x1024, was 1024x512. Stretched over a 9 km dome a texel covered ~10
+     screen pixels at the default lens, which is why the sun disc and cloud edges
+     looked soft and -- see below -- why a per-texel dither read as a grid. */
+  const W = 2048, H = 1024;
   const c = cv(W, H), g = c.getContext('2d');
   // canvas y = 0 is the top of the texture = v = 1 = zenith
   const gr = g.createLinearGradient(0, H, 0, 0);
@@ -207,8 +210,16 @@ function texDaySky(sunDir) {
      further down only ever covered the top half, so the horizon -- the half
      you actually see from a street -- had no dither at all. Seeded on its own
      stream so the cloud placement below is byte-identical to before. */
+  /* NO texel dither here any more. ditherCanvas(g, W, H, 1.6) was added to
+     break 8-bit banding in the ramp, but it adds +/-1.6 of white noise PER
+     TEXEL, and the dome magnifies every texel to a ~5-10 px square: Arun's
+     "the sky in daylight is a mess out on top of the city" was that noise as
+     a visible grid, aliasing against the sphere's latitude rows into rings.
+     Banding is a DISPLAY-quantisation problem and is broken at display time by
+     the grade's film grain (clock.js profiles, `grain`), where the noise is one
+     screen pixel wide, not one sky texel. The seed stays so the cloud RNG
+     stream below is unchanged. */
   seed(17);
-  ditherCanvas(g, W, H, 1.6);
 
   // where the sun sits on the dome
   let su = 0.62, sv = 0.78;
