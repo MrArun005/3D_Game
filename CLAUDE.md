@@ -235,6 +235,18 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   on :4173, `?debug` hooks `__warp/__time/__rain`, dismiss the title card
   with `#hud.classList.add('gone')`). One `vite build` at a time. The older
   "no Playwright" line below is about screenshot churn, not verification.
+- **Resolution / 4K (2026-09-12)**: `renderScale()` caps the drawing buffer
+  at the 60 fps floor's pixel count (1.24 MP full, 0.78 MP lite) and lets the
+  browser upscale. Escape hatches, in precedence: `?res=N` draws at N device
+  pixels per CSS pixel (clamped to 2x the display ratio), `?native` is the
+  old 1:1-in-CSS-pixels flag. EITHER needs `?nodrs` beside it, or
+  `autoResolution` sees the first >19.5 ms sample and walks the scale back to
+  MIN_SCALE, so you never see what you asked for. Measured on this machine,
+  same viewpoint, 959 draws / 2.53M tris either way:
+  0.78 MP 16.6 ms | 8.29 MP (3840x2160) 40.6 ms. So 4K is pure fill: the
+  scene cost does not move, ~11x the pixels costs ~2.4x the frame. It is a
+  screenshot/photo-mode setting, not a play setting, until the post stack
+  gets a cheaper path.
 - **Asphalt textures are real now (2026-09-05)**: the shipped `asphalt_*`
   set was the library's generic dot pattern; under the wet-road env boost
   every dot mirrored as a cobble. `tools/asphalt-textures.py` (numpy + PIL,

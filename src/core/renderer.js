@@ -51,8 +51,20 @@ class GatedCSM extends CSMShadowNode {
 export const RENDER_BUDGET_PX = 1440 * 860;        // ~1.24 MP (Full mode)
 export const RENDER_BUDGET_PX_LITE = 1152 * 680;   // ~0.78 MP (Lite mode, 37% fill-rate savings for integrated GPUs)
 
+/* Escape hatches, in order of precedence:
+     ?res=N    draw at N device pixels per CSS pixel. `?res=1` is a 1:1 4K
+               frame on a 4K monitor; `?res=2` is 1:1 on a retina panel, which
+               is 8.3 MP of shading and roughly seven times the 60 fps budget.
+               Anything above the display's own ratio is wasted, so it clamps.
+     ?native   1:1 in CSS pixels (the old flag, kept).
+   Pair either with ?nodrs, or the adaptive scaler drags you straight back
+   down the moment the frame goes over 19.5 ms -- which at 4K it will. */
 export function renderScale(w, h, lite = false) {
-  if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('native')) return 1;
+  if (typeof location === 'undefined') return Math.min(1, Math.sqrt((lite ? RENDER_BUDGET_PX_LITE : RENDER_BUDGET_PX) / Math.max(1, w * h)));
+  const q = new URLSearchParams(location.search);
+  const res = parseFloat(q.get('res'));
+  if (Number.isFinite(res) && res > 0) return Math.min(res, (globalThis.devicePixelRatio || 1) * 2);
+  if (q.has('native')) return 1;
   const budget = lite ? RENDER_BUDGET_PX_LITE : RENDER_BUDGET_PX;
   return Math.min(1, Math.sqrt(budget / Math.max(1, w * h)));
 }
@@ -146,6 +158,10 @@ export function autoResolution(renderer, grade = null, lite = false) {
   let lastAdjustTime = 0;
   const MIN_SCALE = 0.50;
 
+  // ?nodrs: hold the resolution wherever ?res / ?native put it. Without this
+  // a 4K frame is over the 19.5 ms trigger on the first sample and walks back
+  // down to MIN_SCALE, so you never actually see the resolution you asked for.
+  if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('nodrs')) return function noop() {};
   return function updateAutoResolution(dt) {
     frameCount++;
     sumMs += dt * 1000;
