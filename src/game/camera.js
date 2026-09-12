@@ -23,9 +23,14 @@ export function lensDrops({ wet = 0, mode = 0, onFoot = false, roof = true } = {
   return (inside ? 1.15 : 0.62) * w;
 }
 
+/* Chase distances. The default sat at 7.6 m with a 60 deg lens, which framed
+   a lot of road and a small car; 6.5 m at 58 deg fills more of the frame with
+   the car without losing the corner you are turning into, and the aim point
+   comes in with it so the horizon does not ride up. The close rig follows by
+   the same proportion. */
 const RIGS = [
-  { back: 7.6, up: 2.85, aim: 8.0, fov: 60, lag: 3.4, tilt: 1 },
-  { back: 5.4, up: 2.05, aim: 9.0, fov: 66, lag: 6.0, tilt: 1 },
+  { back: 6.5, up: 2.62, aim: 7.2, fov: 58, lag: 3.4, tilt: 1 },
+  { back: 4.7, up: 1.92, aim: 8.2, fov: 63, lag: 6.0, tilt: 1 },
   { back: -1.3, up: 1.28, aim: 14.0, fov: 62, lag: 22.0, tilt: 0 },
   { back: -0.55, up: 1.3, aim: 16.0, fov: 55, lag: 26.0, tilt: 0 },
 ];
@@ -165,20 +170,45 @@ export class ChaseCamera {
        standstill turns the whole screen when the car itself cannot move,
        which reads as the camera steering instead of the car. */
     const look = (car.steer || 0) * speedK * 6.0;
+    /* Look FURTHER ahead the faster you go. At a standstill you are looking at
+       your own car; at speed you need the corner. Same principle every racing
+       camera uses, and the reason GTA players complain they cannot see through
+       a turn. */
+    const aimAhead = 1 + speedK * 0.55;
     // when free-looking or looking behind, aim through the car rather than down the road
-    const aimD = (this.looking || this.lookBehind) ? 2.0 : rig.aim;
+    const aimD = (this.looking || this.lookBehind) ? 2.0 : rig.aim * aimAhead;
+    /* Sliding: the car POINTS one way and TRAVELS another, and a camera locked
+       to the heading leaves you staring at your own flank through a drift --
+       the single loudest complaint about GTA IV's chase view. Lean the aim a
+       third of the way toward the travel direction, capped, so a drift shows
+       the corner you are sliding into. Heading, never velocity, stays the
+       anchor: following velocity outright makes the camera jump the moment
+       you leave the ground. */
+    let slipX = 0, slipZ = 0;
+    if (!this.looking && !this.lookBehind) {
+      const vx2 = car.vx || 0, vz2 = car.vz || 0, sp = Math.hypot(vx2, vz2);
+      if (sp > 4) {
+        const fx = cy, fz = -sy;                       // the car's own forward
+        const cross = fx * (vz2 / sp) - fz * (vx2 / sp);
+        const slip = Math.max(-0.45, Math.min(0.45, cross)) * speedK;
+        slipX = rx * slip * 5.5; slipZ = rz * slip * 5.5;
+      }
+    }
     this.aim.set(
-      car.x - ox * aimD * flat + rx * look,
+      car.x - ox * aimD * flat + rx * look + slipX,
       targetY + 0.95 - lift * aimD * 0.4,
-      car.z - oz * aimD * flat + rz * look,
+      car.z - oz * aimD * flat + rz * look + slipZ,
     );
     this.camera.lookAt(this.aim);
     if (rig.tilt) this.camera.rotation.z += (car.roll || 0) * 0.35 - (car.yawRate || 0) * 0.018;
 
     const nosBoost = car.nosActive ? 11 : 0;
-    // FOV 62 at rest to 74 at ~150 km/h (speedK reaches 1.0)
-    const baseFov = 62;
-    const fov = baseFov + speedK * 12 + nosBoost;
+    /* The rig's OWN lens. This read a hard-coded 62 and threw away every value
+       in RIGS -- the bonnet rig asks for 55 and got 62, which is why the
+       cockpit views felt wide and far. Widening with speed is the one thing
+       every driving game agrees on (art of rally: "we expand the FOV when
+       you're going faster"): +12 deg by ~150 km/h, and the nitrous kick on top. */
+    const fov = (rig.fov ?? 62) + speedK * 12 + nosBoost;
     if (Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 5.5);
       this.camera.updateProjectionMatrix();
