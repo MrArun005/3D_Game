@@ -88,7 +88,7 @@ export function createWeather(scene, { hemi = null, onStrike = null, dome = null
   rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
   const rain = new THREE.Points(rainGeo, new THREE.PointsMaterial({
     map: streakMap(), size: 0.55, transparent: true, opacity: 0.55,
-    depthWrite: false, fog: true, sizeAttenuation: true,
+    depthWrite: false, fog: false, sizeAttenuation: true,
     blending: THREE.AdditiveBlending, color: 0xc5d6ee,
   }));
   rain.material.mrtNode = NO_NORMAL;
@@ -101,7 +101,7 @@ export function createWeather(scene, { hemi = null, onStrike = null, dome = null
   sprayGeo.setAttribute('position', new THREE.BufferAttribute(sprayPos, 3));
   const spray = new THREE.Points(sprayGeo, new THREE.PointsMaterial({
     map: sprayMap(), size: 0.85, transparent: true, opacity: 0.0,
-    depthWrite: false, fog: true, sizeAttenuation: true,
+    depthWrite: false, fog: false, sizeAttenuation: true,
     blending: THREE.AdditiveBlending, color: 0xb8c4d2,
   }));
   spray.material.mrtNode = NO_NORMAL;
@@ -168,7 +168,6 @@ export function createWeather(scene, { hemi = null, onStrike = null, dome = null
       // the sky under rain: the dome (tinted per frame by the clock, so multiplying never accumulates) darkens with the rain and whites out with the flash
       const d = domeOf();
       if (d?.material?.color) d.material.color.multiplyScalar(1 - 0.45 * amount).addScalar(0.7 * flash);
-      if (scene.fog?.color) scene.fog.color.multiplyScalar(1 - 0.45 * amount).addScalar(0.5 * flash);   // the haze darkens with the sky, so fogged silhouettes do not float pale in front of it
     },
   });
   return api;

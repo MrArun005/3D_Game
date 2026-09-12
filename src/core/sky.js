@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { texSky } from '../world/textures.js';
+import { texSky, cv, toTex } from '../world/textures.js';
+import { glow } from './additive.js';
 import { DAY_SUN } from './renderer.js';
 import { seed, rp, rr } from './rng.js';
 
@@ -8,6 +9,19 @@ import { seed, rp, rr } from './rng.js';
  * car paint and glazing have a real horizon to reflect. Without this the paint
  * reads as flat plastic no matter how good the material is.
  */
+/** A low, hazy sun disc: hot core, warm corona, falling to nothing. */
+function sunDisc() {
+  const S = 256, c = cv(S, S), g = c.getContext('2d');
+  const gr = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  gr.addColorStop(0.00, 'rgba(255,255,248,1)');
+  gr.addColorStop(0.09, 'rgba(255,244,212,0.96)');
+  gr.addColorStop(0.20, 'rgba(255,198,120,0.58)');
+  gr.addColorStop(0.44, 'rgba(255,146,70,0.20)');
+  gr.addColorStop(1.00, 'rgba(255,120,50,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, S, S);
+  return toTex(c);
+}
+
 export function createSky(scene, renderer, day = false) {
   const skyTex = texSky(day, day ? DAY_SUN : null);
   /* toTex() hands back RepeatWrapping on BOTH axes, which is right for a
@@ -46,6 +60,24 @@ export function createSky(scene, renderer, day = false) {
   ground.position.y = -0.5;
   envScene.add(ground);
 
+  /* THE SUN ITSELF. The disc on the day sky is BAKED into the equirect at
+     DAY_SUN (48 degrees of elevation) and the dome is only spun about Y, so it
+     can never sit low at the end of a street -- and it cannot follow the
+     golden-hour azimuth bias clock.js applies to the light. This sprite is the
+     real sun: clock.js parks it along the actual sun DIRECTION, so the disc you
+     see and the light hitting the buildings are the same thing.
+     glow(), not additive(): on a quad the zero-normal guard reads as full
+     occlusion and GTAO paints a black square (core/additive.js). depthTest
+     stays on so buildings and the mountain ring occlude it properly. */
+  const sunSprite = new THREE.Sprite(new THREE.SpriteNodeMaterial({
+    map: sunDisc(), transparent: true, depthWrite: false, depthTest: true,
+    blending: THREE.AdditiveBlending, fog: false,
+  }));
+  glow(sunSprite.material, 0.9);
+  sunSprite.scale.setScalar(760);
+  sunSprite.visible = false;      // clock.js turns it on for golden hour and dusk
+  scene.add(sunSprite);
+
   const pmrem = new THREE.PMREMGenerator(renderer);
   pmrem.compileEquirectangularShader();
   scene.environment = pmrem.fromScene(envScene, 0, 1, 200).texture;
@@ -74,5 +106,5 @@ export function createSky(scene, renderer, day = false) {
   }));
   scene.add(stars);
 
-  return { dome, stars };
+  return { dome, stars, sunSprite };
 }

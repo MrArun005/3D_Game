@@ -1,12 +1,10 @@
 import * as THREE from 'three';
 import { CSMShadowNode } from 'three/examples/jsm/csm/CSMShadowNode.js';
 
-export const FOG_COLOUR = 0x222a3a;
 /* The dome's own colour ~10 degrees above the horizon (textures.js SKY_DAY at
    v=0.55). It was 0xb7c9dd, paler than the sky behind the mountains, which is
    why the range read brighter than the sky (2026-09-08). clock.js sets the
    same value each frame; keep the two together. */
-export const FOG_DAY = 0x93b7de;
 /** Where the day sun is. The sky dome paints its disc from this same vector. */
 export const DAY_SUN = new THREE.Vector3(-190, 250, 120);
 /* ?dusk: the same day rig with the sun 12 degrees up. Long shadows, orange
@@ -249,9 +247,11 @@ function createDayLights(scene, lite = false) {
 
 export function createScene(day = false) {
   const scene = new THREE.Scene();
-  // clear daylight sees a long way; a 4.2km city is worth showing off
-  scene.fog = day ? new THREE.FogExp2(DUSK ? 0xc9a48a : FOG_DAY, DUSK ? 0.00024 : 0.0004)   // aerial perspective: depth, not murk
-                  : new THREE.FogExp2(FOG_COLOUR, 0.0034);
+  // Linear fog keeps foreground/midground city (0-380m) 100% crisp and clear with ZERO fog,
+  // letting distant horizon and mountains gently blend without washing out urban architecture.
+  /* NO FOG. Removed 2026-09-13 at Arun's instruction -- he does not want it
+     anywhere in the codebase. Distance is carried by the sky, the grade and the
+     mountain palette instead. Nothing may set scene.fog again. */
   return scene;
 }
 

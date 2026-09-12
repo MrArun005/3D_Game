@@ -154,7 +154,7 @@ export function buildSurrounds(scene, bounds, day = true) {
   fg.computeVertexNormals();
   group.add(new THREE.Mesh(fg, new THREE.MeshBasicMaterial({
     map: linkTex, transparent: true, alphaTest: 0.35,
-    side: THREE.DoubleSide, fog: true,
+    side: THREE.DoubleSide, fog: false,
   })));
 
   const postGeo = new THREE.CylinderGeometry(0.055, 0.055, H + 0.12, 6);

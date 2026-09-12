@@ -1,11 +1,6 @@
 import * as THREE from 'three';
 
 // Diurnal color grade anchor profiles
-/* Fog targets for the evening/dawn ramps. Display colours (setHex), because
-   fog colour is what you SEE, not a light quantity -- setRGB would be linear. */
-const _FOG_DUSK = new THREE.Color(0x4a3740);
-const _FOG_NIGHT = new THREE.Color(0x0d1020);
-const _FOG_DAY_C = new THREE.Color(0x93b7de);   // renderer.js FOG_DAY
 
 const DIURNAL_PROFILES = {
   DAY: {
@@ -196,10 +191,9 @@ export class GameClock {
     this.sunColor = new THREE.Color();
     this.hemiSky = new THREE.Color();
     this.hemiGround = new THREE.Color();
-    this.fogColor = new THREE.Color();
   }
 
-  update(dt, { sun, hemi, scene, grade, lightPool, heroLights, weatherSystem, assets, player, dome, stars } = {}) {
+  update(dt, { sun, hemi, scene, grade, lightPool, heroLights, weatherSystem, assets, player, dome, stars, sunSprite } = {}) {
     // 24 minutes real time = 24 game hours => dt / 60 hours per second
     this.hour = (this.hour + (dt / 60) * this.timeScale) % 24;
 
@@ -219,7 +213,12 @@ export class GameClock {
        the city rendered flat. 150 holds the golden sun at ~20 degrees, which
        shades the lower storeys and rakes the upper two thirds: lit tops over
        neon-lit shade, which is the reference frame. */
-    const sunFloor = (this.hour >= 16.0 && this.hour < 18.0) ? 150 : 30;
+    /* 150 (~20 deg) was the floor while the sun still came in square to the
+       street and had to clear the rooftops to light anything. Once the azimuth
+       runs ALONG the avenue nothing blocks it, so the sun can sit properly low
+       -- ~10 deg -- which is what puts the disc at the vanishing point and rakes
+       the facades at grazing incidence instead of lighting them from above. */
+    const sunFloor = (this.hour >= 16.0 && this.hour < 18.0) ? 80 : 30;
     /* Golden hour also swings the AZIMUTH up the avenue. The solar arc is pure
        east-west and Little Tokyo's only street runs north-south, so at 16:00-18:00
        the sun was always square to the facades: every building stood in its
@@ -231,7 +230,7 @@ export class GameClock {
        a deliberate cheat -- the sun is not where an ephemeris would put it -- but
        the reference frame is a sun down the street, and the project is stylised. */
     const goldenT = Math.max(0, Math.min(1, (this.hour - 15.6) / 0.8)) * Math.max(0, Math.min(1, (18.4 - this.hour) / 0.8));
-    const bias = 0.80 * goldenT;
+    const bias = 1.0 * goldenT;   // fully up the avenue: the disc lands in the middle of the road, not off to one side
     this.sunPosition.set(
       px - cosH * sunDist * (1 - bias),
       Math.max(sunFloor, sinH * sunDist),
@@ -266,7 +265,6 @@ export class GameClock {
          colour: that pale mauve was the flat pink paper wall across the end of
          the street. A range has to be DARKER than the sky behind it to read as
          a silhouette (see the same note in surrounds.js). Warm and deep. */
-      this.fogColor.setHex(0x7a5c48).lerp(_FOG_DUSK, t);
       sunIntensity = 4.3 - t * 0.5;   // the lit faces have to WIN against the fill, or there is no rake
       hemiIntensity = 0.60 - t * 0.06;
     } else if (isDay) {
@@ -274,7 +272,6 @@ export class GameClock {
       this.sunColor.setRGB(1.0, 0.95, 0.86);
       this.hemiSky.setRGB(0.66, 0.77, 0.88);
       this.hemiGround.setRGB(0.56, 0.53, 0.45);
-      this.fogColor.setRGB(0.55, 0.66, 0.80);
       sunIntensity = 2.8 + dayFactor * 0.8;
       hemiIntensity = 0.55;
     } else if (isDusk) {
@@ -282,7 +279,6 @@ export class GameClock {
       this.sunColor.setRGB(1.0, 0.52 - t * 0.2, 0.25);
       this.hemiSky.setRGB(0.48 - t * 0.3, 0.38 - t * 0.25, 0.55 - t * 0.3);
       this.hemiGround.setRGB(0.42 - t * 0.3, 0.30 - t * 0.2, 0.24 - t * 0.15);
-      this.fogColor.setHex(0x4a3740).lerp(_FOG_NIGHT, t);   // display colour, see the golden-hour note above
       sunIntensity = Math.max(0.2, 3.0 * (1 - t * 0.85));
       hemiIntensity = 0.45 - t * 0.22;
     } else if (isDawn) {
@@ -290,7 +286,6 @@ export class GameClock {
       this.sunColor.setRGB(1.0, 0.75 + t * 0.2, 0.55 + t * 0.3);
       this.hemiSky.setRGB(0.35 + t * 0.3, 0.48 + t * 0.3, 0.68 + t * 0.2);
       this.hemiGround.setRGB(0.25 + t * 0.3, 0.28 + t * 0.25, 0.26 + t * 0.2);
-      this.fogColor.setHex(0x4b5570).lerp(_FOG_DAY_C, t);   // display colour, see the golden-hour note above
       sunIntensity = 1.0 + t * 1.8;
       hemiIntensity = 0.32 + t * 0.23;
     } else {
@@ -298,7 +293,6 @@ export class GameClock {
       this.sunColor.setRGB(0.16, 0.24, 0.42);
       this.hemiSky.setRGB(0.06, 0.09, 0.16);
       this.hemiGround.setRGB(0.03, 0.045, 0.07);
-      this.fogColor.setRGB(0.022, 0.028, 0.06);   // darker than the dome, or fogged silhouettes (the far hills) stand out pale against the sky
       sunIntensity = 0.30; // Soft moon key -- the pale far mountains were lit like dusk at 0.42
       hemiIntensity = 0.17;
     }
@@ -319,15 +313,6 @@ export class GameClock {
       hemi.intensity = hemiIntensity;
     }
     if (scene) {
-      if (scene.fog) {
-        scene.fog.color.copy(this.fogColor);
-        if (scene.fog.isFog) {
-          scene.fog.near = isNight ? 120 : (isGolden || isDay) ? 380 : 250;
-          scene.fog.far = isNight ? 1800 : 3800;
-        } else if (scene.fog.density !== undefined) {
-          scene.fog.density = isNight ? 0.0012 : isDusk ? 0.00012 : 0.00008;
-        }
-      }
       // Phase 2 ownership: Sky radiance & HDRI environment intensity follows solar cycle
       scene.environmentIntensity = (isDay || isGolden) ? 1.05 : (isDusk || isDawn) ? 0.80 : 0.24;   // night: the cover art is ink, not slate
     }
@@ -359,6 +344,31 @@ export class GameClock {
         } else {
           dome.material.color.setRGB(0.03, 0.035, 0.075);   // ink; the day dome tinted to 0.12 read as mid-blue, 0.045 still as evening
         }
+      }
+    }
+    /* Park the sun sprite on the real light direction, out past the mountain
+       ring so the range silhouettes against it. Because golden hour biases the
+       azimuth up the avenue, this puts the disc at the end of the street -- the
+       rays that rake the buildings and the sun you can see are now the same
+       direction, which is the whole point of it being a sprite and not a blob
+       baked into the sky texture. */
+    if (sunSprite) {
+      const show = goldenT > 0.01 || isDusk;
+      sunSprite.visible = show;
+      if (show) {
+        const dx = this.sunPosition.x - px, dy = this.sunPosition.y, dz = this.sunPosition.z - pz;
+        /* INSIDE the mountain ring (surrounds.js puts the belt ~3.4 km out and
+           1.5 km high, which subtends ~24 deg -- a 10 deg sun parked beyond it
+           was simply behind the range and never visible). At 2400 the disc draws
+           in front of the ridge and sits in the middle of the road; buildings,
+           being far nearer, still occlude it correctly. */
+        const L = Math.hypot(dx, dy, dz) || 1, D = 2400;
+        sunSprite.position.set(px + (dx / L) * D, (dy / L) * D, pz + (dz / L) * D);
+        // lower sun, bigger and redder disc -- the atmosphere you cannot afford to simulate
+        const low = 1 - Math.min(1, (dy / L) / 0.45);
+        sunSprite.scale.setScalar(300 + low * 250);   // smaller with the nearer parking distance
+        sunSprite.material.opacity = isDusk ? Math.max(0, 1 - (this.hour - 18.0) / 1.6) : Math.min(1, goldenT * 1.4);
+        sunSprite.material.color.setRGB(1.0, 0.86 - low * 0.22, 0.66 - low * 0.34);
       }
     }
     if (stars && stars.material) {

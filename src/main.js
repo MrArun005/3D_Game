@@ -134,12 +134,12 @@ const scene = createScene(DAY);
 window.scene = scene;
 const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.5, 14000);
 const { sun, hemi } = createLights(scene, DAY, isLite);
-const { dome, stars } = createSky(scene, renderer, DAY);
+const { dome, stars, sunSprite } = createSky(scene, renderer, DAY);
 
 setBootProgress(60, 'Initializing TSL post-processing pipeline…');
 const grade = createGrade(renderer, scene, camera, {
   ssr: new URLSearchParams(location.search).has('ssr'),
-  ao: !isLite && !new URLSearchParams(location.search).has('noao'),
+  ao: new URLSearchParams(location.search).has('ao'),
   bloom: !new URLSearchParams(location.search).has('nobloom'),
   aa: !new URLSearchParams(location.search).has('noaa'),
   post: !new URLSearchParams(location.search).has('nopost'),
@@ -2171,7 +2171,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     if (!document.getElementById('idlecam-style')) { const st = document.createElement('style'); st.id = 'idlecam-style'; st.textContent = '#hud,#cluster,#minimap,#dials,#readout,#wanted,#crosshair,#stats,#gameplay-prompt-bar{transition:opacity .6s}.idlecam #hud,.idlecam #cluster,.idlecam #minimap,.idlecam #dials,.idlecam #readout,.idlecam #wanted,.idlecam #crosshair,.idlecam #stats,.idlecam #gameplay-prompt-bar{opacity:0 !important}'; document.head.appendChild(st); }
     document.body.classList.toggle('idlecam', idleCam);
   }
-  clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: currentVehicle, dome, stars });
+  clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: currentVehicle, dome, stars, sunSprite });
   // the rain audio follows the weather's breathing, and rain is grip: the physics reads car.wet
   // crossing into a district: the area name, GTA-style, and dispatch tracks you if you are wanted
   distT -= dt;
@@ -2229,7 +2229,6 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
       tm.envMapIntensity = look.envMapIntensity;
       tm.normalScale.setScalar(look.normalScale);
     }
-    if (scene.fog) scene.fog.density *= 1 + 0.5 * car.wet;   // rain thickens the air (1.9x washed the night out); multiplies the clock's per-frame value, so it never accumulates
     if (stars && car.wet > 0.05) stars.visible = false;   // no stars through cloud (the clock re-decides every frame)
   }
   lightPool?.update(dt, photo?.on ? camera.position.x : currentVehicle.x, photo?.on ? camera.position.z : currentVehicle.z, traffic);

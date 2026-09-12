@@ -178,7 +178,7 @@ export function createAssets() {
     lampCone: additive(new THREE.MeshBasicMaterial({
       color: 0xffd499, transparent: true, opacity: 0.12,
       blending: THREE.AdditiveBlending, depthWrite: false,
-      side: THREE.DoubleSide, fog: true,
+      side: THREE.DoubleSide, fog: false,
     })),
     bark: new THREE.MeshLambertMaterial({ color: 0x312b25 }),
     leaf: new THREE.MeshStandardMaterial({ color: 0x2f4328, roughness: 0.92, metalness: 0 }),
@@ -188,7 +188,7 @@ export function createAssets() {
     }),
     pool: additive(new THREE.MeshBasicMaterial({
       map: pool, transparent: true, blending: THREE.AdditiveBlending,
-      depthWrite: false, opacity: 1.0, fog: true,
+      depthWrite: false, opacity: 1.0, fog: false,
     })),
     // one white material for every parked car; colour comes per instance, so a
     // whole street of mixed cars is one draw call per silhouette
