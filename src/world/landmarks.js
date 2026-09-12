@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { buildLandmark } from './skyline.js';
+import { tokyoMaterial } from './tokyo.js';
+import { SHADOW_FAR_LAYER } from '../core/renderer.js';
 
 /**
  * Poly Haven's modular tenement facade is a PARTS LIBRARY laid out on a display
@@ -128,21 +131,152 @@ const LANDMARKS = [
   },
 ];
 
+/**
+ * PHASE 6, the authored set pieces (world/skyline.js).
+ *
+ * Every position here was computed from the plan, not eyeballed: for each
+ * district's empty blocks, the longest straight road run whose axis passes
+ * through the block, then the point on that axis inside the block, then the
+ * block-aligned yaw nearest the street's own direction (a building stands
+ * square to its plot; a 40 degree twist to face the camera reads as a prop).
+ * `view` is the street it terminates and how far you can see it from. The
+ * script lives in the phase report; the numbers are the answer.
+ *
+ * `block` is reserved before #place() runs, so the vendor landmarks (the
+ * tenement wants any 44 m Old Quarter lot) never land on top of one.
+ */
+const SKYLINE = [
+  { kind: 'crane_cluster', x: 2339.3, z: 1954.5, yaw: 1.151, block: 497, district: 'HARBOUR POINT', name: 'Halstead Container Terminal', view: 'road 168 (26 m), 1023 m' },
+  { kind: 'grain_silo', x: 2440.3, z: 2010.6, yaw: 2.722, block: 497, district: 'HARBOUR POINT', name: 'Harbour Point grain elevator', view: 'road 169 (26 m), 1086 m' },
+  { kind: 'gas_holder', x: 3304.0, z: 1051.8, yaw: -3.052, block: 315, district: 'STEELGATE', name: 'Steelgate gas holder', view: 'road 172 (26 m), 1416 m' },
+  { kind: 'flare_stack', x: 3387.3, z: 1084.4, yaw: 1.661, block: 315, district: 'STEELGATE', name: 'Steelgate flare stack', view: 'road 84 (30 m), 1105 m' },
+  { kind: 'fly_tower', x: 768.8, z: 2341.5, yaw: 0.040, block: 370, district: 'THE FLATS', name: 'The Rialto', view: 'DOCK ROAD (30 m), 1736 m' },
+  { kind: 'market_hall', x: 761.9, z: 2068.3, yaw: 1.611, block: 347, district: 'THE FLATS', name: 'Flats Market Hall', view: 'road 104 (19 m), 1161 m' },
+  /* Not on a block: a gantry ACROSS road 219, 33 m clear of the nearest
+     junction, ~335 m of straight approach from the north and ~927 m from the
+     south. The posts stand on the pavements; nothing is solid in the road.
+     Moved 12 m down the street from the first pass's (1618.0, 2102.7): the
+     west post there was 2.5 m INSIDE a 14x14 m footprint on block 421 (this
+     is the one landmark not placed on an empty block, so it is the one the
+     plot check could not catch). Here both posts stand 2.0 m off the tarmac
+     and 5.1 m / 16.5 m clear of the nearest building. */
+  { kind: 'arcade_sign', x: 1616.6, z: 2114.6, yaw: 1.451, district: 'VELLERY ROW', name: 'Vellery Row arcade', view: 'road 219 (18 m), ~927 m south / ~335 m north' },
+  { kind: 'church', x: 1383.6, z: 1660.9, yaw: -2.962, block: 272, district: 'OLD QUARTER', name: 'St Halstead in the Quarter', view: 'road 115 (19 m), 1436 m' },
+  { kind: 'clock_tower', x: 1491.6, z: 1564.0, yaw: -1.391, block: 266, district: 'OLD QUARTER', name: 'Old Quarter clock tower', view: 'road 217 (18 m), 1466 m' },
+  { kind: 'water_tower', x: 816.7, z: 1664.3, yaw: -1.791, block: 182, district: 'MARROW HILL', name: 'Marrow Hill water tower', view: 'road 198 (22 m), 1356 m' },
+  { kind: 'bandstand', x: 1257.6, z: 771.0, yaw: -1.611, block: 83, district: 'GREENFELL PARK', name: 'Greenfell bandstand', view: 'road 126 (14 m), 1079 m' },
+  { kind: 'glasshouse', x: 1304.8, z: 843.0, yaw: 3.102, block: 83, district: 'GREENFELL PARK', name: 'Greenfell palm house', view: 'road 56 (20 m), 1330 m' },
+];
+
 export class Landmarks {
-  constructor(scene, district) {
-    this.scene = scene; this.district = district; this.placed = [];
+  constructor(scene, district, world = null) {
+    this.scene = scene; this.district = district; this.world = world; this.placed = [];
+    this.usedBlocks = new Set();     // block ids the skyline took; #place() must not offer them to a vendor model
+    this.solids = [];                // world-frame collision boxes, in districtWorld's own { x, z, hw, hd, angle, height } shape
+    this.keepOut = [];               // world-frame ground footprints the dressing must not scatter into
+    this.#buildSkyline();
     this.#buildTokyoArch();
     this.#buildHalsteadLiftBridge();
     this.#place();
+  }
+
+  /**
+   * The twelve authored landmarks. One merged geometry each, one draw each,
+   * bound to tokyoMaterial() -- vertex colour plus the `emit` attribute, so
+   * their lit parts come up on the city's own night curve (main's
+   * setTokyoNight) with no new material to keep in step. They are NOT in a
+   * chunk: they live for the session, frustum-culled like any mesh, and they
+   * enable SHADOW_FAR_LAYER because at 400 m they are only ever seen by the
+   * far shadow cascades.
+   */
+  #buildSkyline() {
+    const heads = [];
+    let tris = 0;
+    for (const s of SKYLINE) {
+      let lm;
+      try { lm = buildLandmark(s.kind, s.seed ?? 7); } catch (e) { console.warn('skyline', s.kind, e.message); continue; }
+      const mesh = new THREE.Mesh(lm.geo, tokyoMaterial());
+      mesh.name = `landmark_${s.kind}`;
+      mesh.position.set(s.x, 0, s.z);
+      mesh.rotation.y = s.yaw;
+      mesh.castShadow = true; mesh.receiveShadow = true;
+      mesh.layers.enable(SHADOW_FAR_LAYER);
+      this.scene.add(mesh);
+      /* three's rotation.y turns local +X to (cos yaw, -sin yaw), while a
+         collision box's own `angle` turns its +X to (cos a, sin a)
+         (vehicle/collision.js:resolveBoxes) -- so the box angle is -yaw. */
+      const cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);
+      const toWorld = (lx, lz) => [s.x + lx * cy + lz * sy, s.z - lx * sy + lz * cy];
+      for (const b of lm.solids) {
+        const [wx, wz] = toWorld(b.x, b.z);
+        this.solids.push({ x: wx, z: wz, hw: b.hw, hd: b.hd, angle: -s.yaw + (b.angle ?? 0), height: b.height, district: s.district, landmark: true });
+      }
+      for (const l of lm.lights) {
+        const [wx, wz] = toWorld(l.x, l.z);
+        heads.push({ x: wx, y: l.y, z: wz, colour: l.colour, range: l.range });
+      }
+      /* Keep-out. Reserving the BLOCK stops another building landing here; it
+         does not stop the scatterers, and every plot in the table is exactly
+         the type they dress: dressing.js drops YARD_KIT/HARBOUR_KIT on an
+         11 m grid over every lot/vacant/yard and PARK_KIT on a 9 m grid over
+         every park, and districtWorld's own park loop plants trees on an 11 m
+         grid -- a skip inside the gas holder drum and poplars inside the palm
+         house. Publish the GROUND footprint (vertices below 8 m, so the
+         crane's boom still has containers standing under it) and let them
+         ask. Three one-line callers, listed in the review. */
+      const pos = lm.geo.attributes.position;
+      let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+      for (let i = 0; i < pos.count; i++) {
+        if (pos.getY(i) >= 8) continue;
+        const px = pos.getX(i), pz = pos.getZ(i);
+        if (px < mnx) mnx = px; if (px > mxx) mxx = px;
+        if (pz < mnz) mnz = pz; if (pz > mxz) mxz = pz;
+      }
+      if (mnx < Infinity) {
+        const [kx, kz] = toWorld((mnx + mxx) / 2, (mnz + mxz) / 2);
+        this.keepOut.push({ x: kx, z: kz, cy, sy, hw: (mxx - mnx) / 2, hd: (mxz - mnz) / 2 });
+      }
+      if (s.block !== undefined) this.usedBlocks.add(s.block);
+      this.placed.push({ ...s, tris: lm.tris, height: lm.height });
+      tris += lm.tris;
+    }
+    /* The two scatterers both hold the District, not the world, so this is
+       the one object both can reach without a new argument. */
+    this.district.landmarkKeepOut = (x, z, pad) => this.keepOutAt(x, z, pad);
+    if (this.world) {
+      /* The night pool reads hero lights straight out of this map
+         (game/lighting.js:#hero) and nothing else writes to it, so a key of
+         our own is the whole wiring. Collision goes through
+         world.extraSolids, which districtWorld folds into each chunk's box
+         list as it builds -- see the hook in the phase report. */
+      (this.world.heroLightsByChunk ??= new Map()).set('landmarks', heads);
+      this.world.extraSolids = this.solids;
+    }
+    console.info(`skyline: ${this.placed.length} landmarks, ${tris} triangles, ${this.solids.length} solids, ${heads.length} hero lights`);
+  }
+
+  /**
+   * Is (x, z) standing on a landmark? The dressing asks before it drops a
+   * prop or a tree. Rects, in each landmark's own frame -- twelve of them, so
+   * a linear scan is the whole algorithm; it runs per grid cell as a chunk
+   * builds, never in the frame loop.
+   */
+  keepOutAt(x, z, pad = 1.5) {
+    for (const k of this.keepOut) {
+      const dx = x - k.x, dz = z - k.z;
+      if (Math.abs(dx * k.cy - dz * k.sy) <= k.hw + pad
+       && Math.abs(dx * k.sy + dz * k.cy) <= k.hd + pad) return true;
+    }
+    return false;
   }
 
   async #place() {
     const loader = new GLTFLoader();
     const used = new Set();
     await Promise.all(LANDMARKS.map(async (lm) => {
-      const lots = this.district.blocks.filter((b) => (b.type === 'lot' || b.type === 'vacant') && b.district === lm.district && !used.has(b) && Math.min(b.w, b.h) >= lm.minW)
+      const lots = this.district.blocks.filter((b) => (b.type === 'lot' || b.type === 'vacant') && b.district === lm.district && !used.has(b) && !this.usedBlocks.has(b.id) && Math.min(b.w, b.h) >= lm.minW)
         .sort((a, b) => Math.min(a.w, a.h) - Math.min(b.w, b.h));
-      const lot = lots[0] ?? this.district.blocks.filter((b) => (b.type === 'lot' || b.type === 'vacant') && !used.has(b) && Math.min(b.w, b.h) >= lm.minW).sort((a, b) => Math.min(a.w, a.h) - Math.min(b.w, b.h))[0];
+      const lot = lots[0] ?? this.district.blocks.filter((b) => (b.type === 'lot' || b.type === 'vacant') && !used.has(b) && !this.usedBlocks.has(b.id) && Math.min(b.w, b.h) >= lm.minW).sort((a, b) => Math.min(a.w, a.h) - Math.min(b.w, b.h))[0];
       if (!lot) { console.warn('landmark: no lot for', lm.file); return; }
       used.add(lot);
       const path = lm.file.startsWith('/') ? lm.file : BASE + lm.file + '.glb';

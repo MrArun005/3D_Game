@@ -51,13 +51,20 @@ export function buildTree() {
 
 export function buildCanopy() {
   const parts = [];
+  // overlapping icosahedrons, not a box: a cube canopy is the daylight still
+  // that kills the street. More smaller blobs beat one big gem.
   const blobs = [
-    [0, 4.4, 0, 1.55], [0.75, 4.0, 0.35, 1.05],
-    [-0.7, 4.1, -0.3, 1.0], [0.2, 5.0, -0.6, 0.95],
+    [0, 4.5, 0, 1.42],
+    [0.85, 4.15, 0.4, 0.95],
+    [-0.8, 4.2, -0.35, 0.92],
+    [0.15, 5.15, -0.55, 0.88],
+    [-0.45, 4.85, 0.7, 0.78],
+    [0.55, 3.75, -0.7, 0.7],
+    [-0.15, 5.5, 0.2, 0.62],
   ];
   for (const [x, y, z, s] of blobs) {
     const g = new THREE.IcosahedronGeometry(s, 1);
-    g.applyMatrix4(M4(x, y, z, 0, 0, 0, 1, 0.82, 1));
+    g.applyMatrix4(M4(x, y, z, y * 0.12, x * 1.6, z * 0.18, 1, 0.78, 1));
     parts.push(g);
   }
   return mergeGeos(parts);

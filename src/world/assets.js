@@ -102,10 +102,10 @@ export function createAssets() {
       const m = new THREE.MeshStandardMaterial({
         map: loadPBR('/textures/asphalt_albedo.png', true, 2),
         normalMap: loadPBR('/textures/asphalt_normal.png', false, 2),
-        normalScale: new THREE.Vector2(0.8, 0.8),
+        normalScale: new THREE.Vector2(0.28, 0.28),
         roughnessMap: orm,
         metalnessMap: orm,
-        roughness: 0.48, metalness: 0.04, envMapIntensity: 1.1,
+        roughness: 0.82, metalness: 0.0, envMapIntensity: 0.25,
       });
       orm.channel = 0;
       return m;
@@ -181,7 +181,7 @@ export function createAssets() {
       side: THREE.DoubleSide, fog: true,
     })),
     bark: new THREE.MeshLambertMaterial({ color: 0x312b25 }),
-    leaf: new THREE.MeshLambertMaterial({ color: 0x283126 }),
+    leaf: new THREE.MeshStandardMaterial({ color: 0x2f4328, roughness: 0.92, metalness: 0 }),
     bin: new THREE.MeshStandardMaterial({ color: 0x282c31, roughness: 0.7, metalness: 0.4 }),
     tailDim: new THREE.MeshStandardMaterial({
       color: 0x4a1013, emissive: 0xa8181c, emissiveIntensity: 0.7, roughness: 0.3,

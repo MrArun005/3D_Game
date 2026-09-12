@@ -316,6 +316,23 @@ export function texSky(day = false, sunDir = null) {
 }
 
 /**
+ * Dry vs wet carriageway look. The frame loop used to write a "half-wet"
+ * roughness / env / bump even when `wet` was 0, so a dry noon road kept the
+ * night gloss and the asphalt grain specular-highlighted as cobbles.
+ *
+ * Dry: matte, almost-flat bump, env barely there.
+ * Wet: roughness 0.14, env 3.7, bump faded so water fills the grain.
+ */
+export function wetTarmacLook(wet) {
+  const w = Math.max(0, Math.min(1, +wet || 0));
+  return {
+    roughness: 0.82 - 0.68 * w,
+    envMapIntensity: 0.25 + 3.45 * w,
+    normalScale: 0.28 - 0.13 * w,
+  };
+}
+
+/**
  * A normal map derived from a canvas's own luminance.
  *
  * The procedural surfaces here are painted as albedo only, so under a single
