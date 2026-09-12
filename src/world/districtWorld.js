@@ -1399,7 +1399,7 @@ export class DistrictWorld {
           b.geo.applyMatrix4(M);
           tokyoParts.push(b.geo);
           const _p = new THREE.Vector3();
-          for (const lp of b.lamps ?? []) { _p.set(lp.x, lp.y, lp.z).applyMatrix4(M); tokyoHeads.push({ x: _p.x, y: _p.y, z: _p.z, colour: lp.colour }); }   // the kanban as candidates for the real night lights
+          for (const lp of b.lamps ?? []) { _p.set(lp.x, lp.y, lp.z).applyMatrix4(M); tokyoHeads.push({ x: _p.x, y: _p.y, z: _p.z, colour: lp.colour, neon: lp.neon, intensity: lp.intensity, range: lp.range, glare: lp.glare }); }   // the kanban as candidates for the real night lights
           for (const bd of b.boards) {
             _p.set(bd.x, bd.y, bd.z).applyMatrix4(M);
             const yaw = bd.yaw + rot - bl.angle;   // the same two turns, applied to the board's facing
@@ -1443,7 +1443,7 @@ export class DistrictWorld {
           if (fhw > bhw) M.multiply(new THREE.Matrix4().makeTranslation(fhw - bhw, 0, 0));   // clipped: slide the building up to the street edge
           for (const p of b.parts) { p.geo.applyMatrix4(M); (artParts.get(p.mat) ?? artParts.set(p.mat, []).get(p.mat)).push(p.geo); }
           const _p = new THREE.Vector3();
-          for (const lp of b.lamps ?? []) { _p.set(lp.x, lp.y, lp.z).applyMatrix4(M); tokyoHeads.push({ x: _p.x, y: _p.y, z: _p.z, colour: lp.colour }); }
+          for (const lp of b.lamps ?? []) { _p.set(lp.x, lp.y, lp.z).applyMatrix4(M); tokyoHeads.push({ x: _p.x, y: _p.y, z: _p.z, colour: lp.colour, neon: lp.neon, intensity: lp.intensity, range: lp.range, glare: lp.glare }); }
           for (const bd of b.boards ?? []) {   // same as the Tokyo branch above
             _p.set(bd.x, bd.y, bd.z).applyMatrix4(M);
             const yaw = bd.yaw + rot - bl.angle;

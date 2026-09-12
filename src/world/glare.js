@@ -50,7 +50,7 @@ function streakTexture() {
   return t;
 }
 
-function glareMaterial(posAttr, colAttr, phAttr, far = false) {
+function glareMaterial(posAttr, colAttr, phAttr, far = false, scAttr = null) {
   TEX ??= streakTexture();
   const m = new THREE.SpriteNodeMaterial({
     transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, fog: false,
@@ -69,7 +69,10 @@ function glareMaterial(posAttr, colAttr, phAttr, far = false) {
        plain depth test loses the sprite inside its own head. Pull it 0.8 m toward
        the camera: still hidden by a building in front, never by the head itself. */
     m.positionNode = pos.add(cameraPosition.sub(pos).normalize().mul(0.8));
-    m.scaleNode = vec2(1.7);   // metres — 3.6 m with six rays was a cartoon star on the nearest lamp
+    if (scAttr) {
+      const sc = instancedBufferAttribute(scAttr);
+      m.scaleNode = vec2(sc, sc);
+    } else m.scaleNode = vec2(1.7);
   }
   const c = uv().sub(0.5);
   const rot = (ang) => vec2(c.x.mul(cos(ang)).sub(c.y.mul(sin(ang))), c.x.mul(sin(ang)).add(c.y.mul(cos(ang)))).add(0.5);
@@ -96,16 +99,19 @@ function glareMaterial(posAttr, colAttr, phAttr, far = false) {
 export function buildGlare(heads, seed = 1, far = false) {
   if (!heads.length) return null;
   const n = heads.length;
-  const pos = new Float32Array(n * 3), col = new Float32Array(n * 3), ph = new Float32Array(n);
+  const pos = new Float32Array(n * 3), col = new Float32Array(n * 3), ph = new Float32Array(n), sc = new Float32Array(n);
   const c = new THREE.Color();
   heads.forEach((h, i) => {
     pos[i * 3] = h.x; pos[i * 3 + 1] = h.y; pos[i * 3 + 2] = h.z;
     c.setHex(h.colour ?? 0xffb060);
-    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+    const boost = h.neon ? 1.55 : 1;
+    col[i * 3] = c.r * boost; col[i * 3 + 1] = c.g * boost; col[i * 3 + 2] = c.b * boost;
     ph[i] = ((seed * 7919 + i * 104729) % 628) / 100;
+    sc[i] = h.glare ?? (h.neon ? 2.5 : 1.7);
   });
   const posAttr = new THREE.InstancedBufferAttribute(pos, 3), colAttr = new THREE.InstancedBufferAttribute(col, 3), phAttr = new THREE.InstancedBufferAttribute(ph, 1);
-  const sp = new THREE.Sprite(glareMaterial(posAttr, colAttr, phAttr, far));
+  const scAttr = far ? null : new THREE.InstancedBufferAttribute(sc, 1);
+  const sp = new THREE.Sprite(glareMaterial(posAttr, colAttr, phAttr, far, scAttr));
   sp.count = n;
   sp.frustumCulled = false;      // bundle contents are culled as a chunk
   sp.renderOrder = 3;
