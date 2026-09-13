@@ -160,14 +160,18 @@ export function artMaterial(key) {
   if (MATS.has(key)) return MATS.get(key);
   let m;
   if (key === 'emit') m = tokyoMaterial();   // the Tokyo emissive: `emit` attribute x emissiveIntensity, night-faded by setTokyoNight
-  /* A curtain wall is a MIRROR, not a blue plastic panel. 0x0f1a2a at
-     roughness 0.12 / metalness 0.55 tinted everything it reflected navy, so a
-     sunset came back blue. Near-neutral and darker (glass is dark by
-     reflectance, not by pigment), metalness up so the environment dominates,
-     roughness down so the reflection stays sharp, and envMapIntensity 2.6 so
-     the sky and the sunset actually read in it -- which is the whole point of
-     glazing a building. */
-  else if (key === 'glass') m = new THREE.MeshStandardMaterial({ color: 0x0c0e11, roughness: 0.05, metalness: 0.92, envMapIntensity: 2.6, vertexColors: true });
+  /* Glass, with BODY. This went to 0x0c0e11 at metalness 0.92 / roughness 0.05
+     to kill a navy tint, and overshot: a near-black metal is a pure mirror with
+     no surface of its own, so a vertical facade reflected the dark street
+     opposite and came out BLACK. The only thing left visible was the ~35% of
+     panes that are lit, which read as rectangles floating in holes -- Arun:
+     "why do we have gaps in building glasses".
+     A real curtain wall is not a mirror. It is a dark glass with its own
+     reflectance: it holds the sky at a grazing angle and goes quieter face-on,
+     but never to nothing. Neutral (the navy is still gone), metalness back to
+     0.6 so the surface keeps some of itself, roughness 0.08, and the
+     environment strong at 2.4 so a sunset still lands in it. */
+  else if (key === 'glass') m = new THREE.MeshStandardMaterial({ color: 0x171b21, roughness: 0.08, metalness: 0.60, envMapIntensity: 2.4, vertexColors: true });
   else if (key === 'dark') m = new THREE.MeshStandardMaterial({ color: 0x1e2226, roughness: 0.75, vertexColors: true });
   else {
     const [name, tile] = LIBRARY[key];
