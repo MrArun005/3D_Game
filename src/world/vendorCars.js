@@ -295,8 +295,40 @@ export async function fetchKit(id, spec, assets, opts = {}) {
     const turn = zLong ? (def.front === '-z' ? -Math.PI / 2 : Math.PI / 2) : (def.front === '-x' ? Math.PI : 0);
     wrap.rotation.y = turn;
     const k = spec.L / len; wrap.scale.set(k, k, k);
-    wrap.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
-    return { group: wrap, paint: null, detail: null, detailMat: null, lodBody: null };
+    wrap.traverse((o) => {
+      if (o.isMesh) {
+        o.castShadow = true;
+        o.receiveShadow = true;
+        o.frustumCulled = false;
+        if (o.material) {
+          if (o.material.metalness !== undefined) {
+            o.material.envMapIntensity = 1.4;
+          }
+        }
+      }
+    });
+    /* Where the driver's eye is IN THIS BODY, for the cockpit camera (camera.js
+       merges it over the loft-tuned numbers). The loft's seat sits at local
+       (2.1, 1.0, +0.36) and the cockpit rig was measured against it; a vendor
+       body puts its seat wherever the real car does -- the F40 and the 911 well
+       forward, the C8 further back -- so a fixed eye ended up in the dash or over
+       the roof: "steering, dashboard not visible properly". Prefer the model's
+       own steering wheel node when it has one (the F40 rig names it), sit 0.42 m
+       behind it and 0.30 m above its hub; otherwise fall back to the box: eye at
+       the car's centre, 0.74 of its height, on the loft's side of the cabin. */
+    wrap.updateMatrixWorld(true);
+    const wb = new THREE.Box3().setFromObject(wrap), ws = wb.getSize(new THREE.Vector3());
+    let eye = null;
+    wrap.traverse((o) => { if (!eye && /steer/i.test(o.name)) eye = o.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(-0.42, 0.30, 0)); });
+    /* Fallback, calibrated on the C8 and the 992: 0.74 of the box height put the
+       eye at 0.90 m in both, which read right; the car's CENTRE did not -- the
+       911's seats are ~0.5 m ahead of it (rear engine) and from there you were at
+       the B-pillar looking at roll cage and roof. 6% of the length forward covers
+       both. And -0.36: every vendor body here is left-hand drive; +0.36 was the
+       loft's seat and put the eye in the passenger seat with no wheel in view. */
+    if (!eye) eye = new THREE.Vector3(ws.x * 0.03, ws.y * 0.70, -0.36);   // 0.06 put the 992's eye past its wheel and 0.74 of the height into its headliner; 0.03 / 0.70 frame both it and the C8
+    const cockpit = { back: -eye.x, up: eye.y - 0.62, side: eye.z };   // camera.js: back is rearward-positive, up is over car.y (= ground + 0.62)
+    return { group: wrap, paint: null, detail: null, detailMat: null, lodBody: null, cockpit };
   }
   if (def.src === 'q') {
     const group = await fetchObj(def.file);
@@ -341,32 +373,41 @@ export async function loadHeroSkin(assets, hero, file = 'q-sports') {
   const L = bb.max.x - bb.min.x, W = bb.max.z - bb.min.z;
   const kit = await fetchKit(file, { L, wMax: W / 2 }, assets, { wheels: false }).catch((e) => { console.warn('hero skin', file, e.message); return null; });
   if (!kit) return false;
+
+  const shellG = hull.parent;
   if (kit.group) {
-    // a whole textured body (Sketchfab): hide the loft skin, hang the group where the hull centre is
-    const shellG = hull.parent, trimG = assets.carMats.trim, paintG = hull.material, glassG = u.glass?.material;
-    shellG.traverse((o) => { if (o.isMesh && (o.material === paintG || o.material === glassG || o.material === trimG)) o.visible = false; });
+    // Whole textured body (Sketchfab): hide procedural loft shell & procedural wheels
+    shellG.traverse((o) => { if (o.isMesh) o.visible = false; });
+    u.cockpit = kit.cockpit ?? null;   // the eye for this body's own interior (camera.js cockpit rig)
+    if (u.wheels) {
+      for (const w of u.wheels) if (w.steer) w.steer.visible = false;
+    }
     const cxG = (bb.min.x + bb.max.x) / 2;
-    kit.group.position.set(shellG.position.x - cxG, bb.min.y, 0);
+    // Tyre contact plane is at y=0, perfectly seated on the asphalt
+    kit.group.position.set(shellG.position.x - cxG, 0, 0);
     shellG.parent.add(kit.group);
     u.skin = kit.group;
     u.hull = hull;                                         // dents land on the hidden loft: invisible, harmless
     return true;
   }
-  const shell = hull.parent;
-  // hide the loft skin: body, glass, doors and trim; keep lamps, interior, driver, wheel
+
+  // Restore procedural shell & wheels when switching to standard or Quaternius body
+  shellG.traverse((o) => { if (o.isMesh) o.visible = true; });
+  u.cockpit = null;   // back on the loft: its interior, its tuned eye
+  if (u.wheels) {
+    for (const w of u.wheels) if (w.steer) w.steer.visible = true;
+  }
   const trim = assets.carMats.trim, paint = hull.material, glass = u.glass?.material;
-  shell.traverse((o) => { if (o.isMesh && (o.material === paint || o.material === glass || o.material === trim)) o.visible = false; });
+  shellG.traverse((o) => { if (o.isMesh && (o.material === paint || o.material === glass || o.material === trim)) o.visible = false; });
   const paintGeo = kit.paint.clone();                    // the hero crumples its own copy
   paintGeo.userData.owned = true;
   const skin = new THREE.Group();
-  // the kit body is centred and faces +X; the hull is centred at (min+max)/2 in shell space, which the
-  // half-turned shell puts at CG_X - centre in body space, nose forward
   const cx = (bb.min.x + bb.max.x) / 2;
-  skin.position.set(shell.position.x - cx, bb.min.y, 0);
+  skin.position.set(shellG.position.x - cx, bb.min.y, 0);
   const pm = new THREE.Mesh(paintGeo, paint); pm.castShadow = true; pm.receiveShadow = true;
   const dm = new THREE.Mesh(kit.detail, kit.detailMat); dm.castShadow = true; dm.receiveShadow = true;
   skin.add(pm, dm);
-  shell.parent.add(skin);
+  shellG.parent.add(skin);
   u.hull = pm;                                           // damage.attach() reads this
   u.skin = skin;
   return true;

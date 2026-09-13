@@ -85,6 +85,7 @@ import { Photo } from './game/photo.js';
 import { buildRoute, Autopilot, useGraphForRoutes } from './game/autopilot.js';
 import { Cinematic } from './game/cinematic.js';
 import { Recorder } from './game/recorder.js';
+import { VideoMode } from './game/video.js';
 import { FeatureTour } from './game/featureTour.js';
 import { createAudio } from './game/audio.js';
 import { createWeather, rainSpell } from './world/weather.js';
@@ -1351,13 +1352,15 @@ beamPool.position.set(NOSE_X + 17, 0.05, 0);
 beamPool.renderOrder = 2;
 hero.add(beamPool);
 
-const traffic = new Traffic(scene, assets, DAY ? 36 : 40, !DAY);
+// ?cars=N overrides the fleet size (0 for a clear road: recording a lap, or a harness run that must not get T-boned)
+const CARS = +(new URLSearchParams(location.search).get('cars') ?? (DAY ? 36 : 40));
+const traffic = new Traffic(scene, assets, Number.isFinite(CARS) ? CARS : (DAY ? 36 : 40), !DAY);
 officerPool(scene);   // start the rig fetch at boot: acquire() returns null while it is in flight, and the first squad of a session would otherwise be the old boxes   // Phase 5: denser, and lit at night
 const chase = new ChaseCamera(camera);
 const weather = createWeather(scene, { hemi, dome: () => dome, onStrike: (delay) => audio.thunder?.(delay) });   // always built: rain comes in night spells (rainSpell) on the day cycle, and all night with ?night
 const hud = new Hud();
 let navigation = null;
-const clock = new GameClock({ startHour: +(new URLSearchParams(location.search).get('time') ?? (DAY ? 12.0 : 19.5)) });
+const clock = new GameClock({ startHour: +(new URLSearchParams(location.search).get('time') ?? (DAY ? 16.85 : 19.5)) });
 hud.useClock(clock);
 const stats = new Stats();
 window.stats = stats;
@@ -1394,7 +1397,7 @@ window.__buyWeapon = (kind, price) => {
   hud.flash(`${ARSENAL[kind].name} · ${weapon.ammo} / ${weapon.reserveNow}`);
   return true;
 };
-window.__warp = (x, z, yaw = 0) => {
+const warpTo = (x, z, yaw = 0) => {
   resetCar(car);
   car.x = x;
   car.z = z;
@@ -1408,6 +1411,9 @@ window.__warp = (x, z, yaw = 0) => {
   chase.snap(car);
   spawnSnap = true;
 };
+window.__warp = warpTo;
+const video = new VideoMode({ car, chase, hero, hud, clock, warpTo });
+chase.hero = hero;   // the cockpit rig reads the worn body's driver's-eye from hero.userData.cockpit
 
 commands = new CommandEngine({
   car,
@@ -1732,6 +1738,8 @@ const input = createInput((action) => {
     chat?.close();
   }
   if (action === 'film') { if (film) stopFilm(); else { started = true; hud.dismiss(); startFilm(); } }
+  // V: cinematic angles for recording while Arun drives. Not on foot, not from the helicopter/tank (they own customRig).
+  if (action === 'video') { if (!onFoot.active && (!activeVehicle || activeVehicle === carVehicle)) video.cycle(); }
 });
 
 /* Mouse look. Pointer lock so the view keeps turning past the screen edge;

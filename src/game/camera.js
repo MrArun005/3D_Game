@@ -28,7 +28,7 @@ export function lensDrops({ wet = 0, mode = 0, onFoot = false, roof = true } = {
    the car without losing the corner you are turning into, and the aim point
    comes in with it so the horizon does not ride up. The close rig follows by
    the same proportion. */
-const RIGS = [
+export const RIGS = [
   /* Default rig. Measured against the reference frame at 1440x860: stopped, the
      car's wheels were clipped off the bottom edge (aim 7.2 m ahead at 0.95 m up
      tilts the lens down past the bumper); at 86 km/h it was HALF its stopped
@@ -76,7 +76,7 @@ const RIGS = [
        fov    70: an interior camera has to hold the dash, the mirrors and the
               road. 55 through a windscreen is a letterbox.
      `side` is the first lateral offset any rig has asked for. */
-  { back: 1.9, up: 0.30, side: 0.36, aim: 18.0, fov: 70, lag: 26.0, tilt: 1, rigid: 1, near: 0.15 },
+  { back: 1.9, up: 0.30, side: 0.36, aim: 18.0, fov: 70, lag: 26.0, tilt: 1, rigid: 1, near: 0.15, cockpit: 1 },
 ];
 
 export class ChaseCamera {
@@ -122,13 +122,18 @@ export class ChaseCamera {
   cycle() { this.mode = (this.mode + 1) % RIGS.length; }
   /** True while the eye is inside the cabin: main.js hides the modelled driver,
       whose head is otherwise exactly where the camera now is. */
-  get interior() { return !!RIGS[this.mode].side; }   // car.customRig is a cinematic override; those keep the driver
+  get interior() { return !!RIGS[this.mode].cockpit; }   // car.customRig is a cinematic override; those keep the driver
   /** Put the camera where it would settle, now. For spawns and respawns: the
       follow lag is what sends it flying across the city after a 2 km jump. */
   snap(car) { this.update(car, 60); }
 
   update(car, dt) {
-    const rig = car.customRig ?? RIGS[this.mode];
+    const base = car.customRig ?? RIGS[this.mode];
+    /* A worn vendor body carries its own driver's-eye position (vendorCars.js
+       fetchKit -> hero.userData.cockpit); the cockpit rig sits there instead of
+       at the loft's seat. `this.hero` is set once by main. */
+    const eye = base.cockpit ? this.hero?.userData?.cockpit : null;
+    const rig = eye ? { ...base, ...eye } : base;
     const cy = Math.cos(car.yaw), sy = Math.sin(car.yaw);
     const rx = sy, rz = cy;
     const speedK = Math.min(1, (car.speed || 0) / 42);
@@ -179,12 +184,16 @@ export class ChaseCamera {
        the camera, so you can see the flank of your own car, the road behind,
        and the sky above it. */
     let ly = this.lookYaw;
-    if (this.lookBehind) ly += Math.PI; // Instant look-back snap
+    if (this.lookBehind || rig.lookBack) ly += Math.PI;   // the look-back key, or a rig that is a reverse shot by design (video.js HERO REVERSE)
     const lift = Math.sin(this.lookPitch);
     const flat = Math.cos(this.lookPitch);
     const ox = Math.cos(ly) * (-cy) - Math.sin(ly) * (sy);
     const oz = Math.sin(ly) * (-cy) + Math.cos(ly) * (sy);
     const side = rig.side ?? 0;
+    /* Where the AIM point sits laterally. Defaults to the camera's own offset so
+       the cockpit sights down its own lane; a side-tracking shot sets aimSide 0
+       to look AT the car instead of running parallel to it (video.js). */
+    const aimSide = rig.aimSide ?? side;
     /* Velocity feed-forward. The follower below is a first-order lag with rate
        lambda = -ln(0.0016) * lag / 3.4 per second (6.4/s on the default rig), so
        at a steady 24 m/s it trails its target by v / lambda = 3.7 m. That is
@@ -265,9 +274,9 @@ export class ChaseCamera {
       }
     }
     this.aim.set(
-      car.x - ox * aimD * flat + rx * (look + side) + slipX,
+      car.x - ox * aimD * flat + rx * (look + aimSide) + slipX,
       targetY + (rig.aimUp ?? 0.95) - lift * aimD * 0.4,
-      car.z - oz * aimD * flat + rz * (look + side) + slipZ,
+      car.z - oz * aimD * flat + rz * (look + aimSide) + slipZ,
     );
     this.camera.lookAt(this.aim);
     if (rig.tilt) this.camera.rotation.z += (car.roll || 0) * 0.35 - (car.yawRate || 0) * 0.018;

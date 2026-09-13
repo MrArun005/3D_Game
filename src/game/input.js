@@ -132,7 +132,7 @@ export function createInput(onAction) {
     if (e.code === 'KeyC') onAction('camera');
     if (e.code === 'KeyH') onAction('lights');
     if (e.code === 'KeyR') onAction('reset');
-    if (e.code === 'KeyV') onAction('film');
+    if (e.code === 'KeyV') onAction(e.shiftKey ? 'film' : 'video');   // V: video angles while YOU drive; Shift+V: the autopilot film
     if (e.code === 'KeyM') onAction('phone'); // iFruit GTA phone
     if (e.code === 'KeyU') onAction('mute');
     if (e.code === 'KeyB') onAction('garage'); // browse bodies
