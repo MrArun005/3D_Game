@@ -211,18 +211,64 @@ I run this every time, so you don't have to:
 
 ---
 
-## 5. Highest-value assets to make next
+## 5. What we have, and what we actually need
 
-Ranked by what the city visibly lacks, from this session's frames:
+### Are the assets being used? Yes — audited, not assumed.
 
-1. **Ground-floor shopfronts for non-Tokyo districts** — Old Quarter, Vellery
-   Row and The Flats have bare plinths at street level, which is where the
-   camera spends all its time.
-2. **A second and third neon tower silhouette** — the four we have are strong;
-   the district repeats them.
-3. **Road furniture that survived the clean-up**: bus shelter, phone box,
-   A-frame — 20 prop rows were stripped for clean roads and the pavements are
-   now empty.
-4. **A poplar** — the only one of eleven tree species still procedural.
-5. **Rooftop clutter as one merged asset** — HVAC bank, tank, stair bulkhead;
-   roofs read flat from the drone angle.
+**110 of 112 manifest assets are placed by something.** Only two are dead:
+`props/roadblock_jersey` and `props/tactical_crate`.
+
+- The four neon towers ARE placed — `tokyoTowers.js` scatters them, merged into
+  the chunk mesh for zero draws.
+- All ten trees ARE placed — `treeModels.js` replaces the procedural species.
+
+But *referenced* is not *appearing*. Measured against the district file:
+
+| Little Tokyo | count |
+| --- | --- |
+| building footprints | 67 |
+| past the 34% scatter gate | 23 |
+| **a tower actually fits** | **13** |
+| refused — no tower matches the plot | 10 |
+
+So the towers land on **13 of 67 footprints (19%)**, not the 34% intended:
+`towerFor` rejects 43% of candidates because the plot is the wrong shape.
+
+### Why — the number that should drive every new building asset
+
+The city is built of **narrow, deep plots.** Median footprint width, per
+district:
+
+| District | footprints | width p10/p50/p90 | depth p10/p50/p90 |
+| --- | --- | --- | --- |
+| MARROW HILL | 644 | 9.5 / **9.5** / 9.5 | 10.5 / 13.7 / 16.9 |
+| ASHMOOR | 622 | 9.8 / **9.8** / 24.1 | 12.7 / 16.5 / 20.2 |
+| OLD QUARTER | 485 | 9.2 / **9.2** / 9.2 | 7.6 / 9.9 / 12.4 |
+| THE FLATS | 377 | 10.9 / **10.9** / 26.8 | 14.2 / 18.1 / 22.5 |
+| VELLERY ROW | 335 | 11.2 / **11.2** / 29.8 | 11.2 / 14.9 / 17.9 |
+| KINGSWAY | 109 | 10.2 / **10.2** / 29.5 | 17.2 / 22.5 / 28.1 |
+| LITTLE TOKYO | 67 | — / **10.2** / 29.5 | — / 23.6 / 28.2 |
+| STEELGATE / NORTHLINE / HARBOUR POINT | 26 | 84 / — / 197 | ~94–101 |
+
+**The median plot in this city is 9–11 m wide.** Our neon towers are 11–19 m
+wide, which is why half of them get refused. Every new building asset should be
+built to **9–11 m frontage**, deep rather than wide — the Tokyo *unagi no
+nedoko* ("eel bed") proportion, which is what these plots actually are.
+
+The industrial trio is the opposite problem: 26 footprints at 84–197 m,
+currently bare.
+
+---
+
+## 6. The asset list, ranked
+
+Ranked by footprints affected — i.e. how much of the city each one fixes.
+
+| # | Asset | Fixes | Size (m) | Tris |
+| --- | --- | --- | --- | --- |
+| 1 | **Pencil tower ×4** (narrow, deep) | 2,572 plots the current towers refuse | 9–11 w × 18–26 d × 18–40 h | 1800 |
+| 2 | **Ground-floor shopfront ×4**, non-Tokyo | 1,551 bare plinths (Old Quarter, Marrow Hill, Ashmoor) | 9.5 w × 3 d × 4.2 h | 1800 |
+| 3 | **Industrial shed ×2** | the 26 bare 84–197 m footprints | 40 w × 60 d × 12 h, tiling | 6000 |
+| 4 | **Rooftop clutter, one merged asset** | every roof, seen from the drone angle | 6 × 6 × 3 | 2400 |
+| 5 | **Street furniture ×3**: bus shelter, phone box, A-frame | empty pavements after the prop clean-up | 1–4 w × 2.5 h | 900–2400 |
+| 6 | **Poplar** | the last procedural tree species | 3 w × 11 h | 1800 |
