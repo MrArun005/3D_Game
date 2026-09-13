@@ -16,6 +16,8 @@ export function chopValue(file, outlaw = false) {
 
 export const CATALOGUE = [
   { file: 'q-sports',     name: 'SPORTS COUPE',  price: 0 },
+  { file: 's-porsche-gt3r',  name: '992 GT3 R',         price: 7500 },
+  { file: 's-f40-comp',      name: 'F40 COMPETIZIONE',  price: 9000 },
   { file: 'q-normal1',    name: 'SALOON',        price: 500 },
   { file: 'q-normal2',    name: 'COMPACT',       price: 700 },
   { file: 'k-hatch',      name: 'HOT HATCH',     price: 900 },

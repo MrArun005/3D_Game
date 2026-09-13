@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { BODY_TYPES, BODY_KEYS } from '../vehicle/config.js';
 import { toTex } from './textures.js';
 
@@ -61,6 +62,9 @@ export const BODIES = {
   's-camaro-patrol': { src: 's', file: 'camaro-patrol', front: '+z' },
   's-corvette-zr1':  { src: 's', file: 'corvette-zr1',  front: '+z' },
   's-monza':         { src: 's', file: 'monza',         front: '+z' },
+  // 2026-09-13, from Arun's downloads. Long axis Z like the Chevrolets; '+z' is the family default -- flip if one drives backwards.
+  's-porsche-gt3r':  { src: 's', file: 'porsche-gt3r',  front: '+z' },
+  's-f40-comp':      { src: 's', file: 'f40-comp',      front: '+z', pose: 'end' },   // rigged: rest pose has the door OPEN, its one clip is 'DoorFrontLeftClose'
 };
 /** Traffic / parked style -> body id. */
 export const KENNEY_CARS = {
@@ -259,7 +263,28 @@ export async function fetchKit(id, spec, assets, opts = {}) {
   if (def.src === 's') {
     // whole textured model, nose to +X, bottom at 0, scaled by LENGTH so the proportions stay real
     const gltf = await fetchGltf(def.file, SBASE);
-    const group = gltf.scene.clone(true);
+    /* SkeletonUtils.clone, not Object3D.clone. The F40 Competizione export is
+       SKINNED (wheels rigged to bones); a plain clone(true) leaves each
+       SkinnedMesh bound to the bones under the ORIGINAL, never-placed root, so
+       the body rendered at the world origin -- 155k triangles loaded with no
+       error and nothing on screen but the under-glow. SkeletonUtils rebinds the
+       clone to its own bones; on an unskinned scene it is a plain deep clone. */
+    const group = skeletonClone(gltf.scene);
+    /* Some rigged exports ship with their doors/hood OPEN as the rest pose and
+       an animation that closes them (the F40: one 3 s clip, 'DoorFrontLeftClose').
+       `pose: 'end'` plays every clip to its last frame once, so the bones settle
+       in the closed state, and the mixer is dropped -- nothing drives them after. */
+    if (def.pose === 'end' && gltf.animations?.length) {
+      const mixer = new THREE.AnimationMixer(group);
+      let dur = 0;
+      for (const clip of gltf.animations) {
+        /* LoopOnce + clamp, or the default LoopRepeat WRAPS at the end and
+           update(duration) lands back on frame 0 -- the door open again. */
+        const a = mixer.clipAction(clip); a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; a.play();
+        dur = Math.max(dur, clip.duration);
+      }
+      mixer.update(dur + 0.01);
+    }
     group.updateMatrixWorld(true);
     const bb = new THREE.Box3().setFromObject(group), size = bb.getSize(new THREE.Vector3()), c = bb.getCenter(new THREE.Vector3());
     const zLong = size.z >= size.x;
