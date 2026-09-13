@@ -13,6 +13,7 @@ import { BREAK_CLASS } from './breakables.js';
 import { ZEBRA_DEPTH } from '../game/traffic.js';
 import { buildTokyoBuilding, frontRotation, tokyoMaterial, buildTokyoStreet, wireMaterial, buildShrine } from './tokyo.js';
 import { loadTokyoTowers, towerFor } from './tokyoTowers.js';
+import { loadTerraces, terraceFor, TERRACES } from './terraceModels.js';
 import { tileUv, SIGN_TILES } from './signs.js';
 import { buildDecals, decalMaterial, decalGeometry } from './decals.js';
 import { buildGlare, setGlareRing } from './glare.js';
@@ -134,6 +135,12 @@ export class DistrictWorld {
     this.towers = null;
     loadTokyoTowers().then((t) => { this.towers = t.length ? t : null; })
       .catch((e) => console.warn('tokyo towers:', e?.message ?? e));
+    /* Arun's terraces, for the three districts whose brief the procedural
+       styles never matched (see terraceModels.js). Async like the towers:
+       until it lands those plots build as they always did. */
+    this.terraces = null;
+    loadTerraces().then((m) => { this.terraces = m.size ? m : null; })
+      .catch((e) => console.warn('terraces:', e?.message ?? e));
     // solid parked cars, kept per chunk so collision only ever asks about the
     // ones nearby. The old City had this; the district world shipped without
     // it, which is why kerbside cars went back to being scenery you drive
@@ -1512,6 +1519,28 @@ export class DistrictWorld {
            Little Tokyo footprint, so a style the art router claims (glass
            towers, since 2026-09-13) could never land there. Same roll the art
            branch uses further down, so a footprint resolves to exactly one. */
+        /* An authored terrace wins the row plots of its own district, ahead of
+           the procedural style. These are the districts artBuildings.js flags
+           as a language mismatch -- gable-ended hill terraces for MARROW HILL,
+           inter-war render for ASHMOOR -- and at 308-636 triangles against
+           brickRow's 1,207 mean they cost a third as much. They go into
+           artParts by material key like any other art building, so they merge
+           per key per chunk: real library textures, no extra draws. */
+        if (this.terraces && TERRACES[bl.district] && g.w >= 6 && g.d >= 6) {
+          const toWorldT = (lx, lz) => [wx + lx * ca - lz * sa, wz + lx * sa + lz * ca];
+          const rotT = frontRotation((x, z) => this.district.tarmacDepth(x, z), toWorldT, g.w / 2, g.d / 2);
+          const swapT = Math.abs(rotT) > Math.PI / 4 && Math.abs(Math.abs(rotT) - Math.PI) > 1e-6;
+          const tr = terraceFor(this.terraces, bl.district, wx * 7.31 + wz * 3.17,
+            swapT ? g.d / 2 : g.w / 2, swapT ? g.w / 2 : g.d / 2, h);
+          if (tr) {
+            const Mt = new THREE.Matrix4().makeRotationY(-bl.angle).multiply(new THREE.Matrix4().makeRotationY(rotT));
+            Mt.setPosition(wx, KERB_H, wz);
+            for (const p of tr.parts) { p.geo.applyMatrix4(Mt); (artParts.get(p.mat) ?? artParts.set(p.mat, []).get(p.mat)).push(p.geo); }
+            boxes.push({ x: wx, z: wz, angle: bl.angle, hw: swapT ? g.d / 2 : g.w / 2, hd: swapT ? g.w / 2 : g.d / 2, height: tr.height, district: bl.district, art: true });
+            continue;
+          }
+        }
+
         const artStyle = styleFor(bl, g, hash(wx * 0.53, wz * 0.91));
         if (bl.district === 'LITTLE TOKYO' && !noTokyo && !artStyle && g.w >= 4 && g.d >= 4) {
           const toWorld = (lx, lz) => [wx + lx * ca - lz * sa, wz + lx * sa + lz * ca];

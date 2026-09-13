@@ -308,6 +308,150 @@
         "commercial"
       ]
     },
+    "buildings/terrace_m1": {
+      "url": "/models/buildings/terrace_m1.glb",
+      "bounds": {
+        "min": [-4.75, 0, -6.85],
+        "max": [4.75, 7.0, 6.85]
+      },
+      "tris": {
+        "lod0": 364
+      },
+      "materials": [
+        "brick_red",
+        "concrete_cast",
+        "glass_shop",
+        "stone_dressed",
+        "timber_painted"
+      ],
+      "tags": [
+        "building",
+        "terrace",
+        "residential",
+        "marrow_hill",
+        "victorian"
+      ]
+    },
+    "buildings/terrace_m2": {
+      "url": "/models/buildings/terrace_m2.glb",
+      "bounds": {
+        "min": [-4.75, 0, -7.8],
+        "max": [4.75, 10.0, 7.8]
+      },
+      "tris": {
+        "lod0": 508
+      },
+      "materials": [
+        "brick_red",
+        "concrete_cast",
+        "glass_shop",
+        "stone_dressed",
+        "timber_painted"
+      ],
+      "tags": [
+        "building",
+        "terrace",
+        "residential",
+        "marrow_hill",
+        "victorian"
+      ]
+    },
+    "buildings/terrace_a1": {
+      "url": "/models/buildings/terrace_a1.glb",
+      "bounds": {
+        "min": [-4.9, 0, -8.25],
+        "max": [4.9, 7.5, 8.25]
+      },
+      "tris": {
+        "lod0": 308
+      },
+      "materials": [
+        "brick_red",
+        "concrete_cast",
+        "glass_shop",
+        "plaster_worn",
+        "timber_painted"
+      ],
+      "tags": [
+        "building",
+        "terrace",
+        "residential",
+        "ashmoor",
+        "inter_war"
+      ]
+    },
+    "buildings/terrace_a2": {
+      "url": "/models/buildings/terrace_a2.glb",
+      "bounds": {
+        "min": [-4.9, 0, -9.45],
+        "max": [4.9, 10.5, 9.45]
+      },
+      "tris": {
+        "lod0": 404
+      },
+      "materials": [
+        "brick_red",
+        "concrete_cast",
+        "glass_shop",
+        "plaster_worn",
+        "timber_painted"
+      ],
+      "tags": [
+        "building",
+        "terrace",
+        "residential",
+        "ashmoor",
+        "inter_war"
+      ]
+    },
+    "buildings/terrace_v1": {
+      "url": "/models/buildings/terrace_v1.glb",
+      "bounds": {
+        "min": [-5.6, 0, -7.45],
+        "max": [5.6, 10.0, 7.45]
+      },
+      "tris": {
+        "lod0": 480
+      },
+      "materials": [
+        "brick_painted",
+        "concrete_cast",
+        "glass_shop",
+        "metal_painted",
+        "stone_dressed"
+      ],
+      "tags": [
+        "building",
+        "terrace",
+        "residential",
+        "vellery_row",
+        "working_street"
+      ]
+    },
+    "buildings/terrace_v2": {
+      "url": "/models/buildings/terrace_v2.glb",
+      "bounds": {
+        "min": [-5.6, 0, -8.4],
+        "max": [5.6, 13.0, 8.4]
+      },
+      "tris": {
+        "lod0": 636
+      },
+      "materials": [
+        "brick_painted",
+        "concrete_cast",
+        "glass_shop",
+        "metal_painted",
+        "stone_dressed"
+      ],
+      "tags": [
+        "building",
+        "terrace",
+        "residential",
+        "vellery_row",
+        "working_street"
+      ]
+    },
     "vegetation/tree_sakura": {
       "url": "/models/vegetation/tree_sakura.glb",
       "bounds": { "min": [-3.2, 0, -3.2], "max": [3.2, 6.5, 3.2] },
