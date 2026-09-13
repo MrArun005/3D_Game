@@ -14,6 +14,7 @@ import { ZEBRA_DEPTH } from '../game/traffic.js';
 import { buildTokyoBuilding, frontRotation, tokyoMaterial, buildTokyoStreet, wireMaterial, buildShrine } from './tokyo.js';
 import { loadTokyoTowers, towerFor } from './tokyoTowers.js';
 import { loadTerraces, terraceFor, TERRACES } from './terraceModels.js';
+import { loadIndustrial, industrialYard, INDUSTRIAL } from './industrialYard.js';
 import { tileUv, SIGN_TILES } from './signs.js';
 import { buildDecals, decalMaterial, decalGeometry } from './decals.js';
 import { buildGlare, setGlareRing } from './glare.js';
@@ -141,6 +142,12 @@ export class DistrictWorld {
     this.terraces = null;
     loadTerraces().then((m) => { this.terraces = m.size ? m : null; })
       .catch((e) => console.warn('terraces:', e?.message ?? e));
+    /* The five industrial modules. Steelgate, Northline and Harbour Point were
+       building on 15-16% of their plots because warehouse caps at 44x40 m and
+       those yards run to 197x101; these lay a whole compound out instead. */
+    this.industrial = null;
+    loadIndustrial().then((m) => { this.industrial = m.size ? m : null; })
+      .catch((e) => console.warn('industrial:', e?.message ?? e));
     // solid parked cars, kept per chunk so collision only ever asks about the
     // ones nearby. The old City had this; the district world shipped without
     // it, which is why kerbside cars went back to being scenery you drive
@@ -1526,6 +1533,19 @@ export class DistrictWorld {
            brickRow's 1,207 mean they cost a third as much. They go into
            artParts by material key like any other art building, so they merge
            per key per chunk: real library textures, no extra draws. */
+        /* A big industrial yard becomes a compound rather than one capped
+           warehouse on an empty plot. Same artParts merge as the terraces. */
+        if (this.industrial && INDUSTRIAL.has(bl.district) && bl.type === 'yard' && g.w >= 60 && g.d >= 50) {
+          const yard = industrialYard(this.industrial, wx * 13.7 + wz * 5.1, g.w / 2, g.d / 2);
+          if (yard) {
+            const My = new THREE.Matrix4().makeRotationY(-bl.angle);
+            My.setPosition(wx, KERB_H, wz);
+            for (const p of yard.parts) { p.geo.applyMatrix4(My); (artParts.get(p.mat) ?? artParts.set(p.mat, []).get(p.mat)).push(p.geo); }
+            boxes.push({ x: wx, z: wz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: yard.height, district: bl.district, art: true });
+            continue;
+          }
+        }
+
         if (this.terraces && TERRACES[bl.district] && g.w >= 6 && g.d >= 6) {
           const toWorldT = (lx, lz) => [wx + lx * ca - lz * sa, wz + lx * sa + lz * ca];
           const rotT = frontRotation((x, z) => this.district.tarmacDepth(x, z), toWorldT, g.w / 2, g.d / 2);
