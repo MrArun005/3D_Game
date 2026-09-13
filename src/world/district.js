@@ -268,12 +268,15 @@ export class District {
    * span you are and how far off its centre.
    */
   elevationAt(x, z) {
-    let best = 0, bs = null;
+    let best = 0, bs = null, deckBest = 0;
     for (let i = 0; i < this.spans.length; i++) {
       const s = this.spans[i];
       if (x < s.minX || x > s.maxX || z < s.minZ || z > s.maxZ) continue;
       const h = spanHeight(s, x, z);
       if (h > best) { best = h; bs = s; }
+      // the best deck that is NOT a freeway: what you are standing on if the
+      // guard below decides you are underneath the expressway
+      if (h > deckBest && !s.isFreeway) { deckBest = h; }
     }
     /* Under a freeway flyover, not on it. The span band is the deck's footprint, and
        a surface street crossing beneath the expressway lies inside it -- the
@@ -281,6 +284,15 @@ export class District {
        under. If the point sits on the tarmac of a ground-level segment that
        is not parallel to the span, it is underneath: no lift.
        Only applies to freeway spans; bridges cross open water and must keep their continuous deck. */
+    /* ...and a ramp or bridge deck at the same point SURVIVES that. elevationAt
+       takes the MAX over every span, so where the Steelgate ramp passes under
+       the expressway the max came from the expressway, the guard correctly said
+       "you are underneath" -- and returned 0, throwing the RAMP's own height
+       away with it. Measured along that ramp, the deck ran 9.4, 9.4, 9.4 ...
+       then 0.0, 0.0 for ~18 m, then climbed back: you drove up a flyover and
+       fell through it. Falling back to the best non-freeway deck keeps the ramp
+       (and any bridge) continuous while the surface street underneath still
+       drops to the ground, which is the whole point of the guard. */
     if (best > 0 && bs && (bs.isFreeway || bs.height > 8.0)) {
       const d = spanDir(bs, x, z);
       for (const seg of this.segmentsNear(x, z, 30)) {
@@ -288,7 +300,7 @@ export class District {
         const vx = seg.bx - seg.ax, vz = seg.bz - seg.az, l = Math.hypot(vx, vz) || 1;
         if (Math.abs((vx * d[0] + vz * d[1]) / l) > 0.7) continue;      // runs with the span: it IS the approach
         let t = ((x - seg.ax) * vx + (z - seg.az) * vz) / (l * l); t = Math.max(0, Math.min(1, t));
-        if (Math.hypot(x - seg.ax - vx * t, z - seg.az - vz * t) <= seg.half) return 0;
+        if (Math.hypot(x - seg.ax - vx * t, z - seg.az - vz * t) <= seg.half) return deckBest;
       }
     }
     return best;
@@ -383,7 +395,7 @@ function makeSpan(points, width, height, ramp, taper = false, kind = 'bridge') {
   }
   return {
     pts, cum, half: width / 2, height, ramp, taper, kind,
-    isFreeway: kind === 'freeway', isBridge: kind === 'bridge',
+    isFreeway: kind === 'freeway', isBridge: kind === 'bridge', isRamp: kind === 'ramp',
     length: cum[cum.length - 1],
     minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad,
   };
