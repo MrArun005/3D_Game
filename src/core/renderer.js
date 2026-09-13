@@ -96,7 +96,12 @@ export function createRenderer(canvas, lite = false) {
      the lit-to-shadow ratio, not the exposure -- that lever is the hemisphere fill
      in createDayLights, and it wants an A/B, not a guess. */
   renderer.toneMappingExposure = 1.05;
-  renderer.shadowMap.enabled = true;
+  /* ?noshadow: a PROFILING flag. renderer.info accumulates over every pass in a
+     frame, so the only way to attribute draws to the shadow cascades is to
+     build a frame without them. Set at boot, never toggled -- toggling
+     shadowMap.enabled at runtime under WebGPU invalidates a pipeline and blacks
+     out every later frame (CLAUDE.md). */
+  renderer.shadowMap.enabled = !(typeof location !== 'undefined' && new URLSearchParams(location.search).has('noshadow'));
   /* PCF, and it is not a choice.
      The original comment here said PCFSoft was deprecated. I decided that was
      invented, swapped in PCFSoftShadowMap, and claimed softer shadows. The

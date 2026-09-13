@@ -315,9 +315,26 @@ export async function fetchKit(id, spec, assets, opts = {}) {
     const turn = zLong ? (def.front === '-z' ? -Math.PI / 2 : Math.PI / 2) : (def.front === '-x' ? Math.PI : 0);
     wrap.rotation.y = turn;
     const k = spec.L / len; wrap.scale.set(k, k, k);
+    /* Shadow casting is gated by SIZE (2026-09-13). A Sketchfab body is a
+       parts library: the C8 arrives as 976 meshes, 656 of them wheel spokes,
+       lug bolts and calliper badges. Every one was a caster, and cascade 0
+       redraws every caster -- measured in the browser as 985 of the frame's
+       2411 direct draws (41%), the single largest consumer in the game.
+       Anything whose world bounding radius is under 0.20 m sits INSIDE the
+       car's own silhouette, so its shadow is never separable from the body's;
+       the measured distribution has its natural break exactly there
+       (183 casters above 0.15 m, 68 above 0.20 m). Panels, glass and tyres
+       stay; the jewellery stops. Do not raise this to "fix" a draw count --
+       the wheel rims live just above it. */
+    wrap.updateMatrixWorld(true);
+    const SHADOW_MIN_R = 0.20;
     wrap.traverse((o) => {
       if (o.isMesh) {
-        o.castShadow = true;
+        const g = o.geometry;
+        if (!g.boundingSphere) g.computeBoundingSphere();
+        const e = o.matrixWorld.elements;
+        const scale = Math.hypot(e[0], e[1], e[2]);
+        o.castShadow = (g.boundingSphere?.radius ?? 0) * scale > SHADOW_MIN_R;
         o.receiveShadow = true;
         o.frustumCulled = false;
         if (o.material) {
