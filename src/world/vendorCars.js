@@ -82,6 +82,9 @@ export const KENNEY_CARS = {
    They stay in the garage as cars you buy; the roads run on the Quaternius
    and Kenney fleet. */
 const STYLE_WEIGHT = { sedan: 4, hatch: 3, suv: 3, van: 2, wagon: 2, pickup: 2, taxi: 3, hatch2: 2, sports: 1, sports2: 1, chev1: 0, chev2: 0, chev3: 0 };   // explicit 0: the picker defaults a missing key to 1
+/* Never bodywork, whatever else a car is made of -- the fallback below may
+   pick a neutral as the paint, but never one of these. */
+const NON_PAINT = new Set(['windows', 'window', 'glass', 'headlights', 'taillights', 'lights', 'chrome', 'tyre', 'tire', 'rubber']);
 const NEUTRAL = new Set(['black', 'grey', 'gray', 'windows', 'window', 'glass', 'headlights', 'taillights', 'chrome', 'silver', 'lights', 'darkgrey', 'darkgray', 'white', 'tyre', 'tire', 'rubber']);
 // styles with no spec of their own borrow the sedan's dimensions
 const SPEC_OF = { taxi: 'sedan', police: 'sedan', sports: 'sedan', sports2: 'sedan', hatch2: 'hatch', chev1: 'sedan', chev2: 'sedan', chev3: 'sedan' };
@@ -229,6 +232,21 @@ function buildKitFromObj(group, spec, { wheels: keepWheels = true } = {}) {
   for (const m of bodies) { const p = m.geometry.attributes.position.array; for (const g of groupsOf(m)) { let a = 0; for (let v = g.start; v < g.start + g.count; v += 3) a += faceArea(p, v * 3); const n = (g.mat.name || '').toLowerCase(); area.set(n, (area.get(n) || 0) + a); colourOf.set(n, g.mat.color); } }
   let paintName = null, best = -1;
   for (const [n, a] of area) if (!NEUTRAL.has(n.replace(/[^a-z]/g, '')) && a > best) { best = a; paintName = n; }
+  /* Every material neutral -- which is SUV and SportsCar2 exactly: their MTLs
+     carry only Black, Grey, Headlights, TailLights, White, Windows, and all six
+     are in NEUTRAL. paintName stayed null, no group matched it, paintParts came
+     out EMPTY, and mergeGeometries([]) reads geometries[0].index and throws
+     "Cannot read properties of undefined (reading 'index')" -- which is why two
+     of the fleet's body styles silently fell back to the loft.
+     A white or grey car is still a car: fall back to the largest material that
+     CANNOT be bodywork-excluded. NEUTRAL stays as it is, because its job is to
+     stop a chrome bumper winning the hue vote on a car that has a real colour. */
+  if (!paintName) {
+    for (const [n, a] of area) {
+      if (NON_PAINT.has(n.replace(/[^a-z]/g, '')) || a <= best) continue;
+      best = a; paintName = n;
+    }
+  }
   // split: paint ranges vs detail ranges (detail gets vertex colours)
   const paintParts = [], detailParts = [];
   const slice = (m, g, withColour) => {
@@ -242,6 +260,8 @@ function buildKitFromObj(group, spec, { wheels: keepWheels = true } = {}) {
   // every part carries a colour attribute (paint parts too) so mergeGeometries accepts any mix of them
   for (const m of bodies) for (const g of groupsOf(m)) ((g.mat.name || '').toLowerCase() === paintName ? paintParts : detailParts).push(slice(m, g, true));
   if (keepWheels) for (const w of wheels) for (const g of groupsOf(w)) detailParts.push(slice(w, g, true));
+  // a clear failure beats mergeGeometries reading geometries[0].index on an empty array
+  if (!paintParts.length) throw new Error(`no paint material found (materials: ${[...area.keys()].join(', ')})`);
   const paint = mergeGeometries(paintParts, false), detail = mergeGeometries(detailParts, false);
   const all = mergeGeometries([...paintParts, ...detailParts], false);
   if (!paint || !detail || !all) throw new Error('merge failed (mixed attributes)');

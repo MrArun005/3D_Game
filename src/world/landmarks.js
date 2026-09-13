@@ -139,10 +139,6 @@ const LANDMARKS = [
      `frontage.depth: 0` uses the road-facing probe WITHOUT the plaster body:
      these are whole buildings, not stage flats. Metre-accurate, so
      maxScale 1. ~5k tris and 13 primitives each. */
-  { file: '/models/buildings/tokyo_neon_tower.glb',   district: 'LITTLE TOKYO', minW: 40, maxScale: 1.0, frontage: { groundY: 0, depth: 0 }, name: 'Konbini Corner' },
-  { file: '/models/buildings/tokyo_neon_tower_b.glb', district: 'LITTLE TOKYO', minW: 40, maxScale: 1.0, frontage: { groundY: 0, depth: 0 }, name: 'Yokocho Walk-up' },
-  { file: '/models/buildings/tokyo_neon_tower_c.glb', district: 'LITTLE TOKYO', minW: 40, maxScale: 1.0, frontage: { groundY: 0, depth: 0 }, name: 'Kabukicho Block' },
-  { file: '/models/buildings/tokyo_neon_tower_d.glb', district: 'LITTLE TOKYO', minW: 40, maxScale: 1.0, frontage: { groundY: 0, depth: 0 }, name: 'Shinjuku Spire' },
 ];
 
 /**
