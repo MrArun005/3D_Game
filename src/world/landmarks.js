@@ -131,6 +131,18 @@ const LANDMARKS = [
     frontage: { assemble: { bays: 17, floors: 4 }, groundY: 0, depth: 14, colour: 0x6f5548 },
     name: 'Old Quarter tenements',
   },
+  /* Ours, authored in Blender (tools/blender/build_tokyo_neon_building.py):
+     four seeded neon towers -- konbini ground floor, ribbon windows,
+     cantilevered kanban blades, rooftop gantry and mast. They stand on the
+     four free LITTLE TOKYO blocks (292, 297, 309 vacant, 313 lot), which
+     tokyo.js leaves empty because the plan gives them no footprints.
+     `frontage.depth: 0` uses the road-facing probe WITHOUT the plaster body:
+     these are whole buildings, not stage flats. Metre-accurate, so
+     maxScale 1. ~5k tris and 13 primitives each. */
+  { file: '/models/buildings/tokyo_neon_tower.glb',   district: 'LITTLE TOKYO', minW: 40, maxScale: 1.0, frontage: { groundY: 0, depth: 0 }, name: 'Konbini Corner' },
+  { file: '/models/buildings/tokyo_neon_tower_b.glb', district: 'LITTLE TOKYO', minW: 40, maxScale: 1.0, frontage: { groundY: 0, depth: 0 }, name: 'Yokocho Walk-up' },
+  { file: '/models/buildings/tokyo_neon_tower_c.glb', district: 'LITTLE TOKYO', minW: 40, maxScale: 1.0, frontage: { groundY: 0, depth: 0 }, name: 'Kabukicho Block' },
+  { file: '/models/buildings/tokyo_neon_tower_d.glb', district: 'LITTLE TOKYO', minW: 40, maxScale: 1.0, frontage: { groundY: 0, depth: 0 }, name: 'Shinjuku Spire' },
 ];
 
 /**
@@ -359,11 +371,14 @@ export class Landmarks {
           const push = best.out / 2 - fd / 2 - 1.0;
           wrap.position.x += best.nx * push; wrap.position.z += best.nz * push;
           // the block behind the wall: the facade's own height, the frontage depth, a plain plaster body and a flat roof
+          // depth 0 = the model IS the building (the Blender neon towers); only a stage flat needs a body behind it
           const H = (bb.max.y - (lm.frontage.groundY ?? bb.min.y));
-          const body = new THREE.Mesh(new THREE.BoxGeometry(size.x - 0.3, H - 0.6, lm.frontage.depth), new THREE.MeshStandardMaterial({ color: lm.frontage.colour, roughness: 0.92, metalness: 0 }));
-          body.position.set(0, (H - 0.6) / 2, -(size.z / 2 + lm.frontage.depth / 2) + 0.15);
-          body.castShadow = true; body.receiveShadow = true;
-          obj.parent.add(body);
+          if (lm.frontage.depth > 0) {
+            const body = new THREE.Mesh(new THREE.BoxGeometry(size.x - 0.3, H - 0.6, lm.frontage.depth), new THREE.MeshStandardMaterial({ color: lm.frontage.colour, roughness: 0.92, metalness: 0 }));
+            body.position.set(0, (H - 0.6) / 2, -(size.z / 2 + lm.frontage.depth / 2) + 0.15);
+            body.castShadow = true; body.receiveShadow = true;
+            obj.parent.add(body);
+          }
           console.info(`frontage ${lm.name}: yaw ${best.yaw.toFixed(2)}, road depth ${best.depth.toFixed(1)} m`);
         }
       }
