@@ -9,7 +9,7 @@
  *
  *   styleFor(block, footprint, roll)  which style a footprint gets, or null
  *                                     to keep the kit / procedural massing
- *   buildArt(style, seed, hw, hd, h)  the module's build() (artKit contract)
+ *   buildArt(style, seed, hw, hd, h, opts)  the module's build() (artKit contract)
  *   artMaterial(key)                  ONE cached material per artKit MAT_KEY;
  *                                     districtWorld merges the chunk's parts
  *                                     per key into one mesh each (<= 8 draws)
@@ -116,6 +116,13 @@ const MAP = {
   'VELLERY ROW':   { row: ['loft', 0.03], mid: ['loft', 0.03] },
   'THE FLATS':     { row: ['loft', 0.03], mid: ['officeMidrise', 0.35] },
   KINGSWAY:        { mid: ['officeMidrise', 0.35], tower: ['glassTower', 0.45] },
+  /* Little Tokyo's TOWER blocks only (300 and 305, both on Halstead Avenue).
+     Arun's rule for this area is "no Kenney, no kit -- ours", and glassTower is
+     ours: world/buildings/, our own artKit. 70% of every buildable block type,
+     at Arun's ask -- glassTower is 12-24 storeys, so the avenue becomes a
+     glazed canyon. The other 30% stay world/tokyo.js kanban buildings, which
+     is where the street keeps its signage and its neon. */
+  'LITTLE TOKYO':  { tower: ['glassTower', 0.70], mid: ['glassTower', 0.70], row: ['glassTower', 0.70] },
   STEELGATE:       { yard: ['warehouse', 0.7] },
   'HARBOUR POINT': { yard: ['warehouse', 0.7] },
   NORTHLINE:       { yard: ['warehouse', 0.7] },
@@ -124,13 +131,13 @@ const MAP = {
 const flag = (name) => typeof location !== 'undefined' && new URLSearchParams(location.search).has(name);
 
 export function styleFor(block, fp, roll) {
-  if (block.district === 'LITTLE TOKYO' || fp.w < 6 || fp.d < 6 || flag('noart')) return null;
+  if (fp.w < 6 || fp.d < 6 || flag('noart')) return null;   // LITTLE TOKYO used to be excluded outright; MAP now lets its tower blocks through and nothing else
   const hit = MAP[block.district]?.[block.type];
   if (!hit) return null;
   return flag('artall') || roll < hit[1] ? hit[0] : null;
 }
 
-export const buildArt = (style, seed, hw, hd, h) => STYLES[style].build(seed, hw, hd, h);
+export const buildArt = (style, seed, hw, hd, h, opts) => STYLES[style].build(seed, hw, hd, h, opts);   // opts: per-style extras (glassTower { rgb })
 
 /* One material per key, shared by every chunk. The textured keys wear the
    library sets (public/textures/library.json) with vertexColors on so a

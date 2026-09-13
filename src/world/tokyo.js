@@ -42,15 +42,21 @@ export const FLOOR_H = 3.1;    // every storey above
    only light source on a dark one. Shibuya's facades are soot-darkened brick,
    charcoal render and dark tile -- ~0.30-0.40. Dark walls are what make the
    kanban the brightest thing in frame, by day and by night. */
+/* Facade palettes: [wall, band]. Arun: "colourful RGB buildings only" -- with
+   70% of the avenue now glazed (artBuildings MAP), the buildings that are NOT
+   glass have to carry the colour, so these are saturated hues held DARK (~0.10
+   luminance). Dark keeps them reading as buildings under a sunset and lets the
+   neon stay the brightest thing on them; the hue is what makes the canyon
+   read RGB rather than charcoal. */
 const WALLS = [
-  [0x24282e, 0x181a1e], // Wet Basalt & Obsidian Granite
-  [0x2b2f36, 0x1e2227], // Charcoal Concrete & Slate Band
-  [0x2e2722, 0x1f1a16], // Dark Anodized Bronze & Dark Umber
-  [0x1e2329, 0x14181d], // Deep Midnight Blue-Grey & Dark Ash
-  [0x262c32, 0x1b1f23], // Smoked Basalt & Black Lintel
-  [0x322a25, 0x221c18], // Aged Espresso Brick & Dark Timber
-  [0x282c32, 0x1a1d21], // Matte Gunmetal & Dark Trim
-  [0x212d2e, 0x161e1f], // Deep Cyber Spruce & Dark Zinc
+  [0x2a0f33, 0x1a0820], // deep violet
+  [0x0d2a38, 0x061a24], // deep cyan
+  [0x330f22, 0x200814], // deep magenta
+  [0x0f2e22, 0x061c14], // deep emerald
+  [0x2e1c08, 0x1c1004], // deep amber
+  [0x121438, 0x0a0c24], // deep indigo
+  [0x381414, 0x220a0a], // deep crimson
+  [0x0a2e2e, 0x041c1c], // deep teal
 ];
 const MAGENTA = [1.0, 0.25, 0.75], CYAN = [0.2, 0.9, 1.0];
 // weighted by repetition: the cover art is six parts magenta/cyan to four of everything else
@@ -118,7 +124,7 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
   const floorY = (f) => (f === 0 ? 0 : GROUND_H + (f - 1) * FLOOR_H);   // bottom of storey f
   const [wall, band] = pick(WALLS);
   const residential = rnd() < 0.5;
-  const neon = rnd() < 0.7 ? pick(NEON) : null;   // the cover art is mostly neon: seven in ten buildings carry a tube colour
+  const neon = pick(NEON);   // was seven in ten; with only 30% of the avenue left non-glass, every one of them carries a tube colour ("RGB buildings only")
   const parts = [], boards = [], lamps = [];   // lamps: where the night light pool may put a real coloured light (the kanban)
   const F = faces(hw, hd);
 
@@ -190,6 +196,7 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
   // 3. RECESSED STOREFRONT UNDER THE OVERHANG
   const front = F[0];
   const shopX = hw - recess + 0.04;
+  let konbiniFront = false;   // the awning below needs to know which shop this is
   if (rnd() < 0.22) {
     // shuttered: ribbed grey roller door tucked under colonnade
     parts.push(at(quad(front.w - 0.6, 2.7, 0x8d9096), shopX, 1.65, 0, front.yaw));
@@ -197,6 +204,7 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
   } else {
     // konbini white or izakaya warm
     const konbini = rnd() < 0.35;
+    konbiniFront = konbini;
     const shop = konbini ? [0.9, 0.95, 1.0] : WARM;
     parts.push(at(quad(front.w - 0.6, 2.7, konbini ? 0x2a3038 : 0x1c2430, shop, konbini ? 1.05 : 0.85), shopX, 1.65, 0, front.yaw));
     lamps.push({
@@ -240,8 +248,18 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
   }
 
   // Awning extending from colonnade
-  const awningCol = pick([0xc0392b, 0x2e86de, 0xf1c40f, 0xecf0f1, 0x27ae60]);
+  /* The konbini's awning is the three-stripe one the reference points at
+     (green / orange / red over white), not a flat colour: it is the single most
+     recognisable thing on a Japanese street at this scale. */
+  const awningCol = konbiniFront ? 0xecf0f1 : pick([0xc0392b, 0x2e86de, 0xf1c40f, 0xecf0f1, 0x27ae60]);
   parts.push(at(box(1.5, 0.08, front.w * 0.88, awningCol), hw - recess + 0.75, 3.25, 0));
+  if (konbiniFront) {
+    const sw = front.w * 0.88 / 3;
+    const cols = [0x1f8a4c, 0xe8762a, 0xd5312a];
+    for (let i = 0; i < 3; i++) {
+      parts.push(at(box(1.52, 0.05, sw * 0.92, cols[i]), hw - recess + 0.75, 3.30, -front.w * 0.44 + sw * (i + 0.5)));
+    }
+  }
   if (rnd() < 0.5) {
     const stripes = Math.max(2, Math.floor(front.w * 0.88 / 0.9));
     for (let i = 0; i < stripes; i += 2) parts.push(at(box(1.51, 0.02, 0.42, 0xf4f4f0), hw - recess + 0.75, 3.30, -front.w * 0.44 + 0.45 + i * 0.9));
@@ -255,6 +273,31 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
       parts.push(at(box(0.09, 0.09, 0.09, 0x3a2a1a, [1.0, 0.72, 0.35], 1.3), hw - recess + 1.1, 4.2 - 0.35 * s, along));
     }
   }
+  /* BIG FACADE BILLBOARDS. The reference street is not just kanban columns --
+     it carries large multi-storey boards bolted flat to the facade, lit from a
+     frame. One per building on the taller half, spanning ~3 storeys, always on
+     the street face. A board is an instanced atlas quad and the frame is four
+     thin boxes, so this is ~50 triangles and 0 draws a building. */
+  if (floors >= 7 && rnd() < 0.62) {
+    const bw = Math.min(front.w * 0.78, 9.5);            // along the face
+    const bh = Math.min(FLOOR_H * 3 - 0.5, 8.0);         // up it
+    const by = floorY(Math.max(2, Math.floor(floors * 0.45))) + bh / 2;
+    const bx = hw + 0.22;
+    parts.push(at(box(0.16, bh, bw, 0x15171b), bx, by, 0));                       // the panel body
+    const fc = neon ?? pick(NEON);
+    // a lit edge frame: two rails along the top and bottom, two posts at the ends
+    parts.push(at(box(0.1, 0.14, bw + 0.3, 0x101014, fc, 2.2, flickerOf(rnd)), bx + 0.14, by + bh / 2, 0),
+               at(box(0.1, 0.14, bw + 0.3, 0x101014, fc, 2.2, flickerOf(rnd)), bx + 0.14, by - bh / 2, 0));
+    parts.push(at(box(0.1, bh, 0.14, 0x101014, fc, 1.6), bx + 0.14, by, bw / 2),
+               at(box(0.1, bh, 0.14, 0x101014, fc, 1.6), bx + 0.14, by, -bw / 2));
+    boards.push({ x: bx + 0.1, y: by, z: 0, yaw: front.yaw, w: bw * 0.94, h: bh * 0.9 });
+    lamps.push({
+      x: hw + 1.6, y: by - bh / 2, z: 0,
+      colour: _c.setRGB(fc[0], fc[1], fc[2]).getHex(),
+      neon: true, intensity: 150, range: 26, glare: 2.0,
+    });
+  }
+
   // Fascia board above the colonnade
   boards.push({ x: front.off + 0.16, y: 4.45, z: 0, yaw: front.yaw, w: front.w * 0.85, h: 0.85 });
 
@@ -423,6 +466,33 @@ export function buildTokyoStreet(segments, near, seed) {
       const bx = px + nx * side * 4.5, bz = pz + nz * side * 4.5;
       lines.push(px, POLE_H - 0.9, pz, bx, 7.2 + rnd() * 1.5, bz);
       prev = top;
+    }
+    /* TRAFFIC GANTRIES. The reference has a dark steel gantry spanning the
+       avenue carrying directional signs and camera housings -- it is most of
+       what makes the road read as a metropolitan arterial rather than a lane
+       between buildings, and it gives the canyon something at mid-height to
+       pass under. One every ~95 m on segments wide enough to need one. */
+    for (let t = 46 + rnd() * 30; t < L - 24; t += 95 + rnd() * 30) {
+      const cx = s.ax + ux * t, cz = s.az + uz * t;
+      if (!near(cx, cz) || s.half < 7) continue;
+      const yaw = Math.atan2(-uz, ux);
+      const span = (s.half + 0.7) * 2, beamY = 6.4;
+      for (const side of [-1, 1]) {                                  // the two posts, outside the kerb
+        const px = cx + nx * (s.half + 0.7) * side, pz = cz + nz * (s.half + 0.7) * side;
+        parts.push(at(paint(new THREE.CylinderGeometry(0.17, 0.21, beamY, 8), 0x33373d), px, beamY / 2, pz));
+        parts.push(at(box(0.7, 0.22, 0.7, 0x2a2e33), px, 0.11, pz));   // the base plate
+      }
+      // the truss: a top and bottom chord with a thin web between them
+      parts.push(at(box(0.26, 0.26, span, 0x33373d), cx, beamY - 0.15, cz, yaw));
+      parts.push(at(box(0.22, 0.22, span, 0x33373d), cx, beamY - 0.95, cz, yaw));
+      parts.push(at(box(0.1, 0.8, span, 0x2a2e33), cx, beamY - 0.55, cz, yaw));
+      // two directional boards and a camera housing looking back down the road
+      for (const side of [-1, 1]) {
+        const bx = cx + nx * s.half * 0.45 * side, bz = cz + nz * s.half * 0.45 * side;
+        parts.push(at(box(0.09, 1.25, 2.9, 0x14532d), bx, beamY - 1.85, bz, yaw));      // expressway green
+        parts.push(at(box(0.11, 0.1, 2.6, 0xdfe4e8), bx - 0.02, beamY - 1.35, bz, yaw));  // the white rule across its top
+      }
+      parts.push(at(box(0.34, 0.3, 0.55, 0x1e2126), cx, beamY - 1.5, cz, yaw));
     }
   }
   return { parts, lines: new Float32Array(lines) };

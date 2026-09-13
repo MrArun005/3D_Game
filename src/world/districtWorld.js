@@ -1443,7 +1443,12 @@ export class DistrictWorld {
            turned onto that side, then through the block's transform. Its sign
            boards join the chunk's atlas quads. ?notokyo restores the old massing. */
         const noTokyo = typeof location !== 'undefined' && new URLSearchParams(location.search).has('notokyo');
-        if (bl.district === 'LITTLE TOKYO' && !noTokyo && g.w >= 4 && g.d >= 4) {
+        /* Hoisted: the Tokyo branch below runs FIRST and used to take every
+           Little Tokyo footprint, so a style the art router claims (glass
+           towers, since 2026-09-13) could never land there. Same roll the art
+           branch uses further down, so a footprint resolves to exactly one. */
+        const artStyle = styleFor(bl, g, hash(wx * 0.53, wz * 0.91));
+        if (bl.district === 'LITTLE TOKYO' && !noTokyo && !artStyle && g.w >= 4 && g.d >= 4) {
           const toWorld = (lx, lz) => [wx + lx * ca - lz * sa, wz + lx * sa + lz * ca];
           const rot = frontRotation((x, z) => this.district.tarmacDepth(x, z), toWorld, g.w / 2, g.d / 2);
           const swap = Math.abs(rot) > Math.PI / 4 && Math.abs(Math.abs(rot) - Math.PI) > 1e-6;   // a +/-90 turn swaps the footprint axes
@@ -1484,7 +1489,7 @@ export class DistrictWorld {
            kanban. A plot bigger than the style's envelope is clipped to it
            with the street face left where it is (the rest of the plot is
            apron); the collision box is the built footprint. ?noart / ?artall. */
-        const style = styleFor(bl, g, hash(wx * 0.53, wz * 0.91));
+        const style = artStyle;
         if (style) {
           const toWorld = (lx, lz) => [wx + lx * ca - lz * sa, wz + lx * sa + lz * ca];
           const rot = frontRotation((x, z) => this.district.tarmacDepth(x, z), toWorld, g.w / 2, g.d / 2);
@@ -1492,7 +1497,7 @@ export class DistrictWorld {
           const [cw, cd] = ART_CAP[style];
           const fhw = swap ? g.d / 2 : g.w / 2, fhd = swap ? g.w / 2 : g.d / 2;   // the plot's half sizes in the building's frame (+X street)
           const bhw = Math.min(fhw, cw), bhd = Math.min(fhd, cd);
-          const b = buildArt(style, Math.floor(hash(wx * 0.71, wz * 0.29) * 1e9), bhw, bhd, h);
+          const b = buildArt(style, Math.floor(hash(wx * 0.71, wz * 0.29) * 1e9), bhw, bhd, h, { rgb: bl.district === 'LITTLE TOKYO' });
           const M = new THREE.Matrix4().makeRotationY(-bl.angle).multiply(new THREE.Matrix4().makeRotationY(rot));
           M.setPosition(wx, KERB_H, wz);
           if (fhw > bhw) M.multiply(new THREE.Matrix4().makeTranslation(fhw - bhw, 0, 0));   // clipped: slide the building up to the street edge

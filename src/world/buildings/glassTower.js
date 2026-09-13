@@ -44,8 +44,21 @@ const _m = new THREE.Matrix4();
 /** Storey s (0 = lobby) starts at floorY(s); floorY(floors) is the roof. */
 const floorY = (s) => (s === 0 ? 0 : GROUND_H + (s - 1) * FLOOR_H);
 
-export function build(seed, hw, hd, h) {
+/* Saturated pane colours for a district that wants an RGB skyline rather than
+   an office one (Little Tokyo). Off by default: Kingsway keeps warm/cool. */
+const RGB_PANES = [
+  [1.0, 0.18, 0.62], [0.18, 0.85, 1.0], [0.72, 0.25, 1.0], [0.25, 1.0, 0.62],
+  [1.0, 0.72, 0.16], [1.0, 0.30, 0.22], [0.35, 0.55, 1.0], [0.55, 1.0, 0.25],
+];
+
+export function build(seed, hw, hd, h, opts = {}) {
   const rnd = mulberry32((seed * 2654435761) >>> 0);
+  /* `rgb`: every lit pane takes one of two saturated hues chosen per BUILDING,
+     not per pane -- a tower whose every window is a different colour reads as
+     confetti, whereas two hues over a hundred panes reads as a lit facade. */
+  const rgb = !!opts.rgb;
+  const hueA = RGB_PANES[Math.floor(rnd() * RGB_PANES.length)];
+  const hueB = RGB_PANES[Math.floor(rnd() * RGB_PANES.length)];
   const floors = Math.max(MIN_FLOORS, Math.min(MAX_FLOORS, Math.round((h - GROUND_H) / FLOOR_H) + 1));
   const H = floorY(floors);
   const P = new Parts(), boards = [], lamps = [];
@@ -87,10 +100,11 @@ export function build(seed, hw, hd, h) {
       }
       const paneH = FLOOR_H - BAND_H - 0.3, paneW = Math.min(pitch - 0.35, 2.2);
       for (let s = fa; s <= fb; s++) for (let b = 0; b < n; b++) {
-        if (rnd() >= 0.35) continue;
+        if (rnd() >= (rgb ? 0.62 : 0.35)) continue;   // an RGB tower is mostly lit; an office tower mostly is not
         const warm = rnd() < 0.65;
+        const paneCol = rgb ? (warm ? hueA : hueB) : (warm ? WARM : COOL);
         const [x, z] = onFace(f, -f.w / 2 + pitch * (b + 0.5), WINDOW_INSET);
-        P.push('emit', at(quadM(paneW, paneH, GLASS_DARK, warm ? WARM : COOL, 0.8), cx + x, floorY(s) + 0.45 + (FLOOR_H - BAND_H) / 2, z, f.yaw));
+        P.push('emit', at(quadM(paneW, paneH, GLASS_DARK, paneCol, rgb ? 1.25 : 0.8), cx + x, floorY(s) + 0.45 + (FLOOR_H - BAND_H) / 2, z, f.yaw));
       }
     }
     if (!top) {
