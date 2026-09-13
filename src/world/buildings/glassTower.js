@@ -100,11 +100,21 @@ export function build(seed, hw, hd, h, opts = {}) {
       }
       const paneH = FLOOR_H - BAND_H - 0.3, paneW = Math.min(pitch - 0.35, 2.2);
       for (let s = fa; s <= fb; s++) for (let b = 0; b < n; b++) {
-        if (rnd() >= (rgb ? 0.62 : 0.35)) continue;   // an RGB tower is mostly lit; an office tower mostly is not
+        if (rnd() >= (rgb ? 0.40 : 0.35)) continue;   // 0.62 lit so many panes the facade became a chequerboard of colour swatches
         const warm = rnd() < 0.65;
-        const paneCol = rgb ? (warm ? hueA : hueB) : (warm ? WARM : COOL);
+        /* Mixed halfway to warm white, and jittered per pane. A pure saturated
+           hue on a big flat quad reads as a painted panel; a light SOURCE is
+           near-white at its core with the hue in its falloff, and real windows
+           are never all the same brightness. Checked against Arun's screen
+           recording, where the first cut turned every tower into Lego. */
+        const k = 0.5 + rnd() * 0.35;
+        const base = rgb ? (warm ? hueA : hueB) : null;
+        const paneCol = rgb
+          ? [base[0] * k + (1 - k), base[1] * k + (1 - k), base[2] * k + (1 - k)]
+          : (warm ? WARM : COOL);
+        const paneE = rgb ? 0.62 + rnd() * 0.5 : 0.8;
         const [x, z] = onFace(f, -f.w / 2 + pitch * (b + 0.5), WINDOW_INSET);
-        P.push('emit', at(quadM(paneW, paneH, GLASS_DARK, paneCol, rgb ? 1.25 : 0.8), cx + x, floorY(s) + 0.45 + (FLOOR_H - BAND_H) / 2, z, f.yaw));
+        P.push('emit', at(quadM(paneW, paneH, GLASS_DARK, paneCol, paneE), cx + x, floorY(s) + 0.45 + (FLOOR_H - BAND_H) / 2, z, f.yaw));
       }
     }
     if (!top) {

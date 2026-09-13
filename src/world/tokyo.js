@@ -42,21 +42,22 @@ export const FLOOR_H = 3.1;    // every storey above
    only light source on a dark one. Shibuya's facades are soot-darkened brick,
    charcoal render and dark tile -- ~0.30-0.40. Dark walls are what make the
    kanban the brightest thing in frame, by day and by night. */
-/* Facade palettes: [wall, band]. Arun: "colourful RGB buildings only" -- with
-   70% of the avenue now glazed (artBuildings MAP), the buildings that are NOT
-   glass have to carry the colour, so these are saturated hues held DARK (~0.10
-   luminance). Dark keeps them reading as buildings under a sunset and lets the
-   neon stay the brightest thing on them; the hue is what makes the canyon
-   read RGB rather than charcoal. */
+/* Facade palettes: [wall, band]. The saturated version of these (deep violet,
+   deep cyan at ~0.10 luminance) made the street look like a Lego swatch chart
+   in Arun's own screen recording -- on a big flat wall a saturated hue reads as
+   PAINT, and the eye takes the whole facade as one coloured panel. Same hues,
+   pulled to ~0.04 luminance: the tint survives as a cast on a near-black wall,
+   and the colour of the street comes from the neon, the kanban and the glass,
+   which is where it comes from in the reference too. */
 const WALLS = [
-  [0x2a0f33, 0x1a0820], // deep violet
-  [0x0d2a38, 0x061a24], // deep cyan
-  [0x330f22, 0x200814], // deep magenta
-  [0x0f2e22, 0x061c14], // deep emerald
-  [0x2e1c08, 0x1c1004], // deep amber
-  [0x121438, 0x0a0c24], // deep indigo
-  [0x381414, 0x220a0a], // deep crimson
-  [0x0a2e2e, 0x041c1c], // deep teal
+  [0x1e1a24, 0x14111a], // violet-black
+  [0x14202a, 0x0d161e], // cyan-black
+  [0x241820, 0x180f16], // magenta-black
+  [0x162018, 0x0e1610], // emerald-black
+  [0x221a12, 0x16110b], // amber-black
+  [0x14162a, 0x0d0f1e], // indigo-black
+  [0x261616, 0x180d0d], // crimson-black
+  [0x12211f, 0x0b1615], // teal-black
 ];
 const MAGENTA = [1.0, 0.25, 0.75], CYAN = [0.2, 0.9, 1.0];
 // weighted by repetition: the cover art is six parts magenta/cyan to four of everything else

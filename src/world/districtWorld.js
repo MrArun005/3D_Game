@@ -1077,7 +1077,7 @@ export class DistrictWorld {
               -yaw, 1, 1, 1));
           }
           // a gantry where the approach is wide enough to need one
-          if (e.width > 26 && hash(node.x + ei, node.y) < 0.8) {   // 0.4 left the arterials mostly bare; these are what make a road read as an arterial
+          if (e.width > 26 && hash(node.x + ei, node.y) < 0.55) {   // 0.4 left the arterials bare, 0.8 made them wallpaper -- the same board repeats every junction
             sigBatch.add('props/sign_gantry', placeAsset(
               node.x - dx * (back + 3), KERB_H + ly(node.x, node.y), node.y - dz * (back + 3),
               Math.atan2(-dx, -dz)));
