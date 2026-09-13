@@ -48,8 +48,8 @@
         ],
         "max": [
           8.5,
-          31.0,
-          2.0
+          31,
+          2
         ]
       },
       "tris": {
@@ -90,8 +90,8 @@
         ],
         "max": [
           8.5,
-          31.0,
-          2.0
+          31,
+          2
         ]
       },
       "tris": {
@@ -132,8 +132,8 @@
         ],
         "max": [
           8.5,
-          31.0,
-          2.0
+          31,
+          2
         ]
       },
       "tris": {
@@ -174,8 +174,8 @@
         ],
         "max": [
           8.5,
-          31.0,
-          2.0
+          31,
+          2
         ]
       },
       "tris": {
@@ -209,8 +209,16 @@
     "buildings/pencil_building_a": {
       "url": "/models/buildings/pencil_building_a.glb",
       "bounds": {
-        "min": [-5.403, 0, -9.055],
-        "max": [5.403, 20.0, 9.055]
+        "min": [
+          -5.403,
+          0,
+          -9.055
+        ],
+        "max": [
+          5.403,
+          20,
+          9.055
+        ]
       },
       "tris": {
         "lod0": 788
@@ -234,8 +242,16 @@
     "buildings/pencil_building_b": {
       "url": "/models/buildings/pencil_building_b.glb",
       "bounds": {
-        "min": [-5.64, 0, -11.055],
-        "max": [5.64, 26.0, 11.055]
+        "min": [
+          -5.64,
+          0,
+          -11.055
+        ],
+        "max": [
+          5.64,
+          26,
+          11.055
+        ]
       },
       "tris": {
         "lod0": 1100
@@ -260,8 +276,16 @@
     "buildings/pencil_building_c": {
       "url": "/models/buildings/pencil_building_c.glb",
       "bounds": {
-        "min": [-5.903, 0, -12.055],
-        "max": [5.903, 32.0, 12.055]
+        "min": [
+          -5.903,
+          0,
+          -12.055
+        ],
+        "max": [
+          5.903,
+          32,
+          12.055
+        ]
       },
       "tris": {
         "lod0": 1268
@@ -285,8 +309,16 @@
     "buildings/pencil_building_d": {
       "url": "/models/buildings/pencil_building_d.glb",
       "bounds": {
-        "min": [-6.14, 0, -13.055],
-        "max": [6.14, 40.0, 13.055]
+        "min": [
+          -6.14,
+          0,
+          -13.055
+        ],
+        "max": [
+          6.14,
+          40,
+          13.055
+        ]
       },
       "tris": {
         "lod0": 1388
@@ -311,8 +343,16 @@
     "buildings/terrace_m1": {
       "url": "/models/buildings/terrace_m1.glb",
       "bounds": {
-        "min": [-4.75, 0, -6.85],
-        "max": [4.75, 7.0, 6.85]
+        "min": [
+          -4.75,
+          0,
+          -6.85
+        ],
+        "max": [
+          4.75,
+          7,
+          6.85
+        ]
       },
       "tris": {
         "lod0": 364
@@ -335,8 +375,16 @@
     "buildings/terrace_m2": {
       "url": "/models/buildings/terrace_m2.glb",
       "bounds": {
-        "min": [-4.75, 0, -7.8],
-        "max": [4.75, 10.0, 7.8]
+        "min": [
+          -4.75,
+          0,
+          -7.8
+        ],
+        "max": [
+          4.75,
+          10,
+          7.8
+        ]
       },
       "tris": {
         "lod0": 508
@@ -359,8 +407,16 @@
     "buildings/terrace_a1": {
       "url": "/models/buildings/terrace_a1.glb",
       "bounds": {
-        "min": [-4.9, 0, -8.25],
-        "max": [4.9, 7.5, 8.25]
+        "min": [
+          -4.9,
+          0,
+          -8.25
+        ],
+        "max": [
+          4.9,
+          7.5,
+          8.25
+        ]
       },
       "tris": {
         "lod0": 308
@@ -383,8 +439,16 @@
     "buildings/terrace_a2": {
       "url": "/models/buildings/terrace_a2.glb",
       "bounds": {
-        "min": [-4.9, 0, -9.45],
-        "max": [4.9, 10.5, 9.45]
+        "min": [
+          -4.9,
+          0,
+          -9.45
+        ],
+        "max": [
+          4.9,
+          10.5,
+          9.45
+        ]
       },
       "tris": {
         "lod0": 404
@@ -407,8 +471,16 @@
     "buildings/terrace_v1": {
       "url": "/models/buildings/terrace_v1.glb",
       "bounds": {
-        "min": [-5.6, 0, -7.45],
-        "max": [5.6, 10.0, 7.45]
+        "min": [
+          -5.6,
+          0,
+          -7.45
+        ],
+        "max": [
+          5.6,
+          10,
+          7.45
+        ]
       },
       "tris": {
         "lod0": 480
@@ -431,8 +503,16 @@
     "buildings/terrace_v2": {
       "url": "/models/buildings/terrace_v2.glb",
       "bounds": {
-        "min": [-5.6, 0, -8.4],
-        "max": [5.6, 13.0, 8.4]
+        "min": [
+          -5.6,
+          0,
+          -8.4
+        ],
+        "max": [
+          5.6,
+          13,
+          8.4
+        ]
       },
       "tris": {
         "lod0": 636
@@ -455,8 +535,16 @@
     "buildings/industrial_s1": {
       "url": "/models/buildings/industrial_s1.glb",
       "bounds": {
-        "min": [-10.0, 0, -30.0],
-        "max": [10.0, 9.0, 30.0]
+        "min": [
+          -10,
+          0,
+          -30
+        ],
+        "max": [
+          10,
+          9,
+          30
+        ]
       },
       "tris": {
         "lod0": 208
@@ -478,8 +566,16 @@
     "buildings/industrial_s2": {
       "url": "/models/buildings/industrial_s2.glb",
       "bounds": {
-        "min": [-6.0, 0, -30.0],
-        "max": [6.0, 9.0, 30.0]
+        "min": [
+          -6,
+          0,
+          -30
+        ],
+        "max": [
+          6,
+          9,
+          30
+        ]
       },
       "tris": {
         "lod0": 175
@@ -501,8 +597,16 @@
     "buildings/industrial_s3": {
       "url": "/models/buildings/industrial_s3.glb",
       "bounds": {
-        "min": [-10.0, 0, -30.0],
-        "max": [10.0, 12.0, 30.0]
+        "min": [
+          -10,
+          0,
+          -30
+        ],
+        "max": [
+          10,
+          12,
+          30
+        ]
       },
       "tris": {
         "lod0": 696
@@ -523,8 +627,16 @@
     "buildings/industrial_s4": {
       "url": "/models/buildings/industrial_s4.glb",
       "bounds": {
-        "min": [-6.9, 0, -6.9],
-        "max": [6.9, 21.8, 6.9]
+        "min": [
+          -6.9,
+          0,
+          -6.9
+        ],
+        "max": [
+          6.9,
+          21.8,
+          6.9
+        ]
       },
       "tris": {
         "lod0": 524
@@ -546,8 +658,16 @@
     "buildings/industrial_s5": {
       "url": "/models/buildings/industrial_s5.glb",
       "bounds": {
-        "min": [-7.91, 0, -6.61],
-        "max": [7.91, 4.0, 6.61]
+        "min": [
+          -7.91,
+          0,
+          -6.61
+        ],
+        "max": [
+          7.91,
+          4,
+          6.61
+        ]
       },
       "tris": {
         "lod0": 648
@@ -569,73 +689,298 @@
     },
     "vegetation/tree_sakura": {
       "url": "/models/vegetation/tree_sakura.glb",
-      "bounds": { "min": [-3.2, 0, -3.2], "max": [3.2, 6.5, 3.2] },
-      "tris": { "lod0": 1885, "lod1": 900, "lod2": 450 },
-      "materials": ["bark", "foliage"],
-      "tags": ["tree", "sakura", "vegetation", "tokyo"]
+      "bounds": {
+        "min": [
+          -3.2,
+          0,
+          -3.2
+        ],
+        "max": [
+          3.2,
+          6.5,
+          3.2
+        ]
+      },
+      "tris": {
+        "lod0": 1885,
+        "lod1": 900,
+        "lod2": 450
+      },
+      "materials": [
+        "bark",
+        "foliage"
+      ],
+      "tags": [
+        "tree",
+        "sakura",
+        "vegetation",
+        "tokyo"
+      ]
     },
     "vegetation/tree_willow": {
       "url": "/models/vegetation/tree_willow.glb",
-      "bounds": { "min": [-3.0, 0, -3.0], "max": [3.0, 6.2, 3.0] },
-      "tris": { "lod0": 1457, "lod1": 700, "lod2": 350 },
-      "materials": ["bark", "foliage"],
-      "tags": ["tree", "willow", "vegetation", "tokyo"]
+      "bounds": {
+        "min": [
+          -3,
+          0,
+          -3
+        ],
+        "max": [
+          3,
+          6.2,
+          3
+        ]
+      },
+      "tris": {
+        "lod0": 1457,
+        "lod1": 700,
+        "lod2": 350
+      },
+      "materials": [
+        "bark",
+        "foliage"
+      ],
+      "tags": [
+        "tree",
+        "willow",
+        "vegetation",
+        "tokyo"
+      ]
     },
     "vegetation/tree_red_maple": {
       "url": "/models/vegetation/tree_red_maple.glb",
-      "bounds": { "min": [-2.4, 0, -2.4], "max": [2.4, 5.2, 2.4] },
-      "tris": { "lod0": 679, "lod1": 340, "lod2": 170 },
-      "materials": ["bark", "foliage"],
-      "tags": ["tree", "maple", "vegetation", "tokyo"]
+      "bounds": {
+        "min": [
+          -2.4,
+          0,
+          -2.4
+        ],
+        "max": [
+          2.4,
+          5.2,
+          2.4
+        ]
+      },
+      "tris": {
+        "lod0": 679,
+        "lod1": 340,
+        "lod2": 170
+      },
+      "materials": [
+        "bark",
+        "foliage"
+      ],
+      "tags": [
+        "tree",
+        "maple",
+        "vegetation",
+        "tokyo"
+      ]
     },
     "vegetation/tree_ginkgo": {
       "url": "/models/vegetation/tree_ginkgo.glb",
-      "bounds": { "min": [-2.5, 0, -2.5], "max": [2.5, 7.2, 2.5] },
-      "tris": { "lod0": 1641, "lod1": 800, "lod2": 400 },
-      "materials": ["bark", "foliage"],
-      "tags": ["tree", "ginkgo", "vegetation", "tokyo"]
+      "bounds": {
+        "min": [
+          -2.5,
+          0,
+          -2.5
+        ],
+        "max": [
+          2.5,
+          7.2,
+          2.5
+        ]
+      },
+      "tris": {
+        "lod0": 1641,
+        "lod1": 800,
+        "lod2": 400
+      },
+      "materials": [
+        "bark",
+        "foliage"
+      ],
+      "tags": [
+        "tree",
+        "ginkgo",
+        "vegetation",
+        "tokyo"
+      ]
     },
     "vegetation/tree_pine": {
       "url": "/models/vegetation/tree_pine.glb",
-      "bounds": { "min": [-2.6, 0, -2.6], "max": [2.6, 6.0, 2.6] },
-      "tris": { "lod0": 745, "lod1": 370, "lod2": 185 },
-      "materials": ["bark", "foliage"],
-      "tags": ["tree", "pine", "vegetation", "tokyo"]
+      "bounds": {
+        "min": [
+          -2.6,
+          0,
+          -2.6
+        ],
+        "max": [
+          2.6,
+          6,
+          2.6
+        ]
+      },
+      "tris": {
+        "lod0": 745,
+        "lod1": 370,
+        "lod2": 185
+      },
+      "materials": [
+        "bark",
+        "foliage"
+      ],
+      "tags": [
+        "tree",
+        "pine",
+        "vegetation",
+        "tokyo"
+      ]
     },
     "vegetation/tree_plane": {
       "url": "/models/vegetation/tree_plane.glb",
-      "bounds": { "min": [-2.8, 0, -2.8], "max": [2.8, 6.8, 2.8] },
-      "tris": { "lod0": 1281, "lod1": 640, "lod2": 320 },
-      "materials": ["bark", "foliage"],
-      "tags": ["tree", "plane", "vegetation"]
+      "bounds": {
+        "min": [
+          -2.8,
+          0,
+          -2.8
+        ],
+        "max": [
+          2.8,
+          6.8,
+          2.8
+        ]
+      },
+      "tris": {
+        "lod0": 1281,
+        "lod1": 640,
+        "lod2": 320
+      },
+      "materials": [
+        "bark",
+        "foliage"
+      ],
+      "tags": [
+        "tree",
+        "plane",
+        "vegetation"
+      ]
     },
     "vegetation/tree_autumn_oak": {
       "url": "/models/vegetation/tree_autumn_oak.glb",
-      "bounds": { "min": [-2.8, 0, -2.8], "max": [2.8, 6.4, 2.8] },
-      "tris": { "lod0": 580, "lod1": 290, "lod2": 145 },
-      "materials": ["bark", "foliage"],
-      "tags": ["tree", "autumn", "vegetation"]
+      "bounds": {
+        "min": [
+          -2.8,
+          0,
+          -2.8
+        ],
+        "max": [
+          2.8,
+          6.4,
+          2.8
+        ]
+      },
+      "tris": {
+        "lod0": 580,
+        "lod1": 290,
+        "lod2": 145
+      },
+      "materials": [
+        "bark",
+        "foliage"
+      ],
+      "tags": [
+        "tree",
+        "autumn",
+        "vegetation"
+      ]
     },
     "vegetation/tree_cypress": {
       "url": "/models/vegetation/tree_cypress.glb",
-      "bounds": { "min": [-1.2, 0, -1.2], "max": [1.2, 7.8, 1.2] },
-      "tris": { "lod0": 589, "lod1": 295, "lod2": 150 },
-      "materials": ["bark", "foliage"],
-      "tags": ["tree", "cypress", "vegetation"]
+      "bounds": {
+        "min": [
+          -1.2,
+          0,
+          -1.2
+        ],
+        "max": [
+          1.2,
+          7.8,
+          1.2
+        ]
+      },
+      "tris": {
+        "lod0": 589,
+        "lod1": 295,
+        "lod2": 150
+      },
+      "materials": [
+        "bark",
+        "foliage"
+      ],
+      "tags": [
+        "tree",
+        "cypress",
+        "vegetation"
+      ]
     },
     "vegetation/tree_palm": {
       "url": "/models/vegetation/tree_palm.glb",
-      "bounds": { "min": [-3.5, 0, -3.5], "max": [3.5, 7.2, 3.5] },
-      "tris": { "lod0": 1313, "lod1": 650, "lod2": 325 },
-      "materials": ["bark", "foliage"],
-      "tags": ["tree", "palm", "vegetation"]
+      "bounds": {
+        "min": [
+          -3.5,
+          0,
+          -3.5
+        ],
+        "max": [
+          3.5,
+          7.2,
+          3.5
+        ]
+      },
+      "tris": {
+        "lod0": 1313,
+        "lod1": 650,
+        "lod2": 325
+      },
+      "materials": [
+        "bark",
+        "foliage"
+      ],
+      "tags": [
+        "tree",
+        "palm",
+        "vegetation"
+      ]
     },
     "vegetation/tree_magnolia": {
       "url": "/models/vegetation/tree_magnolia.glb",
-      "bounds": { "min": [-2.6, 0, -2.6], "max": [2.6, 5.8, 2.6] },
-      "tris": { "lod0": 880, "lod1": 440, "lod2": 220 },
-      "materials": ["bark", "foliage"],
-      "tags": ["tree", "magnolia", "vegetation"]
+      "bounds": {
+        "min": [
+          -2.6,
+          0,
+          -2.6
+        ],
+        "max": [
+          2.6,
+          5.8,
+          2.6
+        ]
+      },
+      "tris": {
+        "lod0": 880,
+        "lod1": 440,
+        "lod2": 220
+      },
+      "materials": [
+        "bark",
+        "foliage"
+      ],
+      "tags": [
+        "tree",
+        "magnolia",
+        "vegetation"
+      ]
     },
     "facade/balcony": {
       "url": "/models/facade/balcony.glb",
@@ -4341,6 +4686,243 @@
         "bay",
         "residential",
         "tokyo"
+      ]
+    },
+    "buildings/luxury_promenade_building": {
+      "url": "/models/buildings/luxury_promenade_building.glb",
+      "bounds": {
+        "min": [
+          -5.5,
+          0,
+          -8
+        ],
+        "max": [
+          5.5,
+          18,
+          8
+        ]
+      },
+      "tris": {
+        "lod0": 1548
+      },
+      "materials": [
+        "glass_shop",
+        "metal_painted",
+        "plaster_worn",
+        "stone_dressed"
+      ],
+      "tags": [
+        "building",
+        "riviera",
+        "promenade",
+        "hotel",
+        "apartment",
+        "belle_epoque"
+      ]
+    },
+    "props/cafe_terrace_set": {
+      "url": "/models/props/cafe_terrace_set.glb",
+      "bounds": {
+        "min": [
+          -0.906,
+          0,
+          -0.897
+        ],
+        "max": [
+          0.94,
+          0.86,
+          1.076
+        ]
+      },
+      "tris": {
+        "lod0": 780
+      },
+      "materials": [
+        "metal_painted",
+        "timber_bare"
+      ],
+      "tags": [
+        "prop",
+        "cafe",
+        "furniture",
+        "table",
+        "chair",
+        "terrace"
+      ]
+    },
+    "props/square_cafe_parasol": {
+      "url": "/models/props/square_cafe_parasol.glb",
+      "bounds": {
+        "min": [
+          -1.5,
+          0,
+          -1.5
+        ],
+        "max": [
+          1.5,
+          2.6,
+          1.5
+        ]
+      },
+      "tris": {
+        "lod0": 198
+      },
+      "materials": [
+        "fabric_awning",
+        "metal_galv"
+      ],
+      "tags": [
+        "prop",
+        "cafe",
+        "parasol",
+        "umbrella",
+        "awning"
+      ]
+    },
+    "props/double_lantern_lamp": {
+      "url": "/models/props/double_lantern_lamp.glb",
+      "bounds": {
+        "min": [
+          -0.83,
+          0,
+          -0.28
+        ],
+        "max": [
+          0.83,
+          5.2,
+          0.28
+        ]
+      },
+      "tris": {
+        "lod0": 688
+      },
+      "materials": [
+        "metal_painted",
+        "plastic_signage"
+      ],
+      "tags": [
+        "prop",
+        "lamp",
+        "street",
+        "lighting",
+        "classical"
+      ]
+    },
+    "props/stone_balustrade_section": {
+      "url": "/models/props/stone_balustrade_section.glb",
+      "bounds": {
+        "min": [
+          -1.5,
+          0,
+          -0.2
+        ],
+        "max": [
+          1.5,
+          1.1,
+          0.2
+        ]
+      },
+      "tris": {
+        "lod0": 708
+      },
+      "materials": [
+        "stone_dressed"
+      ],
+      "tags": [
+        "prop",
+        "balustrade",
+        "seawall",
+        "railing",
+        "promenade",
+        "tiling"
+      ]
+    },
+    "props/planter_trough_flowers": {
+      "url": "/models/props/planter_trough_flowers.glb",
+      "bounds": {
+        "min": [
+          -0.898,
+          0,
+          -0.389
+        ],
+        "max": [
+          0.898,
+          0.89,
+          0.389
+        ]
+      },
+      "tris": {
+        "lod0": 420
+      },
+      "materials": [
+        "concrete_precast",
+        "foliage"
+      ],
+      "tags": [
+        "prop",
+        "planter",
+        "flowers",
+        "vegetation",
+        "street"
+      ]
+    },
+    "props/cantilevered_blade_sign": {
+      "url": "/models/props/cantilevered_blade_sign.glb",
+      "bounds": {
+        "min": [
+          0,
+          -1.5,
+          -0.16
+        ],
+        "max": [
+          1.22,
+          1.5,
+          0.16
+        ]
+      },
+      "tris": {
+        "lod0": 176
+      },
+      "materials": [
+        "metal_galv",
+        "plastic_signage"
+      ],
+      "tags": [
+        "prop",
+        "sign",
+        "blade",
+        "hanging",
+        "signage"
+      ]
+    },
+    "props/moored_motor_yacht": {
+      "url": "/models/props/moored_motor_yacht.glb",
+      "bounds": {
+        "min": [
+          -3,
+          -0.8,
+          -11
+        ],
+        "max": [
+          3,
+          7,
+          11
+        ]
+      },
+      "tris": {
+        "lod0": 619
+      },
+      "materials": [
+        "car_glass",
+        "chrome_trim",
+        "plaster_worn"
+      ],
+      "tags": [
+        "prop",
+        "boat",
+        "yacht",
+        "marine",
+        "waterfront"
       ]
     }
   }
