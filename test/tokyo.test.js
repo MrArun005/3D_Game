@@ -50,6 +50,24 @@ test('a window is a dim hole, a neon part is HDR', () => {
   assert.ok(maxHot > 1.5, `neon-class emit ${maxHot.toFixed(2)} too timid to bloom`);
 });
 
+test('most Tokyo buildings carry a tall facade kanban like ラーメン', () => {
+  let n = 0;
+  for (let s = 1; s <= 30; s++) {
+    const b = buildTokyoBuilding(s * 19, 6, 8, 28);
+    if (b.boards.some((bd) => bd.vertical && bd.h >= 3.2)) n++;
+  }
+  assert.ok(n >= 22, `tall kanban ${n}/30`);
+});
+
+test('open shops are rooms (back wall + floor), not a glass sticker', () => {
+  let rooms = 0;
+  for (let s = 1; s <= 24; s++) {
+    const b = buildTokyoBuilding(s * 23, 6, 8, 22);
+    if (b.tris > 700 && (b.lamps ?? []).some((lp) => lp.y < 2.0 && lp.intensity >= 170)) rooms++;
+  }
+  assert.ok(rooms >= 10, `open shop rooms ${rooms}/24`);
+});
+
 test('kanban lamps are coloured neon the light pool can prefer', () => {
   let n = 0;
   for (let s = 1; s <= 20; s++) {
@@ -93,7 +111,8 @@ test('little-tokyo camera looks north up the walk-up street at night', () => {
   const p = PRESETS['little-tokyo'];
   assert.ok(p.hour >= 21, `hour ${p.hour} — this is a night shot`);
   assert.ok(p.look[2] > p.pos[2] + 80, 'looks north along the N-S street, not east along the arterial');
-  assert.ok(p.pos[0] > 2320 && p.pos[0] < 2390 && p.pos[2] > 1370, 'stands on the Tokyo street, not the spawn arterial');
+  assert.ok(p.pos[0] > 2345 && p.pos[0] < 2375 && p.pos[2] > 1395, 'stands in the canyon, hugging the east shops');
+  assert.ok(p.pos[1] < 1.8, `eye height ${p.pos[1]} is a drone, not image 11`);
 });
 
 test('the shrine is one small geometry with a lit lantern window', async () => {

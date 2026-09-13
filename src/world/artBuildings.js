@@ -116,13 +116,10 @@ const MAP = {
   'VELLERY ROW':   { row: ['loft', 0.03], mid: ['loft', 0.03] },
   'THE FLATS':     { row: ['loft', 0.03], mid: ['officeMidrise', 0.35] },
   KINGSWAY:        { mid: ['officeMidrise', 0.35], tower: ['glassTower', 0.45] },
-  /* Little Tokyo's TOWER blocks only (300 and 305, both on Halstead Avenue).
-     Arun's rule for this area is "no Kenney, no kit -- ours", and glassTower is
-     ours: world/buildings/, our own artKit. 70% of every buildable block type,
-     at Arun's ask -- glassTower is 12-24 storeys, so the avenue becomes a
-     glazed canyon. The other 30% stay world/tokyo.js kanban buildings, which
-     is where the street keeps its signage and its neon. */
-  'LITTLE TOKYO':  { tower: ['glassTower', 0.70], mid: ['glassTower', 0.70], row: ['glassTower', 0.70] },
+  /* Image 11 is the floor: walk-ups, shop rooms, kanban. Glass towers as the
+     default (0.70 on row/mid/tower) turned the street into an office canyon
+     and hid tokyo.js. Towers only, and few — skyline punctuation, not the kerb. */
+  'LITTLE TOKYO':  { tower: ['glassTower', 0.18] },
   STEELGATE:       { yard: ['warehouse', 0.7] },
   'HARBOUR POINT': { yard: ['warehouse', 0.7] },
   NORTHLINE:       { yard: ['warehouse', 0.7] },
@@ -131,7 +128,7 @@ const MAP = {
 const flag = (name) => typeof location !== 'undefined' && new URLSearchParams(location.search).has(name);
 
 export function styleFor(block, fp, roll) {
-  if (fp.w < 6 || fp.d < 6 || flag('noart')) return null;   // LITTLE TOKYO used to be excluded outright; MAP now lets its tower blocks through and nothing else
+  if (fp.w < 6 || fp.d < 6 || flag('noart')) return null;
   const hit = MAP[block.district]?.[block.type];
   if (!hit) return null;
   return flag('artall') || roll < hit[1] ? hit[0] : null;

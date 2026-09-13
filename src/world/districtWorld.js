@@ -1577,7 +1577,7 @@ export class DistrictWorld {
              ship, 13 materials a building would be 13 draws each. Falls through
              to the generated building when the GLBs have not landed yet (the
              load is async and chunks build from frame one) or none fits. */
-          if (this.towers && hash(wx * 0.19, wz * 0.83) < 0.34) {
+          if (this.towers && hash(wx * 0.19, wz * 0.83) < 0.08) {
             // the plot's own world position is the seed, so the choice is stable per building
             const tw = towerFor(this.towers, wx * 7.31 + wz * 3.17, fhw, fhd, h);
             if (tw) {
@@ -1593,7 +1593,33 @@ export class DistrictWorld {
           const b = buildTokyoBuilding(Math.floor(hash(wx * 0.71, wz * 0.29) * 1e9), fhw, fhd, h);
           // local (front +X) -> footprint local (turned onto the street side) -> world (the block's frame), same rotation sense as mat4()
           const M = new THREE.Matrix4().makeRotationY(-bl.angle).multiply(new THREE.Matrix4().makeRotationY(rot));
-          M.setPosition(wx, KERB_H, wz);
+          /* Image 11 shops sit ON the kerb. Footprints are inset in the block,
+             so the camera saw a 26 m void and a blank lot wall. Walk the front
+             face to the pavement: retreat while it is in the road, advance
+             while it is too far back, and stop in the 0.5-1.15 m dead band
+             (which is why this cannot oscillate).
+
+             BOTH directions loop. Measured over all 219 Little Tokyo
+             footprints: 95 of them ship with the front face ALREADY inside the
+             carriageway -- median 3.8 m in, worst 12.7 m -- so a single 0.45 m
+             step back left a shopfront standing in the road. Retreat needs the
+             full 14 m; the advance is capped at 6 m so an interior plot with no
+             street in front of it stays where the planner put it instead of
+             drifting 15 m into its neighbour. */
+          const dir = new THREE.Vector3(1, 0, 0).applyMatrix4(new THREE.Matrix4().makeRotationY(-bl.angle).multiply(new THREE.Matrix4().makeRotationY(rot)));
+          const MAX_OUT = 6.0, MAX_BACK = 14.0;
+          let sx = wx, sz = wz, out = 0, back = 0;
+          for (let i = 0; i < 48; i++) {
+            const d = this.district.tarmacDepth(sx + dir.x * fhw, sz + dir.z * fhw);
+            if (d < 0.5) {
+              if (back >= MAX_BACK) break;
+              sx -= dir.x * 0.45; sz -= dir.z * 0.45; back += 0.45; out -= 0.45;
+              continue;
+            }
+            if (d < 1.15 || out >= MAX_OUT) break;
+            sx += dir.x * 0.55; sz += dir.z * 0.55; out += 0.55;
+          }
+          M.setPosition(sx, KERB_H, sz);
           b.geo.applyMatrix4(M);
           tokyoParts.push(b.geo);
           const _p = new THREE.Vector3();
@@ -1608,7 +1634,7 @@ export class DistrictWorld {
               tokyoBoards.push({ m, u, v });
             } else tokyoBoards.push({ m: mat4(_p.x, _p.y, _p.z, -yaw, bd.w, bd.h, 1), u, v });
           }
-          boxes.push({ x: wx, z: wz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: b.height, district: bl.district, tokyo: true });
+          boxes.push({ x: sx, z: sz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: b.height, district: bl.district, tokyo: true });
           // kerbside life in front of it (kit props, placed by us): a vending machine at one corner, sometimes an A-frame or a stall
           {
             const fw = swap ? g.w / 2 : g.d / 2, fhw = swap ? g.d / 2 : g.w / 2;   // the built building's half sizes

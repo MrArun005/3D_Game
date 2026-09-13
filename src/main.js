@@ -1204,9 +1204,9 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   districtRef = district;
   // Put the car in Little Tokyo on the northbound lane of Tokyo Street (Road 168)
   // Perfectly aligned with the road heading north directly under the illuminated Grand Torii Arch
-  const spawnX = 2351.5;
-  const spawnZ = 1356.0;
-  const spawnYaw = -Math.PI / 2 - 0.03;
+  const spawnX = 2354.0;
+  const spawnZ = 1408.0;
+  const spawnYaw = -Math.PI / 2;
   resetCar(car);
   car.x = spawnX;
   car.z = spawnZ;
@@ -2250,7 +2250,17 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     // turned the asphalt grain into cobbles at noon.
     const tm = assets?.mat?.tarmac;
     if (tm) {
-      const look = wetTarmacLook(car.wet, (clock.hour >= 20.5 || clock.hour < 5.2) ? 1 : clock.hour >= 18 ? (clock.hour - 18) / 2.5 : clock.hour < 7.2 ? (7.2 - clock.hour) / 2 : 0);
+      const nk = (clock.hour >= 20.5 || clock.hour < 5.2) ? 1 : clock.hour >= 18 ? (clock.hour - 18) / 2.5 : clock.hour < 7.2 ? (7.2 - clock.hour) / 2 : 0;
+      /* Little Tokyo's street is wet after dark whether or not it is raining --
+         the reference still is a wet canyon, and the neon only reaches the road
+         as a reflection. Asked of the district, not of a hand-typed rectangle:
+         `lastDistrict` is already polled twice a second a few lines above, so
+         this costs nothing. Photo mode flies the CAMERA out of the car, so it
+         asks for the camera's own district instead. */
+      const tokyoHere = photo?.on
+        ? districtRef?.districtAt?.(camera.position.x, camera.position.z) === 'LITTLE TOKYO'
+        : lastDistrict === 'LITTLE TOKYO';
+      const look = wetTarmacLook(Math.max(car.wet, nk > 0.65 && tokyoHere ? 0.7 : 0), nk);
       tm.roughness = look.roughness;
       tm.envMapIntensity = look.envMapIntensity;
       tm.normalScale.setScalar(look.normalScale);
