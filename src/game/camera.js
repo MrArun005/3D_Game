@@ -76,7 +76,10 @@ export const RIGS = [
        fov    70: an interior camera has to hold the dash, the mirrors and the
               road. 55 through a windscreen is a letterbox.
      `side` is the first lateral offset any rig has asked for. */
-  { back: 1.9, up: 0.30, side: 0.36, aim: 18.0, fov: 70, lag: 26.0, tilt: 1, rigid: 1, near: 0.15, cockpit: 1 },
+  /* aimUp -0.3 pitches the lens ~2 deg down (reference: horizon at ~46% of the
+     frame, wheel and cluster filling the lower half); 72 deg holds both pillars
+     and the mirror like the reference's wide interior lens. */
+  { back: 1.9, up: 0.30, side: 0.36, aim: 18.0, aimUp: -0.3, fov: 72, lag: 26.0, tilt: 1, rigid: 1, near: 0.15, cockpit: 1 },
 ];
 
 export class ChaseCamera {

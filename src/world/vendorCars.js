@@ -319,14 +319,19 @@ export async function fetchKit(id, spec, assets, opts = {}) {
     wrap.updateMatrixWorld(true);
     const wb = new THREE.Box3().setFromObject(wrap), ws = wb.getSize(new THREE.Vector3());
     let eye = null;
-    wrap.traverse((o) => { if (!eye && /steer/i.test(o.name)) eye = o.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(-0.42, 0.30, 0)); });
+    // Arun's perfect_racing_pov: the head sits ~0.6 m behind the hub, so the whole wheel and cluster fit in the lower half
+    wrap.traverse((o) => {
+      if (!eye && /steer/i.test(o.name)) eye = o.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(-0.62, 0.22, 0));
+    });
+    // a low car with a high hub (the F40: roof ~1.1 m) put the eye through its headliner at +0.36; never above 76% of the body
+    if (eye) eye.y = Math.min(eye.y, ws.y * 0.76);
     /* Fallback, calibrated on the C8 and the 992: 0.74 of the box height put the
        eye at 0.90 m in both, which read right; the car's CENTRE did not -- the
        911's seats are ~0.5 m ahead of it (rear engine) and from there you were at
        the B-pillar looking at roll cage and roof. 6% of the length forward covers
        both. And -0.36: every vendor body here is left-hand drive; +0.36 was the
        loft's seat and put the eye in the passenger seat with no wheel in view. */
-    if (!eye) eye = new THREE.Vector3(ws.x * 0.03, ws.y * 0.70, -0.36);   // 0.06 put the 992's eye past its wheel and 0.74 of the height into its headliner; 0.03 / 0.70 frame both it and the C8
+    if (!eye) eye = new THREE.Vector3(ws.x * 0.03 - 0.20, ws.y * 0.74, -0.36);   // 0.06 put the 992's eye past its wheel and 0.74 of the height into its headliner; 0.03 / 0.70 frame both it and the C8
     const cockpit = { back: -eye.x, up: eye.y - 0.62, side: eye.z };   // camera.js: back is rearward-positive, up is over car.y (= ground + 0.62)
     return { group: wrap, paint: null, detail: null, detailMat: null, lodBody: null, cockpit };
   }
