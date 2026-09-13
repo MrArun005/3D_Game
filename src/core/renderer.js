@@ -162,13 +162,25 @@ export function autoResolution(renderer, grade = null, lite = false) {
   let sumMs = 0;
   let lastAdjustTime = 0;
   const MIN_SCALE = 0.50;
+  /* THE SCALER MUST SETTLE. Down at >19.5 ms and up at <14.2 ms looks like
+     hysteresis, but a 6% down-step removes ~12% of the pixels, which drops the
+     frame time under the up threshold, which steps back up, which puts it over
+     the down threshold again: it hunts forever, once every 2.5 s. Each step
+     reallocates every render target and visibly changes sharpness, so on a
+     74 s recording that is ~30 resolution pops -- the flicker Arun saw.
+     Three things stop it: a window must be bad (or good) TWICE RUNNING before
+     the scale moves, the up threshold drops to 13.0 ms so the two bands cannot
+     touch, and after three direction reversals the scaler LOCKS -- by then it
+     has found the level this machine holds, and further hunting is all cost
+     and no benefit. ?nodrs still pins it outright. */
+  let badRun = 0, goodRun = 0, reversals = 0, lastDir = 0, locked = false;
 
   return function updateAutoResolution(dt) {
     frameCount++;
     sumMs += dt * 1000;
 
     // Sample every 60 frames (~1 second at 60 FPS)
-    if (frameCount >= 60) {
+    if (!locked && frameCount >= 60) {
       const avgMs = sumMs / frameCount;
       frameCount = 0;
       sumMs = 0;
@@ -177,7 +189,14 @@ export function autoResolution(renderer, grade = null, lite = false) {
       // Cooldown of at least 2.5 seconds between adjustments to avoid thrashing
       if (lastAdjustTime !== 0 && now - lastAdjustTime < 2500) return;
 
-      if (avgMs > 19.5 && currentScale > MIN_SCALE) {
+      // two consecutive windows agree, or nothing moves
+      badRun = avgMs > 19.5 ? badRun + 1 : 0;
+      goodRun = avgMs < 13.0 ? goodRun + 1 : 0;
+
+      if (badRun >= 2 && currentScale > MIN_SCALE) {
+        badRun = 0;
+        if (lastDir === 1) reversals++;
+        lastDir = -1;
         // Step down by 6%
         currentScale = Math.max(MIN_SCALE, currentScale * 0.94);
         lastAdjustTime = now;
@@ -185,7 +204,10 @@ export function autoResolution(renderer, grade = null, lite = false) {
         renderer.setSize(window.innerWidth, window.innerHeight, false);
         grade?.resize?.(window.innerWidth * currentScale, window.innerHeight * currentScale);
         console.info(`[drs] downscale -> ratio: ${currentScale.toFixed(2)} (avg frame: ${avgMs.toFixed(1)} ms)`);
-      } else if (avgMs < 14.2 && currentScale < baseScale) {
+      } else if (goodRun >= 2 && currentScale < baseScale) {
+        goodRun = 0;
+        if (lastDir === -1) reversals++;
+        lastDir = 1;
         // Step up by 4%
         currentScale = Math.min(baseScale, currentScale * 1.04);
         lastAdjustTime = now;
@@ -193,6 +215,10 @@ export function autoResolution(renderer, grade = null, lite = false) {
         renderer.setSize(window.innerWidth, window.innerHeight, false);
         grade?.resize?.(window.innerWidth * currentScale, window.innerHeight * currentScale);
         console.info(`[drs] upscale -> ratio: ${currentScale.toFixed(2)} (avg frame: ${avgMs.toFixed(1)} ms)`);
+      }
+      if (reversals >= 3) {
+        locked = true;
+        console.info(`[drs] settled at ratio ${currentScale.toFixed(2)} after ${reversals} reversals; no further changes`);
       }
     }
   };

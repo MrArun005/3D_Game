@@ -113,8 +113,10 @@ test('autoResolution adjusts resolution dynamically under high frame times', () 
   const update = autoResolution(mockRenderer, mockGrade, true);
   assert.equal(typeof update, 'function');
 
-  // Push 60 frames with high frame times (30ms = 33 FPS)
-  for (let i = 0; i < 60; i++) {
+  /* 120 frames, not 60: since 2026-09-13 a window must be bad TWICE RUNNING
+     before the scale moves. One bad second is a chunk build or a stutter; two
+     is the machine actually being short of headroom. */
+  for (let i = 0; i < 120; i++) {
     update(0.030);
   }
 
@@ -122,6 +124,37 @@ test('autoResolution adjusts resolution dynamically under high frame times', () 
   assert.ok(pixelRatio < renderScale(1920, 1080, true));
   assert.ok(sizeSet !== null);
   assert.ok(gradeResized !== null);
+});
+
+/* The flicker Arun caught on a screen recording: a 6% down-step removes ~12%
+   of the pixels, which drops the frame time under the up threshold, which
+   steps back up over the down threshold -- a resolution pop every 2.5 s for as
+   long as the game runs. The scaler must settle instead. */
+test('autoResolution settles instead of hunting between two scales', () => {
+  let pixelRatio = 1.0, changes = 0;
+  const mockRenderer = { setPixelRatio: (r) => { pixelRatio = r; changes++; }, setSize: () => {} };
+  global.window = { innerWidth: 1920, innerHeight: 1080 };
+  const update = autoResolution(mockRenderer, { resize: () => {} }, true);
+
+  /* The pathological input: TWO bad seconds then TWO good ones, forever. That
+     is what a down-step causes in the real engine -- fewer pixels, a faster
+     frame, an up-step, a slower frame -- and it is what an unbounded scaler
+     rides up and down without end. Two of each clears the "twice running"
+     guard, so this really does drive steps and reversals. */
+  let now = 0;
+  const realNow = performance.now.bind(performance);
+  performance.now = () => now;
+  try {
+    for (let sec = 0; sec < 400; sec++) {
+      now += 3000;                                            // clear the 2.5 s cooldown
+      const ms = (sec % 4) < 2 ? 0.030 : 0.008;               // 30 ms, 30, 8, 8, ...
+      for (let i = 0; i < 60; i++) update(ms);
+    }
+  } finally { performance.now = realNow; }
+
+  assert.ok(changes > 0, 'the scaler never reacted at all');
+  assert.ok(changes <= 8, `scaler never settled: ${changes} resolution changes over 400 s`);
+  assert.ok(pixelRatio > 0 && pixelRatio <= renderScale(1920, 1080, true), `ratio ${pixelRatio}`);
 });
 
 test('CommandEngine supports /quality and /perf commands', () => {
