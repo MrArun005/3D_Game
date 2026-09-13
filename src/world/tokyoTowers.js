@@ -1,5 +1,6 @@
 /**
- * Arun's four authored neon towers (public/models/buildings/tokyo_neon_tower*.glb),
+ * Arun's authored buildings (public/models/buildings/*.glb) -- four neon towers
+ * and four narrow pencil buildings --
  * baked into the SAME vertex format world/tokyo.js uses so they merge into the
  * chunk's existing Tokyo mesh and cost ZERO extra draw calls.
  *
@@ -19,7 +20,17 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { mulberry32 } from '../core/rng.js';
 
 const BASE = '/models/buildings/';
-const FILES = ['tokyo_neon_tower', 'tokyo_neon_tower_b', 'tokyo_neon_tower_c', 'tokyo_neon_tower_d'];
+/* The pool. The four neon towers are 11-19 m wide, but the median Little Tokyo
+   plot is 10.2 m -- measured over the district file -- so towerFor was refusing
+   43% of the footprints that passed the gate. The four pencil buildings
+   (9-12 m frontage, 18-26 m deep, the unagi no nedoko proportion these plots
+   actually are) are what fills that gap: replaying the placement maths, the
+   pool goes from 13 of 67 footprints to 18, and from 57% to 78% of the ones
+   that pass the gate. */
+const FILES = [
+  'tokyo_neon_tower', 'tokyo_neon_tower_b', 'tokyo_neon_tower_c', 'tokyo_neon_tower_d',
+  'pencil_building_a', 'pencil_building_b', 'pencil_building_c', 'pencil_building_d',
+];
 
 /* Neon has to BLOOM, a lit room does not. tokyo.js runs its tubes at k 2.4-2.5
    and its windows at 0.16; the same split by material name keeps these towers
