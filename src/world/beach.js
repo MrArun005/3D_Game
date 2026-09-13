@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { M4, mergeGeos } from '../core/geometry.js';
 import { FigureFleet, FOOT_DROP } from './figure.js';
 import { buildSpecies } from './props.js';
+import { InstanceBatch } from './catalogue.js';
 import { SHADOW_FAR_LAYER } from '../core/renderer.js';
 
 /**
@@ -378,6 +379,79 @@ export function buildBeach(scene, district, day = true, catalogue = null) {
     solid(posts, lib('timber_painted', 0xf2efe6));
     solid(huts, lib('timber_painted', 0xf7f3ea));
     solid(roofs, lib('metal_painted', 0x2f7dc0));
+  }
+
+  /* --- the Riviera promenade: the eight authored props (2026-09-14) ---
+     These shipped as files and were placed by nothing, which is the same state
+     `riviera_promenade_building` sat in. The promenade already exists -- a 10 m
+     paved band from DRY+1 to DRY+11 with a palm row up its middle at DRY+6 --
+     so the furniture goes on it: balustrade along the seaward lip, lamps and
+     planters flanking the palms, cafe terraces set back on the landward side
+     where a frontage would be, and the yachts moored out in the bay.
+
+     Everything here is one InstanceBatch, so the whole promenade is a handful
+     of draws however many pieces it places. Without a catalogue (the argument
+     is optional and main.js passed nothing for a year) this block is skipped
+     rather than falling back to boxes -- these are authored assets or nothing. */
+  if (catalogue) {
+    group.name = 'beach';
+    const batch = new InstanceBatch(catalogue);
+    const props = new THREE.Group();
+    props.name = 'promenade';
+    group.add(props);
+    // place a prop at arc length t, `off` metres seaward, turned to face the sea
+    const put = (name, t, off, turn = 0, sc = 1) => {
+      const r = frameAt(t), [x, z] = at(t, off);
+      batch.add(name, M4(x, 0.22, z, 0, seawardYaw(r) + turn, 0, sc, sc, sc));
+    };
+
+    /* The balustrade is the reason the promenade stops being a paving slab:
+       it is the edge you cannot walk off. It tiles at exactly 3 m (cut faces
+       verified identical in YZ at x = +/-1.500), so step it at 3 m and the run
+       is seamless. Local +X runs along its length, and seawardYaw puts +X on
+       the seaward normal, so it needs a quarter turn to lie ALONG the coast. */
+    for (let t = 4; t < total - 4; t += 3) put('props/stone_balustrade_section', t, DRY + 1.2, Math.PI / 2);
+
+    // classical lamps down the middle of the band, offset from the palms at DRY+6
+    for (let t = 20; t < total - 20; t += 26) put('props/double_lantern_lamp', t, DRY + 3.2);
+
+    // planters between the lamps, alternating side, breaking the long empty band
+    for (let t = 33; t < total - 20; t += 26) {
+      put('props/planter_trough_flowers', t, DRY + 2.4, Math.PI / 2);
+      put('props/planter_trough_flowers', t + 9, DRY + 9.4, Math.PI / 2);
+    }
+
+    /* Cafe terraces in CLUSTERS, not a uniform row: three or four sets under
+       their own parasols, then a gap. A promenade with evenly spaced furniture
+       reads as a car park. Clusters bunch near the pier, which is where a
+       seafront actually crowds -- the same rule beach.js already uses for its
+       parasols and its crowd. */
+    for (let c = 0; c < 14; c++) {
+      const base = 40 + c * ((total - 90) / 14) + hash(c, 91) * 12;
+      if (Math.abs(base - pierT) < 45) continue;
+      const n = 3 + Math.floor(hash(c, 93) * 2);
+      for (let i = 0; i < n; i++) {
+        const t = base + i * 4.6 + hash(c * 7 + i, 95) * 0.8;
+        const off = DRY + 7.6 + (hash(c + i, 97) - 0.5) * 1.6;
+        put('props/cafe_terrace_set', t, off, hash(c + i, 99) * 6.28);
+        if (i % 2 === 0) put('props/square_cafe_parasol', t + 0.3, off + 0.2, hash(c + i, 101) * 6.28);
+      }
+    }
+
+    /* Yachts moored off the shore. The asset's origin is its WATERLINE, so it
+       sits at water.js's plane (WATER_TOP) and not on the sand -- putting it at
+       y = 0 would beach every boat in the bay. */
+    for (let c = 0; c < 7; c++) {
+      const t = 60 + c * ((total - 120) / 7) + hash(c, 103) * 30;
+      if (Math.abs(t - pierT) < 60) continue;
+      const r = frameAt(t), [x, z] = at(t, -(120 + hash(c, 105) * 190));
+      batch.add('props/moored_motor_yacht',
+        M4(x, WATER_TOP, z, 0, seawardYaw(r) + Math.PI / 2 + (hash(c, 107) - 0.5) * 0.5, 0, 1, 1, 1));
+    }
+
+    batch.emit(props, { lod: 0 }).then(() => {
+      props.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.receiveShadow = true; } });
+    });
   }
 
   /* --- the crowd --- */

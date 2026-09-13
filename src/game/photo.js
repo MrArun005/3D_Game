@@ -25,6 +25,13 @@ export const PRESETS = {
   'bridge-west':     { pos: [1480, 10, 1010],   look: [1640, 8, 1200] },
   'harbour':         { pos: [2100, 14, 2300],   look: [1950, 8, 2500] },
   'aerial':          { pos: [2200, 160, 1150],  look: [2420, 0, 1400] },
+  /* Halstead Sands' promenade, looking north-east along it with the bay on the
+     right -- the Riviera boulevard camera. Positions are the promenade centre
+     (the paved band runs DRY+1 to DRY+11 seaward of the coastline, palms up the
+     middle at DRY+6), computed from the bay polygon rather than guessed.
+     CLAUDE.md still refers to `beach`, `port` and `docks` presets; they are not
+     in this file and have not been for some time. This one replaces them. */
+  'promenade':       { pos: [3663, 1.9, 2250],  look: [3574, 1.2, 2315], hour: 18.5 },
 
   /* One per district, docs/VISUAL-BRIEF.md. Every position is a point ON a
      road centreline inside that district's own boundary (picked out of

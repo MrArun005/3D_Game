@@ -1157,7 +1157,15 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   buildSurrounds(scene, district.bounds, DAY);
   buildPlaces(scene, district, DAY);
   const params = new URLSearchParams(location.search);
-  if (params.has('beach')) beach = buildBeach(scene, district, DAY);
+  /* The beach is ON (2026-09-14). It was behind `?beach`, so Halstead Sands --
+     promenade, palm row, 120 m pier, lifeguard towers, a crowd -- existed in the
+     build and in the photo presets but not in anybody's session; the `beach`
+     preset framed empty water. Measured cost is +17 draws (docs/CLAUDE.md), which
+     against a ~2,000 draw frame is noise. `?nobeach` turns it off.
+     The CATALOGUE is passed now too: buildBeach has taken one as its fourth
+     argument all along and never received it, so it could not place a single
+     authored asset -- which is why the eight Riviera props had nowhere to go. */
+  if (!params.has('nobeach')) beach = buildBeach(scene, district, DAY, catalogue);
   if (params.has('crowd')) {
     crowd = new Crowd(scene, district, isLite ? 160 : 320);
     crowd.onNear = () => chatter?.civilian?.('near');
