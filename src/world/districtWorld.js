@@ -1529,7 +1529,8 @@ export class DistrictWorld {
              to the generated building when the GLBs have not landed yet (the
              load is async and chunks build from frame one) or none fits. */
           if (this.towers && hash(wx * 0.19, wz * 0.83) < 0.34) {
-            const tw = towerFor(this.towers, 0, fhw, fhd, h);
+            // the plot's own world position is the seed, so the choice is stable per building
+            const tw = towerFor(this.towers, wx * 7.31 + wz * 3.17, fhw, fhd, h);
             if (tw) {
               const Mt = new THREE.Matrix4().makeRotationY(-bl.angle).multiply(new THREE.Matrix4().makeRotationY(rot));
               Mt.setPosition(wx, KERB_H, wz);

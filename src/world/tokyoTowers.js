@@ -117,16 +117,30 @@ function bake(gltf, name) {
 export function towerFor(towers, seed, hw, hd, h) {
   if (!towers || !towers.length) return null;
   const want = { w: hw * 2, d: hd * 2, h: Math.max(8, h) };
-  let best = null, bestCost = Infinity;
+  const bad = (s) => s > 1.6 || s < 0.5;
+  /* Every model that FITS, not just the closest one. Taking the single best
+     match made the city repeat itself: over the 23 Little Tokyo plots that pass
+     the scatter gate it chose pencil_a seven times, pencil_b seven and one neon
+     four, and never picked pencil_c or pencil_d at all -- even though on a
+     typical 10.2 x 23.6 m plot pencil_c is the BEST fit of the eight (cost
+     0.207 against pencil_b's 0.252). They were not being refused on size; they
+     were losing a greedy tie-break on the particular plots that came up.
+     So: keep everything inside tolerance, rank by fit, and let the seed choose
+     among the closest few. Same seed, same city (CLAUDE.md). */
+  const fits = [];
   for (const t of towers) {
     const sx = want.w / t.w, sz = want.d / t.d, sy = want.h / t.h;
-    const cost = Math.abs(Math.log(sx)) + Math.abs(Math.log(sz)) + Math.abs(Math.log(sy)) * 0.6;
-    if (cost < bestCost) { bestCost = cost; best = { t, sx, sy, sz }; }
+    if (bad(sx) || bad(sz) || sy > 1.9 || sy < 0.45) continue;
+    fits.push({ t, sx, sy, sz, cost: Math.abs(Math.log(sx)) + Math.abs(Math.log(sz)) + Math.abs(Math.log(sy)) * 0.6 });
   }
-  if (!best) return null;
+  if (!fits.length) return null;
+  fits.sort((a, b) => a.cost - b.cost);
+  /* The top three, so a plot still gets a building that suits it -- a 40 m
+     model never lands on a two-storey plot, because that never reaches the
+     shortlist -- while the street stops being two buildings repeated. */
+  const shortlist = fits.slice(0, 3);
+  const best = shortlist[Math.floor(Math.abs(Math.sin(seed * 127.1) * 43758.5453) % 1 * shortlist.length) % shortlist.length];
   const { sx, sy, sz } = best;
-  const bad = (s) => s > 1.6 || s < 0.5;
-  if (bad(sx) || bad(sz) || sy > 1.9 || sy < 0.45) return null;
   const geo = best.t.geo.clone();
   geo.scale(sx, sy, sz);
   return { geo, height: best.t.h * sy, name: best.t.name };
