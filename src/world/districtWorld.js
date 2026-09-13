@@ -111,6 +111,14 @@ const pickForm = (forms, r) => { let acc = 0; for (const [k, w] of Object.entrie
 /* Foliage is never one green. These multiply the leaf material, so they read
    as the same planting in different light rather than as five paint pots. */
 const LEAF = [0x3d5a32, 0x4a6338, 0x2f4a28, 0x455c34, 0x3a522e, 0x486438];
+/* The canopy tint. LEAF's six greens are right for a plane tree and wrong for a
+   cherry, so an AUTHORED species (world/treeModels.js) uses the colour read off
+   its own model instead -- sakura stays pink, the maple red -- while a
+   procedural one keeps the green it always had. Per instance, so it costs
+   nothing: the canopies were already tinted this way. */
+const leafTint = (A, sp, fallback) => A?.geo?.species?.[sp]?.authored
+  ? (A.geo.species[sp].leaf ?? fallback)
+  : fallback;
 
 export class DistrictWorld {
   constructor(scene, assets, district, opts = {}) {
@@ -1633,8 +1641,8 @@ export class DistrictWorld {
     const parked = {}, parkedCol = {};       // keyed by silhouette
     const dressed = !!this.catalogue;
     // one bucket per species, so a street never plants the same tree twice over
-    const trees = { plane: [], pine: [], poplar: [], palm: [], sakura: [], ginkgo: [] };
-    const leafCol = { plane: [], pine: [], poplar: [], palm: [], sakura: [], ginkgo: [] };
+    const trees = { plane: [], pine: [], poplar: [], palm: [], sakura: [], ginkgo: [], willow: [], red_maple: [], autumn_oak: [], cypress: [], magnolia: [] };
+    const leafCol = { plane: [], pine: [], poplar: [], palm: [], sakura: [], ginkgo: [], willow: [], red_maple: [], autumn_oak: [], cypress: [], magnolia: [] };
     for (const id of segs) {
       yield* tick('lamp rows');
       const s2 = this.district.segments[id];
@@ -1664,15 +1672,18 @@ export class DistrictWorld {
           pools.push(flat(hx, 0.03 + ly, hz, 13));
         }
         if (!onTarmac && hash(px, pz) < 0.35) {
-          /* Species follows the street it stands on: formal poplars down the
-             arterials, plane trees on the side streets, palms on the water
-             boundary, pines where the map has nothing much else, sakura and ginkgo in Tokyo! */
+          /* 10 Masterpiece Species follow the district and street class:
+             - Little Tokyo: Sakura (Cherry blossom), Ginkgo, Japanese Red Maple, Weeping Willow
+             - Marrow Hill / Suburbs: Magnolia, Autumn Oak, London Plane
+             - Waterfront / Boundary: Royal Palm, Coastal Pine
+             - Arterials & Avenues: Italian Cypress, Poplar, Plane */
           const r = hash(pz * 1.7, px * 0.9);
           const isTokyo = this.district.name === 'LITTLE TOKYO' || (px > 1950 && px < 2400 && pz > 1300 && pz < 1850);
-          const sp = isTokyo ? (r < 0.65 ? 'sakura' : 'ginkgo')
-                   : s2.cls === 'arterial' ? (r < 0.62 ? 'poplar' : 'plane')
-                   : s2.cls === 'boundary' ? (r < 0.5 ? 'palm' : 'pine')
-                   : r < 0.72 ? 'plane' : r < 0.88 ? 'poplar' : 'pine';
+          const isWater = s2.cls === 'boundary' || Math.hypot(px - 1850, pz - 2150) < 500;
+          const sp = isTokyo ? (r < 0.45 ? 'sakura' : r < 0.70 ? 'ginkgo' : r < 0.88 ? 'red_maple' : 'willow')
+                   : isWater ? (r < 0.65 ? 'palm' : 'pine')
+                   : s2.cls === 'arterial' ? (r < 0.40 ? 'cypress' : r < 0.70 ? 'poplar' : 'plane')
+                   : r < 0.30 ? 'magnolia' : r < 0.55 ? 'autumn_oak' : r < 0.80 ? 'plane' : 'pine';
           const sc = 0.85 + hash(px, pz) * 0.45;
           const tx = px + nx * 2.2 * side, tz = pz + nz * 2.2 * side;
           if (this.district.tarmacDepth(tx, tz) > 0.2) {
@@ -1680,8 +1691,15 @@ export class DistrictWorld {
             trees[sp].push(mat4(tx, ty, tz, hash(pz, px) * 6.28, sc, sc * (0.9 + hash(px, pz) * 0.3), sc));
             solidParked.push({ x: tx, z: tz, yaw: 0, offsets: [0],
                                radius: 0.34, reach: 0.7, tag: 'prop' });
-            const col = sp === 'sakura' ? 0xffb7c5 : sp === 'ginkgo' ? 0xe5cc28 : LEAF[Math.floor(r * LEAF.length)];
-            leafCol[sp].push(col);
+            const col = sp === 'sakura' ? 0xffb7c5
+                      : sp === 'ginkgo' ? 0xe5cc28
+                      : sp === 'red_maple' ? 0xd61c28
+                      : sp === 'willow' ? 0x6bb854
+                      : sp === 'autumn_oak' ? 0xe67e22
+                      : sp === 'magnolia' ? 0x27ae60
+                      : sp === 'cypress' ? 0x1e5631
+                      : LEAF[Math.floor(r * LEAF.length)];
+            leafCol[sp].push(leafTint(A, sp, col));
           }
         }
       }
@@ -1741,7 +1759,7 @@ export class DistrictWorld {
           const sc = 1.05 + hash(pz, px) * 0.55;
           const py = KERB_H + this.district.elevationAt(px, pz);
           trees[sp].push(mat4(px, py, pz, hash(px, pz) * 6.28, sc, sc * (0.9 + hash(px, pz) * 0.25), sc));
-          leafCol[sp].push(LEAF[Math.floor(hash(px * 1.3, pz) * LEAF.length)]);
+          leafCol[sp].push(leafTint(A, sp, LEAF[Math.floor(hash(px * 1.3, pz) * LEAF.length)]));
           solidParked.push({ x: px, z: pz, yaw: 0, offsets: [0], radius: 0.38, reach: 0.8, tag: 'prop' });
         }
       }

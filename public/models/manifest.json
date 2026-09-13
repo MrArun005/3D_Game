@@ -15,33 +15,266 @@
       ],
       "bounds": {
         "min": [
-          -0.994,
+          -0.45,
           0,
-          -0.141
+          -0.25
         ],
         "max": [
-          0.994,
-          1.776,
-          0.208
+          0.45,
+          1.78,
+          0.25
         ]
       },
       "tris": {
-        "lod0": 22536,
-        "lod1": 22536,
-        "lod2": 22536
+        "lod0": 6000,
+        "lod1": 3329,
+        "lod2": 3329
       },
       "materials": [
-        "cloth_shirt",
-        "cloth_trouser",
-        "face_skin",
-        "hair",
-        "shoe_leather",
-        "skin"
+        "cloth_shirt"
       ],
       "tags": [
         "character",
-        "crowd"
+        "hero"
       ]
+    },
+    "buildings/tokyo_neon_tower": {
+      "url": "/models/buildings/tokyo_neon_tower.glb",
+      "bounds": {
+        "min": [
+          -8.5,
+          0,
+          -12.5
+        ],
+        "max": [
+          8.5,
+          31.0,
+          2.0
+        ]
+      },
+      "tris": {
+        "lod0": 1200,
+        "lod1": 600,
+        "lod2": 300
+      },
+      "materials": [
+        "wall_dark",
+        "concrete_slab",
+        "glass_curtain",
+        "glass_shop",
+        "steel_dark",
+        "konbini_green",
+        "konbini_orange",
+        "konbini_white",
+        "neon_cyan",
+        "neon_magenta",
+        "neon_yellow",
+        "neon_red",
+        "interior_warm"
+      ],
+      "tags": [
+        "building",
+        "tokyo",
+        "neon",
+        "commercial",
+        "landmark"
+      ]
+    },
+    "buildings/tokyo_neon_tower_b": {
+      "url": "/models/buildings/tokyo_neon_tower_b.glb",
+      "bounds": {
+        "min": [
+          -8.5,
+          0,
+          -12.5
+        ],
+        "max": [
+          8.5,
+          31.0,
+          2.0
+        ]
+      },
+      "tris": {
+        "lod0": 1150,
+        "lod1": 580,
+        "lod2": 290
+      },
+      "materials": [
+        "wall_dark",
+        "concrete_slab",
+        "glass_curtain",
+        "glass_shop",
+        "steel_dark",
+        "konbini_green",
+        "konbini_orange",
+        "konbini_white",
+        "neon_cyan",
+        "neon_magenta",
+        "neon_yellow",
+        "neon_red",
+        "interior_warm"
+      ],
+      "tags": [
+        "building",
+        "tokyo",
+        "neon",
+        "commercial",
+        "landmark"
+      ]
+    },
+    "buildings/tokyo_neon_tower_c": {
+      "url": "/models/buildings/tokyo_neon_tower_c.glb",
+      "bounds": {
+        "min": [
+          -8.5,
+          0,
+          -12.5
+        ],
+        "max": [
+          8.5,
+          31.0,
+          2.0
+        ]
+      },
+      "tris": {
+        "lod0": 1380,
+        "lod1": 700,
+        "lod2": 350
+      },
+      "materials": [
+        "wall_dark",
+        "concrete_slab",
+        "glass_curtain",
+        "glass_shop",
+        "steel_dark",
+        "konbini_green",
+        "konbini_orange",
+        "konbini_white",
+        "neon_cyan",
+        "neon_magenta",
+        "neon_yellow",
+        "neon_red",
+        "interior_warm"
+      ],
+      "tags": [
+        "building",
+        "tokyo",
+        "neon",
+        "commercial",
+        "landmark"
+      ]
+    },
+    "buildings/tokyo_neon_tower_d": {
+      "url": "/models/buildings/tokyo_neon_tower_d.glb",
+      "bounds": {
+        "min": [
+          -8.5,
+          0,
+          -12.5
+        ],
+        "max": [
+          8.5,
+          31.0,
+          2.0
+        ]
+      },
+      "tris": {
+        "lod0": 1420,
+        "lod1": 720,
+        "lod2": 360
+      },
+      "materials": [
+        "wall_dark",
+        "concrete_slab",
+        "glass_curtain",
+        "glass_shop",
+        "steel_dark",
+        "konbini_green",
+        "konbini_orange",
+        "konbini_white",
+        "neon_cyan",
+        "neon_magenta",
+        "neon_yellow",
+        "neon_red",
+        "interior_warm"
+      ],
+      "tags": [
+        "building",
+        "tokyo",
+        "neon",
+        "commercial",
+        "landmark"
+      ]
+    },
+    "vegetation/tree_sakura": {
+      "url": "/models/vegetation/tree_sakura.glb",
+      "bounds": { "min": [-3.2, 0, -3.2], "max": [3.2, 6.5, 3.2] },
+      "tris": { "lod0": 1885, "lod1": 900, "lod2": 450 },
+      "materials": ["bark", "foliage"],
+      "tags": ["tree", "sakura", "vegetation", "tokyo"]
+    },
+    "vegetation/tree_willow": {
+      "url": "/models/vegetation/tree_willow.glb",
+      "bounds": { "min": [-3.0, 0, -3.0], "max": [3.0, 6.2, 3.0] },
+      "tris": { "lod0": 1457, "lod1": 700, "lod2": 350 },
+      "materials": ["bark", "foliage"],
+      "tags": ["tree", "willow", "vegetation", "tokyo"]
+    },
+    "vegetation/tree_red_maple": {
+      "url": "/models/vegetation/tree_red_maple.glb",
+      "bounds": { "min": [-2.4, 0, -2.4], "max": [2.4, 5.2, 2.4] },
+      "tris": { "lod0": 679, "lod1": 340, "lod2": 170 },
+      "materials": ["bark", "foliage"],
+      "tags": ["tree", "maple", "vegetation", "tokyo"]
+    },
+    "vegetation/tree_ginkgo": {
+      "url": "/models/vegetation/tree_ginkgo.glb",
+      "bounds": { "min": [-2.5, 0, -2.5], "max": [2.5, 7.2, 2.5] },
+      "tris": { "lod0": 1641, "lod1": 800, "lod2": 400 },
+      "materials": ["bark", "foliage"],
+      "tags": ["tree", "ginkgo", "vegetation", "tokyo"]
+    },
+    "vegetation/tree_pine": {
+      "url": "/models/vegetation/tree_pine.glb",
+      "bounds": { "min": [-2.6, 0, -2.6], "max": [2.6, 6.0, 2.6] },
+      "tris": { "lod0": 745, "lod1": 370, "lod2": 185 },
+      "materials": ["bark", "foliage"],
+      "tags": ["tree", "pine", "vegetation", "tokyo"]
+    },
+    "vegetation/tree_plane": {
+      "url": "/models/vegetation/tree_plane.glb",
+      "bounds": { "min": [-2.8, 0, -2.8], "max": [2.8, 6.8, 2.8] },
+      "tris": { "lod0": 1281, "lod1": 640, "lod2": 320 },
+      "materials": ["bark", "foliage"],
+      "tags": ["tree", "plane", "vegetation"]
+    },
+    "vegetation/tree_autumn_oak": {
+      "url": "/models/vegetation/tree_autumn_oak.glb",
+      "bounds": { "min": [-2.8, 0, -2.8], "max": [2.8, 6.4, 2.8] },
+      "tris": { "lod0": 580, "lod1": 290, "lod2": 145 },
+      "materials": ["bark", "foliage"],
+      "tags": ["tree", "autumn", "vegetation"]
+    },
+    "vegetation/tree_cypress": {
+      "url": "/models/vegetation/tree_cypress.glb",
+      "bounds": { "min": [-1.2, 0, -1.2], "max": [1.2, 7.8, 1.2] },
+      "tris": { "lod0": 589, "lod1": 295, "lod2": 150 },
+      "materials": ["bark", "foliage"],
+      "tags": ["tree", "cypress", "vegetation"]
+    },
+    "vegetation/tree_palm": {
+      "url": "/models/vegetation/tree_palm.glb",
+      "bounds": { "min": [-3.5, 0, -3.5], "max": [3.5, 7.2, 3.5] },
+      "tris": { "lod0": 1313, "lod1": 650, "lod2": 325 },
+      "materials": ["bark", "foliage"],
+      "tags": ["tree", "palm", "vegetation"]
+    },
+    "vegetation/tree_magnolia": {
+      "url": "/models/vegetation/tree_magnolia.glb",
+      "bounds": { "min": [-2.6, 0, -2.6], "max": [2.6, 5.8, 2.6] },
+      "tris": { "lod0": 880, "lod1": 440, "lod2": 220 },
+      "materials": ["bark", "foliage"],
+      "tags": ["tree", "magnolia", "vegetation"]
     },
     "facade/balcony": {
       "url": "/models/facade/balcony.glb",

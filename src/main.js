@@ -9,6 +9,7 @@ import { createGrade } from './core/grade.js';
 import { setAnisotropy, wetTarmacLook } from './world/textures.js';
 import { createAssets } from './world/assets.js';
 import { loadVendorCars, loadHeroSkin, KENNEY_CARS } from './world/vendorCars.js';
+import { loadTreeModels } from './world/treeModels.js';
 import { LightPool } from './game/lighting.js';
 import { Jobs, onPavementAtSpeed } from './game/jobs.js';
 import { Garage } from './game/garage.js';
@@ -151,6 +152,8 @@ const resolution = autoResolution(renderer, grade, isLite);
 const assets = createAssets();
 setBootProgress(75, 'Loading car fleet…');
 await loadVendorCars(assets).catch((e) => console.warn('vendor cars:', e.message));
+// trees are on every street, so this is AWAITED: a late swap would leave half the city procedural
+await loadTreeModels(assets).catch((e) => console.warn('tree models:', e.message));
 setBootProgress(90, 'Reading the city plan…');
 grade.resize(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio());
 /* Bloom needs no day/night switch: it reads the emissive MRT channel, and
@@ -952,8 +955,12 @@ function driverDoor(hold = 0.9) {
   const d = hero.userData.doors?.doorFR;
   if (!d) return;
   d.target = d.open;
+  audio.doorOpen?.();
   clearTimeout(d.timer);
-  d.timer = setTimeout(() => { d.target = 0; }, hold * 1000);
+  d.timer = setTimeout(() => {
+    d.target = 0;
+    audio.doorShut?.();
+  }, hold * 1000);
 }
 
 function useVehicle() {
