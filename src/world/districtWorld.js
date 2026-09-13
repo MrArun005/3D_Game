@@ -12,6 +12,7 @@ import { signalState, LAMP_COLOURS } from './signals.js';
 import { BREAK_CLASS } from './breakables.js';
 import { ZEBRA_DEPTH } from '../game/traffic.js';
 import { buildTokyoBuilding, frontRotation, tokyoMaterial, buildTokyoStreet, wireMaterial, buildShrine } from './tokyo.js';
+import { loadTokyoTowers, towerFor } from './tokyoTowers.js';
 import { tileUv, SIGN_TILES } from './signs.js';
 import { buildDecals, decalMaterial, decalGeometry } from './decals.js';
 import { buildGlare, setGlareRing } from './glare.js';
@@ -117,6 +118,14 @@ export class DistrictWorld {
     this.assets = assets;
     this.district = district;
     this.chunks = new Map();
+    /* Arun's authored neon towers, baked once and merged into each Tokyo chunk
+       mesh. Async: chunks build from frame one, so until this lands every
+       footprint falls through to a generated building, and Tokyo chunks built
+       before it are not rebuilt -- the towers simply appear on whatever streams
+       in afterwards, which at boot is everything past the spawn ring. */
+    this.towers = null;
+    loadTokyoTowers().then((t) => { this.towers = t.length ? t : null; })
+      .catch((e) => console.warn('tokyo towers:', e?.message ?? e));
     // solid parked cars, kept per chunk so collision only ever asks about the
     // ones nearby. The old City had this; the district world shipped without
     // it, which is why kerbside cars went back to being scenery you drive
@@ -1500,7 +1509,30 @@ export class DistrictWorld {
           const toWorld = (lx, lz) => [wx + lx * ca - lz * sa, wz + lx * sa + lz * ca];
           const rot = frontRotation((x, z) => this.district.tarmacDepth(x, z), toWorld, g.w / 2, g.d / 2);
           const swap = Math.abs(rot) > Math.PI / 4 && Math.abs(Math.abs(rot) - Math.PI) > 1e-6;   // a +/-90 turn swaps the footprint axes
-          const b = buildTokyoBuilding(Math.floor(hash(wx * 0.71, wz * 0.29) * 1e9), swap ? g.d / 2 : g.w / 2, swap ? g.w / 2 : g.d / 2, h);
+          const fhw = swap ? g.d / 2 : g.w / 2, fhd = swap ? g.w / 2 : g.d / 2;
+
+          /* One footprint in three gets one of Arun's authored neon towers
+             instead of a generated building, wherever one fits the plot without
+             being stretched (towerFor refuses past 1.6x/0.5x -- past that the
+             signage smears and it reads worse than a built one). They are baked
+             into the same color/emit/flick vertex format as the rest of this
+             mesh, so they MERGE into it and cost no extra draw; drawn as they
+             ship, 13 materials a building would be 13 draws each. Falls through
+             to the generated building when the GLBs have not landed yet (the
+             load is async and chunks build from frame one) or none fits. */
+          if (this.towers && hash(wx * 0.19, wz * 0.83) < 0.34) {
+            const tw = towerFor(this.towers, 0, fhw, fhd, h);
+            if (tw) {
+              const Mt = new THREE.Matrix4().makeRotationY(-bl.angle).multiply(new THREE.Matrix4().makeRotationY(rot));
+              Mt.setPosition(wx, KERB_H, wz);
+              tw.geo.applyMatrix4(Mt);
+              tokyoParts.push(tw.geo);
+              boxes.push({ x: wx, z: wz, angle: bl.angle, hw: swap ? fhd : fhw, hd: swap ? fhw : fhd, height: tw.height, district: bl.district, tokyo: true });
+              continue;
+            }
+          }
+
+          const b = buildTokyoBuilding(Math.floor(hash(wx * 0.71, wz * 0.29) * 1e9), fhw, fhd, h);
           // local (front +X) -> footprint local (turned onto the street side) -> world (the block's frame), same rotation sense as mat4()
           const M = new THREE.Matrix4().makeRotationY(-bl.angle).multiply(new THREE.Matrix4().makeRotationY(rot));
           M.setPosition(wx, KERB_H, wz);
@@ -1601,8 +1633,8 @@ export class DistrictWorld {
     const parked = {}, parkedCol = {};       // keyed by silhouette
     const dressed = !!this.catalogue;
     // one bucket per species, so a street never plants the same tree twice over
-    const trees = { plane: [], pine: [], poplar: [], palm: [] };
-    const leafCol = { plane: [], pine: [], poplar: [], palm: [] };
+    const trees = { plane: [], pine: [], poplar: [], palm: [], sakura: [], ginkgo: [] };
+    const leafCol = { plane: [], pine: [], poplar: [], palm: [], sakura: [], ginkgo: [] };
     for (const id of segs) {
       yield* tick('lamp rows');
       const s2 = this.district.segments[id];
@@ -1634,9 +1666,11 @@ export class DistrictWorld {
         if (!onTarmac && hash(px, pz) < 0.35) {
           /* Species follows the street it stands on: formal poplars down the
              arterials, plane trees on the side streets, palms on the water
-             boundary, pines where the map has nothing much else. */
+             boundary, pines where the map has nothing much else, sakura and ginkgo in Tokyo! */
           const r = hash(pz * 1.7, px * 0.9);
-          const sp = s2.cls === 'arterial' ? (r < 0.62 ? 'poplar' : 'plane')
+          const isTokyo = this.district.name === 'LITTLE TOKYO' || (px > 1950 && px < 2400 && pz > 1300 && pz < 1850);
+          const sp = isTokyo ? (r < 0.65 ? 'sakura' : 'ginkgo')
+                   : s2.cls === 'arterial' ? (r < 0.62 ? 'poplar' : 'plane')
                    : s2.cls === 'boundary' ? (r < 0.5 ? 'palm' : 'pine')
                    : r < 0.72 ? 'plane' : r < 0.88 ? 'poplar' : 'pine';
           const sc = 0.85 + hash(px, pz) * 0.45;
@@ -1646,7 +1680,8 @@ export class DistrictWorld {
             trees[sp].push(mat4(tx, ty, tz, hash(pz, px) * 6.28, sc, sc * (0.9 + hash(px, pz) * 0.3), sc));
             solidParked.push({ x: tx, z: tz, yaw: 0, offsets: [0],
                                radius: 0.34, reach: 0.7, tag: 'prop' });
-            leafCol[sp].push(LEAF[Math.floor(r * LEAF.length)]);
+            const col = sp === 'sakura' ? 0xffb7c5 : sp === 'ginkgo' ? 0xe5cc28 : LEAF[Math.floor(r * LEAF.length)];
+            leafCol[sp].push(col);
           }
         }
       }
