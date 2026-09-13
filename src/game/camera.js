@@ -39,7 +39,23 @@ const RIGS = [
      (6.2, 1.35) pitches -3.6 deg; the rear wheels at (-2.3, 0) then sit 24 deg
      below the axis -- inside the frame with margin -- and the car spans ~64-93%
      of frame height. aimUp 1.35 (was the shared 0.95) is what lifts it clear. */
-  { back: 6.4, up: 2.15, aim: 6.2, aimUp: 1.35, fov: 56, lag: 3.4, tilt: 1 },
+  /* Default rig, from Arun's shot brief: "camera just above the rear boot and
+     spoiler, slightly elevated, looking forward-downward, ample asphalt visible
+     behind and below the car; the car occupies 30% of the frame in the
+     lower-middle". Solved as geometry at 48 deg vertical (half 24; horizontal
+     half 36.7 at 16:9):
+       width   30% of frame = 22 deg of a 1.9 m car -> its rear sits 4.9 m from
+               the lens -> back 7.2 from the car's centre.
+       height  car at 45-75% of the frame with road under it needs a LOW lens:
+               up 1.5 is spoiler height; from there the roof is 2.5 deg above
+               the axis and the wheels 12 deg below, leaving the bottom quarter
+               of the frame as the asphalt trailing behind the car.
+       pitch   -4.8 deg (horizon at ~40% from the top, as in the reference), so
+               the aim point 6.2 m ahead sits 0.37 m off the ground: aimUp -0.25.
+     A higher camera or a steeper pitch cannot hit all three numbers at once --
+     30% width, lower-middle placement and a visible horizon -- only a low one
+     can, which is why the brief says "just above the spoiler". */
+  { back: 5.9, up: 1.5, aim: 6.2, aimUp: -0.25, fov: 48, lag: 3.4, tilt: 1 },   // 7.2 measured 24% wide on the GT3 R; 30% is 7.2 * 24/30
   { back: 4.7, up: 1.92, aim: 8.2, fov: 63, lag: 6.0, tilt: 1 },
   { back: -1.3, up: 1.28, aim: 14.0, fov: 62, lag: 22.0, tilt: 0 },
   { back: -0.55, up: 1.3, aim: 16.0, fov: 55, lag: 26.0, tilt: 0 },
