@@ -864,19 +864,59 @@ export class DistrictWorld {
           }
         }
 
-        // edge line, then the kerb it runs alongside, then the pavement
+        /* Edge line, then the kerb it runs alongside, then the pavement --
+           but the kerb and the pavement are CLIPPED where they would land on
+           another road's carriageway.
+
+           Both used to be one unconditional ribbon per side, laid at a fixed
+           offset from this edge's centreline with no idea what else was there.
+           Wherever two roads run close and parallel -- which in a city grid is
+           everywhere, and on the lift bridge is the deck beside its own
+           approach -- one road's footpath was drawn straight over the other's
+           lanes. Measured across the bridge deck at z=2450: tarmac from
+           x=1917 to 1960 (two overlapping carriageways), and the pavement
+           tiles sitting at x=1946 where tarmacDepth reads -12.8. You drove on
+           the footpath while the physics said road. This is the same class of
+           bug, and the same fix, as the 2026-08-31 pass that stopped props and
+           parked cars standing in the road: ask tarmacDepth, which is the
+           minimum over ALL nearby segments.
+
+           No `exclude` is needed. The probe sits at half + 2.4, which is
+           outside THIS edge's own half-width, so our own segment contributes
+           +2.4 there; only another road's tarmac can drive it negative.
+
+           Walked in 6 m steps and emitted as CONTIGUOUS RUNS, so a segment
+           with nothing in the way still costs the single quad it always did
+           and only a clipped one pays for extra geometry. */
+        const STEP = 6;
+        const clear = (o, t0, t1) => {
+          const [cx, cz] = at(o, (t0 + t1) / 2);
+          return this.district.tarmacDepth(cx, cz) > 0.2;
+        };
         for (const side of [-1, 1]) {
           const o = side * (half - 0.45);
           ribbon(white, px0 + nx * o, pz0 + nz * o, px1 + nx * o, pz1 + nz * o, 0.15, 0.02);
-          const kx = side * half;
-          // the kerb face looks back at the road it edges
-          wall(kerb, kerbN, px0 + nx * kx, pz0 + nz * kx, px1 + nx * kx, pz1 + nz * kx,
-               0, KERB_H, -nx * side, -nz * side);
-          const w = side * (half + 2.4);
-          ribbon(walk, px0 + nx * w, pz0 + nz * w, px1 + nx * w, pz1 + nz * w, 4.8, KERB_H, walkN);
+          const kx = side * half, w = side * (half + 2.4);
           // the slab texture is 2.4m; without UVs the pavement is flat colour
-          const v = (s1 - s0) / 2.4, u = 4.8 / 2.4;
-          walkUv.push(0, 0, v, 0, v, u, 0, 0, v, u, 0, u);
+          const u = 4.8 / 2.4;
+          let runStart = null;
+          const flush = (t1) => {
+            if (runStart === null) return;
+            const [qx, qz] = at(w, runStart), [rx, rz] = at(w, t1);
+            ribbon(walk, qx, qz, rx, rz, 4.8, KERB_H, walkN);
+            const v = (t1 - runStart) / 2.4;
+            walkUv.push(0, 0, v, 0, v, u, 0, 0, v, u, 0, u);
+            // the kerb face looks back at the road it edges; it runs with its pavement
+            const [ka, kb] = at(kx, runStart), [kc, kd] = at(kx, t1);
+            wall(kerb, kerbN, ka, kb, kc, kd, 0, KERB_H, -nx * side, -nz * side);
+            runStart = null;
+          };
+          for (let t = s0; t < s1; t += STEP) {
+            const t2 = Math.min(s1, t + STEP);
+            if (clear(w, t, t2)) { if (runStart === null) runStart = t; }
+            else flush(t);
+          }
+          flush(s1);
         }
       }
     }
