@@ -251,7 +251,7 @@ const hableToneMapNode = Fn(([color, exposure]) =>
   hableCurve(color.mul(exposure).mul(HABLE.BIAS)).div(hableCurve(HABLE.W)).clamp());
 
 export function createGrade(renderer, scene, camera, {
-  ao: withAO = true, bloom: withBloom = true, aa: withAA = true, post: withPost = true,
+  ao: withAO = true, bloom: withBloom = true, aa: withAA = true, post: withPost = true, blur: withBlur = true,
   ssr: withSSR = false,
 } = {}) {
   /* ?nopost: no pipeline, no MRT, no grade — the pre-Tier-1.1 render path.
@@ -364,7 +364,37 @@ export function createGrade(renderer, scene, camera, {
      the AA pass. Grain lands after AA either way — smoothed grain is mud. */
   const agx = hdr.toneMapping(renderer.toneMapping).rgb;
   const mapped = vec4(mix(agx, hableToneMapNode(hdr.rgb, toneMappingExposure), uFilmic), 1.0);
-  const display = (withAA ? smaa(mapped) : mapped).workingToColorSpace(THREE.SRGBColorSpace);
+  const aa = (withAA ? smaa(mapped) : mapped).workingToColorSpace(THREE.SRGBColorSpace);
+
+  /* --- High-Speed Radial Motion Blur ---
+     High-velocity radial motion blur (as in APEX / Heat / Forza racing).
+     Peripheral scenery, street lamps, and roadside buildings streak outward
+     with speed, while the center vehicle and forward road remain crisp and focused. */
+  const displayTex = convertToTexture(aa);
+  const motionBlurred = Fn(() => {
+    const uvs = uv();
+    const center = vec2(0.5, 0.48);
+    const dir = uvs.sub(center);
+    const dist = dir.length();
+    const edgeMask = smoothstep(0.12, 0.68, dist);
+    const speedFactor = smoothstep(0.18, 0.88, uSpeed);
+    const blurAmt = speedFactor.mul(edgeMask).mul(0.042);
+
+    const baseCol = displayTex.sample(uvs).rgb;
+    const step = dir.mul(blurAmt.div(6.0));
+    const sum = baseCol.toVar();
+    sum.addAssign(displayTex.sample(clamp(uvs.add(step.mul(1.0)), vec2(0.001), vec2(0.999))).rgb);
+    sum.addAssign(displayTex.sample(clamp(uvs.add(step.mul(2.0)), vec2(0.001), vec2(0.999))).rgb);
+    sum.addAssign(displayTex.sample(clamp(uvs.add(step.mul(3.0)), vec2(0.001), vec2(0.999))).rgb);
+    sum.addAssign(displayTex.sample(clamp(uvs.sub(step.mul(1.0)), vec2(0.001), vec2(0.999))).rgb);
+    sum.addAssign(displayTex.sample(clamp(uvs.sub(step.mul(2.0)), vec2(0.001), vec2(0.999))).rgb);
+    sum.addAssign(displayTex.sample(clamp(uvs.sub(step.mul(3.0)), vec2(0.001), vec2(0.999))).rgb);
+    sum.divAssign(7.0);
+
+    return vec4(mix(baseCol, sum, smoothstep(0.005, 0.12, blurAmt)), 1.0);
+  });
+
+  const display = withBlur ? motionBlurred() : aa;   // ?noblur
 
   /* --- the grade, in display space ---------------------------------------
      Each block reproduces its old quad's blend arithmetic exactly:

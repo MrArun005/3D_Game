@@ -66,27 +66,7 @@ function placeBoard(x, y, z, yaw, w, h) {
 export const KERB_ROWS = [
   { asset: 'props/lamp_arterial', every: 34, chance: 1.00, on: ['arterial', 'boundary'], offset: 1.6 },
   { asset: 'props/lamp_local',    every: 30, chance: 1.00, on: ['street', 'local'],      offset: 1.5 },
-  { asset: 'props/bench',         every: 46, chance: 0.34, offset: 3.4 },
-  { asset: 'props/bin',           every: 52, chance: 0.34, offset: 1.9 },
-  { asset: 'props/bike_rack',     every: 74, chance: 0.26, offset: 3.1 },
-  { asset: 'props/parking_meter', every: 26, chance: 0.20, on: ['street', 'local'], offset: 1.7 },
-  { asset: 'props/hydrant',       every: 68, chance: 0.30, offset: 1.7 },
-  { asset: 'props/post_box',      every: 96, chance: 0.26, offset: 2.0 },
-  { asset: 'props/phone_box',     every: 128, chance: 0.22, offset: 2.6 },
-  { asset: 'props/bus_shelter',   every: 150, chance: 0.34, on: ['arterial'], offset: 3.6 },
-  { asset: 'props/bollard',       every: 12, chance: 0.30, on: ['arterial'], offset: 1.1 },
-  { asset: 'props/planter',       every: 58, chance: 0.24, offset: 2.9 },
-  { asset: 'props/banner_pole',   every: 88, chance: 0.30, on: ['arterial'], offset: 1.5 },
-  { asset: 'props/notice_board',  every: 112, chance: 0.20, offset: 2.6 },
-  { asset: 'props/a_frame_sign',  every: 84, chance: 0.26, offset: 3.6 },
-  { asset: 'props/cafe_umbrella', every: 92, chance: 0.24, offset: 4.1 },
-  { asset: 'props/utility_pole',  every: 64, chance: 0.28, on: ['street', 'local'], offset: 1.3 },
-  { asset: 'props/junction_box',  every: 104, chance: 0.22, offset: 2.2 },
   { asset: 'props/street_sign',   every: 70, chance: 0.30, offset: 1.4 },
-  { asset: 'props/sign_projecting', every: 78, chance: 0.22, offset: 4.4 },
-  { asset: 'props/shrub_mass', every: 54, chance: 0.26, offset: 3.8, scale: [0.8, 1.2] },
-  { asset: 'props/railing',       every: 8,  chance: 0.14, on: ['arterial'], offset: 2.5, align: true },
-  { asset: 'props/hedge_run',     every: 10, chance: 0.10, on: ['street'],   offset: 4.6, align: true },
 ];
 
 /**
@@ -304,7 +284,7 @@ function pick(kit, r) {
 export function dressChunk(batch, ctx) {
   const { segments, blocks, district, solids, pools, heads } = ctx;
   kerbside(batch, segments, district, solids, pools, heads);
-  roads(batch, segments, district);
+  // Carriageway clutter/ironwork removed to keep roads 100% clean and unobstructed
   blockDressing(batch, blocks, district, solids);
 }
 
@@ -323,10 +303,8 @@ function kerbside(batch, segments, district, solids, pools, heads) {
     if (s._district === undefined) s._district = district.districtAt?.((s.ax + s.bx) / 2, (s.az + s.bz) / 2) ?? null;
     if (s._district === 'OLD QUARTER') oldQuarterClusters(batch, s, L, ux, uz, nx, nz, district, solids);
 
-    /* One roadworks site per long segment, seeded -- clustered, because a
-       single cone on an empty street reads as a mistake rather than as work. */
-    const works = hash(s.ax * 0.7, s.bz * 1.3) < 0.08 && L > 70
-      ? 24 + hash(s.bx, s.az) * (L - 60) : -1;
+    /* Clean carriageway: zero roadworks/debris blocking high-speed lanes */
+    const works = -1;
 
     for (const row of KERB_ROWS) {
       if (row.on && !row.on.includes(s.cls)) continue;

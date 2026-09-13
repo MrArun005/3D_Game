@@ -76,7 +76,11 @@ function crumple(mesh, local, radius, depth, rng) {
   }
   if (!touched) return false;
   pos.needsUpdate = true;
-  mesh.geometry.computeVertexNormals();
+  const now = performance.now();
+  if (now - (mesh._lastNormTime || 0) > 120) {
+    mesh._lastNormTime = now;
+    mesh.geometry.computeVertexNormals();
+  }
   return true;
 }
 
@@ -292,8 +296,8 @@ export class Damage {
 
     this.#wear(d);
 
-    // a hurt engine will not pull: this is felt long before it is seen
-    car.damageTorqueScale = 1 - d * 0.55;
+    // keep engine torque responsive and punchy for thrilling police pursuit
+    car.damageTorqueScale = Math.max(0.88, 1 - d * 0.12);
 
     /* Smoke is the WARNING, and it stops being the story the moment there are
        flames -- a burning car seen through its own soot is just a grey smudge.

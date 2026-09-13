@@ -143,6 +143,7 @@ const grade = createGrade(renderer, scene, camera, {
   ao: new URLSearchParams(location.search).has('ao'),
   bloom: !new URLSearchParams(location.search).has('nobloom'),
   aa: !new URLSearchParams(location.search).has('noaa'),
+  blur: !new URLSearchParams(location.search).has('noblur'),   // the speed radial blur: a 7-tap full-screen pass, unmeasured -- rule 1 wants a way to A/B it
   post: !new URLSearchParams(location.search).has('nopost'),
 });
 const resolution = autoResolution(renderer, grade, isLite);
@@ -178,6 +179,7 @@ function daylightAssets(A) {
   }
   for (const m of A.base.materials) m.emissiveIntensity = 0.05;
   A.mat.pool.opacity = 0;                 // sodium pools on sunlit tarmac: no
+  if (A.mat.lampCone) A.mat.lampCone.opacity = 0; // additive haze cone under lamps: no in daylight
   A.mat.lampGlow.emissiveIntensity = 0.15;
   A.mat.sign.emissiveIntensity = 0.06;
   A.mat.windowQuad.emissiveIntensity = 0.0;   // daylight: glass, not lamps
@@ -355,11 +357,7 @@ function onShot(gap, landed = null, damage = 26, from = null, kind = 'pistol') {
   car.impact = Math.max(car.impact || 0, 1.6 + hit * 2.2);
   car.yawRate += (Math.random() - 0.5) * hit * 0.9;
   damageModel.hit(2 + hit * 5);
-  // from three stars they shoot for the tyres: one landed round in eight takes one out, and it stays out until the garage
-  if (traffic.wanted >= 3 && Math.random() < 0.125) {
-    const ws = (hero.userData.wheels || []).filter((w) => !w.shot);
-    if (ws.length) { ws[Math.floor(Math.random() * ws.length)].shot = 1; hud.flash('TYRE SHOT OUT'); audio.thud?.(10); }
-  }
+  // Car hull absorbs bullet impacts without crippling tyre blowouts, preserving thrilling high-speed police chase dynamics
 }
 
 /**
@@ -1144,10 +1142,13 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   water = buildWater(scene, district, DAY);
   buildSurrounds(scene, district.bounds, DAY);
   buildPlaces(scene, district, DAY);
-  beach = buildBeach(scene, district, DAY);
-  crowd = new Crowd(scene, district, isLite ? 160 : 320);
-  crowd.onNear = () => chatter?.civilian?.('near');   // a pedestrian you nearly hit shouts (chatter throttles to one per 6 s); set HERE, after the crowd exists
-  people = new People(scene, +(new URLSearchParams(location.search).get('people') ?? (isLite ? 8 : 16)));
+  const params = new URLSearchParams(location.search);
+  if (params.has('beach')) beach = buildBeach(scene, district, DAY);
+  if (params.has('crowd')) {
+    crowd = new Crowd(scene, district, isLite ? 160 : 320);
+    crowd.onNear = () => chatter?.civilian?.('near');
+    people = new People(scene, +(params.get('people') ?? (isLite ? 8 : 16)));
+  }
   heli = new Helicopter(scene, DAY);
   heli.district = district;
   heli.nearbyBuildings = (x, z) => (world.nearbyBuildings ? world.nearbyBuildings(x, z) : []);
@@ -1164,24 +1165,25 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   };
   traffic.hud = hud;
   roadblock = new Roadblock(scene, assets, district, world, traffic, hero);
-  metro = new Metro(scene, district, assets);   // two elevated lines and their trains (world/metro.js)
+  if (params.has('metro')) metro = new Metro(scene, district, assets);
   garage.restore();
   story = new StoryManager(mission, traffic, hud, garage, audio, navigation);
   dispatch = new DispatchService(scene, world, garage, traffic, debris, hud, audio, navigation);
   window._dispatch = dispatch;
-  if (new URLSearchParams(location.search).has('debug')) window.addCash = (amount = 50000) => {
+  if (params.has('debug')) window.addCash = (amount = 50000) => {
     garage.addCash(amount, 'TEST FUNDS');
   };
-  reputation = new ReputationSystem(garage, audio, hud, scene);
+  if (params.has('rpg')) {
+    reputation = new ReputationSystem(garage, audio, hud, scene);
+    intelScanner = new IntelScanner(audio, hud);
+  }
   window._reputation = reputation;
-  intelScanner = new IntelScanner(audio, hud);
   window._intel = intelScanner;
   phone = new Phone(story, garage, hero, traffic, dispatch, car, reputation, intelScanner, navigation);
   vehicleVFX = new VehicleVFX(scene, hero);
   window.vehicleVFX = vehicleVFX;
-  puddles = new PuddleSystem(scene, district);
+  if (params.has('puddles')) puddles = new PuddleSystem(scene, district);
 
-  const params = new URLSearchParams(location.search);
   if (!params.has('nobillboards')) billboards = new BillboardSystem(scene, district, CITY_CENTRE);
   if (!params.has('nostreetlife')) streetLife = new StreetLife(scene, district);
   if (!params.has('noairspace')) airspace = new Airspace(scene);
@@ -1233,8 +1235,9 @@ car.lightsUser = false;
 const hero = buildCar(assets.carMats, 0x5b636d);
 scene.add(hero);
 // the damage model marks the real bodywork, so it needs the real meshes
-// the hero's visible body is the kit's sports sedan over the lofted physics hull
-await loadHeroSkin(assets, hero).catch((e) => console.warn('hero skin:', e.message));
+// the hero's visible body is the high-poly Corvette C8 ZR1 PBR model
+const initialBody = localStorage.getItem('hb.body') || 's-corvette-zr1';
+await loadHeroSkin(assets, hero, initialBody).catch((e) => console.warn('hero skin:', e.message));
 damageModel.attach(hero);
 const carVehicle = new CarVehicle(car, stepVehicle, hero);
 activeVehicle = carVehicle;
@@ -1360,7 +1363,7 @@ const chase = new ChaseCamera(camera);
 const weather = createWeather(scene, { hemi, dome: () => dome, onStrike: (delay) => audio.thunder?.(delay) });   // always built: rain comes in night spells (rainSpell) on the day cycle, and all night with ?night
 const hud = new Hud();
 let navigation = null;
-const clock = new GameClock({ startHour: +(new URLSearchParams(location.search).get('time') ?? (DAY ? 12.0 : 19.5)) });
+const clock = new GameClock({ startHour: +(new URLSearchParams(location.search).get('time') ?? (DAY ? 16.85 : 19.5)) });
 hud.useClock(clock);
 const stats = new Stats();
 window.stats = stats;
@@ -2067,7 +2070,15 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
      ?dusk) -- those are for looking at something in particular. */
   if (!clockRestored) {
     clockRestored = true;
-    try { const q = new URLSearchParams(location.search); const h = localStorage.getItem('hb.clock'); if (h !== null && !q.has('night') && !q.has('dusk') && !q.has('hour')) clock.hour = ((+h) % 24 + 24) % 24; } catch { /* private mode */ }
+    try {
+      const q = new URLSearchParams(location.search);
+      const h = localStorage.getItem('hb.clock');
+      if (h !== null && !q.has('night') && !q.has('dusk') && !q.has('hour') && !q.has('time')) {
+        const val = ((+h) % 24 + 24) % 24;
+        // Upgrade previous flat noon hours (10.5 - 15.5) to golden hour (16.85)
+        clock.hour = (val >= 10.5 && val <= 15.5) ? 16.85 : val;
+      }
+    } catch { /* private mode */ }
   }
   /* Hospitals heal: stand within 6 m of one on foot and health climbs at 15%/s. Free, like GTA's. */
   healTick += dt;

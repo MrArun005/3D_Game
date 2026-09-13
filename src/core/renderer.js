@@ -60,6 +60,10 @@ export const RENDER_BUDGET_PX_LITE = 1152 * 680;   // ~0.78 MP (Lite mode, 37% f
 export function renderScale(w, h, lite = false) {
   if (typeof location === 'undefined') return Math.min(1, Math.sqrt((lite ? RENDER_BUDGET_PX_LITE : RENDER_BUDGET_PX) / Math.max(1, w * h)));
   const q = new URLSearchParams(location.search);
+  if (q.has('4k')) {
+    // True 4K UHD rendering (3840x2160 internal buffer)
+    return Math.max(1, 3840 / Math.max(1, w));
+  }
   const res = parseFloat(q.get('res'));
   if (Number.isFinite(res) && res > 0) return Math.min(res, (globalThis.devicePixelRatio || 1) * 2);
   if (q.has('native')) return 1;
@@ -145,8 +149,11 @@ function patchNestedRenderInBundle(renderer) {
  * below 14.2 ms for over 2.5 seconds, it gradually recovers back to baseScale.
  */
 export function autoResolution(renderer, grade = null, lite = false) {
-  if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('native')) {
-    return () => {};
+  if (typeof location !== 'undefined') {
+    const q = new URLSearchParams(location.search);
+    if (q.has('native') || q.has('nodrs') || q.has('4k')) {
+      return function noop() {};
+    }
   }
 
   const baseScale = renderScale(window.innerWidth, window.innerHeight, lite);
@@ -156,10 +163,6 @@ export function autoResolution(renderer, grade = null, lite = false) {
   let lastAdjustTime = 0;
   const MIN_SCALE = 0.50;
 
-  // ?nodrs: hold the resolution wherever ?res / ?native put it. Without this
-  // a 4K frame is over the 19.5 ms trigger on the first sample and walks back
-  // down to MIN_SCALE, so you never actually see the resolution you asked for.
-  if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('nodrs')) return function noop() {};
   return function updateAutoResolution(dt) {
     frameCount++;
     sumMs += dt * 1000;

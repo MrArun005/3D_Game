@@ -15,9 +15,17 @@ export function chopValue(file, outlaw = false) {
 }
 
 export const CATALOGUE = [
-  { file: 'q-sports',     name: 'SPORTS COUPE',  price: 0 },
+  // Premier High-Poly PBR Hero Sports Cars
+  { file: 's-corvette-zr1',  name: 'CORVETTE C8 ZR1',   price: 0 },
+  { file: 's-monza',         name: 'MONZA SP1',         price: 4500 },
+  { file: 's-corvette-c6r',  name: 'C6.R GT2',          price: 5000 },
+  { file: 's-camaro-jewel',  name: "'67 CAMARO SS",     price: 3500 },
+  { file: 's-camaro-350',    name: "'67 CAMARO 350",    price: 4000 },
+  { file: 's-camaro-patrol', name: 'CAMARO PATROL',     price: 6000 },
   { file: 's-porsche-gt3r',  name: '992 GT3 R',         price: 7500 },
   { file: 's-f40-comp',      name: 'F40 COMPETIZIONE',  price: 9000 },
+  // Standard & Street Fleet
+  { file: 'q-sports',     name: 'SPORTS COUPE',  price: 0 },
   { file: 'q-normal1',    name: 'SALOON',        price: 500 },
   { file: 'q-normal2',    name: 'COMPACT',       price: 700 },
   { file: 'k-hatch',      name: 'HOT HATCH',     price: 900 },
@@ -28,13 +36,6 @@ export const CATALOGUE = [
   { file: 'k-suv-luxury', name: 'LUXURY SUV',    price: 2600 },
   { file: 'q-sports2',    name: 'SUPERCAR',      price: 3800 },
   { file: 'q-cop',        name: 'CRUISER',       price: 4000 },
-  // owner-supplied Sketchfab bodies: real PBR, hero-only
-  { file: 's-camaro-jewel',  name: "'67 CAMARO SS",     price: 6500 },
-  { file: 's-camaro-350',    name: "'67 CAMARO 350",    price: 7500 },
-  { file: 's-corvette-c6r',  name: 'C6.R GT2',          price: 9000 },
-  { file: 's-camaro-patrol', name: 'CAMARO PATROL',     price: 9500 },
-  { file: 's-corvette-zr1',  name: 'CORVETTE ZR1',      price: 14000 },
-  { file: 's-monza',         name: 'MONZA',             price: 12000 },
 ];
 /* Repair is priced by the damage on the car, plus a respray when you are hot:
    a scuffed wing is $100, a wreck at 100% is $700, and the police pay-off is
@@ -49,9 +50,10 @@ export class Garage {
     this.damage = damage;
     this.hud = hud;
 
-    this.owned = new Set(JSON.parse(localStorage.getItem('hb.garage') || '["q-sports"]'));
-    this.fitted = localStorage.getItem('hb.body') || 'q-sports';
-    if (!CATALOGUE.some((c) => c.file === this.fitted)) this.fitted = 'q-sports';
+    const storedGarage = localStorage.getItem('hb.garage');
+    this.owned = new Set(JSON.parse(storedGarage || '["q-sports"]'));
+    this.fitted = localStorage.getItem('hb.body') || 's-corvette-zr1';
+    if (!CATALOGUE.some((c) => c.file === this.fitted)) this.fitted = 's-corvette-zr1';
     this.cursor = CATALOGUE.findIndex((c) => c.file === this.fitted);
     this.browsing = false;
     this.lastOwned = this.owned.has(this.fitted) ? this.fitted : 'q-sports';   // what the chop shop hands you back

@@ -44,6 +44,9 @@ const TRADE = [
   'SUSHI BAR · 鮨', 'CAPSULE HOTEL', 'YAKITORI · 鳥', 'MATCHA CAFE', 'NEO TOKYO MOTORS',
 ];
 const TOKYO_SIGNS = [
+  '東京 NIGHTS · RACING',
+  '首都高 · SHUTOKO C1',
+  'ネオン 24H · CYBER',
   'ラーメン 一番 · RAMEN',
   '居酒屋 🏮 赤ちょうちん',
   'カラオケ 館 · KARAOKE',
@@ -58,24 +61,21 @@ const TOKYO_SIGNS = [
   '新宿 歌舞伎町 · KABUKICHO',
   '渋谷 センター街 · SHIBUYA',
   '六本木 · ROPPONGI NIGHT',
-  'ドン・キホーテ · DISCOUNT',
+  'APEX RACING · 峠 TOUGE',
   'セガ ゲームセンター · ARCADE',
   '大衆酒場 · SAKE & BEER',
-  'とんかつ · TONKATSU',
+  '警視庁 · POLICE PATROL',
   '牛丼 · BEEF BOWL 24H',
-  'アニメイト · ANIME & MANGA',
+  'MIDNIGHT TUNERS · 湾岸',
   '銀座 クラブ · GINZA CLUB',
   '東京タワー · TOKYO VIEW',
-  '原宿 ファッション · HARAJUKU',
+  '高速 SPEED · HIGHWAY',
   '築地海鮮 · TSUKIJI FISH',
   '珈琲 喫茶 · KISSATEN',
   'インターネットカフェ · NET CAFE',
   'カクテルバー · BAR TOKYO',
   '立ち飲み · STANDING BAR',
-  'おでん · ODEN NOREN',
-  '夜市 · NIGHT MARKET',
   '電脳街 · CYBER DISTRICT',
-  '浅草 雷門 · ASAKUSA',
 ];
 // [board, text, accent]
 const PALETTE = [
@@ -87,14 +87,14 @@ const PALETTE = [
   ['#0a0614', '#bd00ff', '#39ffb0'],
 ];
 const TOKYO_PALETTES = [
-  ['#06070e', '#ff007f', '#00f0ff'],
-  ['#080512', '#00f0ff', '#ff007f'],
-  ['#120406', '#ff2200', '#ffd23f'],
-  ['#040e08', '#39ff14', '#ffea00'],
-  ['#060614', '#ffd23f', '#00f0ff'],
-  ['#0e0516', '#bd00ff', '#39ffb0'],
-  ['#180608', '#ff3344', '#ffbb00'],
-  ['#050d12', '#00e5ff', '#ff007f'],
+  ['#06070e', '#ff007f', '#00f0ff'], // Hot Magenta / Tokyo Cyan on Obsidian
+  ['#080512', '#00f0ff', '#ff007f'], // Tokyo Cyan / Hot Magenta
+  ['#120406', '#ff2200', '#ffd23f'], // Tokyo Crimson / Amber Gold
+  ['#040e08', '#39ff14', '#ffea00'], // Electric Lime / Solar Yellow
+  ['#060614', '#ffd23f', '#00f0ff'], // Golden Amber / Electric Cyan
+  ['#0e0516', '#bd00ff', '#39ffb0'], // Cyber Violet / Neo Mint
+  ['#180608', '#ff3344', '#ffaa00'], // Cherry Red / Tangerine
+  ['#050d12', '#00e5ff', '#ff007f'], // Sky Cyan / Pink Glow
 ];
 const FONTS = [
   '700 {s}px "Hiragino Kaku Gothic Pro", "Noto Sans JP", -apple-system, sans-serif',

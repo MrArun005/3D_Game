@@ -46,3 +46,6 @@ public/models/vendor/polyhaven/*.glb
 
 # the same Poly Haven downloads, parked when the 2026-09-11 prune found them unreferenced (MOVED.txt lists them)
 assets/source/unused-vendor/vendor/polyhaven/*.glb
+
+# scraped research pages (firecrawl), not source
+.firecrawl/

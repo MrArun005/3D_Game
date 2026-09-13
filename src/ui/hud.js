@@ -103,6 +103,26 @@ export class Hud {
       this._lastGearStr = gearStr;
       this.gear.innerHTML = gearStr;
     }
+    if (!this.vehicleTag) this.vehicleTag = document.getElementById('vehicle-tag');
+    if (this.vehicleTag) {
+      let tag = 'CORVETTE C8 ZR1 · RWD';
+      if (vehicleType === 'helicopter') tag = 'BELL 206 · ROTOR';
+      else if (vehicleType === 'tank') tag = 'M1 ABRAMS · 120MM';
+      else if (typeof localStorage !== 'undefined') {
+        const body = localStorage.getItem('hb.body');
+        if (body === 's-monza') tag = 'FERRARI MONZA SP1 · RWD';
+        else if (body === 's-corvette-c6r') tag = 'CORVETTE C6.R · GT2';
+        else if (body === 's-camaro-jewel') tag = "'67 CAMARO SS · V8";
+        else if (body === 's-camaro-patrol') tag = 'CAMARO PATROL · POLICE';
+        else if (body === 's-porsche-gt3r') tag = 'PORSCHE 992 GT3 R · GT3';
+        else if (body === 's-f40-comp') tag = 'FERRARI F40 COMPETIZIONE · V8T';
+        else if (body === 'q-sports') tag = 'SPORTS COUPE · RWD';
+      }
+      if (this._lastVehicleTag !== tag) {
+        this._lastVehicleTag = tag;
+        this.vehicleTag.textContent = tag;
+      }
+    }
     this.#drawDials(car);
     this.#tickWedges(1 / 60);
     this.#drawMap(car, traffic);
@@ -789,31 +809,44 @@ export class Hud {
     this.missionEl.style.color = '#e8eef4';
   }
 
-  /** Wanted level, as stars over the minimap. */
+  /** Wanted level, styled as a modern motorsport pursuit heat badge. */
   #drawWanted(traffic) {
     const w = traffic ? traffic.wanted : 0;
     if (!this.wantedEl) {
       const el = document.createElement('div');
       el.id = 'wanted';
-      el.style.cssText = 'position:fixed;left:24px;bottom:196px;font:700 26px/1 ui-sans-serif,sans-serif;'
-        + 'letter-spacing:4px;color:#ffb020;text-shadow:0 2px 8px rgba(0,0,0,.8);pointer-events:none';
+      el.style.cssText = 'position:fixed;left:22px;bottom:240px;display:none;align-items:center;gap:8px;'
+        + 'background:rgba(10,14,22,0.88);backdrop-filter:blur(10px);border:1px solid rgba(255,70,50,0.4);'
+        + 'border-radius:20px;padding:6px 14px;box-shadow:0 6px 24px rgba(0,0,0,0.65);pointer-events:none;transition:all 0.3s ease;';
       document.body.appendChild(el);
       this.wantedEl = el;
     }
-    // when an officer has a line on you the stars pulse; no line, they sit still
-    if (traffic?.hot) { this.wantedEl.style.filter = 'drop-shadow(0 0 7px rgba(255,74,74,.95))'; this.wantedEl.style.opacity = '1'; this._coldFor = 0; }
-    else {
-      // nobody has a line on you: after three seconds the stars go grey -- you are evading, keep it up
-      this._coldFor = (this._coldFor ?? 0) + 1 / 60;
-      const evading = this._coldFor > 3 && (traffic?.wanted ?? 0) > 0;
-      this.wantedEl.style.filter = evading ? 'grayscale(1)' : '';
-      this.wantedEl.style.opacity = evading ? '0.55' : '1';
-    }
     const n = Math.ceil(w - 0.001);
-    if (n === this.lastWanted) return;
-    if (this.lastWanted !== undefined && n > this.lastWanted && n >= 2) this.flash?.(`WANTED LEVEL ${n}`);   // a new star is news; the first one the stars themselves announce
-    this.lastWanted = n;
-    this.wantedEl.textContent = n > 0 ? '★'.repeat(n) + '☆'.repeat(5 - n) : '';
+    if (n <= 0) {
+      this.wantedEl.style.display = 'none';
+      return;
+    }
+    this.wantedEl.style.display = 'flex';
+    // when an officer has a line on you the badge pulses red; no line, evading
+    if (traffic?.hot) {
+      this.wantedEl.style.borderColor = 'rgba(255,70,50,0.85)';
+      this.wantedEl.style.boxShadow = '0 0 16px rgba(255,70,50,0.5), 0 6px 24px rgba(0,0,0,0.65)';
+      this.wantedEl.style.opacity = '1';
+      this._coldFor = 0;
+    } else {
+      this._coldFor = (this._coldFor ?? 0) + 1 / 60;
+      const evading = this._coldFor > 3;
+      this.wantedEl.style.borderColor = evading ? 'rgba(120,150,190,0.3)' : 'rgba(255,180,50,0.6)';
+      this.wantedEl.style.boxShadow = '0 6px 24px rgba(0,0,0,0.65)';
+      this.wantedEl.style.opacity = evading ? '0.65' : '1';
+    }
+    if (n !== this.lastWanted) {
+      if (this.lastWanted !== undefined && n > this.lastWanted && n >= 2) this.flash?.(`HEAT LEVEL ${n}`);
+      this.lastWanted = n;
+    }
+    const stars = '★'.repeat(n) + '☆'.repeat(5 - n);
+    const hotText = traffic?.hot ? 'POLICE PURSUIT' : 'EVADING';
+    this.wantedEl.innerHTML = `<span style="font:800 11px/1 ui-sans-serif,sans-serif;letter-spacing:0.14em;color:#ff5232;text-transform:uppercase">${hotText} · HEAT ${n}</span><span style="color:#ffb020;font-size:16px;letter-spacing:2px">${stars}</span>`;
   }
 
   #getDialPlate() {

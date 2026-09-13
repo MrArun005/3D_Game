@@ -295,7 +295,18 @@ export async function fetchKit(id, spec, assets, opts = {}) {
     const turn = zLong ? (def.front === '-z' ? -Math.PI / 2 : Math.PI / 2) : (def.front === '-x' ? Math.PI : 0);
     wrap.rotation.y = turn;
     const k = spec.L / len; wrap.scale.set(k, k, k);
-    wrap.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+    wrap.traverse((o) => {
+      if (o.isMesh) {
+        o.castShadow = true;
+        o.receiveShadow = true;
+        o.frustumCulled = false;
+        if (o.material) {
+          if (o.material.metalness !== undefined) {
+            o.material.envMapIntensity = 1.4;
+          }
+        }
+      }
+    });
     /* Where the driver's eye is IN THIS BODY, for the cockpit camera (camera.js
        merges it over the loft-tuned numbers). The loft's seat sits at local
        (2.1, 1.0, +0.36) and the cockpit rig was measured against it; a vendor
@@ -336,23 +347,11 @@ export async function fetchKit(id, spec, assets, opts = {}) {
 }
 
 /**
- * The hero wears a Kenney body too (item 1 of the visual list, 2026-09-02).
- *
- * The lofted hull stays as the PHYSICS and damage carrier -- its wheels
- * steer and spin, its interior, driver, steering wheel and lamps stay -- but
- * the visible skin becomes the kit's sports sedan, scaled to the hull's own
- * length and width so nothing downstream (camera offsets, collision probes,
- * door hinge maths) moves. Hidden: the hull body and glass, the four hinged
- * doors and the box trim. The paint mesh shares the hero's `paint` material
- * so damage soot and stolen-car colours still apply, and it becomes
- * userData.hull so the crumple lands on what you see. Known loss: the doors
- * no longer swing open on a carjack; the body is one piece.
+ * The hero car skin loader. Supports both procedural/Quaternius kits and
+ * full-fidelity high-poly Sketchfab hero bodies (e.g. Corvette C8 ZR1, Monza).
  */
-export async function loadHeroSkin(assets, hero, file = 'q-sports') {
+export async function loadHeroSkin(assets, hero, file = 's-corvette-zr1') {
   const u = hero.userData;
-  /* Re-fits: after the first skin userData.hull is the Kenney paint mesh, not
-     the loft -- measuring that (and its parent, the old skin group) put the
-     second body nowhere. Keep the loft hull as the fixed reference. */
   u.loftHull ??= u.hull;
   const hull = u.loftHull;
   if (!hull) return false;
@@ -362,34 +361,41 @@ export async function loadHeroSkin(assets, hero, file = 'q-sports') {
   const L = bb.max.x - bb.min.x, W = bb.max.z - bb.min.z;
   const kit = await fetchKit(file, { L, wMax: W / 2 }, assets, { wheels: false }).catch((e) => { console.warn('hero skin', file, e.message); return null; });
   if (!kit) return false;
+
+  const shellG = hull.parent;
   if (kit.group) {
-    // a whole textured body (Sketchfab): hide the loft skin, hang the group where the hull centre is
-    const shellG = hull.parent, trimG = assets.carMats.trim, paintG = hull.material, glassG = u.glass?.material;
-    shellG.traverse((o) => { if (o.isMesh && (o.material === paintG || o.material === glassG || o.material === trimG)) o.visible = false; });
+    // Whole textured body (Sketchfab): hide procedural loft shell & procedural wheels
+    shellG.traverse((o) => { if (o.isMesh) o.visible = false; });
     u.cockpit = kit.cockpit ?? null;   // the eye for this body's own interior (camera.js cockpit rig)
+    if (u.wheels) {
+      for (const w of u.wheels) if (w.steer) w.steer.visible = false;
+    }
     const cxG = (bb.min.x + bb.max.x) / 2;
-    kit.group.position.set(shellG.position.x - cxG, bb.min.y, 0);
+    // Tyre contact plane is at y=0, perfectly seated on the asphalt
+    kit.group.position.set(shellG.position.x - cxG, 0, 0);
     shellG.parent.add(kit.group);
     u.skin = kit.group;
     u.hull = hull;                                         // dents land on the hidden loft: invisible, harmless
     return true;
   }
-  const shell = hull.parent;
+
+  // Restore procedural shell & wheels when switching to standard or Quaternius body
+  shellG.traverse((o) => { if (o.isMesh) o.visible = true; });
   u.cockpit = null;   // back on the loft: its interior, its tuned eye
-  // hide the loft skin: body, glass, doors and trim; keep lamps, interior, driver, wheel
+  if (u.wheels) {
+    for (const w of u.wheels) if (w.steer) w.steer.visible = true;
+  }
   const trim = assets.carMats.trim, paint = hull.material, glass = u.glass?.material;
-  shell.traverse((o) => { if (o.isMesh && (o.material === paint || o.material === glass || o.material === trim)) o.visible = false; });
+  shellG.traverse((o) => { if (o.isMesh && (o.material === paint || o.material === glass || o.material === trim)) o.visible = false; });
   const paintGeo = kit.paint.clone();                    // the hero crumples its own copy
   paintGeo.userData.owned = true;
   const skin = new THREE.Group();
-  // the kit body is centred and faces +X; the hull is centred at (min+max)/2 in shell space, which the
-  // half-turned shell puts at CG_X - centre in body space, nose forward
   const cx = (bb.min.x + bb.max.x) / 2;
-  skin.position.set(shell.position.x - cx, bb.min.y, 0);
+  skin.position.set(shellG.position.x - cx, bb.min.y, 0);
   const pm = new THREE.Mesh(paintGeo, paint); pm.castShadow = true; pm.receiveShadow = true;
   const dm = new THREE.Mesh(kit.detail, kit.detailMat); dm.castShadow = true; dm.receiveShadow = true;
   skin.add(pm, dm);
-  shell.parent.add(skin);
+  shellG.parent.add(skin);
   u.hull = pm;                                           // damage.attach() reads this
   u.skin = skin;
   return true;
