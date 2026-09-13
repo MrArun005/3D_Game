@@ -1360,7 +1360,7 @@ const chase = new ChaseCamera(camera);
 const weather = createWeather(scene, { hemi, dome: () => dome, onStrike: (delay) => audio.thunder?.(delay) });   // always built: rain comes in night spells (rainSpell) on the day cycle, and all night with ?night
 const hud = new Hud();
 let navigation = null;
-const clock = new GameClock({ startHour: +(new URLSearchParams(location.search).get('time') ?? (DAY ? 16.85 : 19.5)) });
+const clock = new GameClock({ startHour: +(new URLSearchParams(location.search).get('time') ?? (DAY ? 12.0 : 19.5)) });
 hud.useClock(clock);
 const stats = new Stats();
 window.stats = stats;

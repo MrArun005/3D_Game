@@ -295,18 +295,7 @@ export async function fetchKit(id, spec, assets, opts = {}) {
     const turn = zLong ? (def.front === '-z' ? -Math.PI / 2 : Math.PI / 2) : (def.front === '-x' ? Math.PI : 0);
     wrap.rotation.y = turn;
     const k = spec.L / len; wrap.scale.set(k, k, k);
-    wrap.traverse((o) => {
-      if (o.isMesh) {
-        o.castShadow = true;
-        o.receiveShadow = true;
-        o.frustumCulled = false;
-        if (o.material) {
-          if (o.material.metalness !== undefined) {
-            o.material.envMapIntensity = 1.4;
-          }
-        }
-      }
-    });
+    wrap.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
     /* Where the driver's eye is IN THIS BODY, for the cockpit camera (camera.js
        merges it over the loft-tuned numbers). The loft's seat sits at local
        (2.1, 1.0, +0.36) and the cockpit rig was measured against it; a vendor
@@ -373,41 +362,34 @@ export async function loadHeroSkin(assets, hero, file = 'q-sports') {
   const L = bb.max.x - bb.min.x, W = bb.max.z - bb.min.z;
   const kit = await fetchKit(file, { L, wMax: W / 2 }, assets, { wheels: false }).catch((e) => { console.warn('hero skin', file, e.message); return null; });
   if (!kit) return false;
-
-  const shellG = hull.parent;
   if (kit.group) {
-    // Whole textured body (Sketchfab): hide procedural loft shell & procedural wheels
-    shellG.traverse((o) => { if (o.isMesh) o.visible = false; });
+    // a whole textured body (Sketchfab): hide the loft skin, hang the group where the hull centre is
+    const shellG = hull.parent, trimG = assets.carMats.trim, paintG = hull.material, glassG = u.glass?.material;
+    shellG.traverse((o) => { if (o.isMesh && (o.material === paintG || o.material === glassG || o.material === trimG)) o.visible = false; });
     u.cockpit = kit.cockpit ?? null;   // the eye for this body's own interior (camera.js cockpit rig)
-    if (u.wheels) {
-      for (const w of u.wheels) if (w.steer) w.steer.visible = false;
-    }
     const cxG = (bb.min.x + bb.max.x) / 2;
-    // Tyre contact plane is at y=0, perfectly seated on the asphalt
-    kit.group.position.set(shellG.position.x - cxG, 0, 0);
+    kit.group.position.set(shellG.position.x - cxG, bb.min.y, 0);
     shellG.parent.add(kit.group);
     u.skin = kit.group;
     u.hull = hull;                                         // dents land on the hidden loft: invisible, harmless
     return true;
   }
-
-  // Restore procedural shell & wheels when switching to standard or Quaternius body
-  shellG.traverse((o) => { if (o.isMesh) o.visible = true; });
+  const shell = hull.parent;
   u.cockpit = null;   // back on the loft: its interior, its tuned eye
-  if (u.wheels) {
-    for (const w of u.wheels) if (w.steer) w.steer.visible = true;
-  }
+  // hide the loft skin: body, glass, doors and trim; keep lamps, interior, driver, wheel
   const trim = assets.carMats.trim, paint = hull.material, glass = u.glass?.material;
-  shellG.traverse((o) => { if (o.isMesh && (o.material === paint || o.material === glass || o.material === trim)) o.visible = false; });
+  shell.traverse((o) => { if (o.isMesh && (o.material === paint || o.material === glass || o.material === trim)) o.visible = false; });
   const paintGeo = kit.paint.clone();                    // the hero crumples its own copy
   paintGeo.userData.owned = true;
   const skin = new THREE.Group();
+  // the kit body is centred and faces +X; the hull is centred at (min+max)/2 in shell space, which the
+  // half-turned shell puts at CG_X - centre in body space, nose forward
   const cx = (bb.min.x + bb.max.x) / 2;
-  skin.position.set(shellG.position.x - cx, bb.min.y, 0);
+  skin.position.set(shell.position.x - cx, bb.min.y, 0);
   const pm = new THREE.Mesh(paintGeo, paint); pm.castShadow = true; pm.receiveShadow = true;
   const dm = new THREE.Mesh(kit.detail, kit.detailMat); dm.castShadow = true; dm.receiveShadow = true;
   skin.add(pm, dm);
-  shellG.parent.add(skin);
+  shell.parent.add(skin);
   u.hull = pm;                                           // damage.attach() reads this
   u.skin = skin;
   return true;
