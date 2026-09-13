@@ -160,7 +160,14 @@ export function artMaterial(key) {
   if (MATS.has(key)) return MATS.get(key);
   let m;
   if (key === 'emit') m = tokyoMaterial();   // the Tokyo emissive: `emit` attribute x emissiveIntensity, night-faded by setTokyoNight
-  else if (key === 'glass') m = new THREE.MeshStandardMaterial({ color: 0x0f1a2a, roughness: 0.12, metalness: 0.55, envMapIntensity: 1.4, vertexColors: true });
+  /* A curtain wall is a MIRROR, not a blue plastic panel. 0x0f1a2a at
+     roughness 0.12 / metalness 0.55 tinted everything it reflected navy, so a
+     sunset came back blue. Near-neutral and darker (glass is dark by
+     reflectance, not by pigment), metalness up so the environment dominates,
+     roughness down so the reflection stays sharp, and envMapIntensity 2.6 so
+     the sky and the sunset actually read in it -- which is the whole point of
+     glazing a building. */
+  else if (key === 'glass') m = new THREE.MeshStandardMaterial({ color: 0x0c0e11, roughness: 0.05, metalness: 0.92, envMapIntensity: 2.6, vertexColors: true });
   else if (key === 'dark') m = new THREE.MeshStandardMaterial({ color: 0x1e2226, roughness: 0.75, vertexColors: true });
   else {
     const [name, tile] = LIBRARY[key];

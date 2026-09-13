@@ -38,6 +38,9 @@ const BAY = 2.6;                  // curtain-wall module: one mullion per bay
 const BAND_H = 0.6;               // spandrel band height; it stands 0.15 proud of the glass
 const WINDOW_INSET = 0.02;        // lit quads sit just proud of the (opaque) glass, behind the 0.05 mullions (see header)
 const SPANDREL = 0xd8dbe0, PLANT = 0xb4b9c0, DARK = 0x1b1e23, WHITE = 0xffffff, GLASS_DARK = 0x1a2230;
+/* What a lit room looks like through glass: tungsten and fluorescent, both
+   near-white. Kept dim so the reflection stays the loudest thing on the pane. */
+const WARM_ROOM = [1.0, 0.92, 0.80], COOL_ROOM = [0.88, 0.93, 1.0];
 const WARM = [1.0, 0.85, 0.6], COOL = [0.72, 0.84, 1.0], LOBBY = [1.0, 0.82, 0.55], BEACON = [1.0, 0.15, 0.1];
 const _m = new THREE.Matrix4();
 
@@ -46,19 +49,17 @@ const floorY = (s) => (s === 0 ? 0 : GROUND_H + (s - 1) * FLOOR_H);
 
 /* Saturated pane colours for a district that wants an RGB skyline rather than
    an office one (Little Tokyo). Off by default: Kingsway keeps warm/cool. */
-const RGB_PANES = [
-  [1.0, 0.18, 0.62], [0.18, 0.85, 1.0], [0.72, 0.25, 1.0], [0.25, 1.0, 0.62],
-  [1.0, 0.72, 0.16], [1.0, 0.30, 0.22], [0.35, 0.55, 1.0], [0.55, 1.0, 0.25],
-];
+/* No pane palette any more. This held eight saturated hues and every lit
+   window took one: Arun -- "we are adding some shit colors to the buildings...
+   buildings covered with glass and no colour to it, and when rain beats down it
+   reflects as is". A curtain wall has no colour of its own. What you see in it
+   is the sky, the sunset and the street, and that is the environment map's job,
+   not a vertex colour's. A lit room behind the glass is a WARMTH, not a hue. */
 
 export function build(seed, hw, hd, h, opts = {}) {
   const rnd = mulberry32((seed * 2654435761) >>> 0);
-  /* `rgb`: every lit pane takes one of two saturated hues chosen per BUILDING,
-     not per pane -- a tower whose every window is a different colour reads as
-     confetti, whereas two hues over a hundred panes reads as a lit facade. */
-  const rgb = !!opts.rgb;
-  const hueA = RGB_PANES[Math.floor(rnd() * RGB_PANES.length)];
-  const hueB = RGB_PANES[Math.floor(rnd() * RGB_PANES.length)];
+  /* opts.rgb is accepted and ignored: callers still pass it, and a glass tower
+     is the same neutral curtain wall whichever district it stands in. */
   const floors = Math.max(MIN_FLOORS, Math.min(MAX_FLOORS, Math.round((h - GROUND_H) / FLOOR_H) + 1));
   const H = floorY(floors);
   const P = new Parts(), boards = [], lamps = [];
@@ -100,19 +101,14 @@ export function build(seed, hw, hd, h, opts = {}) {
       }
       const paneH = FLOOR_H - BAND_H - 0.3, paneW = Math.min(pitch - 0.35, 2.2);
       for (let s = fa; s <= fb; s++) for (let b = 0; b < n; b++) {
-        if (rnd() >= (rgb ? 0.40 : 0.35)) continue;   // 0.62 lit so many panes the facade became a chequerboard of colour swatches
+        if (rnd() >= 0.35) continue;
         const warm = rnd() < 0.65;
-        /* Mixed halfway to warm white, and jittered per pane. A pure saturated
-           hue on a big flat quad reads as a painted panel; a light SOURCE is
-           near-white at its core with the hue in its falloff, and real windows
-           are never all the same brightness. Checked against Arun's screen
-           recording, where the first cut turned every tower into Lego. */
-        const k = 0.5 + rnd() * 0.35;
-        const base = rgb ? (warm ? hueA : hueB) : null;
-        const paneCol = rgb
-          ? [base[0] * k + (1 - k), base[1] * k + (1 - k), base[2] * k + (1 - k)]
-          : (warm ? WARM : COOL);
-        const paneE = rgb ? 0.62 + rnd() * 0.5 : 0.8;
+        /* A lit room seen through glass: warm or cool WHITE, never a hue, and
+           dim -- the pane's job is to reflect the sky, and an emissive that
+           competes with the reflection is what made these read as painted
+           panels rather than as glass. */
+        const paneCol = warm ? WARM_ROOM : COOL_ROOM;
+        const paneE = 0.30 + rnd() * 0.28;
         const [x, z] = onFace(f, -f.w / 2 + pitch * (b + 0.5), WINDOW_INSET);
         P.push('emit', at(quadM(paneW, paneH, GLASS_DARK, paneCol, paneE), cx + x, floorY(s) + 0.45 + (FLOOR_H - BAND_H) / 2, z, f.yaw));
       }

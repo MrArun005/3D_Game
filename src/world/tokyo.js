@@ -35,29 +35,15 @@ import { mulberry32 } from '../core/rng.js';
 export const GROUND_H = 4.2;   // shopfront storey
 export const FLOOR_H = 3.1;    // every storey above
 
-/* Facade palettes: [wall, band]. These were Tokyo's daylight creams and tile
-   greys (0xd9d4c7, 0xe8e2d3) and they were the reason the street never looked
-   like the reference: a cream wall at ~0.85 albedo is BRIGHTER than most of the
-   neon on it, so the signage read as decoration on a pale block instead of the
-   only light source on a dark one. Shibuya's facades are soot-darkened brick,
-   charcoal render and dark tile -- ~0.30-0.40. Dark walls are what make the
-   kanban the brightest thing in frame, by day and by night. */
-/* Facade palettes: [wall, band]. The saturated version of these (deep violet,
-   deep cyan at ~0.10 luminance) made the street look like a Lego swatch chart
-   in Arun's own screen recording -- on a big flat wall a saturated hue reads as
-   PAINT, and the eye takes the whole facade as one coloured panel. Same hues,
-   pulled to ~0.04 luminance: the tint survives as a cast on a near-black wall,
-   and the colour of the street comes from the neon, the kanban and the glass,
-   which is where it comes from in the reference too. */
+/* Facade palettes: [wall, band]. Neutral. These carried eight hues held very
+   dark -- violet-black, cyan-black and so on -- and Arun's call was that the
+   colour on a building is wrong: "no colour to it". A Shibuya facade IS
+   near-black concrete and tile; every colour on that street comes from the
+   neon, the kanban and what the glass reflects, and those are all still here.
+   Value varies 0x17..0x23 so the buildings read apart from one another. */
 const WALLS = [
-  [0x1e1a24, 0x14111a], // violet-black
-  [0x14202a, 0x0d161e], // cyan-black
-  [0x241820, 0x180f16], // magenta-black
-  [0x162018, 0x0e1610], // emerald-black
-  [0x221a12, 0x16110b], // amber-black
-  [0x14162a, 0x0d0f1e], // indigo-black
-  [0x261616, 0x180d0d], // crimson-black
-  [0x12211f, 0x0b1615], // teal-black
+  [0x1a1a1c, 0x111113], [0x1e1e21, 0x141416], [0x171719, 0x0f0f11], [0x212124, 0x161618],
+  [0x1c1c1e, 0x131314], [0x232326, 0x18181a], [0x191a1c, 0x101113], [0x202023, 0x151517],
 ];
 const MAGENTA = [1.0, 0.25, 0.75], CYAN = [0.2, 0.9, 1.0];
 // weighted by repetition: the cover art is six parts magenta/cyan to four of everything else
