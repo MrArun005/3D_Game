@@ -67,6 +67,17 @@ export const KERB_ROWS = [
   { asset: 'props/lamp_arterial', every: 34, chance: 1.00, on: ['arterial', 'boundary'], offset: 1.6 },
   { asset: 'props/lamp_local',    every: 30, chance: 1.00, on: ['street', 'local'],      offset: 1.5 },
   { asset: 'props/street_sign',   every: 70, chance: 0.30, offset: 1.4 },
+  /* Street trees (2026-09-13, Arun's vegetation set). Offset 2.6 stands them
+     mid-pavement -- the ribbon runs from the kerb out to 4.8 -- so the canopy
+     overhangs both the footpath and the kerb without the trunk ever being in
+     the road; the tarmacDepth guard in kerbside() keeps that true through
+     junctions. Ginkgo and sakura are Tokyo's own street trees, so they are
+     gated to Little Tokyo; the plane is the everywhere tree.
+     `district` is a new row field -- kerbside() already memoises the segment's
+     district for the Old Quarter clusters, so gating costs nothing. */
+  { asset: 'vegetation/tree_plane',  every: 34, chance: 0.42, offset: 2.6, scale: [0.85, 1.20] },
+  { asset: 'vegetation/tree_ginkgo', every: 26, chance: 0.50, offset: 2.6, scale: [0.85, 1.15], district: 'LITTLE TOKYO' },
+  { asset: 'vegetation/tree_sakura', every: 30, chance: 0.45, offset: 2.6, scale: [0.90, 1.25], district: 'LITTLE TOKYO' },
 ];
 
 /**
@@ -308,6 +319,7 @@ function kerbside(batch, segments, district, solids, pools, heads) {
 
     for (const row of KERB_ROWS) {
       if (row.on && !row.on.includes(s.cls)) continue;
+      if (row.district && s._district !== row.district) continue;
       for (let t = rowStart(row, s); t < L - 8; t += row.every) {
         const seed = hash(s.ax + t * 1.31, s.az + t * 0.77);
         if (seed > row.chance) continue;

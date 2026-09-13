@@ -28,6 +28,15 @@ import { anisotropyOf } from './textures.js';
 const MANIFEST = '/models/manifest.json';
 const LIBRARY = '/textures/library.json';
 
+/* Family prefix -> library material, for assets whose own material names are
+   per-species rather than per-material. Only what has been verified against
+   public/textures/library.json; anything unmatched still falls through to the
+   declared-materials step and then concrete_cast, as before. */
+const MATERIAL_ALIAS = [
+  [/^(leaf|foliage|canopy|blossom)/i, 'foliage'],
+  [/^(bark|trunk)/i, 'bark'],
+];
+
 /**
  * ORM is one image doing three jobs: occlusion in R, roughness in G,
  * metalness in B. three reads exactly those channels from aoMap/roughnessMap/
@@ -265,6 +274,19 @@ export class Catalogue {
   #materialFor(mesh, rec) {
     const n = mesh.material?.name;
     if (n && this.materials.has(n)) return n;
+    /* An asset authored outside the library's vocabulary still has to land on
+       a real material. The vegetation set (bark_ginkgo, leaf_sakura, ...) is
+       the first of these: its names are per-SPECIES, the library's are per
+       MATERIAL, and without an alias every one of them falls through the
+       declared-materials step -- which returns the FIRST library name the
+       asset declares, the same one for bark and leaf both -- and then all the
+       way to concrete_cast. Grey stone trees. Matched on the family prefix,
+       which is the part that names a material rather than a species. */
+    if (n) {
+      for (const [re, lib] of MATERIAL_ALIAS) {
+        if (re.test(n) && this.materials.has(lib)) return lib;
+      }
+    }
     const declared = rec.def.materials || [];
     for (const d of declared) if (this.materials.has(d)) return d;
     return 'concrete_cast';
