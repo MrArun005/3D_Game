@@ -391,6 +391,10 @@ export class GameClock {
     const dawnProgress = Math.max(0, Math.min(1, 1 - (this.hour - 5.4) / 1.6));
     const nightFactor = isNight ? 1 : isDusk ? duskProgress : isDawn ? dawnProgress : 0;
 
+    /* The real point lights ride the same dusk curve as the painted ones, so a
+       lamp's emissive cap and the light it actually casts come up together. */
+    lightPool?.setNight?.(nightFactor);
+
     if (assets) {
       // Stagger 1: Street lamps & sodium pools turn on at 35% dusk
       const lampOn = nightFactor > 0.35;

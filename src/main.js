@@ -1124,7 +1124,14 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
      what fills that map; it also puts world.extraSolids in place before the
      first chunk builds its box list. */
   landmarks = new Landmarks(scene, district, world);   // Phase 6 skyline + gun shop, supermarket, street set (world/landmarks.js)
-  if (!DAY) {
+  /* Always, not `if (!DAY)`. The pool was built only for a ?night boot, so a
+     normal session -- which boots at 16.85 and runs a full day in 24 real
+     minutes -- reached midnight with no pool: 2 lights alive, parked at the
+     origin, against 2,077 registered lamp heads. A PointLight cannot be added
+     to a live WebGPU scene without recompiling every pipeline (~2 s stall), so
+     the slots have to exist from boot; clock.js fades them with nightFactor,
+     the same curve that already staggers lamps, signs and windows. */
+  {
     const n = +(new URLSearchParams(location.search).get('lights') ?? (isLite ? 4 : 6));
     lightPool = new LightPool(scene, world, { count: n });
   }

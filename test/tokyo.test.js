@@ -63,7 +63,10 @@ test('open shops are rooms (back wall + floor), not a glass sticker', () => {
   let rooms = 0;
   for (let s = 1; s <= 24; s++) {
     const b = buildTokyoBuilding(s * 23, 6, 8, 22);
-    if (b.tris > 700 && (b.lamps ?? []).some((lp) => lp.y < 2.0 && lp.intensity >= 170)) rooms++;
+    // a shop at eye level that throws real light -- NOT a brightness constant:
+    // pinning 170 here made a later retune of the palette fail the test rather
+    // than the look, which is the wrong way round
+    if (b.tris > 700 && (b.lamps ?? []).some((lp) => lp.y < 2.0 && lp.intensity > 0 && lp.range >= 20)) rooms++;
   }
   assert.ok(rooms >= 10, `open shop rooms ${rooms}/24`);
 });
@@ -73,7 +76,10 @@ test('kanban lamps are coloured neon the light pool can prefer', () => {
   for (let s = 1; s <= 20; s++) {
     const b = buildTokyoBuilding(s * 13, 6, 8, 30);
     for (const lp of b.lamps ?? []) {
-      if (lp.neon && lp.colour && lp.intensity >= 150 && lp.range >= 28 && lp.y < 3.5) n++;
+      // the property the pool actually sorts on: neon-flagged, coloured, at
+      // street level, with reach. Brightness is a look value and lives in the
+      // generator, not in an assertion.
+      if (lp.neon && lp.colour && lp.intensity > 0 && lp.range >= 28 && lp.y < 3.5) n++;
     }
   }
   assert.ok(n >= 8, `neon heads across 20 buildings: ${n}`);

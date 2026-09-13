@@ -107,7 +107,30 @@ export class LightPool {
     this.beacon = new THREE.PointLight(0xff2a1c, 0, 30, 2);
     this.beacon.castShadow = false;
     scene.add(this.beacon);
+
+    /* Day/night dimmer (2026-09-14). The pool used to be built ONLY when the
+       game booted with ?night (main.js gated it on !DAY), so a normal session
+       -- which boots at 16.85 and runs 24 game hours per 24 real minutes --
+       drove into midnight with no pool at all: measured on the Little Tokyo
+       street, 2 lights alive out of 6, both still parked at the world origin,
+       while 2,077 registered lamp heads and 720 doorway lights went unused.
+       That is why neon never reached the tarmac and a wet road reflected
+       nothing: the road material was right, there was simply no light.
+
+       The pool is built at boot now (adding a PointLight to a live WebGPU
+       scene recompiles every pipeline and stalls ~2 s, so it cannot be built
+       on the way into dusk) and clock.js fades it with the SAME nightFactor
+       that already staggers the lamps, signs and windows. */
+    /* Defaults ON. clock.js sets this every frame before the pool updates, so
+       the value is only ever a default for a caller that forgot -- and of the
+       two ways to be wrong, a lamp lit at noon is one somebody reports, while
+       night with no lights is the bug this replaced and it was invisible for
+       weeks. Fail loud. */
+    this.night = 1;
   }
+
+  /** 0 by day, 1 after dark. clock.js drives this off nightFactor. */
+  setNight(k) { this.night = Math.max(0, Math.min(1, +k || 0)); }
 
   #traffic(traffic, x, z) {
     if (!traffic || !traffic.cars) return;
@@ -206,6 +229,10 @@ export class LightPool {
   update(dt, x, z, traffic = null) {
     this.t += dt;
     this.#traffic(traffic, x, z);
+    /* Fully dark daytime: the lights are at zero anyway, so skip the 0.25 s
+       re-rank over every head in every loaded chunk (2,077 of them downtown)
+       rather than sort a list nobody can see. */
+    if (this.night <= 0) { for (const s of this.lights) { s.light.intensity = 0; } for (const s of this.heroes) s.light.intensity = 0; return; }
     if (this.t >= this.next) {
       this.next = this.t + 0.25;
       this.#hero(x, z);
@@ -242,7 +269,7 @@ export class LightPool {
           }
         }
       } else if (s.src) s.fade = Math.min(1, s.fade + dt / 0.5);
-      s.light.intensity = s.src ? (s.src.intensity ?? 22) * s.fade : 0;
+      s.light.intensity = s.src ? (s.src.intensity ?? 22) * s.fade * this.night : 0;
     }
     for (let i = 0; i < this.lights.length; i++) {
       const s = this.lights[i];
@@ -268,7 +295,7 @@ export class LightPool {
       if (!s.want || s.want === s.head) s.fade = Math.min(1, s.fade + dt / 0.4);
       // the light sits a little below the head so the pool lands on the pavement, not the lamp
       l.position.set(s.head.x, s.head.y - 0.4, s.head.z);
-      l.intensity = (s.head.intensity ?? this.intensity) * s.fade;
+      l.intensity = (s.head.intensity ?? this.intensity) * s.fade * this.night;
       l.distance = s.head.range ?? 26;
       if (corona) {
         corona.position.set(s.head.x, s.head.y - 0.15, s.head.z);
@@ -276,7 +303,7 @@ export class LightPool {
         corona.material.color.setHex(s.head.colour ?? this.colour);
         const g = s.head.neon ? 5.4 : 4.2;
         corona.scale.set(g, g, 1);
-        corona.material.opacity = 0.85 * s.fade;
+        corona.material.opacity = 0.85 * s.fade * this.night;
       }
     }
   }
