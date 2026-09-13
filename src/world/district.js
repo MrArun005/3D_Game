@@ -17,7 +17,18 @@ export class District {
     this.grid = new Map();             // hash cell -> segment list
     this.segments = [];
     // Designate Little Tokyo / Neo-Tokyo district in the central street corridor around spawn
-    const TOKYO_BLOCKS = new Set([299, 300, 301, 304, 305, 306, 307, 310, 311, 312, 313]);
+    /* The corridor, not a pocket. Arun: "we should have a long stretch". The
+       original eleven ran z 1400-1624 -- about 225 m, three grid rows, and the
+       canyon ended almost as soon as it started. These are every block in the
+       same grid columns from z~1080 to z~1624: rows 291-298 (north), 302-303
+       (the row that was missing between them), 308-309 and 314 (the flanks).
+       ~545 m of continuous frontage, better than double. */
+    const TOKYO_BLOCKS = new Set([
+      291, 292, 293, 294, 295, 296, 297, 298,
+      299, 300, 301, 302, 303,
+      304, 305, 306, 307, 308,
+      309, 310, 311, 312, 313, 314,
+    ]);
     for (const b of data.blocks) {
       if (TOKYO_BLOCKS.has(b.id)) {
         b.district = 'LITTLE TOKYO';

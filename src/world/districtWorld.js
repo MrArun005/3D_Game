@@ -1045,7 +1045,15 @@ export class DistrictWorld {
            width on most edges. */
         const lanes = Math.max(1, Math.round((half - 1.8) / 3.6));
         const laneW = (half - 1.0) / lanes;
+        /* Only the turn lanes and ONE through lane carry an arrow. A 34 m
+           arterial derives four lanes an approach, so four approaches painted
+           sixteen 5 m arrows into a junction that already carries four zebra
+           crossings, four stop lines and (in Little Tokyo) two diagonal
+           scramble crosswalks -- the tarmac disappeared under white paint.
+           Real arterials mark the turn lanes and leave the through lanes bare. */
         for (let i = 0; i < lanes; i++) {
+          const isTurn = (lanes > 1 && i === lanes - 1) || (lanes > 2 && i === 0);
+          if (!isTurn && i !== 1) continue;
           const off = laneW * (i + 0.5);
           const ax2 = node.x - dx * (stopBack + 9) + -dz * off;
           const az2 = node.y - dz * (stopBack + 9) + dx * off;
@@ -1069,7 +1077,7 @@ export class DistrictWorld {
               -yaw, 1, 1, 1));
           }
           // a gantry where the approach is wide enough to need one
-          if (e.width > 26 && hash(node.x + ei, node.y) < 0.4) {
+          if (e.width > 26 && hash(node.x + ei, node.y) < 0.8) {   // 0.4 left the arterials mostly bare; these are what make a road read as an arterial
             sigBatch.add('props/sign_gantry', placeAsset(
               node.x - dx * (back + 3), KERB_H + ly(node.x, node.y), node.y - dz * (back + 3),
               Math.atan2(-dx, -dz)));

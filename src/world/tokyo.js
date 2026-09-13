@@ -467,33 +467,6 @@ export function buildTokyoStreet(segments, near, seed) {
       lines.push(px, POLE_H - 0.9, pz, bx, 7.2 + rnd() * 1.5, bz);
       prev = top;
     }
-    /* TRAFFIC GANTRIES. The reference has a dark steel gantry spanning the
-       avenue carrying directional signs and camera housings -- it is most of
-       what makes the road read as a metropolitan arterial rather than a lane
-       between buildings, and it gives the canyon something at mid-height to
-       pass under. One every ~95 m on segments wide enough to need one. */
-    for (let t = 46 + rnd() * 30; t < L - 24; t += 95 + rnd() * 30) {
-      const cx = s.ax + ux * t, cz = s.az + uz * t;
-      if (!near(cx, cz) || s.half < 7) continue;
-      const yaw = Math.atan2(-uz, ux);
-      const span = (s.half + 0.7) * 2, beamY = 6.4;
-      for (const side of [-1, 1]) {                                  // the two posts, outside the kerb
-        const px = cx + nx * (s.half + 0.7) * side, pz = cz + nz * (s.half + 0.7) * side;
-        parts.push(at(paint(new THREE.CylinderGeometry(0.17, 0.21, beamY, 8), 0x33373d), px, beamY / 2, pz));
-        parts.push(at(box(0.7, 0.22, 0.7, 0x2a2e33), px, 0.11, pz));   // the base plate
-      }
-      // the truss: a top and bottom chord with a thin web between them
-      parts.push(at(box(0.26, 0.26, span, 0x33373d), cx, beamY - 0.15, cz, yaw));
-      parts.push(at(box(0.22, 0.22, span, 0x33373d), cx, beamY - 0.95, cz, yaw));
-      parts.push(at(box(0.1, 0.8, span, 0x2a2e33), cx, beamY - 0.55, cz, yaw));
-      // two directional boards and a camera housing looking back down the road
-      for (const side of [-1, 1]) {
-        const bx = cx + nx * s.half * 0.45 * side, bz = cz + nz * s.half * 0.45 * side;
-        parts.push(at(box(0.09, 1.25, 2.9, 0x14532d), bx, beamY - 1.85, bz, yaw));      // expressway green
-        parts.push(at(box(0.11, 0.1, 2.6, 0xdfe4e8), bx - 0.02, beamY - 1.35, bz, yaw));  // the white rule across its top
-      }
-      parts.push(at(box(0.34, 0.3, 0.55, 0x1e2126), cx, beamY - 1.5, cz, yaw));
-    }
   }
   return { parts, lines: new Float32Array(lines) };
 }
