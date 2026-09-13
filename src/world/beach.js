@@ -438,6 +438,61 @@ export function buildBeach(scene, district, day = true, catalogue = null) {
       }
     }
 
+    /* --- THE FRONTAGE: a building wall behind the promenade ---
+       This is the corniche. There is no seafront road in the district file and
+       no block within 300 m of the water, so the buildings stand on the land
+       plate directly behind the promenade band (which ends at DRY+11) and face
+       the sea. Sea -> balustrade -> furniture -> frontage is the whole
+       composition; without the wall the promenade is a path in a field.
+
+       FOUR OF THE FIVE ARE FACADE CARDS, measured: at mid-height their geometry
+       spans 0.3-0.4 m of a declared 14-16 m depth and NOTHING sits on the back
+       third. Only riviera_corner_hotel is solid (14.3 m of 18, 96 verts behind).
+       So each card gets a plaster body built behind it here -- the same trick
+       landmarks.js:assembleTenement uses for the Poly Haven tenement kit, which
+       is also a facade with no building attached. Without it you see paper from
+       any angle off the normal. */
+    const FRONT = [
+      // asset,                              w,    d,    solid
+      ['buildings/riviera_corner_hotel',     14.0, 18.0, true],
+      ['buildings/boutique_townhouse',        9.0, 14.0, false],
+      ['buildings/luxury_promenade_building', 11.0, 16.0, false],
+      ['buildings/belle_epoque_mansard',     10.0, 15.0, false],
+      ['buildings/boutique_townhouse',        9.0, 14.0, false],
+      ['buildings/cafe_arcade_building',     12.0, 16.0, false],
+    ];
+    const SET_BACK = DRY + 13;          // 2 m clear of the promenade's landward kerb
+    const bodies = [];
+    {
+      let t = 30, i = 0;
+      while (t < total - 40) {
+        const [asset, w, d, isSolid] = FRONT[i % FRONT.length];
+        // a gap every few plots: a seafront is not one continuous block, and the
+        // gaps are where the sea shows through from the road behind
+        if (hash(i, 131) < 0.16) { t += 9 + hash(i, 133) * 7; i++; continue; }
+        const r = frameAt(t + w / 2), [x, z] = at(t + w / 2, SET_BACK);
+        /* rotY(yaw) sends local +Z to (sin, cos). seawardYaw puts local +X on
+           the seaward normal, so +PI/2 puts local +Z there instead -- which is
+           the face these assets are modelled on (their ground floors sit at
+           max +Z). Same turn the balustrade uses, one axis over. */
+        const yaw = seawardYaw(r) + Math.PI / 2;
+        batch.add(asset, M4(x, 0.22, z, 0, yaw, 0, 1, 1, 1));
+        if (!isSolid) {
+          /* The body: a plain block filling the depth the facade only claims.
+             Held 0.15 m narrower so it never pokes through the facade's own
+             reveals, and stopped 1.5 m short of the front so the card's window
+             recesses still read. */
+          const g = new THREE.BoxGeometry(w - 0.3, 17.0, d - 2.0);
+          g.applyMatrix4(M4(x, 0.22 + 8.5, z, 0, yaw, 0, 1, 1, 1));
+          g.translate(-Math.sin(yaw) * 1.5, 0, -Math.cos(yaw) * 1.5);
+          bodies.push(g);
+        }
+        t += w + 0.6 + hash(i, 137) * 1.2;
+        i++;
+      }
+      solid(bodies, lib('plaster_worn', 0xbfb4a4));
+    }
+
     /* Yachts moored off the shore. The asset's origin is its WATERLINE, so it
        sits at water.js's plane (WATER_TOP) and not on the sand -- putting it at
        y = 0 would beach every boat in the bay. */

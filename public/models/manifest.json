@@ -4924,6 +4924,182 @@
         "marine",
         "waterfront"
       ]
+    },
+    "buildings/riviera_corner_hotel": {
+      "url": "/models/buildings/riviera_corner_hotel.glb",
+      "bounds": {
+        "min": [
+          -7,
+          0,
+          -9
+        ],
+        "max": [
+          7,
+          22,
+          9
+        ]
+      },
+      "tris": {
+        "lod0": 1624
+      },
+      "materials": [
+        "plaster_worn",
+        "stone_dressed",
+        "metal_painted",
+        "glass_shop"
+      ],
+      "tags": [
+        "building",
+        "riviera",
+        "hotel",
+        "corner"
+      ]
+    },
+    "buildings/boutique_townhouse": {
+      "url": "/models/buildings/boutique_townhouse.glb",
+      "bounds": {
+        "min": [
+          -4.5,
+          0,
+          -7
+        ],
+        "max": [
+          4.5,
+          14,
+          7
+        ]
+      },
+      "tris": {
+        "lod0": 480
+      },
+      "materials": [
+        "plaster_worn",
+        "stone_dressed",
+        "metal_painted",
+        "glass_shop"
+      ],
+      "tags": [
+        "building",
+        "riviera",
+        "townhouse",
+        "residential"
+      ]
+    },
+    "buildings/cafe_arcade_building": {
+      "url": "/models/buildings/cafe_arcade_building.glb",
+      "bounds": {
+        "min": [
+          -6,
+          0,
+          -8
+        ],
+        "max": [
+          6,
+          18,
+          8
+        ]
+      },
+      "tris": {
+        "lod0": 1336
+      },
+      "materials": [
+        "plaster_worn",
+        "stone_dressed",
+        "metal_painted",
+        "glass_shop"
+      ],
+      "tags": [
+        "building",
+        "riviera",
+        "arcade",
+        "cafe"
+      ]
+    },
+    "buildings/belle_epoque_mansard": {
+      "url": "/models/buildings/belle_epoque_mansard.glb",
+      "bounds": {
+        "min": [
+          -5,
+          0,
+          -7.5
+        ],
+        "max": [
+          5,
+          20,
+          7.5
+        ]
+      },
+      "tris": {
+        "lod0": 730
+      },
+      "materials": [
+        "plaster_worn",
+        "stone_dressed",
+        "metal_painted",
+        "glass_shop"
+      ],
+      "tags": [
+        "building",
+        "riviera",
+        "apartment",
+        "mansard"
+      ]
+    },
+    "props/hotel_entry_canopy": {
+      "url": "/models/props/hotel_entry_canopy.glb",
+      "bounds": {
+        "min": [
+          -1.62,
+          0,
+          -1.12
+        ],
+        "max": [
+          1.62,
+          3.42,
+          1.1
+        ]
+      },
+      "tris": {
+        "lod0": 216
+      },
+      "materials": [
+        "fabric_awning",
+        "metal_galv"
+      ],
+      "tags": [
+        "prop",
+        "canopy",
+        "awning",
+        "hotel"
+      ]
+    },
+    "vegetation/mature_date_palm": {
+      "url": "/models/vegetation/mature_date_palm.glb",
+      "bounds": {
+        "min": [
+          -2.115,
+          0,
+          -2.058
+        ],
+        "max": [
+          1.789,
+          10.908,
+          1.936
+        ]
+      },
+      "tris": {
+        "lod0": 478
+      },
+      "materials": [
+        "bark",
+        "foliage"
+      ],
+      "tags": [
+        "vegetation",
+        "palm",
+        "tree",
+        "seafront"
+      ]
     }
   }
 }

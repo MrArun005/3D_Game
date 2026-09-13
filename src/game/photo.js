@@ -31,7 +31,7 @@ export const PRESETS = {
      middle at DRY+6), computed from the bay polygon rather than guessed.
      CLAUDE.md still refers to `beach`, `port` and `docks` presets; they are not
      in this file and have not been for some time. This one replaces them. */
-  'promenade':       { pos: [3663, 1.9, 2250],  look: [3574, 1.2, 2315], hour: 18.5 },
+  'promenade':       { pos: [3541, 1.9, 2346],  look: [3556, 7, 2312],  hour: 18.5 },   // on the walkway: balustrade and sea left, the frontage right
 
   /* One per district, docs/VISUAL-BRIEF.md. Every position is a point ON a
      road centreline inside that district's own boundary (picked out of
