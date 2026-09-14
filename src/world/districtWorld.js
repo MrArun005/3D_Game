@@ -177,7 +177,8 @@ export class DistrictWorld {
     this.propGroups = new Map();
     this.headsByChunk = new Map();
     this.heroLightsByChunk = new Map();
-    this.gantryArmByNode = new Map();   // node id -> the edge index that carries its gantry   // chunk key -> [{x,y,z,colour,intensity,range}] block hero lights (game/lighting.js)     // chunk key -> [{x,y,z}] lamp heads (night light pool)
+    this.gantryArmByNode = new Map();   // node id -> the edge index that carries its gantry
+    this.nodeDegreeById = new Map();    // node id -> how many roads meet there   // chunk key -> [{x,y,z,colour,intensity,range}] block hero lights (game/lighting.js)     // chunk key -> [{x,y,z}] lamp heads (night light pool)
     this.facadeGroups = new Map();
     this.parkedLod = new Map();        // chunk key -> { near, far, byBody } parked-car LOD sets (#cullFar swaps them; #buildSteps sets, releaseChunk deletes). Dropped by the lite/radius constructor edit in 22c1c0c and every chunk build died on .set -- keep it.
     this.isLite = !!opts.lite;
@@ -222,6 +223,16 @@ export class DistrictWorld {
    * the far copies are deliberately a little shorter and a little narrower so
    * they can never fight the real geometry for the same pixel.
    */
+  /** How many roads meet at `nodeId`. Cached: a scan per approach is not free. */
+  #nodeDegree(nodeId) {
+    let n = this.nodeDegreeById.get(nodeId);
+    if (n !== undefined) return n;
+    n = 0;
+    for (const e of this.district.graph.edges) if (e.a === nodeId || e.b === nodeId) n++;
+    this.nodeDegreeById.set(nodeId, n);
+    return n;
+  }
+
   /** The one approach at `nodeId` that may carry an overhead sign gantry. */
   #gantryArm(nodeId) {
     let arm = this.gantryArmByNode.get(nodeId);
@@ -1108,6 +1119,23 @@ export class DistrictWorld {
             for (let k = -reach; k <= reach; k += 1.45) zebra.push(flatRect(node.x + ddx * k, 0.022, node.y + ddz * k, ys, 0.62, 4.0));
           }
         }
+
+        /* WHERE FIVE OR MORE ROADS MEET, PAINT NOTHING (2026-09-14).
+           Every marking below -- crossing, stop line, lane arrows -- is built
+           from ONE approach and laid on the tarmac in front of it. That is
+           right for a crossroads and nonsense past it: counted over the
+           district file, 83 nodes have five or more roads meeting (50 five-way,
+           29 six-way, one seven-way, three eight-way), so a six-way node drew
+           SIX sets of crossing, stop line and arrows across the same few metres
+           of asphalt, overlapping at every angle. That is the "road paintings
+           colliding each other, you cannot tell which road goes where" report,
+           and no amount of nudging the offsets fixes it -- the shapes are
+           correct, there are just too many of them on one piece of ground.
+
+           Bare asphalt reads as an open junction, which is honest. The real
+           answer for these is a roundabout with an island and a circulating
+           lane; until that exists, clean tarmac beats a white scribble. */
+        if (this.#nodeDegree(end) >= 5) continue;
 
         /* A crossing on every signalled approach, and the mast beside it.
            Without one the cars pulled up nose-to-post at the signal itself,
