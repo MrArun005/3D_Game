@@ -516,11 +516,27 @@ function blockDressing(batch, blocks, district, solids) {
             place(px, KERB_H + district.elevationAt(px, pz), pz, bl.angle));
         }
       }
-      // a fenced perimeter is what makes a lot read as private ground
+      /* A fenced perimeter is what makes a lot read as private ground -- but
+         ONLY where the perimeter is not the road (2026-09-14).
+         Block footprints are not inset from the carriageway by any fixed
+         amount, so a lot whose edge runs into a street fenced the street.
+         Counted over the district file: 195 of 8,258 panels stood ON tarmac,
+         the worst 16.3 m inside a carriageway at (2172,325) -- a chain-link
+         wall across a road, which is what "some fence, and the road itself is
+         blocked" is.
+         This is the same guard every kerbside prop got in the 2026-08-31 pass
+         (tarmacDepth is the MINIMUM over all nearby segments, so it catches a
+         fence standing in a road that is not the lot's own frontage).
+         0.2 m, not more: a lot boundary is SUPPOSED to hug the kerb, and the
+         clearance is only there to absorb float error at the edge. Swept over
+         all 8,258 panels -- 0.0 keeps 98%, 0.2 keeps 86%, 0.8 keeps 29% and
+         0.4 keeps 67%; every one of them removes all 195 on-tarmac panels, so
+         anything past 0.2 is throwing away good fences for nothing. */
       if (!harbour) {
         for (let lx = -bl.w / 2; lx < bl.w / 2; lx += 3.2) {
           for (const side of [-1, 1]) {
             const [px, pz] = toWorld(lx, side * (bl.h / 2 - 0.6));
+            if (district.tarmacDepth(px, pz) < 0.2) continue;
             batch.add('props/fence_panel',
               place(px, KERB_H + district.elevationAt(px, pz), pz, bl.angle));
           }

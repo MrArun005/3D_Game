@@ -176,7 +176,8 @@ export class DistrictWorld {
     if (this.catalogue?.multiDraw) this.catalogue.attach(scene);
     this.propGroups = new Map();
     this.headsByChunk = new Map();
-    this.heroLightsByChunk = new Map();   // chunk key -> [{x,y,z,colour,intensity,range}] block hero lights (game/lighting.js)     // chunk key -> [{x,y,z}] lamp heads (night light pool)
+    this.heroLightsByChunk = new Map();
+    this.gantryArmByNode = new Map();   // node id -> the edge index that carries its gantry   // chunk key -> [{x,y,z,colour,intensity,range}] block hero lights (game/lighting.js)     // chunk key -> [{x,y,z}] lamp heads (night light pool)
     this.facadeGroups = new Map();
     this.parkedLod = new Map();        // chunk key -> { near, far, byBody } parked-car LOD sets (#cullFar swaps them; #buildSteps sets, releaseChunk deletes). Dropped by the lite/radius constructor edit in 22c1c0c and every chunk build died on .set -- keep it.
     this.isLite = !!opts.lite;
@@ -221,6 +222,21 @@ export class DistrictWorld {
    * the far copies are deliberately a little shorter and a little narrower so
    * they can never fight the real geometry for the same pixel.
    */
+  /** The one approach at `nodeId` that may carry an overhead sign gantry. */
+  #gantryArm(nodeId) {
+    let arm = this.gantryArmByNode.get(nodeId);
+    if (arm !== undefined) return arm;
+    arm = -1;
+    const edges = this.district.graph.edges;
+    for (let i = 0; i < edges.length; i++) {
+      const e = edges[i];
+      if ((e.a !== nodeId && e.b !== nodeId) || e.width <= 26) continue;
+      if (arm < 0 || i < arm) arm = i;
+    }
+    this.gantryArmByNode.set(nodeId, arm);
+    return arm;
+  }
+
   #buildFarCity(day) {
     const D = this.district;
     const far = new THREE.Group();
@@ -981,6 +997,11 @@ export class DistrictWorld {
     const sigBatch = this.catalogue ? new InstanceBatch(this.catalogue) : null;
     const ly = (x, z) => this.district.elevationAt(x, z);
 
+    /* Which approach at a junction carries the overhead gantry.
+       The LOWEST-numbered wide edge at the node, cached. Lowest rather than a
+       hash so it cannot depend on which chunk reached the node first: a node on
+       a chunk seam is built from either side and must choose the same arm both
+       times, or the board appears and disappears as you drive past. */
     /* Junction paint: stop lines and lane arrows.
        Kept here rather than in #streetFurniture because both are positioned
        from the APPROACH -- they need the junction node, the direction into it
@@ -1147,8 +1168,17 @@ export class DistrictWorld {
             lens.push(mat4(px + dx * 0.24, KERB_H + 3.82 - k * 0.32, pz + dz * 0.24,
               -yaw, 1, 1, 1));
           }
-          // a gantry where the approach is wide enough to need one
-          if (e.width > 26 && hash(node.x + ei, node.y) < 0.55) {   // 0.4 left the arterials bare, 0.8 made them wallpaper -- the same board repeats every junction
+          /* ONE gantry per junction, on ONE approach (2026-09-14).
+             This used to run per approach, so a wide crossroads got a board on
+             every arm. Counted over the district file: 620 gantries across 337
+             junctions, and 200 of those junctions carried TWO OR MORE -- 138
+             with two, 42 with three, 19 with four, one with five. Standing at
+             such a junction you are looking at a wall of identical boards
+             facing different ways, which is what "so many boards on the road,
+             next to each other, of no use" means.
+             `gantryArm` is chosen once per NODE, so exactly one approach can
+             carry it and the choice is stable per city seed. */
+          if (e.width > 26 && ei === this.#gantryArm(end)) {
             sigBatch.add('props/sign_gantry', placeAsset(
               node.x - dx * (back + 3), KERB_H + ly(node.x, node.y), node.y - dz * (back + 3),
               Math.atan2(-dx, -dz)));
