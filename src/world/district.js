@@ -339,6 +339,14 @@ export class District {
           if (Math.abs((vx * d[0] + vz * d[1]) / l) > 0.6) alongD = Math.min(alongD, dist);
           else crossD = Math.min(crossD, dist);
         }
+        /* A bare comparison, no margin. Where two roads meet their centrelines
+           pass within centimetres and the winner flutters sample to sample --
+           at (2027,2421) the cross street is 0.3 m from its centre against the
+           arterial's 0.4 m, and the approach drops for one 3 m step: a pothole.
+           A margin is the obvious fix and it is the WRONG one: it makes the
+           zero harder to reach, so more streets stay lifted onto decks. Swept:
+             margin 0.0 -> 53 walls   0.5 -> 55   1.0 -> 63   1.5 -> 65   2.0 -> 65
+           Every metre of margin trades one 3 m jolt for a dozen real walls. */
         if (crossD < alongD) return 0;      // squarely on the cross street: underneath
       }
     }
@@ -372,6 +380,10 @@ export class District {
       // at the height of the structure you are on (a ramp may be part-climbed
       // while the expressway above it is at full height -- returning the max
       // teleported you off the ramp and onto the motorway)
+      /* No margin on THIS side. The ramp guard below needs one because two
+         road centrelines meeting at a junction flutter within centimetres of
+         each other; here a margin does the opposite -- it hands ground streets
+         to the deck. Measured: adding +3.0 m took walls from 53 to 126. */
       if (elevSeg && elevD <= groundD) {
         if (elevSeg.cls === 'ramp' && rampBest > 0) return rampBest;
         if (elevSeg.cls === 'freeway' && fwyBest > 0) return fwyBest;
