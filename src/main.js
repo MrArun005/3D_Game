@@ -36,6 +36,7 @@ import { buildSurrounds } from './world/surrounds.js';
 import { buildWater } from './world/water.js';
 import { buildPlaces } from './world/places.js';
 import { buildBeach } from './world/beach.js';
+import { buildRiverside } from './world/riverside.js';
 import { useDistrict } from './world/metrics.js';
 import { buildCar } from './vehicle/model.js';
 import { createCarState, resetCar, stepVehicle } from './vehicle/dynamics.js';
@@ -1166,6 +1167,12 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
      argument all along and never received it, so it could not place a single
      authored asset -- which is why the eight Riviera props had nowhere to go. */
   if (!params.has('nobeach')) beach = buildBeach(scene, district, DAY, catalogue);
+  /* The river's two banks: wall, coping, plane trees, lamps, benches. Until
+     now water.js cut the river out of the ground plate and nothing put an edge
+     on it, so THE EMBANKMENT -- 1,281 m of arterial following the river, and
+     the spine of the scenic route -- ran through open field beside a blue
+     strip. `?noriver` turns it off. */
+  if (!params.has('noriver')) buildRiverside(scene, district, DAY, catalogue);
   if (params.has('crowd')) {
     crowd = new Crowd(scene, district, isLite ? 160 : 320);
     crowd.onNear = () => chatter?.civilian?.('near');
