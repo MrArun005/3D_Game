@@ -366,30 +366,55 @@ export class District {
          alongside the expressway underneath it: 9.4 m in 3 m, the invisible
          wall you stop dead against. The expressway's real approaches are their
          own `ramp` class and are handled as elevated below. */
+      /* NORMALISED centredness, d / half -- not raw metres (2026-09-14).
+         A freeway on-ramp is half 8 where the arterial it merges with is
+         half 15, and near the merge their carriageways OVERLAP in plan. On raw
+         distance the winner flips every few metres, and each flip is a 9.4 m
+         step: measured on the race route at (3100,2538) the ramp centre is
+         3.2 m away and the arterial's 4.6 m, so the ramp won and lifted a car
+         that was squarely on the arterial. As a FRACTION of each road's own
+         width the arterial is 0.31 against the ramp's 0.40 -- you are further
+         into the arterial, which is the true answer. A wide road owns you at a
+         greater distance than a narrow one. */
       let groundD = Infinity, elevD = Infinity, elevSeg = null;
       for (const seg of this.segmentsNear(x, z, 30)) {
         const vx = seg.bx - seg.ax, vz = seg.bz - seg.az, l2 = vx * vx + vz * vz || 1;
         let t = ((x - seg.ax) * vx + (z - seg.az) * vz) / l2; t = Math.max(0, Math.min(1, t));
         const d = Math.hypot(x - seg.ax - vx * t, z - seg.az - vz * t);
         if (d > seg.half) continue;
+        const f = d / Math.max(1, seg.half);
         if (seg.cls === 'freeway' || seg.cls === 'ramp') {
-          if (d < elevD) { elevD = d; elevSeg = seg; }
-        } else if (d < groundD) groundD = d;
+          if (f < elevD) { elevD = f; elevSeg = seg; }
+        } else if (f < groundD) groundD = f;
       }
-      // on an elevated carriageway and more centred in it: you are ON the deck,
-      // at the height of the structure you are on (a ramp may be part-climbed
-      // while the expressway above it is at full height -- returning the max
-      // teleported you off the ramp and onto the motorway)
-      /* No margin on THIS side. The ramp guard below needs one because two
-         road centrelines meeting at a junction flutter within centimetres of
-         each other; here a margin does the opposite -- it hands ground streets
-         to the deck. Measured: adding +3.0 m took walls from 53 to 126. */
+      /* The tie goes to the GROUND against a ramp, and to the DECK against the
+         expressway (2026-09-14). These roads genuinely overlap in plan, so no
+         2D test can say which you are driving -- but the two structures fail
+         differently and deserve different answers.
+
+         A RAMP is half 8 and merges with an arterial of half 15, so they run
+         together for a stretch and the nearer centreline flips every few
+         metres. Measured on the race route: at (3102,2537) the ramp centre is
+         1.3 m off against the arterial's 5.1 m, so the ramp won and lifted a
+         car that was squarely on the arterial -- a 9.4 m invisible wall, which
+         is the blockage on the scenic route. You can only reach a ramp from
+         its own ends, so where one overlaps a road at grade, the road wins.
+
+         The EXPRESSWAY is the opposite: it is a through road you drive along
+         for kilometres, and every surface street crossing UNDER it also
+         contains the deck's centreline. Handing those ties to the ground put
+         46 holes in the motorway -- measured, by trying it. So the deck keeps
+         its ties.
+
+           elevated wins ties   53 walls total, 9.4 m walls on the race line
+           ground wins ties     91 walls total, race line clean, 46 freeway holes
+           split (this)         see below */
+      if (elevSeg && elevSeg.cls === 'ramp' && groundD < Infinity) return deckBest;
       if (elevSeg && elevD <= groundD) {
         if (elevSeg.cls === 'ramp' && rampBest > 0) return rampBest;
         if (elevSeg.cls === 'freeway' && fwyBest > 0) return fwyBest;
         return best;
       }
-      // more centred in a ground street: underneath. deckBest is bridges only.
       if (groundD < Infinity) return deckBest;
     }
     return best;
