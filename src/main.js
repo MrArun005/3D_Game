@@ -57,7 +57,7 @@ import { CHARACTERS, NAMED_CHARACTERS } from './game/character.js';
 import { Navigation } from './game/navigation.js';
 import { GameClock } from './game/clock.js';
 import { Mission } from './game/mission.js';
-import { HALSTEAD_MILE, DEFAULT_HOUR, startYaw, missionPoints } from './game/scenicRoute.js';
+import { HALSTEAD_MILE, DEFAULT_HOUR, startYaw, missionPoints, drivingLine } from './game/scenicRoute.js';
 import { Multiplayer, roomFromUrl, createRoom } from './game/multiplayer.js';
 import { Weapon } from './game/weapon.js';
 import { ARSENAL, WEAPON_KINDS, buildWeaponMesh, weaponMaterial } from './game/weapons.js';
@@ -398,6 +398,8 @@ function onShot(gap, landed = null, damage = 26, from = null, kind = 'pistol') {
  * on leg 4 -- see the header of scenicRoute.js. Starting it at midnight is
  * allowed, it just throws away the reason the waypoints are in that order.
  */
+const RIVALS = +(new URLSearchParams(location.search).get('rivals') ?? 5);
+
 function startHalsteadMile() {
   if (!districtRef) { hud.flash('THE HALSTEAD MILE · CITY STILL LOADING'); return; }
   const start = HALSTEAD_MILE[0];
@@ -411,7 +413,12 @@ function startHalsteadMile() {
   mission?.route(pts, 'THE HALSTEAD MILE · 5.7 km');
   navigation?.setWaypoint?.(pts[0].x, pts[0].y);
   if (navigation) navigation.lastTarget = null;
-  hud.flash('THE HALSTEAD MILE · 8 MARKS · GOLDEN HOUR');
+  /* A FIELD, not a time trial. The rivals are ordinary fleet cars driven by
+     the same steering that makes a cruiser chase you, following the route
+     expanded through the road graph -- see traffic.startRace. */
+  const line = drivingLine(navigation);
+  const n = traffic.startRace?.(line, RIVALS, car.yaw) ?? 0;
+  hud.flash(n ? `THE HALSTEAD MILE · ${n} RIVALS · GOLDEN HOUR` : 'THE HALSTEAD MILE · 8 MARKS · GOLDEN HOUR');
 }
 
 function respawnCar(nearX = car.x, nearZ = car.z, kinds = null) {
@@ -2120,6 +2127,17 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   if (heli && !flying) { heli.update(quarry, traffic, dt); traffic.eyesOn = heli.eyesOn; }
   const playerTarget = onFoot.active ? quarry : currentVehicle;
   if (mission) mission.update(playerTarget, dt);
+  /* Your place in the field, while a race is on. It goes in the mission
+     drawer rather than the district line at the top, which is already saying
+     where you are. Ordinal not raw distance: see traffic.raceStandings. */
+  if (traffic.racePath) {
+    const st = traffic.racePlace?.(car);
+    if (st) {
+      const ord = ['', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'][st.place] ?? `${st.place}th`;
+      hud.setJob(`THE HALSTEAD MILE · ${ord} of ${st.of}`);
+      if (mission && !mission.active) { traffic.endRace(); hud.setJob(''); }
+    }
+  }
   if (jobs) jobs.update(playerTarget, dt);
   if (story) story.update(playerTarget, dt);
   if (crowd && !onFoot.active && onPavementAtSpeed(car)) crowd.panic(car.x, car.z, 14);

@@ -1222,7 +1222,21 @@ export class DistrictWorld {
                matrix instead of calling place(): scaling a 9.1 m gantry up to
                span 38 m uniformly also makes it 28 m TALL, a signpost the size
                of an office block. Width follows the road; height stays put. */
-            const gx = Math.min(4.6, (e.width + 3) / 9.1);
+            const gx = Math.min(4.6, (e.width + 4.0) / 9.1);
+            /* The beam is local +X and must lie ACROSS the road, and this yaw
+               is the one that does it. A co-agent changed it to
+               atan2(-dz, dx) with the right reasoning and the wrong result --
+               three.js rotY(t) sends local +X to (cos t, 0, -sin t), so for a
+               road direction (dx, dz) into the junction:
+
+                 atan2(-dx, -dz) -> beam (-dz, dx)   |beam . road| = 0.00  ACROSS
+                 atan2(-dz,  dx) -> beam ( dx, dz)   |beam . road| = 1.00  ALONG
+
+               Checked for an east road, a north road and a diagonal; the dot
+               product is 0.00 and 1.00 respectively in all three. The second
+               form turns the gantry down the carriageway, and since gx stretches
+               local X it would lay a 31-42 m board along the middle of the road
+               instead of spanning it. */
             const gYaw = Math.atan2(-dx, -dz);
             _ge.set(0, gYaw, 0);
             sigBatch.add('props/sign_gantry', new THREE.Matrix4().compose(

@@ -51,3 +51,33 @@ export function startYaw() {
 export function missionPoints() {
   return HALSTEAD_MILE.slice(1).map((p) => ({ x: p.x, y: p.z, note: p.note }));
 }
+
+/**
+ * The full driving line, expanded through the road graph.
+ *
+ * The eight marks are 300-1300 m apart; a rival aimed straight at one of them
+ * drives through buildings and across the river. Navigation already answers
+ * "how do I drive from here to there", so the race line is those answers
+ * stitched end to end -- the same 5,698 m a player covers.
+ *
+ * @param navigation  a Navigation (needs findNearestNode / findRoute)
+ * @returns [{x, z}, ...] or [] if the graph cannot connect the marks
+ */
+export function drivingLine(navigation) {
+  if (!navigation?.findRoute) return [];
+  const out = [];
+  for (let i = 1; i < HALSTEAD_MILE.length; i++) {
+    const a = HALSTEAD_MILE[i - 1], b = HALSTEAD_MILE[i];
+    const leg = navigation.findRoute(
+      navigation.findNearestNode(a.x, a.z),
+      navigation.findNearestNode(b.x, b.z),
+    );
+    for (const [x, z] of leg) {
+      // the legs share endpoints; do not stack two points on one spot
+      const last = out[out.length - 1];
+      if (last && Math.hypot(last.x - x, last.z - z) < 4) continue;
+      out.push({ x, z });
+    }
+  }
+  return out;
+}

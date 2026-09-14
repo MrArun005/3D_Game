@@ -101,6 +101,11 @@ export class Traffic {
   }
 
   /** Report a collision. `tag` says what was hit; `force` is closing speed. */
+  /** The rival field and the line it drives. Empty until startRace(). */
+  racers = [];
+  racePath = null;
+  playerLeg = 0;
+
   reportCrime(tag, force) {
     const worth = tag === 'police' ? 1.3
                 : tag === 'person' ? 1.5
@@ -327,6 +332,131 @@ export class Traffic {
       reach: spec.L * 0.5 + 0.6,
       x: 0, z: 0, yaw: 0, stopped: false,
     };
+  }
+
+  /* ------------------------------------------------------------------ race
+     RIVALS: a field of cars that races you along a fixed route.
+
+     They are ordinary fleet cars -- #makeCar gives them the same vendor
+     bodies, paint, brake lights and headlamps as civilian traffic -- driven by
+     #steerToward, which is the same routine that already makes a cruiser chase
+     you at 1.7x cruise. Nothing new is modelled; a rival is a traffic car with
+     a route instead of a lane and no interest in the speed limit.
+
+     They follow the ROAD GRAPH between marks, not straight lines. Aiming a car
+     at a waypoint 800 m away drives it through buildings and across the river;
+     Navigation already answers "how do I drive from here to there", so the
+     race path is those answers stitched end to end. Height comes from
+     groundHeightAt, which folds in elevationAt, so the field climbs the bridges
+     with you rather than swimming under them.
+     ------------------------------------------------------------------------ */
+
+  /**
+   * Put a field of rivals on the start line.
+   *
+   * @param path   the driving line as [{x, z}, ...] -- already expanded
+   *               through the road graph by the caller
+   * @param count  how many rivals
+   * @param yaw    the start heading, so they line up facing the right way
+   */
+  startRace(path, count = 5, yaw = 0) {
+    this.endRace();
+    if (!path || path.length < 2) return 0;
+    this.racePath = path;
+    this.racers = [];
+    for (let i = 0; i < count; i++) {
+      const c = this.#makeCar();
+      c.live = true;
+      c.isRacer = true;
+      c.mesh.visible = true;
+      /* Staggered on a grid behind the line, two per row, so they do not all
+         spawn inside each other and shove the field apart on frame one. */
+      const row = Math.floor(i / 2), side = (i % 2) ? 1 : -1;
+      const back = 6 + row * 7, over = side * 3.0;
+      c.x = path[0].x - Math.cos(yaw) * back - Math.sin(yaw) * over;
+      c.z = path[0].z + Math.sin(yaw) * back - Math.cos(yaw) * over;
+      c.yaw = yaw;
+      c.speed = 0;
+      c.leg = 0;                       // how far along racePath this rival is
+      /* Skill spreads the field. Without it five identical cars drive the same
+         line at the same speed for 5.7 km and finish in a tangle. */
+      c.skill = 0.86 + (i / Math.max(1, count - 1)) * 0.26;
+      c.raceCap = 26 * c.skill;        // m/s: ~94 km/h for the slowest, ~122 for the quickest
+      c.mesh.position.set(c.x, groundHeightAt(c.x, c.z), c.z);
+      c.mesh.rotation.y = c.yaw;
+      this.racers.push(c);
+    }
+    return this.racers.length;
+  }
+
+  /** Take the field off the road and out of the scene. */
+  endRace() {
+    for (const c of this.racers ?? []) { c.live = false; if (c.mesh) c.mesh.visible = false; }
+    this.racers = [];
+    this.racePath = null;
+  }
+
+  /** Drive the field one step. Called from update(). */
+  #driveRacers(dt) {
+    const path = this.racePath;
+    if (!path || !this.racers?.length) return;
+    for (const c of this.racers) {
+      if (!c.live) continue;
+      /* Advance along the line by PROXIMITY, and let a rival skip a point it
+         has already passed -- a car that clips a corner wide can end up nearer
+         point n+1 than point n, and without the skip it turns round to collect
+         the one it missed. */
+      let guard = 0;
+      while (c.leg < path.length - 1 && guard++ < 8) {
+        const p = path[c.leg];
+        if (Math.hypot(p.x - c.x, p.z - c.z) < 14) c.leg++;
+        else break;
+      }
+      const t = path[Math.min(c.leg, path.length - 1)];
+      // aim a little PAST the point so they carry speed through a corner
+      const nx = path[Math.min(c.leg + 1, path.length - 1)];
+      const aimX = t.x * 0.7 + nx.x * 0.3, aimZ = t.z * 0.7 + nx.z * 0.3;
+      this.#steerToward(c, aimX, aimZ, dt, 0, c.raceCap);
+      c.mesh.position.set(c.x, groundHeightAt(c.x, c.z), c.z);
+      c.mesh.rotation.y = c.yaw;
+      if (c.leg >= path.length - 1) { c.finished = true; c.speed *= 0.97; }
+    }
+  }
+
+  /**
+   * Where everyone is, best first.
+   *
+   * Progress is (points cleared, then how close to the next one), which is the
+   * only ordering that survives a rival taking a different line: raw distance
+   * to the finish puts a car that has cut across the map ahead of one properly
+   * three marks up the road.
+   */
+  raceStandings(player) {
+    const path = this.racePath;
+    if (!path) return [];
+    const progress = (x, z, leg) => {
+      const t = path[Math.min(leg, path.length - 1)];
+      return leg * 1e6 - Math.hypot(t.x - x, t.z - z);
+    };
+    let pLeg = this.playerLeg ?? 0;
+    let guard = 0;
+    while (pLeg < path.length - 1 && guard++ < 8) {
+      const p = path[pLeg];
+      if (Math.hypot(p.x - player.x, p.z - player.z) < 22) pLeg++;
+      else break;
+    }
+    this.playerLeg = pLeg;
+    const field = [{ who: 'YOU', p: progress(player.x, player.z, pLeg) }];
+    for (const c of this.racers ?? []) field.push({ who: c.style, p: progress(c.x, c.z, c.leg) });
+    field.sort((a, b) => b.p - a.p);
+    return field;
+  }
+
+  /** Your place in the field, 1-based, and how many are racing. */
+  racePlace(player) {
+    if (!this.racePath) return null;
+    const f = this.raceStandings(player);
+    return { place: f.findIndex((e) => e.who === 'YOU') + 1, of: f.length };
   }
 
   /**
@@ -858,6 +988,7 @@ export class Traffic {
   }
 
   update(player, dt, time) {
+    this.#driveRacers(dt);
     /* One building scan for the whole frame: every shooter is within ~65 m of
        the player, so the player's 9-chunk neighbourhood serves them all. Eleven
        per-shooter scans at four stars were eleven allocations a frame. */
