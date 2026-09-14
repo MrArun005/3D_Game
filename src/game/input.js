@@ -131,7 +131,10 @@ export function createInput(onAction) {
     if (e.repeat) return;
     if (e.code === 'KeyC') onAction('camera');
     if (e.code === 'KeyH') onAction('lights');
-    if (e.code === 'KeyR') onAction('reset');
+    /* Shift+R starts the scenic route; plain R stays RESPAWN. R is how you get
+       unstuck, so it does not get taken away -- pressing it by reflex after a
+       crash must never launch a 5.7 km drive. */
+    if (e.code === 'KeyR') onAction(e.shiftKey ? 'mile' : 'reset');
     if (e.code === 'KeyV') onAction(e.shiftKey ? 'film' : 'video');   // V: video angles while YOU drive; Shift+V: the autopilot film
     if (e.code === 'KeyM') onAction('phone'); // iFruit GTA phone
     if (e.code === 'KeyU') onAction('mute');

@@ -51,8 +51,50 @@ function flatten(shape, y) {
   return g;
 }
 
+function buildRiverGeometry(points, width, y) {
+  const half = width / 2;
+  const pos = [];
+  const uvs = [];
+  const indices = [];
+
+  let dist = 0;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[Math.max(0, i - 1)], b = points[Math.min(points.length - 1, i + 1)];
+    const dx = b[0] - a[0], dz = b[1] - a[1];
+    const L = Math.hypot(dx, dz) || 1;
+    const nx = (-dz / L) * half, nz = (dx / L) * half;
+
+    if (i > 0) {
+      dist += Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]);
+    }
+
+    // Left vertex (along +nx, +nz)
+    pos.push(points[i][0] + nx, y, points[i][1] + nz);
+    uvs.push((points[i][0] + nx) / 15, (points[i][1] + nz) / 15);
+
+    // Right vertex (along -nx, -nz)
+    pos.push(points[i][0] - nx, y, points[i][1] - nz);
+    uvs.push((points[i][0] - nx) / 15, (points[i][1] - nz) / 15);
+
+    if (i < points.length - 1) {
+      const base = i * 2;
+      // Winding for +Y upward normal:
+      indices.push(base, base + 2, base + 1);
+      indices.push(base + 1, base + 2, base + 3);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+
 export function buildWater(scene, district, day = true) {
   const group = new THREE.Group();
+  group.name = 'water_system';
   const D = district.data;
   const bay = toV2(D.water.bay);
   const river = toV2(ribbonPolygon(D.water.river.points, D.water.river.width));
@@ -75,6 +117,7 @@ export function buildWater(scene, district, day = true) {
   const land = new THREE.Mesh(flatten(outline, -0.06), new THREE.MeshLambertMaterial({
     color: day ? 0x59614a : 0x11161c,
   }));
+  land.name = 'ground_water_cutout';
   land.receiveShadow = true;
   land.frustumCulled = false;
   group.add(land);
@@ -103,14 +146,34 @@ export function buildWater(scene, district, day = true) {
     [b.w + 20, -pad - 3000], [b.w + 11000, -pad - 3000],
     [b.w + 11000, b.h + pad + 3000], [b.w + 20, b.h + pad + 3000],
   ]);
-  for (const poly of [bay, river, ocean]) {
+
+  // Flat water polygon bodies (Bay and Ocean)
+  for (const [name, poly] of [['water_bay', bay], ['water_ocean', ocean]]) {
     const shape = new THREE.Shape(poly);
     const a = new THREE.Mesh(flatten(shape, WATER_Y), mat);
+    a.name = `${name}_surface`;
     a.frustumCulled = false;
     group.add(a);
     const b = new THREE.Mesh(flatten(shape, WATER_Y + 0.02), mat2);
+    b.name = `${name}_surface_swell`;
     b.frustumCulled = false;
     group.add(b);
+  }
+
+  // The River: built as a contiguous quad-strip ribbon so winding river curves
+  // never suffer chord clipping or degenerate triangulation from 2D polygon planar cuts.
+  if (D.water.river?.points?.length) {
+    const riverGeo = buildRiverGeometry(D.water.river.points, D.water.river.width, WATER_Y);
+    const riverA = new THREE.Mesh(riverGeo, mat);
+    riverA.name = 'water_river_surface';
+    riverA.frustumCulled = false;
+    group.add(riverA);
+
+    const riverSwellGeo = buildRiverGeometry(D.water.river.points, D.water.river.width, WATER_Y + 0.02);
+    const riverB = new THREE.Mesh(riverSwellGeo, mat2);
+    riverB.name = 'water_river_surface_swell';
+    riverB.frustumCulled = false;
+    group.add(riverB);
   }
 
   /* --- bridges ---

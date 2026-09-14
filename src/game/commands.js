@@ -13,7 +13,8 @@ const LANDMARKS = {
   airport:  { x: 1200, z: 1100, yaw: 0, name: 'Airport District' },
   north:    { x: 2350, z: 450, yaw: Math.PI, name: 'North Bay Overlook' },
   marrow:   { x: 499, z: 1391, yaw: 0, name: 'Marrow Hill' },              // the suburb: gable roofs (photo preset marrow-hill)
-  steelgate: { x: 3662, z: 1221, yaw: 0, name: 'Steelgate Chop Shop' }
+  steelgate: { x: 3662, z: 1221, yaw: 0, name: 'Steelgate Chop Shop' },
+  tokyo:    { x: 2160, z: 1540, yaw: Math.PI / 2, name: 'Little Tokyo Neon Boulevard' }
 };
 
 export class CommandEngine {
@@ -38,6 +39,7 @@ export class CommandEngine {
       case 'help':
       case 'commands': {
         chat.post('SYSTEM', 'Available Commands:');
+        chat.post('SYSTEM', '· /mile — THE HALSTEAD MILE scenic route (also Shift+R)');
         chat.post('SYSTEM', '· /wanted <0-5> or /clearheat — Police pursuit level');
         chat.post('SYSTEM', '· /nos — Equip & refill Nitrous Oxide');
         chat.post('SYSTEM', '· /repair — Fix all bodywork & damage');
@@ -91,6 +93,15 @@ export class CommandEngine {
         this.ctx.car.impact = 0;
         this.ctx.setHealth(1.0);
         chat.post('SYSTEM', '🔧 Vehicle fully repaired. Chassis & bodywork restored.');
+        break;
+      }
+
+      case 'mile':
+      case 'route':
+      case 'scenic': {
+        // THE HALSTEAD MILE -- also Shift+R. See game/scenicRoute.js.
+        this.ctx.mile?.();
+        chat.post('SYSTEM', 'THE HALSTEAD MILE: 5.7 km, 8 marks. Old Quarter, the river, the lift bridge at golden hour, the bay.');
         break;
       }
 

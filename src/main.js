@@ -57,6 +57,7 @@ import { CHARACTERS, NAMED_CHARACTERS } from './game/character.js';
 import { Navigation } from './game/navigation.js';
 import { GameClock } from './game/clock.js';
 import { Mission } from './game/mission.js';
+import { HALSTEAD_MILE, DEFAULT_HOUR, startYaw, missionPoints } from './game/scenicRoute.js';
 import { Multiplayer, roomFromUrl, createRoom } from './game/multiplayer.js';
 import { Weapon } from './game/weapon.js';
 import { ARSENAL, WEAPON_KINDS, buildWeaponMesh, weaponMaterial } from './game/weapons.js';
@@ -385,6 +386,34 @@ function onShot(gap, landed = null, damage = 26, from = null, kind = 'pistol') {
  * of the map. Everywhere that resets the car has to say where, and the
  * drowning recovery was the only place that did.
  */
+/**
+ * Put the car on the Halstead Mile's start line and run the route.
+ *
+ * Shift+R, or `/mile` in the chat. The route is data in game/scenicRoute.js;
+ * this only places the car and hands the waypoints to Mission, which already
+ * owns the rings, the beam, the countdown and the arrival tests.
+ *
+ * The clock is set to 16:20 unless it is already inside golden hour, because
+ * the whole ORDER of the route exists to put the sun down the lift bridge deck
+ * on leg 4 -- see the header of scenicRoute.js. Starting it at midnight is
+ * allowed, it just throws away the reason the waypoints are in that order.
+ */
+function startHalsteadMile() {
+  if (!districtRef) { hud.flash('THE HALSTEAD MILE · CITY STILL LOADING'); return; }
+  const start = HALSTEAD_MILE[0];
+  resetCar(car);
+  car.x = start.x;
+  car.z = start.z;
+  car.y = (districtRef.elevationAt?.(start.x, start.z) ?? 0) + 0.62;
+  car.yaw = startYaw();
+  if (clock.hour < 16.0 || clock.hour > 18.0) clock.hour = DEFAULT_HOUR;
+  const pts = missionPoints();
+  mission?.route(pts, 'THE HALSTEAD MILE · 5.7 km');
+  navigation?.setWaypoint?.(pts[0].x, pts[0].y);
+  if (navigation) navigation.lastTarget = null;
+  hud.flash('THE HALSTEAD MILE · 8 MARKS · GOLDEN HOUR');
+}
+
 function respawnCar(nearX = car.x, nearZ = car.z, kinds = null) {
   const nodes = districtRef?.graph?.nodes;
   resetCar(car);
@@ -1536,6 +1565,7 @@ commands = new CommandEngine({
     clock.hour = h;
     hud.flash(`TIME · ${clock.formattedTime}`);
   },
+  mile: () => startHalsteadMile(),
   teleport: (x, z, yaw = 0) => {
     car.x = x;
     car.z = z;
@@ -1773,6 +1803,7 @@ const input = createInput((action) => {
   if (action === 'map') hud.toggleMap();
   if (action === 'radio') radio?.cycle();
   if (action === 'reset') respawnCar();
+  if (action === 'mile') startHalsteadMile();
   if (action === 'time') { clock.hour = (clock.hour + 3) % 24; hud.flash(`TIME · ${clock.formattedTime}`); }
   if (action === 'horn' && !onFoot.active) {
     // your horn: heard, and answered -- pedestrians ahead break for the kerb, the car in front picks up for three seconds
