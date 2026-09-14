@@ -333,7 +333,14 @@ export function buildSpan(seg, district, opts = {}) {
     // collision: the parapet line, so the caller can drop districtWorld's own
     const cx = (pt(tLo, uOff, 0)[0] + pt(tHi, uOff, 0)[0]) * 0.5;
     const cz = (pt(tLo, uOff, 0)[2] + pt(tHi, uOff, 0)[2]) * 0.5;
-    solids.push({ x: cx, z: cz, hw: (tHi - tLo) / 2, hd: UPSTAND_T * 0.5 + 0.15, angle: Math.atan2(dz, dx) });
+    /* baseY: the deck this parapet stands on (2026-09-14).
+       Car/building collision is a 2D footprint test -- resolveBoxes never looked
+       at a box's height or the car's y -- so a parapet 7.6 m up in the air was a
+       wall across the road passing UNDERNEATH the bridge. "under bridge road i
+       cannot pass through" is exactly this. Carrying the base lets the solver
+       skip a structure the car is driving below. */
+    solids.push({ x: cx, z: cz, hw: (tHi - tLo) / 2, hd: UPSTAND_T * 0.5 + 0.15,
+      angle: Math.atan2(dz, dx), baseY: Math.min(edgeY(side, tLo), edgeY(side, tHi)) });
   }
 
   // ---------------------------------------------------------------- lamps

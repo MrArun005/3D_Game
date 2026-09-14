@@ -122,6 +122,11 @@ const leafTint = (A, sp, fallback) => A?.geo?.species?.[sp]?.authored
   ? (A.geo.species[sp].leaf ?? fallback)
   : fallback;
 
+/* Scratch for the gantry's non-uniform placement matrix. Module scope so the
+   signals pass does not allocate four objects per junction. */
+const _gv = new THREE.Vector3(), _gq = new THREE.Quaternion();
+const _ge = new THREE.Euler(), _gs = new THREE.Vector3();
+
 export class DistrictWorld {
   constructor(scene, assets, district, opts = {}) {
     this.scene = scene;
@@ -1207,9 +1212,24 @@ export class DistrictWorld {
              `gantryArm` is chosen once per NODE, so exactly one approach can
              carry it and the choice is stable per city seed. */
           if (e.width > 26 && ei === this.#gantryArm(end)) {
-            sigBatch.add('props/sign_gantry', placeAsset(
-              node.x - dx * (back + 3), KERB_H + ly(node.x, node.y), node.y - dz * (back + 3),
-              Math.atan2(-dx, -dz)));
+            /* STRETCHED ACROSS ITS ROAD, not scaled up (2026-09-14).
+               props/sign_gantry is 9.1 m wide and 6.8 m tall, and the gate
+               above only ever offers it roads WIDER than 26 m -- so at native
+               size both legs stood in the middle of a 26-44 m carriageway
+               instead of spanning it. That is the board you meet planted in
+               the road.
+               The scale has to be NON-UNIFORM, which is why this builds its own
+               matrix instead of calling place(): scaling a 9.1 m gantry up to
+               span 38 m uniformly also makes it 28 m TALL, a signpost the size
+               of an office block. Width follows the road; height stays put. */
+            const gx = Math.min(4.6, (e.width + 3) / 9.1);
+            const gYaw = Math.atan2(-dx, -dz);
+            _ge.set(0, gYaw, 0);
+            sigBatch.add('props/sign_gantry', new THREE.Matrix4().compose(
+              _gv.set(node.x - dx * (back + 3), KERB_H + ly(node.x, node.y), node.y - dz * (back + 3)),
+              _gq.setFromEuler(_ge),
+              _gs.set(gx, 1, 1),
+            ));
           }
         } else {
           posts.push(mat4(px, KERB_H, pz, -yaw, 0.11, 3.9, 0.11));

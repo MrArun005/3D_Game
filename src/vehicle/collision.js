@@ -84,6 +84,14 @@ export function resolveBoxes(car, boxes) {
     let hit = false;
 
     for (const b of boxes) {
+      /* A structure the car is driving UNDER is not in its way (2026-09-14).
+         This test is otherwise a pure 2D footprint check -- it never read
+         `height` or the car's y -- so every elevated thing that reported a
+         solid was a wall at ground level. A bridge parapet sitting on a 7.6 m
+         deck blocked the road passing beneath the bridge.
+         Only boxes that declare a `baseY` are skipped: a building's footprint
+         has no base to be above, and must keep blocking at every height. */
+      if (b.baseY !== undefined && (car.y ?? 0) + 1.7 < b.baseY) continue;
       const ca = Math.cos(b.angle), sa = Math.sin(b.angle);
       const hw = b.hw + PAD, hd = b.hd + PAD;
       const rough = Math.hypot(hw, hd) + 3.2;
