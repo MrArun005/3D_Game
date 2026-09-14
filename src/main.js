@@ -106,12 +106,25 @@ let boot = document.getElementById('boot');
 const bootMsg = document.getElementById('bootmsg');
 const bootProgress = document.getElementById('bootprogress');
 const bootPercent = document.getElementById('bootpercent');
-// whatever happens, the loading screen is gone inside 12 s
-setTimeout(() => { if (boot) { console.warn('boot: 12 s cap hit, dropping the loading screen'); boot.remove(); boot = null; } }, 12000);
+/* The stuck-boot guard. It used to be a flat 12 s from module parse, which is
+   not what it is for: measured on this machine a healthy boot clears at ~16.5 s
+   with the catalogue pre-warm and ~17.1 s without, so the flat cap fired on
+   EVERY boot and tore the loading screen away while the city was still
+   building. The point is to catch a boot that has STOPPED, so the timer resets
+   on every reported phase and only fires after 12 s of no progress at all. */
+let bootStall = null;
+const armBootStall = () => {
+  clearTimeout(bootStall);
+  bootStall = setTimeout(() => {
+    if (boot) { console.warn('boot: no progress for 12 s, dropping the loading screen'); boot.remove(); boot = null; }
+  }, 12000);
+};
+armBootStall();
 const setBootProgress = (pct, m) => {
   if (bootMsg) bootMsg.textContent = m;
   if (bootProgress) bootProgress.style.width = `${pct}%`;
   if (bootPercent) bootPercent.textContent = `${pct}%`;
+  armBootStall();
 };
 setBootProgress(10, 'Waking the GPU…');
 const renderer = createRenderer(canvas);
@@ -1107,7 +1120,7 @@ const catalogueReady = new Catalogue().load(renderer)
   })
   .catch((e) => { console.warn('catalogue unavailable:', e.message); return null; });
 
-Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search).has('nokit') ? null : loadKitBuildings(assets).catch((e) => console.warn('kit buildings:', e.message))]).then(([district, catalogue]) => {
+Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search).has('nokit') ? null : loadKitBuildings(assets).catch((e) => console.warn('kit buildings:', e.message))]).then(async ([district, catalogue]) => {
   useDistrict(district);                  // roadDepth() now answers from the file
   traffic.useGraph(district);
   useGraphForRoutes(district);             // and the fleet drives the real streets
@@ -1116,6 +1129,44 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   hud.useNavigation(navigation);
   for (const g of city.cells.values()) scene.remove(g);
   city.cells.clear();
+  /* PRE-WARM THE CATALOGUE (2026-09-14).
+     Every asset is fetched and parsed HERE, behind the boot screen, instead of
+     on the frame a chunk first asks for it. The whole library is small -- 141
+     assets / 337 GLB files including LODs, 12.99 MB on disk -- and fetchAsset
+     already caches per record and de-dupes concurrent callers, so this is a
+     cache fill and nothing downstream changes.
+
+     A BOUNDED POOL, not Promise.all over 337 urls. The fetch is cheap; the
+     PARSE is not, and it is main-thread: firing all of them at once lands 337
+     GLTFLoader parses back to back, which blocks the very frame loop that
+     paints the progress bar, so the screen freezes and then jumps. A small
+     pool leaves gaps for rAF and keeps the bar moving.
+
+     Deliberately BEFORE `new DistrictWorld`, so the initial 5x5 ring builds
+     from a warm cache instead of racing the network. The streaming ring itself
+     is untouched -- this removes pop-in, not the 2 ms slicing that holds 60 fps.
+
+     `?nowarm` skips it and restores the old lazy behaviour. */
+  if (catalogue && !new URLSearchParams(location.search).has('nowarm')) {
+    const names = [...catalogue.assets.keys()];
+    const t0 = performance.now();
+    let done = 0, next = 0;
+    const POOL = 16;   // fetch overlaps; the parse is main-thread and serialises anyway
+    const worker = async () => {
+      while (next < names.length) {
+        const i = next++;
+        try { await catalogue.fetchAsset(names[i]); } catch { /* fetchAsset already warns and caches an empty */ }
+        done++;
+        if (done % 8 === 0 || done === names.length) {
+          setBootProgress(45 + Math.round((done / names.length) * 22), `Loading assets… ${done}/${names.length}`);
+          await new Promise((r) => requestAnimationFrame(r));   // let the bar actually paint
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: POOL }, worker));
+    console.info(`catalogue pre-warm: ${names.length} assets in ${Math.round(performance.now() - t0)} ms`);
+  }
+
   setBootProgress(70, 'Building the streets…');
   world = new DistrictWorld(scene, assets, district, { day: DAY, catalogue, lite: isLite });
   window._world = world;
