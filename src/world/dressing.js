@@ -202,6 +202,34 @@ function oldQuarterClusters(batch, s, L, ux, uz, nx, nz, district, solids) {
   }
 }
 
+
+/* Is (x, z) within `r` of a junction? Nodes are bucketed once into a coarse
+   grid -- 1,789 of them, and a linear scan per candidate prop turned dressing
+   into an O(props x nodes) walk. */
+let _nodeGrid = null, _nodeGridFor = null;
+function nearJunction(district, x, z, r) {
+  const nodes = district?.graph?.nodes;
+  if (!nodes) return false;
+  if (_nodeGridFor !== nodes) {
+    _nodeGrid = new Map();
+    for (const n of nodes) {
+      const k = `${Math.floor(n.x / 64)},${Math.floor(n.y / 64)}`;
+      (_nodeGrid.get(k) ?? _nodeGrid.set(k, []).get(k)).push(n);
+    }
+    _nodeGridFor = nodes;
+  }
+  const gx = Math.floor(x / 64), gz = Math.floor(z / 64), r2 = r * r;
+  for (let a = -1; a <= 1; a++) {
+    for (let b = -1; b <= 1; b++) {
+      for (const n of _nodeGrid.get(`${gx + a},${gz + b}`) ?? []) {
+        const dx = n.x - x, dz = n.y - z;
+        if (dx * dx + dz * dz < r2) return true;
+      }
+    }
+  }
+  return false;
+}
+
 /** Things in the kerb gutter, away from vehicle tyre paths (no black road patches). */
 const ROAD_ROWS = [
   { asset: 'props/drain_grate', every: 32, chance: 0.45, lateral: 0.94 },   // in the gutter, by the kerb
@@ -386,6 +414,16 @@ function kerbside(batch, segments, district, solids, pools, heads) {
         const px = s.ax + ux * t + nx * off, pz = s.az + uz * t + nz * off;
         // roadworks live on their OWN road's edge; never in the crossing one
         if (district.tarmacDepth(px, pz, s) <= 0.3) continue;
+        /* AND NEVER AT A JUNCTION (2026-09-14).
+           These sit 0.7 m inside their own carriageway edge on purpose -- real
+           roadworks take a lane -- and the guard above passes `s` so it only
+           rejects them from OTHER roads. Fine down a straight. At a junction it
+           is a wall of red-and-white barriers across the one place you need to
+           read the road: counted over the district file, 279 roadworks props
+           are placed and 105 of them stand within 26 m of a junction node.
+           That is the barrier clutter you meet head-on coming off a bridge.
+           30 m clears the crossing, the stop line and the approach paint. */
+        if (nearJunction(district, px, pz, 30)) continue;
         batch.add(a, place(px, district.elevationAt(px, pz), pz, Math.atan2(ux, uz)));
       }
     }
