@@ -268,15 +268,23 @@ export class District {
    * span you are and how far off its centre.
    */
   elevationAt(x, z) {
-    let best = 0, bs = null, deckBest = 0;
+    let best = 0, bs = null, deckBest = 0, rampBest = 0, fwyBest = 0;
     for (let i = 0; i < this.spans.length; i++) {
       const s = this.spans[i];
       if (x < s.minX || x > s.maxX || z < s.minZ || z > s.maxZ) continue;
       const h = spanHeight(s, x, z);
       if (h > best) { best = h; bs = s; }
-      // the best deck that is NOT a freeway: what you are standing on if the
-      // guard below decides you are underneath the expressway
-      if (h > deckBest && !s.isFreeway) { deckBest = h; }
+      /* Three separate "best"s, because the guard below has three answers and
+         one number could not carry them (2026-09-14). deckBest used to mean
+         "not a freeway", which INCLUDED ramp spans -- isFreeway is
+         `kind === 'freeway'` and a ramp's kind is 'ramp' -- so a street passing
+         under the expressway anywhere near a ramp was "dropped" to the ramp's
+         own 9.4 m and climbed 9.4 m in 3 m instead. That is the invisible wall.
+         deckBest is now BRIDGES ONLY: the thing you can still be standing on
+         when you are underneath the whole expressway structure. */
+      if (h > deckBest && !s.isFreeway && !s.isRamp) { deckBest = h; }
+      if (s.isRamp && h > rampBest) { rampBest = h; }
+      if (s.isFreeway && h > fwyBest) { fwyBest = h; }
     }
     /* Under a freeway flyover, not on it. The span band is the deck's footprint, and
        a surface street crossing beneath the expressway lies inside it -- the
@@ -293,15 +301,84 @@ export class District {
        fell through it. Falling back to the best non-freeway deck keeps the ramp
        (and any bridge) continuous while the surface street underneath still
        drops to the ground, which is the whole point of the guard. */
-    if (best > 0 && bs && (bs.isFreeway || bs.height > 8.0)) {
-      const d = spanDir(bs, x, z);
-      for (const seg of this.segmentsNear(x, z, 30)) {
-        if (seg.cls === 'freeway' || seg.cls === 'ramp') continue;
-        const vx = seg.bx - seg.ax, vz = seg.bz - seg.az, l = Math.hypot(vx, vz) || 1;
-        if (Math.abs((vx * d[0] + vz * d[1]) / l) > 0.7) continue;      // runs with the span: it IS the approach
-        let t = ((x - seg.ax) * vx + (z - seg.az) * vz) / (l * l); t = Math.max(0, Math.min(1, t));
-        if (Math.hypot(x - seg.ax - vx * t, z - seg.az - vz * t) <= seg.half) return deckBest;
+    /* A bridge's APPROACH RAMP lifts anything near its axis (2026-09-14).
+       spanHeight extends a 62 m corridor straight out of each abutment and
+       raises every point inside it, which is right for the road that climbs
+       onto the bridge and wrong for a street that merely passes near the
+       abutment. Measured beside the heist-2 crossing: a street at (1431,943)
+       is carried to 5.7 m, reaches 6.6 m at (1437,942), and is back to 0.0 at
+       (1443,941) -- 6.6 m of climb and a 6.6 m drop in 7 m. That is the
+       invisible wall you hit and stop dead against.
+
+       An approach runs WITH the span; a street that crosses near it does not.
+       Only applied where the lift came from the ramp corridor (outside the
+       deck band) -- on the deck itself there is nothing to cross, it is over
+       water. */
+    if (best > 0 && bs && bs.isBridge) {
+      let onPolyline = Infinity;
+      for (let i = 0; i < bs.pts.length - 1; i++) {
+        const ax = bs.pts[i][0], az = bs.pts[i][1];
+        const vx = bs.pts[i + 1][0] - ax, vz = bs.pts[i + 1][1] - az;
+        const l2 = vx * vx + vz * vz;
+        let t = l2 ? ((x - ax) * vx + (z - az) * vz) / l2 : 0;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        onPolyline = Math.min(onPolyline, Math.hypot(x - ax - vx * t, z - az - vz * t));
       }
+      if (onPolyline > bs.half + 5.5) {                 // we are on the ramp, not the deck
+        /* Which road are you MORE CENTRED in -- one that climbs with the span,
+           or one that crosses it? "Any crossing street wins" zeroed the
+           approach at every junction on it, which put a hole in the ramp
+           30 m short of the deck. */
+        const d = spanDir(bs, x, z);
+        let alongD = Infinity, crossD = Infinity;
+        for (const seg of this.segmentsNear(x, z, 24)) {
+          const vx = seg.bx - seg.ax, vz = seg.bz - seg.az, l = Math.hypot(vx, vz) || 1;
+          let t = ((x - seg.ax) * vx + (z - seg.az) * vz) / (l * l); t = Math.max(0, Math.min(1, t));
+          const dist = Math.hypot(x - seg.ax - vx * t, z - seg.az - vz * t);
+          if (dist > seg.half) continue;
+          if (Math.abs((vx * d[0] + vz * d[1]) / l) > 0.6) alongD = Math.min(alongD, dist);
+          else crossD = Math.min(crossD, dist);
+        }
+        if (crossD < alongD) return 0;      // squarely on the cross street: underneath
+      }
+    }
+    if (best > 0 && bs && (bs.isFreeway || bs.height > 8.0)) {
+      /* Deck or underneath? In plan they overlap, so no geometry alone can say
+         -- a surface street crossing beneath the expressway sits inside the
+         freeway's 22 m half-width, and the freeway's own centreline sits inside
+         the crossing street's. The honest tie-break is which carriageway you
+         are more CENTRED in: you are driving the road you are in the middle of.
+
+         Measured at (3152,1253): 0.0 m from the arterial's centre, 20.3 m from
+         the freeway's -- you are on the arterial, underneath. At the freeway's
+         own centreline the comparison inverts and you stay on the deck.
+
+         This replaces a parallelism test ("a street running WITH the span IS
+         the approach, lift it"), which lifted every service street running
+         alongside the expressway underneath it: 9.4 m in 3 m, the invisible
+         wall you stop dead against. The expressway's real approaches are their
+         own `ramp` class and are handled as elevated below. */
+      let groundD = Infinity, elevD = Infinity, elevSeg = null;
+      for (const seg of this.segmentsNear(x, z, 30)) {
+        const vx = seg.bx - seg.ax, vz = seg.bz - seg.az, l2 = vx * vx + vz * vz || 1;
+        let t = ((x - seg.ax) * vx + (z - seg.az) * vz) / l2; t = Math.max(0, Math.min(1, t));
+        const d = Math.hypot(x - seg.ax - vx * t, z - seg.az - vz * t);
+        if (d > seg.half) continue;
+        if (seg.cls === 'freeway' || seg.cls === 'ramp') {
+          if (d < elevD) { elevD = d; elevSeg = seg; }
+        } else if (d < groundD) groundD = d;
+      }
+      // on an elevated carriageway and more centred in it: you are ON the deck,
+      // at the height of the structure you are on (a ramp may be part-climbed
+      // while the expressway above it is at full height -- returning the max
+      // teleported you off the ramp and onto the motorway)
+      if (elevSeg && elevD <= groundD) {
+        if (elevSeg.cls === 'ramp' && rampBest > 0) return rampBest;
+        if (elevSeg.cls === 'freeway' && fwyBest > 0) return fwyBest;
+        return best;
+      }
+      // more centred in a ground street: underneath. deckBest is bridges only.
+      if (groundD < Infinity) return deckBest;
     }
     return best;
   }
