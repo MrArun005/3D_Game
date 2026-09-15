@@ -7,6 +7,8 @@
  * the hull collision, the camera and the traffic all ask constantly.
  */
 
+import { fetchCached } from '../core/assetCache.js';
+
 const CELL = 96;                       // spatial hash cell, metres
 const key = (ix, iz) => `${ix},${iz}`;
 
@@ -97,6 +99,13 @@ export class District {
     this.#infill(data);
   }
 
+  /** Add a road segment dynamically (e.g. race track) and bucket it in the spatial grid. */
+  addSegment(seg, pad = seg.half + 6) {
+    const id = this.segments.push(seg) - 1;
+    this.#bucket(seg, id, pad);
+    return id;
+  }
+
   #bucket(seg, id, pad) {
     const x0 = Math.floor((Math.min(seg.ax, seg.bx) - pad) / CELL);
     const x1 = Math.floor((Math.max(seg.ax, seg.bx) + pad) / CELL);
@@ -178,6 +187,7 @@ export class District {
   /** Blocks whose footprint touches a radius — the streamer's unit of work. */
   /** The district a point stands in: the nearest block's, within 60 m; null on the water or far outside the plan. */
   districtAt(x, z) {
+    if (this.isRacewayLand && this.isRacewayLand(x, z)) return 'HALSTEAD RACEWAY';
     let best = null, bd = 60;
     for (const i of this.blocksNear(x, z, 60)) {   // blocksNear returns indices into this.blocks
       const b = this.blocks[i]; if (!b) continue;
@@ -252,6 +262,7 @@ export class District {
    * wall to y=0.
    */
   inOpenWater(x, z) {
+    if (this.isRacewayLand && this.isRacewayLand(x, z)) return false;
     const W = this.data.water;
     if (x > this.bounds.w + 20) return true;
     if (nearPolyline(W.river.points, x, z) < W.river.width / 2) return true;
@@ -268,6 +279,10 @@ export class District {
    * span you are and how far off its centre.
    */
   elevationAt(x, z) {
+    if (this.racewayElevationAt) {
+      const rh = this.racewayElevationAt(x, z);
+      if (rh !== null && rh !== undefined) return rh;
+    }
     let best = 0, bs = null, deckBest = 0, rampBest = 0, fwyBest = 0;
     for (let i = 0; i < this.spans.length; i++) {
       const s = this.spans[i];
@@ -616,7 +631,6 @@ function pointInPoly(poly, x, z) {
 }
 
 export async function loadDistrict(url = '/halstead-bay.district.json') {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`district ${res.status}`);
-  return new District(await res.json());
+  const data = await fetchCached(url, 'json');
+  return new District(data);
 }

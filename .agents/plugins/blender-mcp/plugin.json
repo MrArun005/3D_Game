@@ -1,0 +1,5 @@
+{
+  "name": "blender-mcp",
+  "description": "Blender MCP server for interactive 3D modeling and scene control",
+  "version": "1.30.0"
+}

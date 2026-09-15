@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { anisotropyOf } from './textures.js';
+import { fetchCached } from '../core/assetCache.js';
 
 /**
  * The asset catalogue.
@@ -135,8 +136,8 @@ export class Catalogue {
   /** Fetch both indexes and build every material. Models load lazily after. */
   async load(renderer) {
     const [manifest, library] = await Promise.all([
-      fetch(MANIFEST).then((r) => r.json()),
-      fetch(LIBRARY).then((r) => r.json()),
+      fetchCached(MANIFEST, 'json'),
+      fetchCached(LIBRARY, 'json'),
     ]);
     this.manifest = manifest;
     /* City-wide BatchedMesh only pays where the device can multi-draw. On a
@@ -255,41 +256,48 @@ export class Catalogue {
   }
 
   #loadOne(url, rec) {
-    return new Promise((res, rej) => {
-      LOADER.load(url, (gltf) => {
-        const parts = [];
-        gltf.scene.updateMatrixWorld(true);
-        gltf.scene.traverse((o) => {
-          if (!o.isMesh) return;
-          /* Bake the node transform into the geometry. The alternative is a
-             per-part offset matrix multiplied into every instance, which is
-             the same maths done thousands more times. */
-          const g = deQuantize(o.geometry.clone());
-          g.applyMatrix4(o.matrixWorld);
-          /* Rule 4, for real. Every one of the 201 shipped parts arrived with
-             NO TEXCOORD_0, so the merge step's zero-fill put every texel of
-             every PBR material on one point: brick, glass and timber never
-             actually showed. Box-projection in METRES -- each vertex takes the
-             two axes perpendicular to its normal's dominant axis -- so the
-             library's per-metre tiling reads at true size and a 3.6m bay gets
-             3.6m of brick. Baked positions, so it is done once per asset. */
-          if (!g.attributes.uv) boxProjectUv(g);
-          /* NOT marked `owned`. Catalogue geometry is shared by every chunk
-             that instances the asset, and districtWorld's release sweep
-             disposes anything flagged owned -- so flagging these would free
-             the bench buffer the moment one chunk unloaded and leave every
-             other chunk drawing from a dead VBO. */
-          const matName = this.#materialFor(o, rec);
-          parts.push({
-            geometry: g,
-            material: this.materials.get(matName) ?? FALLBACK,
-            materialName: matName,
-            tris: (g.index ? g.index.count : g.attributes.position.count) / 3,
-          });
+    const parseGltf = (gltf, res) => {
+      const parts = [];
+      gltf.scene.updateMatrixWorld(true);
+      gltf.scene.traverse((o) => {
+        if (!o.isMesh) return;
+        /* Bake the node transform into the geometry. The alternative is a
+           per-part offset matrix multiplied into every instance, which is
+           the same maths done thousands more times. */
+        const g = deQuantize(o.geometry.clone());
+        g.applyMatrix4(o.matrixWorld);
+        /* Rule 4, for real. Every one of the 201 shipped parts arrived with
+           NO TEXCOORD_0, so the merge step's zero-fill put every texel of
+           every PBR material on one point: brick, glass and timber never
+           actually showed. Box-projection in METRES -- each vertex takes the
+           two axes perpendicular to its normal's dominant axis -- so the
+           library's per-metre tiling reads at true size and a 3.6m bay gets
+           3.6m of brick. Baked positions, so it is done once per asset. */
+        if (!g.attributes.uv) boxProjectUv(g);
+        /* NOT marked `owned`. Catalogue geometry is shared by every chunk
+           that instances the asset, and districtWorld's release sweep
+           disposes anything flagged owned -- so flagging these would free
+           the bench buffer the moment one chunk unloaded and leave every
+           other chunk drawing from a dead VBO. */
+        const matName = this.#materialFor(o, rec);
+        parts.push({
+          geometry: g,
+          material: this.materials.get(matName) ?? FALLBACK,
+          materialName: matName,
+          tris: (g.index ? g.index.count : g.attributes.position.count) / 3,
         });
-        res(parts);
-      }, undefined, rej);
-    });
+      });
+      res(parts);
+    };
+
+    return fetchCached(url, 'arrayBuffer')
+      .then((buffer) => new Promise((res, rej) => {
+        const path = url.slice(0, url.lastIndexOf('/') + 1);
+        LOADER.parse(buffer, path, (gltf) => parseGltf(gltf, res), rej);
+      }))
+      .catch(() => new Promise((res, rej) => {
+        LOADER.load(url, (gltf) => parseGltf(gltf, res), undefined, rej);
+      }));
   }
 
   /**

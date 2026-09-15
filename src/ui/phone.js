@@ -130,6 +130,27 @@ export class Phone {
     this.content.innerHTML = '';
 
     if (this.tab === 'missions') {
+      // Halstead International Raceway Featured Circuit Card
+      const raceCard = document.createElement('div');
+      raceCard.style.cssText = 'background: linear-gradient(135deg, rgba(230,126,34,0.2), rgba(231,76,60,0.25)); border: 1px solid rgba(243,156,18,0.5); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; box-shadow: 0 4px 16px rgba(243,156,18,0.2);';
+      raceCard.innerHTML = `
+        <div style="font-weight: 800; font-size: 13px; color: #f39c12;">🏎️ HALSTEAD RACEWAY</div>
+        <div style="font-size: 11px; color: #eee;">2.34 km Circuit · 3 Laps · 5 AI Rivals</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top: 6px;">
+          <div style="font-weight:800; color:#2ecc71; font-size:12px;">+$12,000 PURSE</div>
+          <button id="phone-raceway-btn" style="padding: 5px 12px; border-radius: 6px; border:none; background:#e67e22; color:#fff; font-weight:700; font-size:11px; cursor:pointer;">
+            RACE NOW
+          </button>
+        </div>
+      `;
+      raceCard.querySelector('#phone-raceway-btn').onclick = () => {
+        if (typeof window !== 'undefined' && window._startCircuitRace) {
+          window._startCircuitRace();
+          this.toggle(false);
+        }
+      };
+      this.content.appendChild(raceCard);
+
       STORY_MISSIONS.forEach((m) => {
         const card = document.createElement('div');
         card.style.cssText = 'background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 4px;';

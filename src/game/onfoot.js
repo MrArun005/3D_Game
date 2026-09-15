@@ -223,6 +223,7 @@ export class OnFoot {
        `forward` and you spiral (test 3 catches exactly that). So we hold the
        facing and let the character play its walk backwards. */
     this.backing = false;
+    let turnRate = 0;
     if (speed > 0.2) {
       const camFX = Math.cos(this.camYaw), camFZ = -Math.sin(this.camYaw);
       const along = (this.vx * camFX + this.vz * camFZ) / speed;
@@ -231,15 +232,22 @@ export class OnFoot {
       let diff = targetYaw - this.yaw;
       while (diff < -Math.PI) diff += Math.PI * 2;
       while (diff > Math.PI) diff -= Math.PI * 2;
+      turnRate = diff;
       this.yaw += diff * Math.min(1, dt * 14);
     }
     this.bob += dt * speed * 2.1;
 
+    // Locomotion bank roll: tilt torso smoothly into rapid direction cuts
+    this.rollLean = (this.rollLean || 0) + (-turnRate * Math.min(1, speed / RUN) * 0.28 - (this.rollLean || 0)) * Math.min(1, dt * 12);
+    // Forward lean proportional to acceleration
+    this.pitchLean = (this.pitchLean || 0) + ((speed / RUN) * 0.12 - (this.pitchLean || 0)) * Math.min(1, dt * 8);
+
     if (this.character.ready) {
-      this.character.update(dt, this.x, this.y, this.z, this.yaw, this.backing ? -speed : speed, this.isGrounded);
+      this.character.update(dt, this.x, this.y, this.z, this.yaw, this.backing ? -speed : speed, this.isGrounded, this.rollLean, this.pitchLean);
     } else {
       this.group.position.set(this.x, this.y + Math.abs(Math.sin(this.bob)) * 0.055, this.z);
       this.group.rotation.y = -this.yaw + Math.PI / 2;
+      this.group.rotation.z = this.rollLean;
     }
 
     // Camera: over the shoulder, smoothly tracking position and elevation

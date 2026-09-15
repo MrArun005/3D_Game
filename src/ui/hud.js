@@ -59,6 +59,8 @@ export class Hud {
   /** Once Halstead Bay is loaded the minimap draws real streets. */
   useDistrict(d) { this.district = d; }
 
+  useCircuit(circuit) { this.circuit = circuit; }
+
   useNavigation(nav) { this.navigation = nav; }
 
   useClock(clock) { this.clock = clock; }
@@ -81,6 +83,7 @@ export class Hud {
     if (this.promptBar) this.promptBar.style.display = 'none';
     this.#drawWanted(traffic);
     this.#drawMission(mission);
+    this.#drawCircuitRace(car);
     this.net = net;
     const fwd = car.fwdSpeed !== undefined ? car.fwdSpeed : (car.speed || 0);
     const kphVal = Math.round(Math.abs(fwd) * 3.6);
@@ -847,6 +850,56 @@ export class Hud {
     const stars = '★'.repeat(n) + '☆'.repeat(5 - n);
     const hotText = traffic?.hot ? 'POLICE PURSUIT' : 'EVADING';
     this.wantedEl.innerHTML = `<span style="font:800 11px/1 ui-sans-serif,sans-serif;letter-spacing:0.14em;color:#ff5232;text-transform:uppercase">${hotText} · HEAT ${n}</span><span style="color:#ffb020;font-size:16px;letter-spacing:2px">${stars}</span>`;
+  }
+
+  /** Race HUD widget: position, lap, lap time, and best lap on Halstead International Raceway */
+  #drawCircuitRace(car) {
+    if (!this.circuit) return;
+    const st = this.circuit.getStatus(car);
+
+    if (!this.raceHudEl && typeof document !== 'undefined') {
+      const el = document.createElement('div');
+      el.id = 'circuit-race-hud';
+      el.style.cssText = 'position:fixed;top:48px;right:28px;z-index:65;display:none;flex-direction:column;gap:6px;'
+        + 'background:rgba(12,16,25,0.92);backdrop-filter:blur(12px);border:1px solid rgba(255,190,40,0.45);'
+        + 'border-radius:14px;padding:12px 18px;color:#fff;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;'
+        + 'box-shadow:0 8px 32px rgba(0,0,0,0.7),0 0 16px rgba(255,190,40,0.18);min-width:180px;pointer-events:none;';
+      document.body.appendChild(el);
+      this.raceHudEl = el;
+    }
+
+    if (!this.raceHudEl) return;
+
+    if (st.state === 'racing' || st.state === 'countdown' || st.state === 'finished') {
+      this.raceHudEl.style.display = 'flex';
+      const pCol = st.place === 1 ? '#ffd700' : st.place === 2 ? '#c0c0c0' : st.place === 3 ? '#cd7f32' : '#ffffff';
+      const m = Math.floor(st.currentLapTime / 60), s = Math.floor(st.currentLapTime % 60), cs = Math.floor((st.currentLapTime * 100) % 100);
+      const curStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
+      const bestStr = st.bestLapTime ? `${Math.floor(st.bestLapTime / 60)}:${String(Math.floor(st.bestLapTime % 60)).padStart(2, '0')}.${String(Math.floor((st.bestLapTime * 100) % 100)).padStart(2, '0')}` : '--:--.--';
+
+      this.raceHudEl.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.12);padding-bottom:6px">
+          <span style="font-weight:800;font-size:18px;color:${pCol};letter-spacing:1px">P ${st.place} <span style="font-size:12px;color:#888">/ ${st.fieldCount}</span></span>
+          <span style="font-weight:700;font-size:13px;color:#39ffb0;background:rgba(57,255,176,0.12);padding:2px 6px;border-radius:4px">LAP ${Math.min(st.totalLaps, st.lap)}/${st.totalLaps}</span>
+        </div>
+        <div style="font-size:11px;color:#8899aa;display:flex;justify-content:space-between;margin-top:2px">
+          <span>LAP TIME</span><b style="color:#fff;font-size:13px">${curStr}</b>
+        </div>
+        <div style="font-size:10px;color:#8899aa;display:flex;justify-content:space-between">
+          <span>BEST LAP</span><b style="color:#ffd700">${bestStr}</b>
+        </div>
+        ${st.state === 'countdown' ? `<div style="color:#ffcc00;font-weight:800;font-size:14px;text-align:center;margin-top:4px">START IN ${st.countdown}…</div>` : ''}
+      `;
+    } else if (st.inRaceway) {
+      this.raceHudEl.style.display = 'flex';
+      this.raceHudEl.innerHTML = `
+        <div style="font-weight:800;font-size:12px;color:#ffd700;letter-spacing:1px">HALSTEAD RACEWAY</div>
+        <div style="font-size:11px;color:#8899aa;margin-top:2px">3-Lap Circuit Race</div>
+        <div style="font-size:11px;color:#39ffb0;margin-top:4px">Press <b>[G]</b> or <b>/track</b> to Race</div>
+      `;
+    } else {
+      this.raceHudEl.style.display = 'none';
+    }
   }
 
   #getDialPlate() {

@@ -14,7 +14,8 @@ const LANDMARKS = {
   north:    { x: 2350, z: 450, yaw: Math.PI, name: 'North Bay Overlook' },
   marrow:   { x: 499, z: 1391, yaw: 0, name: 'Marrow Hill' },              // the suburb: gable roofs (photo preset marrow-hill)
   steelgate: { x: 3662, z: 1221, yaw: 0, name: 'Steelgate Chop Shop' },
-  tokyo:    { x: 2160, z: 1540, yaw: Math.PI / 2, name: 'Little Tokyo Neon Boulevard' }
+  tokyo:    { x: 2160, z: 1540, yaw: Math.PI / 2, name: 'Little Tokyo Neon Boulevard' },
+  track:    { x: 3560, z: 2457, yaw: 0, name: 'Halstead International Raceway' }
 };
 
 export class CommandEngine {
@@ -39,11 +40,12 @@ export class CommandEngine {
       case 'help':
       case 'commands': {
         chat.post('SYSTEM', 'Available Commands:');
+        chat.post('SYSTEM', '· /track — HALSTEAD RACEWAY dedicated circuit (also Shift+T)');
         chat.post('SYSTEM', '· /mile — THE HALSTEAD MILE scenic route (also Shift+R)');
         chat.post('SYSTEM', '· /wanted <0-5> or /clearheat — Police pursuit level');
         chat.post('SYSTEM', '· /nos — Equip & refill Nitrous Oxide');
         chat.post('SYSTEM', '· /repair — Fix all bodywork & damage');
-        chat.post('SYSTEM', '· /tp <downtown|harbour|bridge|airport> — Teleport');
+        chat.post('SYSTEM', '· /tp <downtown|harbour|bridge|airport|track> — Teleport');
         chat.post('SYSTEM', '· /time <0-23|day|night|dusk> — Set city clock');
         chat.post('SYSTEM', '· /weather <clear|rain> — Set road precipitation');
         chat.post('SYSTEM', '· /car <zr1|patrol|c6r> — Spawn vehicle');
@@ -93,6 +95,15 @@ export class CommandEngine {
         this.ctx.car.impact = 0;
         this.ctx.setHealth(1.0);
         chat.post('SYSTEM', '🔧 Vehicle fully repaired. Chassis & bodywork restored.');
+        break;
+      }
+
+      case 'track':
+      case 'circuit':
+      case 'raceway': {
+        // Halstead International Raceway -- also Shift+T.
+        this.ctx.startTrackRace?.();
+        chat.post('SYSTEM', '🏎️ HALSTEAD INTERNATIONAL RACEWAY: 2.34 km circuit. Staging 3-lap race…');
         break;
       }
 

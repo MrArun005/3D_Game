@@ -1266,32 +1266,58 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
      `?nowarm` skips it and restores the old lazy behaviour. */
   catalogueRef = catalogue;
   if (catalogue && !new URLSearchParams(location.search).has('nowarm')) {
-    const names = [...catalogue.assets.keys()];
+    const allNames = [...catalogue.assets.keys()];
+    const isSpawnEssential = (k) => /hero|tokyo|pencil|sakura|ginkgo|lamp|signal|barrier|sign|bench|bin|tree|corvette/i.test(k);
+    const tier1Names = allNames.filter(isSpawnEssential);
+    const tier2Names = allNames.filter(k => !isSpawnEssential(k));
+
     const t0 = performance.now();
     let done = 0, next = 0;
     const POOL = 16;   // fetch overlaps; the parse is main-thread and serialises anyway
     const worker = async () => {
-      while (next < names.length) {
+      while (next < tier1Names.length) {
         const i = next++;
-        try { await catalogue.fetchAsset(names[i]); } catch { /* fetchAsset already warns and caches an empty */ }
+        try { await catalogue.fetchAsset(tier1Names[i]); } catch { /* fetchAsset already warns and caches an empty */ }
         done++;
-        if (done % 8 === 0 || done === names.length) {
-          setBootProgress(45 + Math.round((done / names.length) * 22), `Loading assets… ${done}/${names.length}`);
+        if (done % 4 === 0 || done === tier1Names.length) {
+          setBootProgress(45 + Math.round((done / tier1Names.length) * 22), `Loading essentials… ${done}/${tier1Names.length}`);
           await new Promise((r) => requestAnimationFrame(r));   // let the bar actually paint
         }
       }
     };
     await Promise.all(Array.from({ length: POOL }, worker));
-    console.info(`catalogue pre-warm: ${names.length} assets in ${Math.round(performance.now() - t0)} ms`);
-    /* And the textures. loader.load() is fire-and-forget, so before this the
-       boot screen dropped while the 99 library PNGs were still arriving and
-       the first minute of play watched them pop in. allSettled + a 15 s cap
-       inside the catalogue, so one bad PNG cannot hold the screen forever. */
+    console.info(`catalogue tier 1 fast-warm: ${tier1Names.length} assets in ${Math.round(performance.now() - t0)} ms`);
+
+    // Queue Tier 2 background streaming after boot screen drops
+    window._startBackgroundAssetStream = () => {
+      let bgIndex = 0;
+      const processIdle = (deadline) => {
+        while (bgIndex < tier2Names.length && (deadline?.timeRemaining ? deadline.timeRemaining() > 6 : true)) {
+          const name = tier2Names[bgIndex++];
+          catalogue.fetchAsset(name).catch(() => {});
+          if (!deadline?.timeRemaining) break;
+        }
+        if (bgIndex < tier2Names.length) {
+          if (typeof requestIdleCallback !== 'undefined') {
+            requestIdleCallback(processIdle, { timeout: 1500 });
+          } else {
+            setTimeout(processIdle, 120);
+          }
+        } else {
+          console.info(`catalogue tier 2 background stream complete: ${tier2Names.length} assets`);
+        }
+      };
+      if (typeof requestIdleCallback !== 'undefined') {
+        requestIdleCallback(processIdle, { timeout: 2000 });
+      } else {
+        setTimeout(processIdle, 500);
+      }
+    };
+
+    /* And the textures. Do not block boot indefinitely on textures: give them up to 1.5s max */
     if (catalogue.texturesReady) {
-      setBootProgress(68, 'Decoding textures…');
-      const t1 = performance.now();
-      await catalogue.texturesReady;
-      console.info(`textures ready in ${Math.round(performance.now() - t1)} ms`);
+      setBootProgress(68, 'Preparing graphics…');
+      await Promise.race([catalogue.texturesReady, new Promise((r) => setTimeout(r, 1500))]);
     }
   }
 
@@ -1411,6 +1437,13 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   raceCircuit.setTrackGroup(racewayGroup);
   hud.useCircuit(raceCircuit);
   window.raceCircuit = raceCircuit;
+  // Race run: the car goes straight to the grid and the Tokyo spawn below is
+  // skipped -- it used to run AFTER this and drag the car back to (2354, 1408)
+  // at the far side of the map, where nothing in the raceway-only ring is built.
+  if (RACE_MODE) {
+    startCircuitRace();
+    chase.snap(car);
+  } else {
   // Put the car in Little Tokyo on the northbound lane of Tokyo Street (Road 168)
   // Perfectly aligned with the road heading north directly under the illuminated Grand Torii Arch
   const spawnX = 2354.0;
@@ -1430,6 +1463,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   }
   spawnSnap = true;
   chase.snap(car);
+  }
   {
     // Place person safely on the pedestrian sidewalk
     person.place(spawnX - 7.5, spawnZ, spawnYaw + Math.PI / 2);
@@ -1437,13 +1471,6 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   // now the car is on its spawn node, lay the film route from where it stands
   ROUTE = buildRoute(null, car.x, car.z);
   console.info(`Halstead Bay loaded — spawn at Little Tokyo (${car.x}, ${car.z})`);
-  // Race run: the car goes straight to the grid and the Tokyo spawn below is
-  // skipped -- it used to run AFTER this and drag the car back to (2354, 1408)
-  // at the far side of the map, where nothing in the raceway-only ring is built.
-  if (RACE_MODE) {
-    startCircuitRace();
-    chase.snap(car);
-  } else {
   /* spawn is the city. No toast. */
 }).catch((e) => { districtFailed = true; console.warn('district not loaded, staying on the grid:', e.message); });
 
@@ -1463,7 +1490,6 @@ scene.add(hero);
    material rather than by eye: of the eight shipped Sketchfab bodies, only
    camaro-350 has a saturated BODY material -- `CarPaint` at #001b8a, a deep
    navy. Every other car's most-saturated material is lights, glass or brake
-  }
    calipers (corvette-c6r #ff0000 is `glass_lights`, porsche-gt3r #ff0000 is
    `EXT_CALIPER`), so none of them is actually a blue car.
    A saved choice still wins: if you have ever picked a body in the garage,
@@ -2625,6 +2651,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
       scene.remove(dummyGroup);
       testBox.dispose();
       if (boot) { boot.remove(); boot = null; }
+      if (window._startBackgroundAssetStream) window._startBackgroundAssetStream();
     };
     Promise.race([renderer.compileAsync(scene, camera), new Promise((r) => setTimeout(r, 1500))])
       .catch((e) => console.warn('warm-up:', e.message)).then(drop);

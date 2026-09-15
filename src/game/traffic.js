@@ -267,6 +267,10 @@ export class Traffic {
     }
   }
 
+  makeCar(force) {
+    return this.#makeCar(force);
+  }
+
   #makeCar(force) {
     const rand = this.rand;
     const keys = this.assets.geo.stuntKeys ?? BODY_KEYS;    // vendor kits add taxi

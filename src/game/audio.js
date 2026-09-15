@@ -605,6 +605,42 @@ export function createAudio() {
       const g = ctx.createGain(); g.gain.setValueAtTime(0.18, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
       o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.07);
     },
+    /** Circuit countdown tone: low pitch for 3, 2, 1, high pitch for GO! */
+    countdownBeep(isGo = false) {
+      if (!ctx || ctx.state !== 'running') return;
+      const t = ctx.currentTime;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = isGo ? 'sawtooth' : 'sine';
+      o.frequency.setValueAtTime(isGo ? 880 : 440, t);
+      if (isGo) {
+        o.frequency.exponentialRampToValueAtTime(1320, t + 0.28);
+      }
+      g.gain.setValueAtTime(isGo ? 0.28 : 0.20, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + (isGo ? 0.45 : 0.25));
+      o.connect(g);
+      g.connect(master);
+      o.start(t);
+      o.stop(t + (isGo ? 0.46 : 0.26));
+    },
+    /** Chequered flag victory fanfare */
+    raceFinishFanfare() {
+      if (!ctx || ctx.state !== 'running') return;
+      const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
+      notes.forEach((freq, idx) => {
+        const at = ctx.currentTime + idx * 0.12;
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'triangle';
+        o.frequency.setValueAtTime(freq, at);
+        g.gain.setValueAtTime(0.22, at);
+        g.gain.exponentialRampToValueAtTime(0.001, at + 0.38);
+        o.connect(g);
+        g.connect(master);
+        o.start(at);
+        o.stop(at + 0.4);
+      });
+    },
     mute(on) {
       if (!master) return;
       master.gain.setTargetAtTime(on ? 0 : 0.24, ctx.currentTime, 0.08);

@@ -388,13 +388,13 @@ export class Character {
   /* A NEGATIVE speed means backing up: the caller keeps you facing the camera
      and we play the walk clip in reverse, which is what a backpedal is. Every
      decision below reads the magnitude. */
-  update(dt, x, y, z, yaw, speed, isGrounded = true) {
+  update(dt, x, y, z, yaw, speed, isGrounded = true, rollLean = 0, pitchLean = 0) {
     const backing = speed < 0;
     speed = Math.abs(speed);
     if (!this.ready) return;
     this._bones = this._bones && this._bonesRoot === this.root.children[0] ? this._bones : (this._bonesRoot = this.root.children[0], new Map());
     this.root.position.set(x, y, z);
-    this.root.rotation.y = -yaw + Math.PI / 2;
+    this.root.rotation.set(pitchLean * 0.5, -yaw + Math.PI / 2, rollLean, 'YXZ');
     this.#updateFace(dt);
 
     if (!(this.busyUntil > performance.now())) {
