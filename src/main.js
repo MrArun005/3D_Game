@@ -242,6 +242,7 @@ if (new URLSearchParams(location.search).has('debug')) {
   window.__wanted = (n) => { traffic.wanted = n; };
   window.__hurt = (h) => { health = Math.max(0, health - (+h || 1)); hud.setHealth(health); if (health <= 0) onDeath(); };   // the death flow, on demand
   window.__hud = () => hud; window.__dying = () => ({ dying, wastedAnim, drowning, holdFire: traffic.holdFire });
+  window.__audio = () => audio;   // ?debug: fire any sound by hand, and check the bank is wired
   window.__time = (h) => { clock.hour = ((+h) % 24 + 24) % 24; };          // the recording harness sets the hour
   window.__cmd = (line) => (commands ? commands.execute(line) : false);   // and runs chat commands ('/time 22', '/tp ...')
   window.__rain = (v) => { rainForce = v; };   // true/false forces the weather on/off; null returns it to the spells
@@ -819,6 +820,48 @@ function pullTrigger() {
   }
 }
 const _obsBuffer = [];
+/* Distance-to-BAY test for the surf bed. The first cut called
+   districtRef.nearShore(), which does not exist on District -- it would have
+   returned undefined, gone falsy, and left the beach silent with nothing to
+   show for it. Walks the bay polyline, same shape as nearRiver below. */
+let _bayPts = null;
+function nearBay(x, z, r = 150) {
+  if (!_bayPts) {
+    _bayPts = districtRef?.data?.water?.bay ?? [];
+    if (!_bayPts.length) return false;
+  }
+  const r2 = r * r;
+  for (let i = 1; i < _bayPts.length; i++) {
+    const [ax, az] = _bayPts[i - 1], [bx, bz] = _bayPts[i];
+    const dx = bx - ax, dz = bz - az, L = dx * dx + dz * dz;
+    let t = L ? ((x - ax) * dx + (z - az) * dz) / L : 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const ox = x - (ax + t * dx), oz = z - (az + t * dz);
+    if (ox * ox + oz * oz < r2) return true;
+  }
+  return false;
+}
+
+/* Distance-to-river test for the ambience bed. Cheap: the polyline is 99 points
+   and this runs once a frame, so it walks it rather than building a grid. */
+let _riverPts = null;
+function nearRiver(x, z, r = 130) {
+  if (!_riverPts) {
+    _riverPts = districtRef?.data?.water?.river?.points ?? [];
+    if (!_riverPts.length) return false;
+  }
+  const r2 = r * r;
+  for (let i = 1; i < _riverPts.length; i++) {
+    const [ax, az] = _riverPts[i - 1], [bx, bz] = _riverPts[i];
+    const dx = bx - ax, dz = bz - az, L = dx * dx + dz * dz;
+    let t = L ? ((x - ax) * dx + (z - az) * dz) / L : 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const ox = x - (ax + t * dx), oz = z - (az + t * dz);
+    if (ox * ox + oz * oz < r2) return true;
+  }
+  return false;
+}
+
 function getObstacles(x, z) {
   _obsBuffer.length = 0;
   if (world.nearbyParked) world.nearbyParked(x, z, _obsBuffer);
@@ -2539,6 +2582,22 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     if (bustFlash <= 0) hud.setDead(false);
   }
   audio.update(currentVehicle);
+  /* Where you are, as a mix. The beach, the promenade, the riverside and the
+     harbour were all built this week and every one of them is silent; this is
+     the bed under them. Cross-faded inside sfx.place(), never switched, or the
+     bed pops as you cross a boundary. `elevated` uses the deck height the
+     physics already knows, so a bridge gets its own wind without a new test. */
+  {
+    const vx = currentVehicle.x, vz = currentVehicle.z;
+    const deck = districtRef?.elevationAt?.(vx, vz) ?? 0;
+    audio.place?.(lastDistrict, {
+      onBeach: !!beach && nearBay(vx, vz),
+      onWater: (districtRef?.data?.water?.river && nearRiver(vx, vz)) || false,
+      elevated: deck > 3.5,
+      crowd: crowd ? 0.6 : 0,
+      dt,
+    });
+  }
   /* The nearest live cruiser's siren: louder as it closes, panned to its
      side, gone when the stars are. traffic._nearest is this frame's distance. */
   if (audio.siren) {
@@ -2569,6 +2628,18 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   }
 
   if (car.hitTag) {
+    /* Impact BANDS, not one thud scaled (2026-09-15). A glancing scrape and a
+       head-on are different events, not the same one played louder: the scrape
+       is long and bright, the heavy hit is short and low. audio.thud still
+       covers the middle; these are its ends. Thresholds match the ones damage
+       already uses -- 4.5 is "hurt the other car", 9 is "hurt it badly". */
+    {
+      const f = car.hitForce || 0;
+      if (f > 9) audio.crunch?.(1);
+      else if (f > 4.5) audio.crunch?.(0.45);
+      else if (f > 1.2) audio.scrape?.(Math.min(1, f / 4.5));
+      if (f > 9) audio.glass?.();
+    }
     traffic.reportCrime(car.hitTag, car.hitForce || 0);
     damageModel.hit(car.hitForce || 0, car.hitAt);
     // ramming a car or a cruiser hurts ITS engine too: a hard hit is one or two of its eight points (PIT them back)

@@ -7,6 +7,7 @@ import {
 } from './engine-samples.js';
 import { rumble } from './input.js';
 import { WHEEL_R } from '../vehicle/config.js';
+import { createSfx } from './sfx.js';
 
 function makeNoise(ctx, seconds = 1.5) {
   const n = Math.floor(ctx.sampleRate * seconds);
@@ -37,6 +38,7 @@ export function createAudio() {
   let limiter, turboGain, turboFilter;
   let tyreGain, tyreFilter, windGain, rainGain;
   let sprayGain, flapGain, flapOsc;
+  let sfx = null;
   let sprayFilterFreq = () => {};
   let ready = false;
   let lastGear = 2;
@@ -173,6 +175,11 @@ export function createAudio() {
     cityGain.connect(master);
 
     noise.start();
+
+    /* The sound bank (game/sfx.js): every one-shot and ambience bed. Built here
+       because it needs the live context, the master gain and the SAME noise
+       buffer -- one buffer shared by both files rather than a second copy. */
+    sfx = createSfx(ctx, master, noise.buffer);
     ready = true;
     return ctx.state === 'running';
   }
@@ -297,7 +304,23 @@ export function createAudio() {
     osc.start(t); osc.stop(t + 0.07);
   }
 
+  /* Spread the bank onto the public API so callers say audio.crunch(), not
+     audio.sfx.crunch(). The spread is FIRST, so anything audio.js defines
+     itself wins if a name ever collides.
+     This block landed inside makeLayer() on the first attempt -- `return {` also
+     matches `return { src, gain }` twenty lines from the top of the file, and a
+     replace-first put 41 sounds on a gain node. exposed: 0 of 41. */
+  const bank = (name) => (...a) => { if (ready && ctx && ctx.state === 'running' && sfx) sfx[name](...a); };
+  const BANK_NAMES = ['skid','brakeSqueal','handbrake','suspension','bottomOut','starter','blowOff',
+    'backfire','engineKnock','radiator','dragMetal','scrape','crunch','glass','propBreak','step',
+    'jump','land','passBy','casing','dryFire','weaponSwitch','pin','throwArc','explosion',
+    'checkpoint','countdown','raceStart','finish','missionAccept','missionFail','mapOpen','mapClose',
+    'hover','gull','bird','shipHorn','crane','railPass','place','tunnel'];
+  const banked = {};
+  for (const n of BANK_NAMES) banked[n] = bank(n);
+
   return {
+    ...banked,
     resume() {
       boot();
       if (ctx && ctx.state === 'suspended') ctx.resume();
