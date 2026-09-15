@@ -1,4 +1,5 @@
 import { loadHeroSkin, DEFAULT_BODY } from '../world/vendorCars.js';
+import { getVehicleProfile } from '../vehicle/config.js';
 
 /* The chop shop (2026-09-09). Drive a car you do not OWN -- a carjack or a
    break-in fits the victim's body without buying it -- to the Steelgate
@@ -43,25 +44,26 @@ export const CATALOGUE = [
 const repairCost = (damage, hot) => Math.round(100 + 600 * Math.min(1, damage)) + (hot ? 200 : 0);
 
 export class Garage {
-  constructor(jobs, assets, hero, damage, hud) {
+  constructor(jobs, assets, hero, damage, hud, car = null) {
     this.jobs = jobs;
     this.assets = assets;
     this.hero = hero;
     this.damage = damage;
     this.hud = hud;
+    this.car = car;
 
     const storedGarage = localStorage.getItem('hb.garage');
-    /* The default body is OWNED by default (2026-09-15). A default you do not
-       own is incoherent: lastOwned falls back to q-sports, so the chop shop
-       hands you the wrong car back, and the browse cursor lands on something
-       with a price tag. restore() -> #fit() does not check ownership, so this
-       never blocked the fit -- it just left the books wrong. */
-    this.owned = new Set(JSON.parse(storedGarage || JSON.stringify(['q-sports', DEFAULT_BODY])));
+    /* The default body and premier race cars are owned by default for instant track readiness */
+    this.owned = new Set(JSON.parse(storedGarage || JSON.stringify(['q-sports', DEFAULT_BODY, 's-porsche-gt3r', 's-corvette-c6r'])));
     this.fitted = localStorage.getItem('hb.body') || DEFAULT_BODY;   // ONE default: vendorCars.DEFAULT_BODY
     if (!CATALOGUE.some((c) => c.file === this.fitted)) this.fitted = DEFAULT_BODY;
     this.cursor = CATALOGUE.findIndex((c) => c.file === this.fitted);
     this.browsing = false;
     this.lastOwned = this.owned.has(this.fitted) ? this.fitted : 'q-sports';   // what the chop shop hands you back
+
+    if (this.car) {
+      this.car.profile = getVehicleProfile(this.fitted);
+    }
 
     // Performance & NOS Tuning
     this.stage = Number(localStorage.getItem('hb.tune_stage') || 1);
@@ -178,12 +180,22 @@ export class Garage {
     const ok = await loadHeroSkin(this.assets, this.hero, file);
     if (!ok) { this.hud.flash('GARAGE CLOSED'); return; }
     this.fitted = file;
+    if (this.car) {
+      this.car.profile = getVehicleProfile(file);
+    }
     this.damage?.attach(this.hero);
     try {
       localStorage.setItem('hb.body', file);
       localStorage.setItem('hb.garage', JSON.stringify([...this.owned]));
     } catch { /* private mode */ }
     this.browsing = false;
+  }
+
+  /** Immediately equip and fit a dedicated race car */
+  async equipRaceCar(file = 's-porsche-gt3r') {
+    this.owned.add(file);
+    await this.#fit(file);
+    return true;
   }
 
   /** Hold Shift to trigger nitrous boost */

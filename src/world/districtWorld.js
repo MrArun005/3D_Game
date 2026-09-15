@@ -300,8 +300,12 @@ export class DistrictWorld {
     rg.setAttribute('normal', new THREE.BufferAttribute(
       new Float32Array(pos.length).fill(0).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
     rg.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
-    const roads = new THREE.Mesh(rg, this.assets.mat.tarmac);
-    roads.position.y = -0.03;               // always loses to the real tarmac
+    const farTarmac = this.assets.mat.tarmac.clone();
+    farTarmac.polygonOffset = true;
+    farTarmac.polygonOffsetFactor = 4;
+    farTarmac.polygonOffsetUnits = 4;
+    const roads = new THREE.Mesh(rg, farTarmac);
+    roads.position.y = -0.08;               // sits clearly below near tarmac with positive polygonOffset so real roads always cleanly win
     roads.frustumCulled = false;
     /* The far city RECEIVES the sun's shadow (2026-09-08). Photo presets that
        stand outside the loaded ring (docks, beach, aerial) see only these

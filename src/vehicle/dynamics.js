@@ -2,15 +2,16 @@ import { V, WHEELBASE, WHEEL_R } from './config.js';
 import { surfaceAt, LANE, groundHeightAt } from '../world/metrics.js';
 import { resolveBoxes, resolveBuildings, resolveObstacles } from './collision.js';
 
-/** Flat-ish turbo four. Nm against rpm, with a taper into the limiter. */
-export function engineTorque(rpm) {
+/** Flat-ish turbo four / high-rev engine. Nm against rpm, with a taper into the limiter. */
+export function engineTorque(rpm, redline = V.redline) {
   if (rpm < 500) return 0;
-  const r = Math.max(600, Math.min(V.redline, rpm));
+  const r = Math.max(600, Math.min(redline, rpm));
   const t =
     120 +
     250 * Math.exp(-(((r - 3200) / 2200) ** 2)) +
-    90 * Math.exp(-(((r - 5200) / 1800) ** 2));
-  return r > V.redline - 250 ? t * Math.max(0, (V.redline - r) / 250) : t;
+    90 * Math.exp(-(((r - 5200) / 1800) ** 2)) +
+    (redline > 7500 ? 115 * Math.exp(-(((r - 7000) / 1600) ** 2)) : 0);
+  return r > redline - 250 ? t * Math.max(0, (redline - r) / 250) : t;
 }
 
 /**
@@ -64,12 +65,38 @@ export function resetCar(car) {
 const DRIVEN = [2, 3];   // rear-wheel drive
 
 export function stepVehicle(car, dt) {
-  // --- Task 1.3: steering curve by speed (6 rad/s at rest, 2.5 at 120 km/h, 1.5x return-to-centre) ---
+  // Vehicle profile characteristics (GT3 race, supercar, muscle, street)
+  const prof = car.profile;
+  const steerRateMult = (prof?.steerRateMult || 1.0) * (car.steerBoost || 1.0);
+  const steerMax = prof?.steerMax || V.steerMax;
+  const mass = prof?.mass || V.mass;
+  const sprungMass = prof?.sprungMass || V.sprungMass;
+  const inertia = prof?.inertia || V.inertia;
+  const Ipitch = prof?.Ipitch || V.Ipitch;
+  const Iroll = prof?.Iroll || V.Iroll;
+  const springK = prof?.springK || V.springK;
+  const damperC = prof?.damperC || V.damperC;
+  const damperR = prof?.damperR || V.damperR;
+  const antiRollF = prof?.antiRollF || V.antiRollF;
+  const antiRollR = prof?.antiRollR || V.antiRollR;
+  const redline = prof?.redline || V.redline;
+  const shiftUp = prof?.shiftUp || V.shiftUp;
+  const shiftDown = prof?.shiftDown || V.shiftDown;
+  const launchRpm = prof?.launchRpm || V.launchRpm;
+  const gears = prof?.gears || V.gears;
+  const final = prof?.final || V.final;
+  const brakeMax = prof?.brakeMax || V.brakeMax;
+  const gripMult = prof?.gripMult || 1.0;
+  const torqueMult = (prof?.torqueMult || 1.0) * (car.damageTorqueScale ?? 1);
+
+  // --- Steering curve by speed: responsive, agile, preserving high-speed authority ---
   const speed = Math.hypot(car.vx, car.vz);
-  const speedNorm = Math.min(1, Math.max(0, speed / 33.3)); // 0 to 120 km/h (33.3 m/s)
-  const limit = V.steerMax * (1.0 - 0.68 * speedNorm);
+  const speedNorm = Math.min(1, Math.max(0, speed / 38.0)); // 0 to ~137 km/h (38 m/s)
+  // Preserve turning authority at speed: 0.50 reduction instead of 0.68, maintaining at least 50% steer range at top speed
+  const limit = steerMax * (1.0 - 0.50 * speedNorm);
   const returning = (car.steerTarget === 0) || (Math.sign(car.steerTarget) !== Math.sign(car.steer));
-  const steerRate = (6.0 - 3.5 * speedNorm) * (returning ? 1.5 : 1.0) * (car.steerBoost || 1.0);
+  // Responsive turn-in: 11.5 rad/s at rest, 6.0 rad/s at high speed, 2.0x return-to-center
+  const steerRate = (11.5 - 5.5 * speedNorm) * (returning ? 2.0 : 1.0) * steerRateMult;
   car.steer += (car.steerTarget * limit - car.steer) * Math.min(1, dt * steerRate);
 
   const cy = Math.cos(car.yaw), sy = Math.sin(car.yaw);
@@ -93,24 +120,13 @@ export function stepVehicle(car, dt) {
     contactX.push(px); contactZ.push(pz);
     const sf = surfaceAt(px, pz);
     const flat = car.flat ? car.flat[i] : 0;
-    grip.push(sf.grip * (1 - 0.45 * flat) * (1 - 0.28 * (car.wet || 0))); drags.push(sf.drag + 6 * flat);   // a burst tyre slides, and drags like a pavement corner (tarmac drag is 0, so this is additive)
+    grip.push(sf.grip * (1 - 0.45 * flat) * (1 - 0.28 * (car.wet || 0))); drags.push(sf.drag + 6 * flat);
     if (sf.kerb) { kerbCount++; offSum += sf.off; }
   }
   car.offRoad = offSum / 4;
   car.kerb = kerbCount;
 
-  /* --- four rays instead of a weight-transfer formula ---------------------
-     Each corner casts down, compares the ground it finds against its own
-     spring, and that force IS the tyre's normal load. Dive, squat, roll and the
-     kick over a kerb all fall out of one model instead of three approximations.
-
-     NOTE the lateral convention: the tyre model uses a LEFT-positive lateral
-     axis (see `vw = v + r * ax`), so offsets[i][1] is positive to the LEFT.
-     Writing the springs as if it were right-positive inverts every roll term —
-     the car then leans into the corner instead of out of it.
-     pitch: rotation about the lateral axis, positive = nose up.
-     roll:  positive = leaning right.
-     A corner at (ax, az) therefore sits at  y + ax*sin(pitch) + az*sin(roll). */
+  /* --- four rays instead of a weight-transfer formula --- */
   const Fz = [], comp = [], wheelGround = [];
   const sinP = Math.sin(car.pitch), sinR = Math.sin(car.roll);
   for (let i = 0; i < 4; i++) {
@@ -124,46 +140,49 @@ export function stepVehicle(car, dt) {
 
     const cornerVel = car.vy + ax * car.pitchRate + az * car.rollRate;
     const closing = -cornerVel;                       // + is compressing
-    const damping = closing > 0 ? V.damperC : V.damperR;
-    Fz.push(c > 0 ? Math.max(0, V.springK * c + damping * closing) : 0);
+    const damping = closing > 0 ? damperC : damperR;
+    Fz.push(c > 0 ? Math.max(0, springK * c + damping * closing) : 0);
   }
   // anti-roll bars move load across an axle without adding any
-  const arbF = (comp[0] - comp[1]) * V.antiRollF;
-  const arbR = (comp[2] - comp[3]) * V.antiRollR;
+  const arbF = (comp[0] - comp[1]) * antiRollF;
+  const arbR = (comp[2] - comp[3]) * antiRollR;
   // the bar pushes up on the compressed corner and pulls down on the other
   Fz[0] = Math.max(0, Fz[0] + arbF); Fz[1] = Math.max(0, Fz[1] - arbF);
   Fz[2] = Math.max(0, Fz[2] + arbR); Fz[3] = Math.max(0, Fz[3] - arbR);
 
+  // Aerodynamic downforce: increases normal load on tyres with v^2
+  const downFCoeff = prof?.downF ?? V.downF ?? 0.45;
+  const aeroDown = downFCoeff * 0.5 * 1.225 * (u * u); // in Newtons
+  const aeroF = (aeroDown * 0.45) / 2; // per front wheel
+  const aeroR = (aeroDown * 0.55) / 2; // per rear wheel
+  if (comp[0] > 0) Fz[0] += aeroF;
+  if (comp[1] > 0) Fz[1] += aeroF;
+  if (comp[2] > 0) Fz[2] += aeroR;
+  if (comp[3] > 0) Fz[3] += aeroR;
+
   car.suspension = comp;
   car.wheelGround = wheelGround;
-  car.airborne = Fz[0] + Fz[1] + Fz[2] + Fz[3] < V.mass * 2;
+  car.airborne = Fz[0] + Fz[1] + Fz[2] + Fz[3] < mass * 2;
 
   // --- driveline ---
-  const ratio = V.gears[car.gear] * V.final;
+  const ratio = gears[car.gear] * final;
   const wAvg = (car.wheelW[2] + car.wheelW[3]) / 2;
   if (car.gear !== 1) {
-    /* Torque-converter launch.
-       Locking rpm to wheel speed meant a standing start ran the engine at idle
-       -- about 200Nm against a 370Nm peak -- and the measured launch was 8km/h
-       after a full second. A real automatic lets the engine flare against the
-       converter off the line; this is that: the rpm floor rises with throttle
-       while the wheels are slower than it, and hands over to wheel speed the
-       moment they catch up. Costs nothing at cruise. */
     const wheelRpm = (Math.abs(wAvg * ratio) * 60) / (2 * Math.PI);
-    const flare = V.idle + car.throttle * V.launchRpm;
+    const flare = V.idle + car.throttle * launchRpm;
     const target = Math.max(wheelRpm, wheelRpm < flare ? flare : 0);
     car.rpm += (target - car.rpm) * Math.min(1, dt * 9);
   } else {
     car.rpm += (V.idle + car.throttle * 4200 - car.rpm) * Math.min(1, dt * 3);
   }
-  car.rpm = Math.max(V.idle, Math.min(V.redline, car.rpm));
+  car.rpm = Math.max(V.idle, Math.min(redline, car.rpm));
 
   car.gearTimer -= dt;
   if (!car.holdGear && car.gearTimer <= 0) {
-    if (car.gear >= 2 && car.rpm > V.shiftUp && car.gear < V.gears.length - 1) {
-      car.gear++; car.gearTimer = 0.45;
-    } else if (car.gear > 2 && car.rpm < V.shiftDown) {
-      car.gear--; car.gearTimer = 0.4;
+    if (car.gear >= 2 && car.rpm > shiftUp && car.gear < gears.length - 1) {
+      car.gear++; car.gearTimer = 0.35;
+    } else if (car.gear > 2 && car.rpm < shiftDown) {
+      car.gear--; car.gearTimer = 0.35;
     }
     // select R once you have stopped and are still asking to go back
     if (u < 0.6 && car.wantsReverse && !car.wantsForward && car.gear !== 0) {
@@ -176,10 +195,10 @@ export function stepVehicle(car, dt) {
   }
 
   // a damaged engine will not pull; scale sits at 1 until something hits us
-  const engT = engineTorque(car.rpm) * car.throttle * (car.damageTorqueScale ?? 1);
+  const engT = engineTorque(car.rpm, redline) * car.throttle * torqueMult;
   // Coast brake scales down in the low gears so a 1st-gear lift is not a wall.
-  const gearAbs = Math.abs(V.gears[car.gear] || 0);
-  const engBrake = (car.rpm / V.redline) * 18 + (car.throttle < 0.02 ? 10 : 0);
+  const gearAbs = Math.abs(gears[car.gear] || 0);
+  const engBrake = (car.rpm / redline) * 18 + (car.throttle < 0.02 ? 10 : 0);
   const wSignD = Math.sign(wAvg);   // 0 at rest, so no phantom drive off the line
   const axleT = car.gear === 1 ? 0
     : engT * ratio * 0.92 - engBrake * Math.min(6.5, Math.abs(ratio)) * wSignD * (0.45 + 0.55 * Math.min(1, gearAbs / 3.6));
@@ -187,7 +206,7 @@ export function stepVehicle(car, dt) {
 
   // --- per-wheel tyre forces ---
   let Fx = 0, Fy = 0, Mz = 0;
-  const brakeT = car.brake * V.brakeMax;
+  const brakeT = car.brake * brakeMax;
   for (let i = 0; i < 4; i++) {
     const front = i < 2;
     const [ax, az] = offsets[i];
@@ -198,7 +217,7 @@ export function stepVehicle(car, dt) {
     const uL = uw * cd + vw * sd;
     const vL = -uw * sd + vw * cd;
 
-    const mu = V.muPeak * grip[i];
+    const mu = V.muPeak * grip[i] * gripMult;
     const denom = Math.max(1.2, Math.abs(uL));
     const slipRatio = (car.wheelW[i] * WHEEL_R - uL) / denom;
     const slipAngle = Math.atan2(-vL, denom);
@@ -230,24 +249,23 @@ export function stepVehicle(car, dt) {
   Fy -= V.rollC * v * 1.4;
   for (let i = 0; i < 4; i++) Fx -= drags[i] * u * 0.25;
 
-  /* --- heave, pitch and roll -------------------------------------------
-     Springs hold the car up; the moment that actually makes it dive is the
-     tyre force acting at road level with the mass a cgH above it. Springs
-     alone would have kept it dead level under braking. */
-  let Fvert = 0, Mpitch = 0, Mroll = 0;
+  /* --- heave, pitch and roll ------------------------------------------- */
+  let FspringUp = 0, Mpitch = 0, Mroll = 0;
   for (let i = 0; i < 4; i++) {
     const [ax_, az_] = offsets[i];
-    Fvert += Fz[i];
+    const aeroCorner = i < 2 ? aeroF : aeroR;
+    FspringUp += Math.max(0, Fz[i] - aeroCorner);
     Mpitch += Fz[i] * ax_;      // up at the front lifts the nose
     Mroll += Fz[i] * az_;       // springs resist whichever way it is leaning
   }
   Mpitch += V.cgH * Fx;         // braking (Fx<0) pitches the nose down
   Mroll += V.cgH * Fy;          // cornering leans the body out of the turn
 
-  car.vy += (Fvert / V.sprungMass - 9.81) * dt;
+  // Aerodynamic downforce pushes the body downward, compressing springs and increasing tire contact
+  car.vy += ((FspringUp - aeroDown) / sprungMass - 9.81) * dt;
   car.y += car.vy * dt;
-  car.pitchRate += (Mpitch / V.Ipitch) * dt;
-  car.rollRate += (Mroll / V.Iroll) * dt;
+  car.pitchRate += (Mpitch / Ipitch) * dt;
+  car.rollRate += (Mroll / Iroll) * dt;
   car.pitchRate -= car.pitchRate * 2.2 * dt;
   car.rollRate -= car.rollRate * 2.6 * dt;
   car.pitch = Math.max(-0.20, Math.min(0.20, car.pitch + car.pitchRate * dt));
@@ -256,12 +274,20 @@ export function stepVehicle(car, dt) {
   const floor = groundHeightAt(car.x, car.z) + WHEEL_R + V.restLength - V.maxTravel;
   if (car.y < floor) { car.y = floor; car.vy = Math.max(0, car.vy); }
 
-  const ax = Fx / V.mass, ay = Fy / V.mass;
+  const ax = Fx / mass, ay = Fy / mass;
   car.lastAx = ax; car.lastAy = ay;
   u += (ax + v * r) * dt;
   v += (ay - u * r) * dt;
-  car.yawRate += (Mz / V.inertia) * dt;
+  car.yawRate += (Mz / inertia) * dt;
   car.yawRate -= car.yawRate * 1.6 * dt;
+
+  /* Dynamic counter-steer stability assist:
+     When drifting (lateral velocity v has opposite sign to steer angle),
+     dampen excessive yaw rate so the slide is progressive and controllable. */
+  if (Math.abs(v) > 1.2 && Math.sign(v) !== Math.sign(car.steer)) {
+    const driftAssist = Math.min(1, (Math.abs(v) - 1.2) / 4.0);
+    car.yawRate -= car.yawRate * (2.2 * driftAssist) * dt;
+  }
 
   /* Low-speed steering assist.
      Below walking pace the tyre model produces almost no yaw moment -- which

@@ -245,3 +245,128 @@ export const V = {
    car renders sitting 7cm into its own arches. */
 V.staticSag = (V.sprungMass * 9.81) / (4 * V.springK);
 V.rideHeight = WHEEL_R + V.restLength - V.staticSag;
+
+/**
+ * Performance profiles tailored for different car classes.
+ * gt3_race: Lightweight, track-tuned, extreme downforce, racing slicks, high-rev engine, flat suspension.
+ * supercar: High top speed, strong grip, responsive handling.
+ * muscle: High torque, tail-happy drift character.
+ * street: Balanced civilian ride.
+ */
+export const VEHICLE_PROFILES = {
+  gt3_race: {
+    name: 'GT3 RACE SPEC',
+    mass: 1240,
+    sprungMass: 1060,
+    inertia: 1650,
+    Ipitch: 1650,
+    Iroll: 480,
+    torqueMult: 1.55,
+    gripMult: 1.28,        // ~1.82 muPeak on tarmac
+    downF: 1.85,           // Aerodynamic downforce (wings + splitter)
+    steerRateMult: 1.40,   // Rapid steering response
+    steerMax: 0.64,
+    brakeMax: 16500,       // Carbon-ceramic track brakes
+    redline: 8600,
+    shiftUp: 8100,
+    shiftDown: 3800,
+    launchRpm: 3400,
+    springK: 68000,
+    damperC: 5200,
+    damperR: 6800,
+    antiRollF: 24000,      // Razor-flat cornering
+    antiRollR: 18000,
+    final: 3.85,
+    gears: [-3.3, 0, 3.40, 2.35, 1.76, 1.38, 1.14, 0.94],
+  },
+  supercar: {
+    name: 'SUPERCAR SPEC',
+    mass: 1380,
+    sprungMass: 1180,
+    inertia: 1900,
+    Ipitch: 1900,
+    Iroll: 540,
+    torqueMult: 1.35,
+    gripMult: 1.18,
+    downF: 1.10,
+    steerRateMult: 1.22,
+    steerMax: 0.62,
+    brakeMax: 13500,
+    redline: 7800,
+    shiftUp: 7300,
+    shiftDown: 3000,
+    launchRpm: 2600,
+    springK: 54000,
+    damperC: 4200,
+    damperR: 5400,
+    antiRollF: 17000,
+    antiRollR: 12000,
+    final: 3.65,
+    gears: [-3.3, 0, 3.50, 2.25, 1.62, 1.24, 1.02, 0.84],
+  },
+  muscle: {
+    name: 'V8 MUSCLE SPEC',
+    mass: 1520,
+    sprungMass: 1280,
+    inertia: 2200,
+    Ipitch: 2200,
+    Iroll: 640,
+    torqueMult: 1.25,
+    gripMult: 1.02,
+    downF: 0.35,
+    steerRateMult: 1.05,
+    steerMax: 0.60,
+    brakeMax: 11000,
+    redline: 6500,
+    shiftUp: 6000,
+    shiftDown: 2200,
+    launchRpm: 2200,
+    springK: 44000,
+    damperC: 3200,
+    damperR: 4400,
+    antiRollF: 11000,
+    antiRollR: 8000,
+    final: 3.55,
+    gears: [-3.3, 0, 3.62, 2.19, 1.54, 1.18, 0.96, 0.78],
+  },
+  street: {
+    name: 'STREET SPEC',
+    mass: 1480,
+    sprungMass: 1240,
+    inertia: 2100,
+    Ipitch: 2100,
+    Iroll: 620,
+    torqueMult: 1.0,
+    gripMult: 1.0,
+    downF: 0.45,
+    steerRateMult: 1.0,
+    steerMax: 0.60,
+    brakeMax: 10500,
+    redline: 6800,
+    shiftUp: 6200,
+    shiftDown: 2400,
+    launchRpm: 1900,
+    springK: 46000,
+    damperC: 3400,
+    damperR: 4600,
+    antiRollF: 12000,
+    antiRollR: 8000,
+    final: 3.55,
+    gears: [-3.3, 0, 3.62, 2.19, 1.54, 1.18, 0.96, 0.78],
+  },
+};
+
+/** Get the matching vehicle performance profile for a body style */
+export function getVehicleProfile(bodyFile) {
+  if (!bodyFile) return VEHICLE_PROFILES.street;
+  if (['s-porsche-gt3r', 's-corvette-c6r', 's-f40-comp'].includes(bodyFile)) {
+    return VEHICLE_PROFILES.gt3_race;
+  }
+  if (['s-corvette-zr1', 's-monza', 'q-sports2'].includes(bodyFile)) {
+    return VEHICLE_PROFILES.supercar;
+  }
+  if (['s-camaro-350', 's-camaro-jewel', 's-camaro-patrol'].includes(bodyFile)) {
+    return VEHICLE_PROFILES.muscle;
+  }
+  return VEHICLE_PROFILES.street;
+}

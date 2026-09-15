@@ -49,3 +49,5 @@ assets/source/unused-vendor/vendor/polyhaven/*.glb
 
 # scraped research pages (firecrawl), not source
 .firecrawl/
+__pycache__/
+*.pyc

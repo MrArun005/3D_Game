@@ -215,7 +215,7 @@ export function decalMaterial() {
   const m = new THREE.MeshStandardNodeMaterial({
     color: 0xffffff, roughness: 0.94, metalness: 0,
     transparent: true, depthWrite: false,
-    polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+    polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
   });
   m.name = 'wear_decal';
   const cell = uv().mul(vec2(1 / DECAL_COLS, 1 / DECAL_ROWS)).add(attribute('aTile', 'vec2'));

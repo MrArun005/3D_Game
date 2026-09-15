@@ -41,6 +41,7 @@ export class CommandEngine {
       case 'commands': {
         chat.post('SYSTEM', 'Available Commands:');
         chat.post('SYSTEM', '· /track — HALSTEAD RACEWAY dedicated circuit (also Shift+T)');
+        chat.post('SYSTEM', '· /racecar or /gt3 — Equip PORSCHE 992 GT3 R race car');
         chat.post('SYSTEM', '· /mile — THE HALSTEAD MILE scenic route (also Shift+R)');
         chat.post('SYSTEM', '· /wanted <0-5> or /clearheat — Police pursuit level');
         chat.post('SYSTEM', '· /nos — Equip & refill Nitrous Oxide');
@@ -48,7 +49,7 @@ export class CommandEngine {
         chat.post('SYSTEM', '· /tp <downtown|harbour|bridge|airport|track> — Teleport');
         chat.post('SYSTEM', '· /time <0-23|day|night|dusk> — Set city clock');
         chat.post('SYSTEM', '· /weather <clear|rain> — Set road precipitation');
-        chat.post('SYSTEM', '· /car <zr1|patrol|c6r> — Spawn vehicle');
+        chat.post('SYSTEM', '· /car <gt3|c6r|f40|zr1|patrol> — Spawn vehicle');
         chat.post('SYSTEM', '· /grade <preset|list|cycle> — Cinematic color grade');
         chat.post('SYSTEM', '· /quality <lite|full|status> — Switch quality profile');
         chat.post('SYSTEM', '· /perf — Live frame time & GPU performance stats');
@@ -181,22 +182,31 @@ export class CommandEngine {
         break;
       }
 
+      case 'racecar':
+      case 'gt3':
       case 'car':
       case 'spawn': {
-        const model = (args[0] || '').toLowerCase();
+        const isDirect = cmd === 'gt3' || cmd === 'racecar';
+        const model = (args[0] || (isDirect ? 'gt3' : '')).toLowerCase();
         const aliasMap = {
+          'gt3': 's-porsche-gt3r',
+          'porsche': 's-porsche-gt3r',
+          '992': 's-porsche-gt3r',
+          'c6r': 's-corvette-c6r',
+          'race': 's-porsche-gt3r',
+          'f40': 's-f40-comp',
           'zr1': 's-corvette-zr1',
           'corvette': 's-corvette-zr1',
+          'monza': 's-monza',
           'patrol': 's-camaro-patrol',
-          'camaro': 's-camaro-patrol',
-          'c6r': 's-corvette-c6r',
-          'race': 's-corvette-c6r'
+          'camaro': 's-camaro-350'
         };
-        const carId = aliasMap[model] || model;
+        const carId = aliasMap[model] || model || 's-porsche-gt3r';
         if (this.ctx.switchCar && this.ctx.switchCar(carId)) {
-          chat.post('SYSTEM', `Spawned vehicle: ${model.toUpperCase()}`);
+          const display = model ? model.toUpperCase() : 'PORSCHE 992 GT3 R';
+          chat.post('SYSTEM', `🏎️ Spawned vehicle: ${display}`);
         } else {
-          chat.post('SYSTEM', `Available cars: zr1, patrol, c6r`);
+          chat.post('SYSTEM', `Available: gt3 (992 GT3 R), c6r, f40, zr1, monza, patrol`);
         }
         break;
       }

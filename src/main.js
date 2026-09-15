@@ -45,7 +45,7 @@ import { HelicopterVehicle } from './game/flight.js';
 import { TankVehicle } from './game/tank.js';
 import { DispatchService } from './game/dispatch.js';
 import { groundHeightAt } from './world/metrics.js';
-import { CG_X, WHEEL_R } from './vehicle/config.js';
+import { CG_X, WHEEL_R, getVehicleProfile } from './vehicle/config.js';
 import { ChaseCamera } from './game/camera.js';
 import { createInput, padConnected, rumble } from './game/input.js';
 import { Traffic, policeMaterials } from './game/traffic.js';
@@ -161,7 +161,7 @@ setAnisotropy(renderer.capabilities?.getMaxAnisotropy?.() ?? 16);
 
 const scene = createScene(DAY);
 window.scene = scene;
-const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.5, 14000);
+const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.5, 8000);
 const { sun, hemi } = createLights(scene, DAY, isLite);
 const { dome, stars, sunSprite, sunRaySprite } = createSky(scene, renderer, DAY);
 
@@ -1393,7 +1393,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   mission.useHud(hud);
   mission.useAudio(audio);
   jobs = new Jobs(mission, traffic, hud, district, audio, navigation);
-  garage = new Garage(jobs, assets, hero, damageModel, hud);
+  garage = new Garage(jobs, assets, hero, damageModel, hud, car);
   garage.heat = () => traffic.wanted;
   garage.onRepair = () => {   // Pay 'n' Spray: a respray below three stars loses the police; at three or more they know the driver, not the car
     if (traffic.wanted > 0 && traffic.wanted < 3) { traffic.standDown(); chatter?.radio?.('Suspect vehicle lost. Cancel the description.'); return true; }
@@ -1497,6 +1497,7 @@ scene.add(hero);
 const initialBody = localStorage.getItem('hb.body') || DEFAULT_BODY;
 await loadHeroSkin(assets, hero, initialBody).catch((e) => console.warn('hero skin:', e.message));
 damageModel.attach(hero);
+car.profile = getVehicleProfile(initialBody);
 const carVehicle = new CarVehicle(car, stepVehicle, hero);
 activeVehicle = carVehicle;
 window._activeVehicle = activeVehicle;

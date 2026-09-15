@@ -93,6 +93,16 @@ export class RaceCircuit {
     this.playerClearedCount = 0;
     this.playerPlace = 1;
 
+    // Ensure player is equipped with a high-performance track-ready vehicle
+    if (this.garage && typeof this.garage.equipRaceCar === 'function') {
+      const current = this.garage.fitted;
+      const isRaceClass = ['s-porsche-gt3r', 's-corvette-c6r', 's-f40-comp', 's-corvette-zr1', 's-monza'].includes(current);
+      if (!isRaceClass) {
+        this.garage.equipRaceCar('s-porsche-gt3r');
+        this.hud?.flash?.('🏁 RACEDAY: PORSCHE 992 GT3 R EQUIPPED!');
+      }
+    }
+
     // Position player car on pole position (Grid slot 1)
     const pole = GRID_SLOTS[0];
     car.x = pole.x;

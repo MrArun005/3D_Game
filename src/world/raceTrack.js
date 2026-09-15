@@ -273,11 +273,18 @@ export function buildRaceTrack(scene, district) {
   if (chkTex) {
     chkTex.wrapS = THREE.RepeatWrapping;
     chkTex.repeat.set(4, 1);
-    const chkMat = new THREE.MeshStandardMaterial({ map: chkTex, roughness: 0.6, metalness: 0.1 });
+    const chkMat = new THREE.MeshStandardMaterial({
+      map: chkTex,
+      roughness: 0.6,
+      metalness: 0.1,
+      polygonOffset: true,
+      polygonOffsetFactor: -3,
+      polygonOffsetUnits: -3,
+    });
     const chkGeo = new THREE.PlaneGeometry(TRACK_WIDTH, 4);
     chkGeo.rotateX(-Math.PI / 2);
     const chkMesh = new THREE.Mesh(chkGeo, chkMat);
-    chkMesh.position.set(START_FINISH.x, RACEWAY_ELEVATION + 0.015, START_FINISH.z);
+    chkMesh.position.set(START_FINISH.x, RACEWAY_ELEVATION + 0.025, START_FINISH.z);
     chkMesh.rotation.y = Math.PI / 2; // spanning across the straight
     chkMesh.receiveShadow = true;
     group.add(chkMesh);
@@ -548,13 +555,15 @@ export function buildRaceTrack(scene, district) {
   group.add(floodlightGroup);
 
   // 9. ISLAND FOUNDATION DECK & CONCRETE SEA WALL
-  // Concrete perimeter deck underneath the raceway
+  // Concrete perimeter deck underneath the raceway (sits 8cm below track surface to prevent Z-fighting)
   const islandMat = new THREE.MeshStandardMaterial({ color: 0x1e2229, roughness: 0.9 });
+  const islandTopY = RACEWAY_ELEVATION - 0.08;
+  const islandH = islandTopY - WATER_Y;
   const islandFloor = new THREE.Mesh(
-    new THREE.BoxGeometry(780, RACEWAY_ELEVATION - WATER_Y, 620),
+    new THREE.BoxGeometry(780, islandH, 620),
     islandMat
   );
-  islandFloor.position.set(3810, (RACEWAY_ELEVATION + WATER_Y) / 2, 2720);
+  islandFloor.position.set(3810, (islandTopY + WATER_Y) / 2, 2720);
   islandFloor.receiveShadow = true;
   group.add(islandFloor);
 
@@ -569,7 +578,7 @@ export function buildRaceTrack(scene, district) {
   );
   bridgeMesh.position.set(
     (DOCK_ROAD_END.x + CAUSEWAY_PADDOCK.x) / 2,
-    RACEWAY_ELEVATION - 0.5,
+    RACEWAY_ELEVATION - 0.64,
     (DOCK_ROAD_END.z + CAUSEWAY_PADDOCK.z) / 2
   );
   bridgeMesh.rotation.y = -bridgeYaw;

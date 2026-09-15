@@ -112,10 +112,10 @@ export function createAssets() {
     })(),
     // road paint, drawn as geometry a hair above the tarmac
     paint: new THREE.MeshBasicMaterial({
-      color: 0xd6d8d2, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+      color: 0xd6d8d2, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
     }),
     paintWarm: new THREE.MeshBasicMaterial({
-      color: 0xd8c24a, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+      color: 0xd8c24a, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
     }),
     kerbFace: new THREE.MeshLambertMaterial({ color: 0x9a9a94 }),
     intersection: new THREE.MeshStandardMaterial({
