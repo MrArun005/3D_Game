@@ -329,6 +329,24 @@ export class Landmarks {
       if (!lot) { console.warn('landmark: no lot for', lm.file); return; }
       used.add(lot);
       const path = lm.file.startsWith('/') ? lm.file : BASE + lm.file + '.glb';
+      /* Is the file even there? Poly Haven GLBs are CC0 downloads that
+         .gitignore deliberately excludes (public/models/vendor/polyhaven/*.glb)
+         and tools/polyhaven.mjs restores from a local download. On a machine
+         without that download the request 404s to an HTML page, GLTFLoader
+         tries to parse "<!DOCTYPE" as glTF, and every boot logs a JSON error
+         that reads like a corrupt asset. Check first; skip with the fix named. */
+      try {
+        const head = await fetch(path, { method: 'HEAD' });
+        /* `ok` is not enough: Vite's server answers a missing file with 200 and
+           index.html (SPA fallback), which is exactly the "<!DOCTYPE" that
+           GLTFLoader then chokes on. A GLB is application/octet-stream or
+           model/gltf-binary; anything text/html is the fallback page. */
+        const type = head.headers.get('content-type') || '';
+        if (!head.ok || /text\/html/i.test(type)) {
+          console.info(`landmark skipped: ${lm.name} -- ${path} is not downloaded (run tools/polyhaven.mjs)`);
+          return;
+        }
+      } catch { /* offline or blocked HEAD: fall through and let the load decide */ }
       let gltf; try { gltf = await new Promise((res, rej) => loader.load(path, res, undefined, rej)); } catch (e) { console.warn('landmark', lm.file, e.message); return; }
       let obj = gltf.scene;
       if (lm.frontage?.assemble) {

@@ -123,7 +123,10 @@ const armBootStall = () => {
   }, 12000);
 };
 armBootStall();
+let bootPhaseName = '';        // the lag logger names the phase a boot-time spike fell in
+let catalogueRef = null;       // set once the catalogue resolves; the lag logger reads pendingLoads
 const setBootProgress = (pct, m) => {
+  bootPhaseName = m;
   if (bootMsg) bootMsg.textContent = m;
   if (bootProgress) bootProgress.style.width = `${pct}%`;
   if (bootPercent) bootPercent.textContent = `${pct}%`;
@@ -1254,6 +1257,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
      is untouched -- this removes pop-in, not the 2 ms slicing that holds 60 fps.
 
      `?nowarm` skips it and restores the old lazy behaviour. */
+  catalogueRef = catalogue;
   if (catalogue && !new URLSearchParams(location.search).has('nowarm')) {
     const names = [...catalogue.assets.keys()];
     const t0 = performance.now();
@@ -1272,6 +1276,16 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
     };
     await Promise.all(Array.from({ length: POOL }, worker));
     console.info(`catalogue pre-warm: ${names.length} assets in ${Math.round(performance.now() - t0)} ms`);
+    /* And the textures. loader.load() is fire-and-forget, so before this the
+       boot screen dropped while the 99 library PNGs were still arriving and
+       the first minute of play watched them pop in. allSettled + a 15 s cap
+       inside the catalogue, so one bad PNG cannot hold the screen forever. */
+    if (catalogue.texturesReady) {
+      setBootProgress(68, 'Decoding textures…');
+      const t1 = performance.now();
+      await catalogue.texturesReady;
+      console.info(`textures ready in ${Math.round(performance.now() - t1)} ms`);
+    }
   }
 
   setBootProgress(70, 'Building the streets…');
@@ -2603,7 +2617,11 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
      load and is never reset, so the banner's old "907 DRAWS" was a lifetime
      pass counter that happened to look plausible. `drawCalls` is the real
      per-frame number and matches the F3 overlay. */
-  stats.update(dt, world, renderer, { physics: physMs, render: renderMs });
+  stats.update(dt, world, renderer, { physics: physMs, render: renderMs }, {
+    pendingLoads: catalogueRef?.pendingLoads ?? 0,
+    texturesLoading: !!catalogueRef?.texturesLoading,
+    bootPhase: boot ? bootPhaseName : null,
+  });
   // counted + replayed-from-bundles: renderer.info alone under-reports by ~75% since the chunks became render bundles
   const draws = renderer.info.render.drawCalls + (stats.snapshot.bundledDraws || 0);
   const tris = renderer.info.render.triangles + (stats.snapshot.bundledTris || 0);

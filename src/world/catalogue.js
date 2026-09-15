@@ -149,8 +149,27 @@ export class Catalogue {
     const aniso = anisotropyOf(renderer);
     const loader = new THREE.TextureLoader();
 
+    /* Every texture request is collected (2026-09-15). loader.load() is
+       fire-and-forget: Catalogue.load() resolved, the boot screen dropped, and
+       the 99 library PNGs were still arriving and popping in for seconds
+       afterwards. `texturesReady` lets the boot sequence hold for them, and
+       the lag logger reports "textures still loading" as a spike cause while it
+       is pending. allSettled, not all: one missing PNG must not stall boot. */
+    const texJobs = [];
     const tex = (url, srgb) => {
-      const t = loader.load(url);
+      const t = loader.load(url,
+        () => {}, undefined,
+        (e) => console.warn('texture', url, e?.message ?? 'failed'));
+      texJobs.push(new Promise((res) => {
+        const img = t.image;
+        if (img && (img.complete || img.width)) return res();
+        const done = () => res();
+        // TextureLoader resolves through ImageLoader; poll the texture's image
+        // rather than reach into three's private onLoad plumbing.
+        const tick = () => (t.image && (t.image.complete || t.image.width)) ? done() : setTimeout(tick, 60);
+        setTimeout(tick, 60);
+        setTimeout(done, 15000);   // hard cap: a hung request may not stall boot forever
+      }));
       t.wrapS = t.wrapT = THREE.RepeatWrapping;
       t.anisotropy = aniso;
       t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
@@ -190,8 +209,17 @@ export class Catalogue {
         this.byTag.get(t).push(name);
       }
     }
+    this.texturesLoading = true;
+    this.texturesReady = Promise.allSettled(texJobs).then(() => { this.texturesLoading = false; });
     this.ready = true;
     return this;
+  }
+
+  /** How many assets are mid-fetch right now -- a spike cause for the lag logger. */
+  get pendingLoads() {
+    let n = 0;
+    for (const rec of this.assets.values()) if (rec.loading) n++;
+    return n;
   }
 
   /** Asset names carrying a tag, in manifest order so placement is stable. */
