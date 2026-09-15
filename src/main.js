@@ -100,6 +100,13 @@ import { Debris } from './world/breakables.js';
 /* Day first. Night is still fully built -- ?night in the URL brings it back --
    but daylight is the honest view: nothing hides behind a lamp glow. */
 const DAY = !new URLSearchParams(location.search).has('night');
+/* ?mode=race -- the raceway as its OWN run. Only the chunks under the circuit
+   are built, no far-city LOD, no civilian traffic, no crowd, no landmarks, no
+   beach or riverside dressing, and the race stages itself on the grid at
+   boot. The city is still the same District (roads, collision, elevation),
+   there is just nothing in it that is not the track. See DistrictWorld's
+   `only` option for the mechanism. */
+const RACE_MODE = new URLSearchParams(location.search).get('mode') === 'race';
 
 const canvas = document.getElementById('gl');
 /* The boot overlay is static HTML in index.html so it paints before this
@@ -1289,14 +1296,14 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   }
 
   setBootProgress(70, 'Building the streets…');
-  world = new DistrictWorld(scene, assets, district, { day: DAY, catalogue, lite: isLite });
+  world = new DistrictWorld(scene, assets, district, { day: DAY, catalogue, lite: isLite, only: RACE_MODE ? isRacewayArea : null });
   window._world = world;
   world.camera = camera;                  // chunk-level frustum culling for the render bundles
   /* Before the LightPool: it decides at construction whether to allocate hero
      lights at all (lighting.js reads world.heroLightsByChunk), and Landmarks is
      what fills that map; it also puts world.extraSolids in place before the
      first chunk builds its box list. */
-  landmarks = new Landmarks(scene, district, world);   // Phase 6 skyline + gun shop, supermarket, street set (world/landmarks.js)
+  landmarks = RACE_MODE ? null : new Landmarks(scene, district, world);   // Phase 6 skyline + gun shop, supermarket, street set (world/landmarks.js); none on the race run
   /* Always, not `if (!DAY)`. The pool was built only for a ?night boot, so a
      normal session -- which boots at 16.85 and runs a full day in 24 real
      minutes -- reached midnight with no pool: 2 lights alive, parked at the
@@ -1308,7 +1315,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
     const n = +(new URLSearchParams(location.search).get('lights') ?? (isLite ? 4 : 6));
     lightPool = new LightPool(scene, world, { count: n });
   }
-  farTraffic = new FarTraffic(scene, district, { count: isLite ? 120 : 220 });   // GTA's distant headlights: phantom cars on the far road graph, one draw, count 0 by day
+  farTraffic = RACE_MODE ? null : new FarTraffic(scene, district, { count: isLite ? 120 : 220 });   // GTA's distant headlights: phantom cars on the far road graph, one draw, count 0 by day
   debris.catalogue = catalogue;
   world.onBreakables = (k, tracked, solids, pools) => debris.registerChunk(k, tracked, solids, pools);
   world.onBreakablesGone = (k) => debris.dropChunk(k);
@@ -1328,7 +1335,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   world.onChunkDone = (ms) => stats.reportChunkTotal(ms);
   water = buildWater(scene, district, DAY);
   buildSurrounds(scene, district.bounds, DAY);
-  buildPlaces(scene, district, DAY);
+  if (!RACE_MODE) buildPlaces(scene, district, DAY);
   const params = new URLSearchParams(location.search);
   /* The beach is ON (2026-09-14). It was behind `?beach`, so Halstead Sands --
      promenade, palm row, 120 m pier, lifeguard towers, a crowd -- existed in the
@@ -1338,22 +1345,24 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
      The CATALOGUE is passed now too: buildBeach has taken one as its fourth
      argument all along and never received it, so it could not place a single
      authored asset -- which is why the eight Riviera props had nowhere to go. */
-  if (!params.has('nobeach')) beach = buildBeach(scene, district, DAY, catalogue);
+  if (!params.has('nobeach') && !RACE_MODE) beach = buildBeach(scene, district, DAY, catalogue);
   /* The river's two banks: wall, coping, plane trees, lamps, benches. Until
      now water.js cut the river out of the ground plate and nothing put an edge
      on it, so THE EMBANKMENT -- 1,281 m of arterial following the river, and
      the spine of the scenic route -- ran through open field beside a blue
      strip. `?noriver` turns it off. */
-  if (!params.has('noriver')) buildRiverside(scene, district, DAY, catalogue);
-  if (params.has('crowd')) {
+  if (!params.has('noriver') && !RACE_MODE) buildRiverside(scene, district, DAY, catalogue);
+  if (params.has('crowd') && !RACE_MODE) {
     crowd = new Crowd(scene, district, isLite ? 160 : 320);
     crowd.onNear = () => chatter?.civilian?.('near');
     people = new People(scene, +(params.get('people') ?? (isLite ? 8 : 16)));
   }
-  heli = new Helicopter(scene, DAY);
-  heli.district = district;
-  heli.nearbyBuildings = (x, z) => (world.nearbyBuildings ? world.nearbyBuildings(x, z) : []);
-  heli.onArrive = () => hud.flash('AIR SUPPORT INBOUND');
+  heli = RACE_MODE ? null : new Helicopter(scene, DAY);
+  if (heli) {
+    heli.district = district;
+    heli.nearbyBuildings = (x, z) => (world.nearbyBuildings ? world.nearbyBuildings(x, z) : []);
+    heli.onArrive = () => hud.flash('AIR SUPPORT INBOUND');
+  }
   mission = new Mission(scene, district);
   mission.useHud(hud);
   mission.useAudio(audio);
@@ -1428,6 +1437,13 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   // now the car is on its spawn node, lay the film route from where it stands
   ROUTE = buildRoute(null, car.x, car.z);
   console.info(`Halstead Bay loaded — spawn at Little Tokyo (${car.x}, ${car.z})`);
+  // Race run: the car goes straight to the grid and the Tokyo spawn below is
+  // skipped -- it used to run AFTER this and drag the car back to (2354, 1408)
+  // at the far side of the map, where nothing in the raceway-only ring is built.
+  if (RACE_MODE) {
+    startCircuitRace();
+    chase.snap(car);
+  } else {
   /* spawn is the city. No toast. */
 }).catch((e) => { districtFailed = true; console.warn('district not loaded, staying on the grid:', e.message); });
 
@@ -1447,6 +1463,7 @@ scene.add(hero);
    material rather than by eye: of the eight shipped Sketchfab bodies, only
    camaro-350 has a saturated BODY material -- `CarPaint` at #001b8a, a deep
    navy. Every other car's most-saturated material is lights, glass or brake
+  }
    calipers (corvette-c6r #ff0000 is `glass_lights`, porsche-gt3r #ff0000 is
    `EXT_CALIPER`), so none of them is actually a blue car.
    A saved choice still wins: if you have ever picked a body in the garage,
@@ -1572,7 +1589,7 @@ hero.add(beamPool);
 
 // ?cars=N overrides the fleet size (0 for a clear road: recording a lap, or a harness run that must not get T-boned)
 const CARS = +(new URLSearchParams(location.search).get('cars') ?? (DAY ? 36 : 40));
-const traffic = new Traffic(scene, assets, Number.isFinite(CARS) ? CARS : (DAY ? 36 : 40), !DAY);
+const traffic = new Traffic(scene, assets, RACE_MODE ? 0 : (Number.isFinite(CARS) ? CARS : (DAY ? 36 : 40)), !DAY);   // race mode: rivals only, no civilians
 officerPool(scene);   // start the rig fetch at boot: acquire() returns null while it is in flight, and the first squad of a session would otherwise be the old boxes   // Phase 5: denser, and lit at night
 const chase = new ChaseCamera(camera);
 const weather = createWeather(scene, { hemi, dome: () => dome, onStrike: (delay) => audio.thunder?.(delay) });   // always built: rain comes in night spells (rainSpell) on the day cycle, and all night with ?night

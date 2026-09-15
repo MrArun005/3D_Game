@@ -191,7 +191,19 @@ export class DistrictWorld {
     this.nodeById = new Map(district.graph.nodes.map((n) => [n.id, n]));
     this.radius = opts.lite ? 1 : (opts.radius ?? 2);   // 3x3 in LITE (9 chunks = 768m) or 5x5 in FULL (25 chunks = 1.28km)
 
-    this.#buildFarCity(opts.day);
+    /* RACE MODE (2026-09-16): `opts.only` is a predicate (x, z) => bool. When
+       it is set, a chunk is built only if its 256 m cell touches the area the
+       predicate accepts, and the far-city LOD is not built at all. The
+       raceway sits in the bay with the whole city behind it; layered on top of
+       normal streaming, a race carried every stutter the city has -- chunks
+       streaming in, the far grid flickering at the horizon, 36 civilian cars
+       -- for scenery the driver never looks at. "We can have a separate run
+       for this, so no unnecessary glitch or load on the race." This is that
+       run. DistrictWorld still exists, so the sixteen `world.*` call sites in
+       main.js keep working; they just have nothing to return. */
+    this.only = typeof opts.only === 'function' ? opts.only : null;
+
+    if (!this.only) this.#buildFarCity(opts.day);
 
     // bucket road segments and blocks into chunks once
     this.segByChunk = new Map();
@@ -251,6 +263,13 @@ export class DistrictWorld {
     }
     this.gantryArmByNode.set(nodeId, arm);
     return arm;
+  }
+
+  /** Does this 256 m chunk cell touch the `only` area? Centre and four corners. */
+  #cellTouches(cx, cz) {
+    const x0 = cx * CHUNK, z0 = cz * CHUNK, x1 = x0 + CHUNK, z1 = z0 + CHUNK;
+    const f = this.only;
+    return f(x0 + CHUNK / 2, z0 + CHUNK / 2) || f(x0, z0) || f(x1, z0) || f(x0, z1) || f(x1, z1);
   }
 
   #buildFarCity(day) {
@@ -435,6 +454,7 @@ export class DistrictWorld {
         for (let dz = -scanRadius; dz <= scanRadius; dz++) {
           const k = ck(ix + dx, iz + dz);
           if (this.chunks.has(k) || this.pending.has(k)) continue;
+          if (this.only && !this.#cellTouches(ix + dx, iz + dz)) continue;   // race mode: outside the raceway, never built
           const d2 = dx * dx + dz * dz;
           // Chunks ahead in velocity vector get higher priority (lower effective d)
           const dotAhead = hasVel ? (dx * normVx + dz * normVz) : 0;
