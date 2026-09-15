@@ -6,6 +6,7 @@ import {
   ENGINE_BANDS, engineLayerGains, renderEngineLoop, renderLimiterLoop, toAudioBuffer,
 } from './engine-samples.js';
 import { rumble } from './input.js';
+import { WHEEL_R } from '../vehicle/config.js';
 
 function makeNoise(ctx, seconds = 1.5) {
   const n = Math.floor(ctx.sampleRate * seconds);
@@ -35,6 +36,8 @@ export function createAudio() {
   let layers = [];
   let limiter, turboGain, turboFilter;
   let tyreGain, tyreFilter, windGain, rainGain;
+  let sprayGain, flapGain, flapOsc;
+  let sprayFilterFreq = () => {};
   let ready = false;
   let lastGear = 2;
   let lastImpact = 0;
@@ -116,6 +119,48 @@ export function createAudio() {
     split.connect(rainFilter);
     rainFilter.connect(rainGain);
     rainGain.connect(master);
+
+    /* SPRAY off a wet road (2026-09-15). `car.wet` has been computed by the
+       weather for a year and audio never read it -- 0 references in this file.
+       It is not the rain bus: rain is what falls on you and runs whether you
+       are moving or not, spray is what the TYRES throw and exists only with
+       speed. Separate bus, higher and wetter, so a car standing still in the
+       rain hisses and a car at 100 km/h through a puddle roars. */
+    const sprayFilter = ctx.createBiquadFilter();
+    sprayFilter.type = 'bandpass';
+    sprayFilter.frequency.value = 2600;
+    sprayFilter.Q.value = 0.5;
+    sprayGain = ctx.createGain();
+    sprayGain.gain.value = 0;
+    split.connect(sprayFilter);
+    sprayFilter.connect(sprayGain);
+    sprayGain.connect(master);
+    sprayFilterFreq = (f, t) => sprayFilter.frequency.setTargetAtTime(f, t, 0.2);
+
+    /* A FLAT TYRE, the other signal nothing listened to. `car.flat[]` is set by
+       dynamics (a puncture, or w.shot from the spike strip) and read by the
+       physics for grip and drag -- but it made no sound at all, so the first
+       you knew was the car pulling.
+       The flap is amplitude modulation, not a loop: a flat tyre slaps the road
+       once per wheel revolution, so the rate has to follow speed or it sounds
+       like a machine rather than a wheel. rev/s = v / (2*pi*r), and WHEEL_R is
+       0.34 m, so about 4.7 Hz at 10 m/s. */
+    flapOsc = ctx.createOscillator();
+    flapOsc.type = 'sawtooth';
+    flapOsc.frequency.value = 0;
+    const flapShape = ctx.createGain();      // osc -> gain modulation depth
+    flapShape.gain.value = 0.5;
+    flapOsc.connect(flapShape);
+    const flapFilter = ctx.createBiquadFilter();
+    flapFilter.type = 'lowpass';
+    flapFilter.frequency.value = 520;
+    flapGain = ctx.createGain();
+    flapGain.gain.value = 0;
+    split.connect(flapFilter);
+    flapFilter.connect(flapGain);
+    flapShape.connect(flapGain.gain);        // the slap: modulate the bus gain
+    flapGain.connect(master);
+    flapOsc.start();
 
     // City ambience bed (Task 6.1): low rumble of distant traffic & urban air
     const cityFilter = ctx.createBiquadFilter();
@@ -451,6 +496,25 @@ export function createAudio() {
       tyreFilter.frequency.setTargetAtTime(700 + (car.slip || 0) * 1400, now, 0.08);
       windGain.gain.setTargetAtTime(Math.min(0.07, (speed / 70) ** 2 * 0.09), now, 0.12);
 
+      /* Spray: wetness TIMES speed. Either alone is silent -- a dry road at
+         100 km/h is wind, a wet road at rest is rain. */
+      const wet = Math.max(0, Math.min(1, car.wet ?? 0));
+      sprayGain.gain.setTargetAtTime(wet * Math.min(1, speed / 26) * 0.055, now, 0.15);
+      sprayFilterFreq(1700 + speed * 22, now);
+
+      /* The flat: how many wheels are down, and the slap rate from road speed.
+         rev/s = v / (2*pi*WHEEL_R), imported rather than typed: the radius is
+         0.345 and a hardcoded 0.34 would drift from the physics. Silent below
+         walking pace,
+         because a flat tyre at 1 m/s does not slap, it just drags. */
+      const flats = Array.isArray(car.flat) ? car.flat.reduce((n, f) => n + (f ? 1 : 0), 0) : 0;
+      if (flats > 0 && speed > 1.5) {
+        flapOsc.frequency.setTargetAtTime(speed / (2 * Math.PI * WHEEL_R), now, 0.05);
+        flapGain.gain.setTargetAtTime(Math.min(0.09, 0.03 + flats * 0.022) * Math.min(1, speed / 8), now, 0.08);
+      } else {
+        flapGain.gain.setTargetAtTime(0, now, 0.12);
+      }
+
       if (car.gear !== undefined && car.gear !== lastGear) { lastGear = car.gear; shiftClick(); }
       if ((car.impact || 0) > 2.4 && car.impact > lastImpact + 0.5) thud(car.impact);
       lastImpact = car.impact || 0;
@@ -493,6 +557,31 @@ export function createAudio() {
     },
     /** A weapon coming up: one dry click. */
     click() { if (!ctx) return; const t = ctx.currentTime; const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = 700; const g = ctx.createGain(); g.gain.setValueAtTime(0.07, t); g.gain.exponentialRampToValueAtTime(0.0008, t + 0.05); o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.06); },   // impact thud, magnitude in m/s-ish; punches and blasts borrow it
+    /** Car door handle latch and open sound */
+    doorOpen() {
+      if (!ctx || ctx.state !== 'running') return;
+      const t = ctx.currentTime;
+      // Mechanical metallic handle unlatch click
+      const o = ctx.createOscillator(); o.type = 'square'; o.frequency.setValueAtTime(480, t); o.frequency.exponentialRampToValueAtTime(140, t + 0.06);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.12, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+      o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.08);
+      // Soft rubber seal unstick whoosh
+      const n = ctx.createBufferSource(); n.buffer = makeNoise(ctx, 0.12);
+      const lp = ctx.createBiquadFilter(); lp.type = 'bandpass'; lp.frequency.value = 800; lp.Q.value = 1.2;
+      const ng = ctx.createGain(); ng.gain.setValueAtTime(0.08, t + 0.02); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.11);
+      n.connect(lp); lp.connect(ng); ng.connect(master); n.start(t + 0.02); n.stop(t + 0.14);
+    },
+    /** Heavy mechanical car door slam & latch */
+    doorShut() {
+      if (!ctx || ctx.state !== 'running') return;
+      const t = ctx.currentTime;
+      // Deep heavy chassis metal thump
+      thud(28);
+      // Sharp mechanical striker latch click
+      const o = ctx.createOscillator(); o.type = 'square'; o.frequency.setValueAtTime(850, t); o.frequency.exponentialRampToValueAtTime(220, t + 0.05);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.18, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+      o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.07);
+    },
     mute(on) {
       if (!master) return;
       master.gain.setTargetAtTime(on ? 0 : 0.24, ctx.currentTime, 0.08);

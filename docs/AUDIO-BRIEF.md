@@ -31,20 +31,35 @@ The engine architecture is already right — `ENGINE_BANDS = [900, 1800, 3000,
 4200, 5500, 6800]` with a two-layer on/off load crossfade is exactly how a
 racing game does it. It wants better source material, not a rewrite.
 
-### The five signals the game computes that NOTHING listens to
+### Signals the physics computes, and whether audio listens
 
-This is the cheapest audio win in the project. The physics already knows:
+CORRECTED 2026-09-15. The first draft of this table claimed five dead signals.
+Three of them were already wired and I had not read `audio.js:update()` before
+writing it -- I audited by grepping `audio.*` call sites and exported names,
+which shows what the REST of the game calls and says nothing about what the
+per-frame update reads. Read the function.
 
-| signal | where | the sound it should drive |
+| signal | state | drives |
 | --- | --- | --- |
-| `car.slip` | `dynamics.js` — rear slip, 0..1 | **tyre squeal**, rising with slip |
-| `car.wet` | weather / `wetTarmacLook` | **wet-road hiss**, spray under the arches |
-| `car.flat[]` | `dynamics.js`, set by `w.shot` | **flat-tyre flap**, rim scrape |
-| `car.hitForce` | `collision.js`, per contact | **impact severity** — scrape / crunch / heavy |
-| `gear` | `dynamics.js` driveline | **shift clunk**, and the engine's pitch reset |
+| `car.slip` | **already wired**, `update()` line 449 | tyre squeal + filter sweep |
+| `gear` | **already wired**, line 454 | `shiftClick()` |
+| `car.impact` | **already wired**, line 455 | `thud(mag)` |
+| `car.wet` | **was dead — now wired** | tyre SPRAY (see below) |
+| `car.flat[]` | **was dead — now wired** | flat-tyre flap |
 
-None of these make a sound today. Wiring them needs no new asset at all for the
-first pass — the existing noise/filter machinery can carry them.
+Spray is deliberately not the rain bus: rain falls on you whether you move or
+not, spray is what the tyres throw and exists only with speed. A car standing
+still in the rain hisses; a car at 100 km/h through standing water roars.
+
+The flap is amplitude modulation rather than a loop, because a flat tyre slaps
+the road once per wheel revolution -- rev/s = v / (2*pi*WHEEL_R), imported from
+`vehicle/config.js` rather than typed, since the radius is 0.345 and a hardcoded
+0.34 drifts from the physics.
+
+Still genuinely missing on this axis: impact BANDS (one `thud` scaled by
+magnitude is not scrape vs crunch vs heavy), and surface variation -- sand,
+gravel and grass all roll like tarmac today, which the new beach and riverside
+make obvious.
 
 ---
 
@@ -59,15 +74,16 @@ without it.
 | --- | --- | --- |
 | Engine idle / load / overrun | rendered | `rpm`, `throttle` |
 | Rev limiter bounce | `renderLimiterLoop` exists, unused | `rpm >= REDLINE` |
-| **Gear shift clunk** (up / down) | ✗ | `gear` change |
-| **Tyre squeal** | ✗ | `car.slip` |
+| Gear shift clunk (up / down) | ✔ `shiftClick` | `gear` change |
+| Tyre squeal | ✔ `update()` 449 | `car.slip` |
 | **Skid / lock-up** | ✗ | brake + slip |
-| **Surface roll** — tarmac, wet, sand, gravel, grass | ✗ | `roadDepth`, beach sand, `car.wet` |
-| **Wind noise** | ✗ | speed |
+| Tyre SPRAY on a wet road | ✔ NEW | `car.wet` x speed |
+| **Surface roll** — sand, gravel, grass | ✗ | `roadDepth`, beach sand |
+| Wind noise | ✔ `update()` 452 | speed |
 | **Suspension** — bump, bottom-out, landing | partial (`thud`) | `car.heave`, 4-ray suspension |
 | Brake squeal at low speed | ✗ | brake + speed |
 | Handbrake | ✗ | input |
-| **Flat tyre flap** | ✗ | `car.flat[]` |
+| Flat tyre flap | ✔ NEW | `car.flat[]` |
 | Damage — knock, radiator hiss, dragging metal | ✗ | `damage` |
 | Starter / ignition | ✗ | enter vehicle |
 | Turbo spool + blow-off, overrun pops | ✗ | boost, throttle lift |
@@ -152,10 +168,10 @@ and beds compress hard as mono `.ogg` at 96 kbps.
 
 ## 3. The order I would do it in
 
-1. **Wire the five dead signals.** Tyre squeal off `car.slip`, impact bands off
-   `car.hitForce`, shift clunk off `gear`, flap off `car.flat`, hiss off
-   `car.wet`. No new assets — the existing synthesis carries the first pass, and
-   it is the single biggest felt improvement per hour.
+1. ~~Wire the dead signals.~~ **DONE 2026-09-15** — and only two were dead:
+   `car.wet` now drives tyre spray, `car.flat[]` drives the flap. Slip, gear and
+   impact were already wired; see the corrected table above. No new assets were
+   needed, as predicted.
 2. **Surface roll + wind by speed.** The constant bed under all driving.
 3. **District ambience beds.** Cheap to wire (`districtAt` already polls), and
    the beach, promenade and riverside are brand new and silent.
