@@ -392,7 +392,17 @@ export async function fetchKit(id, spec, assets, opts = {}) {
  * The hero car skin loader. Supports both procedural/Quaternius kits and
  * full-fidelity high-poly Sketchfab hero bodies (e.g. Corvette C8 ZR1, Monza).
  */
-export async function loadHeroSkin(assets, hero, file = 's-corvette-zr1') {
+/* THE default car, in one place (2026-09-15). It used to live in three:
+   here, main.js:initialBody and garage.js:fitted, each hardcoded to
+   's-corvette-zr1'. Changing main.js alone did nothing -- the garage constructs
+   after it, sets its own default, and stamps it into localStorage 'hb.body',
+   so the yellow Corvette came back on every boot. Measured: cleared the key
+   before load, and it read 's-corvette-zr1' again 24 s later.
+   camaro-350 is the deep blue one: `CarPaint` #001b8a, the only shipped body
+   whose most-saturated material is paint rather than lights or calipers. */
+export const DEFAULT_BODY = 's-camaro-350';
+
+export async function loadHeroSkin(assets, hero, file = DEFAULT_BODY) {
   const u = hero.userData;
   u.loftHull ??= u.hull;
   const hull = u.loftHull;

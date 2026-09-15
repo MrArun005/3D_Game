@@ -1,4 +1,4 @@
-import { loadHeroSkin } from '../world/vendorCars.js';
+import { loadHeroSkin, DEFAULT_BODY } from '../world/vendorCars.js';
 
 /* The chop shop (2026-09-09). Drive a car you do not OWN -- a carjack or a
    break-in fits the victim's body without buying it -- to the Steelgate
@@ -51,9 +51,14 @@ export class Garage {
     this.hud = hud;
 
     const storedGarage = localStorage.getItem('hb.garage');
-    this.owned = new Set(JSON.parse(storedGarage || '["q-sports"]'));
-    this.fitted = localStorage.getItem('hb.body') || 's-corvette-zr1';
-    if (!CATALOGUE.some((c) => c.file === this.fitted)) this.fitted = 's-corvette-zr1';
+    /* The default body is OWNED by default (2026-09-15). A default you do not
+       own is incoherent: lastOwned falls back to q-sports, so the chop shop
+       hands you the wrong car back, and the browse cursor lands on something
+       with a price tag. restore() -> #fit() does not check ownership, so this
+       never blocked the fit -- it just left the books wrong. */
+    this.owned = new Set(JSON.parse(storedGarage || JSON.stringify(['q-sports', DEFAULT_BODY])));
+    this.fitted = localStorage.getItem('hb.body') || DEFAULT_BODY;   // ONE default: vendorCars.DEFAULT_BODY
+    if (!CATALOGUE.some((c) => c.file === this.fitted)) this.fitted = DEFAULT_BODY;
     this.cursor = CATALOGUE.findIndex((c) => c.file === this.fitted);
     this.browsing = false;
     this.lastOwned = this.owned.has(this.fitted) ? this.fitted : 'q-sports';   // what the chop shop hands you back

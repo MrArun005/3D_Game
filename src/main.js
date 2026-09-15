@@ -8,7 +8,7 @@ import { createSky } from './core/sky.js';
 import { createGrade } from './core/grade.js';
 import { setAnisotropy, wetTarmacLook } from './world/textures.js';
 import { createAssets } from './world/assets.js';
-import { loadVendorCars, loadHeroSkin, KENNEY_CARS } from './world/vendorCars.js';
+import { loadVendorCars, loadHeroSkin, KENNEY_CARS, DEFAULT_BODY } from './world/vendorCars.js';
 import { loadTreeModels } from './world/treeModels.js';
 import { LightPool } from './game/lighting.js';
 import { Jobs, onPavementAtSpeed } from './game/jobs.js';
@@ -58,6 +58,8 @@ import { Navigation } from './game/navigation.js';
 import { GameClock } from './game/clock.js';
 import { Mission } from './game/mission.js';
 import { HALSTEAD_MILE, DEFAULT_HOUR, startYaw, missionPoints, drivingLine } from './game/scenicRoute.js';
+import { buildRaceTrack, registerRaceTrackPhysics, isRacewayArea } from './world/raceTrack.js';
+import { RaceCircuit } from './game/raceCircuit.js';
 import { Multiplayer, roomFromUrl, createRoom } from './game/multiplayer.js';
 import { Weapon } from './game/weapon.js';
 import { ARSENAL, WEAPON_KINDS, buildWeaponMesh, weaponMaterial } from './game/weapons.js';
@@ -256,6 +258,7 @@ let spawnSnap = false;        // the frame loop snaps the chase camera on its ne
 let lightPool = null;
 let farTraffic = null;   // distant headlight sprites on the far road graph (world/farTraffic.js)
 let jobs = null, garage = null, story = null, phone = null, dispatch = null, reputation = null, intelScanner = null;
+let circuit = null, racewayTrackGroup = null;
 let activeVehicle = null;
 let chat = null, chatter = null, commands = null;
 let vehicleVFX = null, puddles = null;
@@ -421,6 +424,29 @@ function startHalsteadMile() {
   const n = traffic.startRace?.(line, RIVALS, car.yaw) ?? 0;
   hud.flash(n ? `THE HALSTEAD MILE · ${n} RIVALS · GOLDEN HOUR` : 'THE HALSTEAD MILE · 8 MARKS · GOLDEN HOUR');
 }
+
+function startCircuitRace() {
+  if (!districtRef) { hud.flash('HALSTEAD RACEWAY · CITY STILL LOADING'); return; }
+  if (onFoot?.active) useVehicle();
+  if (!raceCircuit) {
+    hud.flash('HALSTEAD RACEWAY · CIRCUIT STILL PREPARING');
+    return;
+  }
+  resetCar(car);
+  car.x = 3560;
+  car.z = 2457;
+  car.yaw = 0;
+  car.y = (districtRef.elevationAt?.(3560, 2457) ?? 1.2) + 0.62;
+  car.vx = 0;
+  car.vz = 0;
+  car.speed = 0;
+  car.fwdSpeed = 0;
+  world?.update?.(car.x, car.z);
+  spawnSnap = true;
+  raceCircuit.startCircuitRace(car);
+}
+window._startCircuitRace = () => startCircuitRace();
+window.startTrackRace = () => startCircuitRace();
 
 function respawnCar(nearX = car.x, nearZ = car.z, kinds = null) {
   const nodes = districtRef?.graph?.nodes;
@@ -606,6 +632,7 @@ grenades.onBlast = (bx, by, bz) => {
   weapon.bloodAt?.(bx, by + 0.3, bz, 0, 0);   // reuse the pool for a dark puff of debris
 };
 let modes = null;   // range / hold-out, built once the HUD and traffic exist
+let raceCircuit = null; // Halstead International Raceway manager
 let aiming = false, ads = 0, burst = 0, sinceShot = 9, swayPhase = 0, crouch = false;
 let lastFiredAt = -1e9;   // officers advance when you have been quiet for a while
 let lastHurtAt = -1e9;    // health regenerates to half once this is six seconds old
@@ -1200,6 +1227,7 @@ const catalogueReady = new Catalogue().load(renderer)
   .catch((e) => { console.warn('catalogue unavailable:', e.message); return null; });
 
 Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search).has('nokit') ? null : loadKitBuildings(assets).catch((e) => console.warn('kit buildings:', e.message))]).then(async ([district, catalogue]) => {
+  registerRaceTrackPhysics(district);
   useDistrict(district);                  // roadDepth() now answers from the file
   traffic.useGraph(district);
   useGraphForRoutes(district);             // and the fleet drives the real streets
@@ -1354,6 +1382,12 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   traffic.onBust = onBust;
   window.district = district;
   districtRef = district;
+
+  const racewayGroup = buildRaceTrack(scene, district);
+  raceCircuit = new RaceCircuit(scene, hud, traffic, audio, garage);
+  raceCircuit.setTrackGroup(racewayGroup);
+  hud.useCircuit(raceCircuit);
+  window.raceCircuit = raceCircuit;
   // Put the car in Little Tokyo on the northbound lane of Tokyo Street (Road 168)
   // Perfectly aligned with the road heading north directly under the illuminated Grand Torii Arch
   const spawnX = 2354.0;
@@ -1395,7 +1429,15 @@ const hero = buildCar(assets.carMats, 0x5b636d);
 scene.add(hero);
 // the damage model marks the real bodywork, so it needs the real meshes
 // the hero's visible body is the high-poly Corvette C8 ZR1 PBR model
-const initialBody = localStorage.getItem('hb.body') || 's-corvette-zr1';
+/* The deep blue Camaro is the default car (2026-09-15). Identified by its
+   material rather than by eye: of the eight shipped Sketchfab bodies, only
+   camaro-350 has a saturated BODY material -- `CarPaint` at #001b8a, a deep
+   navy. Every other car's most-saturated material is lights, glass or brake
+   calipers (corvette-c6r #ff0000 is `glass_lights`, porsche-gt3r #ff0000 is
+   `EXT_CALIPER`), so none of them is actually a blue car.
+   A saved choice still wins: if you have ever picked a body in the garage,
+   localStorage 'hb.body' holds it and this default never applies. */
+const initialBody = localStorage.getItem('hb.body') || DEFAULT_BODY;
 await loadHeroSkin(assets, hero, initialBody).catch((e) => console.warn('hero skin:', e.message));
 damageModel.attach(hero);
 const carVehicle = new CarVehicle(car, stepVehicle, hero);
@@ -1616,6 +1658,7 @@ commands = new CommandEngine({
     hud.flash(`TIME · ${clock.formattedTime}`);
   },
   mile: () => startHalsteadMile(),
+  startTrackRace: () => startCircuitRace(),
   teleport: (x, z, yaw = 0) => {
     car.x = x;
     car.z = z;
@@ -1854,6 +1897,7 @@ const input = createInput((action) => {
   if (action === 'radio') radio?.cycle();
   if (action === 'reset') respawnCar();
   if (action === 'mile') startHalsteadMile();
+  if (action === 'track') startCircuitRace();
   if (action === 'time') { clock.hour = (clock.hour + 3) % 24; hud.flash(`TIME · ${clock.formattedTime}`); }
   if (action === 'horn' && !onFoot.active) {
     // your horn: heard, and answered -- pedestrians ahead break for the kerb, the car in front picks up for three seconds
@@ -1887,6 +1931,7 @@ const input = createInput((action) => {
   if (action === 'use') useVehicle();
   if (action === 'room') joinRoom(roomFromUrl());
   if (action === 'fire') pullTrigger();
+  if (action === 'run' && isRacewayArea(car.x, car.z)) { startCircuitRace(); return; }
   if (action === 'run' && mission && !photo.on) {   // photo mode uses G to cycle grade filters (photo.js); the run toggle stays out of it
     if (!started) { started = true; hud.dismiss(); }
     if (net) {                                   // a room races; alone you work
@@ -2180,6 +2225,9 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
       hud.setJob(`THE HALSTEAD MILE · ${ord} of ${st.of}`);
       if (mission && !mission.active) { traffic.endRace(); hud.setJob(''); }
     }
+  }
+  if (raceCircuit) {
+    raceCircuit.update(dt, car);
   }
   if (jobs) jobs.update(playerTarget, dt);
   if (story) story.update(playerTarget, dt);
