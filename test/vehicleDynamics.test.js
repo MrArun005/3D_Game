@@ -42,8 +42,13 @@ test('vehicleDynamics: preserves turning authority at high speed', () => {
     stepVehicle(car, dt);
   }
 
-  // At high speed, car must retain at least 45% of maximum steer angle (not choked to 10 deg)
-  assert.ok(car.steer >= V.steerMax * 0.45, `high speed steering should maintain authority: ${car.steer} vs max ${V.steerMax}`);
+  /* At 144 km/h the limit is steerMax * (1 - 0.66), so a third of full lock --
+     about 11 deg of road wheel, which is a lane change, not a hairpin. 0.45
+     was the 2026-09-16 tuning that made a key tap swing the car to full lock
+     at road speed; the floor is what stops the OPPOSITE regression, steering
+     choked to nothing at speed. */
+  assert.ok(car.steer >= V.steerMax * 0.30, `high speed steering should maintain authority: ${car.steer} vs max ${V.steerMax}`);
+  assert.ok(car.steer <= V.steerMax * 0.40, `high speed steering should not be near full lock: ${car.steer} vs max ${V.steerMax}`);
 });
 
 test('vehicleDynamics: aerodynamic downforce increases tire normal loads at speed', () => {
@@ -119,6 +124,26 @@ test('raceCircuit: auto-equips GT3 race car when starting circuit race', () => {
 
   circuit.startCircuitRace(car);
 
-  assert.equal(equipped, 's-porsche-gt3r', 'circuit race should auto-equip Porsche 992 GT3 R');
+  assert.equal(equipped, 's-porsche-gt3r', 'must auto-equip Porsche 992 GT3 R');
   assert.equal(mockGarage.fitted, 's-porsche-gt3r');
+});
+
+test('vehicleDynamics: stepVehicle records prevX, prevZ, prevYaw for sub-step visual interpolation', () => {
+  const car = createCarState();
+  const dt = 1 / 120;
+  car.vx = 25; // 90 km/h
+  car.vz = 10;
+  car.yawRate = 0.5;
+
+  const startX = car.x;
+  const startZ = car.z;
+  const startYaw = car.yaw;
+
+  stepVehicle(car, dt);
+
+  assert.equal(car.prevX, startX, 'prevX must capture state before displacement');
+  assert.equal(car.prevZ, startZ, 'prevZ must capture state before displacement');
+  assert.equal(car.prevYaw, startYaw, 'prevYaw must capture state before rotation');
+  assert.ok(car.x !== car.prevX, 'car.x must advance from prevX');
+  assert.ok(car.z !== car.prevZ, 'car.z must advance from prevZ');
 });

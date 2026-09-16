@@ -137,8 +137,11 @@ export class ChaseCamera {
        at the loft's seat. `this.hero` is set once by main. */
     const eye = base.cockpit ? this.hero?.userData?.cockpit : null;
     const rig = eye ? { ...base, ...eye } : base;
-    const cy = Math.cos(car.yaw), sy = Math.sin(car.yaw);
+    const yaw = car.renderYaw ?? car.yaw;
+    const cy = Math.cos(yaw), sy = Math.sin(yaw);
     const rx = sy, rz = cy;
+    const carX = car.renderX ?? car.x;
+    const carZ = car.renderZ ?? car.z;
     const speedK = Math.min(1, (car.speed || 0) / 42);
     /* Speed used to pull the camera back 18%, widen the lens 12 degrees AND push
        the aim 55% further ahead, all at once -- three zoom-outs compounding, and
@@ -152,7 +155,7 @@ export class ChaseCamera {
        the spring travel out of the target and add back a damped copy of it --
        the part the follower has not caught up with is the bob, capped at
        0.45 m so a ramp jump still tracks the car. w=9 rad/s, zeta=1. */
-    const heave = car.heave || 0;
+    const heave = car.renderHeave ?? car.heave ?? 0;
     if (dt > 0.25) { this.heaveSm = heave; this.heaveV = 0; }   // snap(): a 2 km teleport must not spring
     else {
       const h = Math.min(dt, 1 / 30), w = 9;
@@ -171,7 +174,7 @@ export class ChaseCamera {
          of the rig is as close as it goes; past that the camera clips through
          the wall for a moment rather than making the car unreadable. */
       for (let i = 0; i < 3; i++) {
-        const tx = car.x - cy * back, tz = car.z + sy * back;
+        const tx = carX - cy * back, tz = carZ + sy * back;
         if (roadDepth(tx, tz) < WALK_W - 0.5) break;
         back *= 0.78;
       }
@@ -209,8 +212,8 @@ export class ChaseCamera {
        rigs -- they have no lag to compensate. */
     const lambda = 6.44 * (rig.lag / 3.4);
     const lead = rig.rigid ? 0 : 0.7 / lambda;
-    const tx = car.x + ox * back * flat + rx * side + (car.vx || 0) * lead;
-    const tz = car.z + oz * back * flat + rz * side + (car.vz || 0) * lead;
+    const tx = carX + ox * back * flat + rx * side + (car.vx || 0) * lead;
+    const tz = carZ + oz * back * flat + rz * side + (car.vz || 0) * lead;
     const ty = targetY + rig.up + lift * back * 1.15;
     const k = rig.rigid ? 1 : 1 - Math.pow(0.0016, dt * (rig.lag / 3.4));
     this.pos.x += (tx - this.pos.x) * k;
@@ -277,12 +280,12 @@ export class ChaseCamera {
       }
     }
     this.aim.set(
-      car.x - ox * aimD * flat + rx * (look + aimSide) + slipX,
+      carX - ox * aimD * flat + rx * (look + aimSide) + slipX,
       targetY + (rig.aimUp ?? 0.95) - lift * aimD * 0.4,
-      car.z - oz * aimD * flat + rz * (look + aimSide) + slipZ,
+      carZ - oz * aimD * flat + rz * (look + aimSide) + slipZ,
     );
     this.camera.lookAt(this.aim);
-    if (rig.tilt) this.camera.rotation.z += (car.roll || 0) * 0.35 - (car.yawRate || 0) * 0.018;
+    if (rig.tilt) this.camera.rotation.z += (car.renderRoll ?? car.roll ?? 0) * 0.35 - (car.yawRate || 0) * 0.018;
 
     const nosBoost = car.nosActive ? 11 : 0;
     /* The rig's OWN lens. This read a hard-coded 62 and threw away every value

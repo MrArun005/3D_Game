@@ -32,6 +32,8 @@ export function tyreForce(slip, stiffness, load, mu) {
 export function createCarState() {
   const car = {
     x: 0, z: 0, yaw: 0,
+    prevX: 0, prevZ: 0, prevYaw: 0,
+    prevPitch: 0, prevRoll: 0, prevHeave: 0,
     vx: 0, vz: 0, yawRate: 0,
     rpm: V.idle, gear: 2, gearTimer: 0, holdGear: false,
     wheelW: [0, 0, 0, 0],            // FL FR RL RR
@@ -53,7 +55,10 @@ export function createCarState() {
 export function resetCar(car) {
   const ox = car.x ?? 2351.5, oz = car.z ?? 1356.0, oyaw = car.yaw ?? (-Math.PI / 2 - 0.03);
   Object.assign(car, {
-    x: ox, z: oz, yaw: oyaw, vx: 0, vz: 0, yawRate: 0,
+    x: ox, z: oz, yaw: oyaw,
+    prevX: ox, prevZ: oz, prevYaw: oyaw,
+    prevPitch: 0, prevRoll: 0, prevHeave: 0,
+    vx: 0, vz: 0, yawRate: 0,
     rpm: V.idle, gear: 2, gearTimer: 0, steer: 0, pitch: 0, roll: 0, heave: 0,
     speed: 0, fwdSpeed: 0, lastAx: 0, lastAy: 0,
     throttle: 0, brake: 0, hand: 0, slip: 0, offRoad: 0, kerb: 0,
@@ -65,6 +70,13 @@ export function resetCar(car) {
 const DRIVEN = [2, 3];   // rear-wheel drive
 
 export function stepVehicle(car, dt) {
+  // Store previous step physics state for visual interpolation
+  car.prevX = car.x;
+  car.prevZ = car.z;
+  car.prevYaw = car.yaw;
+  car.prevPitch = car.pitch;
+  car.prevRoll = car.roll;
+  car.prevHeave = car.heave;
   // Vehicle profile characteristics (GT3 race, supercar, muscle, street)
   const prof = car.profile;
   const steerRateMult = (prof?.steerRateMult || 1.0) * (car.steerBoost || 1.0);
@@ -92,11 +104,16 @@ export function stepVehicle(car, dt) {
   // --- Steering curve by speed: responsive, agile, preserving high-speed authority ---
   const speed = Math.hypot(car.vx, car.vz);
   const speedNorm = Math.min(1, Math.max(0, speed / 38.0)); // 0 to ~137 km/h (38 m/s)
-  // Preserve turning authority at speed: 0.50 reduction instead of 0.68, maintaining at least 50% steer range at top speed
-  const limit = steerMax * (1.0 - 0.50 * speedNorm);
+  /* Steering authority falls with speed, and the rate is the ONLY thing that
+     makes a key press progressive -- input.js hands over a binary +-1 the
+     instant a key goes down. At 0.50/11.5 (the 2026-09-16 tuning) a tap at
+     66 km/h reached 0.301 rad in 0.1 s and 2.16 g of lateral, yaw rate
+     2.04 rad/s: "extremely sensitive, goes to the left extreme or right", and
+     the camera swung with it. 0.66/8.0 plus the steerTarget ramp in main.js
+     lands at 0.06 rad in 0.1 s and ~1 g -- see the table in that comment. */
+  const limit = steerMax * (1.0 - 0.66 * speedNorm);
   const returning = (car.steerTarget === 0) || (Math.sign(car.steerTarget) !== Math.sign(car.steer));
-  // Responsive turn-in: 11.5 rad/s at rest, 6.0 rad/s at high speed, 2.0x return-to-center
-  const steerRate = (11.5 - 5.5 * speedNorm) * (returning ? 2.0 : 1.0) * steerRateMult;
+  const steerRate = (8.0 - 4.0 * speedNorm) * (returning ? 2.0 : 1.0) * steerRateMult;
   car.steer += (car.steerTarget * limit - car.steer) * Math.min(1, dt * steerRate);
 
   const cy = Math.cos(car.yaw), sy = Math.sin(car.yaw);

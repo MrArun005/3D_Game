@@ -177,7 +177,7 @@ const grade = createGrade(renderer, scene, camera, {
   ao: new URLSearchParams(location.search).has('ao'),
   bloom: !new URLSearchParams(location.search).has('nobloom'),
   aa: !new URLSearchParams(location.search).has('noaa'),
-  blur: !new URLSearchParams(location.search).has('noblur'),   // the speed radial blur: a 7-tap full-screen pass, unmeasured -- rule 1 wants a way to A/B it
+  blur: (new URLSearchParams(location.search).has('blur') || (!new URLSearchParams(location.search).has('noblur') && !isLite)),   // high-speed radial blur: 7-tap full-screen pass; auto-disabled in lite mode for 60fps floor
   post: !new URLSearchParams(location.search).has('nopost'),
 });
 const resolution = autoResolution(renderer, grade, isLite);
@@ -1294,31 +1294,9 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
     await Promise.all(Array.from({ length: POOL }, worker));
     console.info(`catalogue tier 1 fast-warm: ${tier1Names.length} assets in ${Math.round(performance.now() - t0)} ms`);
 
-    // Queue Tier 2 background streaming after boot screen drops
-    window._startBackgroundAssetStream = () => {
-      let bgIndex = 0;
-      const processIdle = (deadline) => {
-        while (bgIndex < tier2Names.length && (deadline?.timeRemaining ? deadline.timeRemaining() > 6 : true)) {
-          const name = tier2Names[bgIndex++];
-          catalogue.fetchAsset(name).catch(() => {});
-          if (!deadline?.timeRemaining) break;
-        }
-        if (bgIndex < tier2Names.length) {
-          if (typeof requestIdleCallback !== 'undefined') {
-            requestIdleCallback(processIdle, { timeout: 1500 });
-          } else {
-            setTimeout(processIdle, 120);
-          }
-        } else {
-          console.info(`catalogue tier 2 background stream complete: ${tier2Names.length} assets`);
-        }
-      };
-      if (typeof requestIdleCallback !== 'undefined') {
-        requestIdleCallback(processIdle, { timeout: 2000 });
-      } else {
-        setTimeout(processIdle, 500);
-      }
-    };
+    // Tier 2 background streaming disabled: on-demand chunk loading via InstanceBatch.emit
+    // loads props as needed without saturating the main thread with 105+ GLB parses during gameplay.
+    window._startBackgroundAssetStream = null;
 
     /* And the textures. Do not block boot indefinitely on textures: give them up to 1.5s max */
     if (catalogue.texturesReady) {
@@ -2091,7 +2069,8 @@ function frame() {
 function frameBody() {
   performance.mark('frame-start');
   const now = performance.now();
-  let dt = Math.min((now - lastTime) / 1000, 0.05);
+  const rawDt = (now - lastTime) / 1000;
+  let dt = Math.min(rawDt, 0.05);
   lastTime = now;
   if (wastedAnim === 1) dt *= 0.35;   // wasted: the fall plays at a third speed, GTA's beat
 
@@ -2155,7 +2134,26 @@ function frameBody() {
   car.throttle += (throttleIn - car.throttle) * Math.min(1, dt * lag);
   car.brake += (brakeIn - car.brake) * Math.min(1, dt * (c.analogue ? 20 : 15));
   car.hand += ((started ? c.handbrake : 0) - car.hand) * Math.min(1, dt * 18);
-  car.steerTarget = c.steer;
+  /* Keyboard steering is BINARY: input.js hands over steerTarget = +-1 the
+     instant a key goes down (input.js:181), so nothing about a key press is
+     progressive on its own -- the dynamics' first-order lag was the whole
+     ramp. When that lag was sped up 2.3x, one tap became full lock. Measured
+     at 66 km/h, steer angle after a held key (rad):
+
+              @0.1s  @0.2s  @0.5s
+       before  0.140  0.219  0.326
+       shipped 0.301  0.393  0.450   <- "goes to the left extreme or right"
+       now     0.057  0.142  0.319
+
+     A stick is already progressive, so an analogue pad passes straight
+     through; only the digital path is ramped, faster when parking than at
+     100 km/h, and 2.2x as fast coming back to centre as going out. */
+  if (c.analogue) car.steerTarget = c.steer;
+  else {
+    const rate = 7.0 - 3.6 * Math.min(1, Math.hypot(car.vx, car.vz) / 38);
+    const back = c.steer === 0 || Math.sign(c.steer) !== Math.sign(car.steerTarget);
+    car.steerTarget += (c.steer - car.steerTarget) * Math.min(1, dt * rate * (back ? 2.2 : 1));
+  }
   }
   }
 
@@ -2171,7 +2169,7 @@ function frameBody() {
   // fixed-step physics keeps the tyre model stable; clamp accumulator to prevent death spirals on dt spikes
   performance.mark('physics-start');
   const tPhys0 = performance.now();
-  if (dt > 0.05) physicsAccumulator = Math.min(physicsAccumulator, STEP * 4);
+  if (rawDt > 0.05) physicsAccumulator = 0;   // Spike or tab-out: clear backlog to prevent death spiral
   physicsAccumulator += dt;
   let guard = 0;
   if (!activeVehicle || activeVehicle === carVehicle) {
@@ -2185,13 +2183,35 @@ function frameBody() {
   const physMs = performance.now() - tPhys0;
   performance.mark('physics-end');
 
+  // Sub-step physics visual interpolation (ensures rock-solid 60Hz/120Hz consistency and eliminates judder)
+  const alpha = Math.min(1, Math.max(0, physicsAccumulator / STEP));
+  const prevX = car.prevX ?? car.x;
+  const prevZ = car.prevZ ?? car.z;
+  const prevYaw = car.prevYaw ?? car.yaw;
+  const renderX = prevX + (car.x - prevX) * alpha;
+  const renderZ = prevZ + (car.z - prevZ) * alpha;
+  let dYaw = (car.yaw - prevYaw) % (Math.PI * 2);
+  if (dYaw > Math.PI) dYaw -= Math.PI * 2;
+  if (dYaw < -Math.PI) dYaw += Math.PI * 2;
+  const renderYaw = prevYaw + dYaw * alpha;
+  const renderRoll = (car.prevRoll ?? car.roll) + (car.roll - (car.prevRoll ?? car.roll)) * alpha;
+  const renderPitch = (car.prevPitch ?? car.pitch) + (car.pitch - (car.prevPitch ?? car.pitch)) * alpha;
+  const renderHeave = (car.prevHeave ?? car.heave) + (car.heave - (car.prevHeave ?? car.heave)) * alpha;
+
+  car.renderX = renderX;
+  car.renderZ = renderZ;
+  car.renderYaw = renderYaw;
+  car.renderRoll = renderRoll;
+  car.renderPitch = renderPitch;
+  car.renderHeave = renderHeave;
+
   // ---- pose ----
   // group carries x/y/z and yaw; the body carries the sprung motion; the wheels ride the road
   if (!activeVehicle || activeVehicle === carVehicle) {
     hero.visible = !onFoot.active;
-    const gy = (world.district?.elevationAt?.(car.x, car.z) ?? groundHeightAt(car.x, car.z));
-    hero.position.set(car.x, gy, car.z);
-    hero.rotation.set(0, car.yaw, 0);
+    const gy = (world.district?.elevationAt?.(renderX, renderZ) ?? groundHeightAt(renderX, renderZ));
+    hero.position.set(renderX, gy, renderZ);
+    hero.rotation.set(0, renderYaw, 0);
   } else {
     hero.visible = false;
   }
@@ -2201,9 +2221,9 @@ function frameBody() {
      height, so the sag has to land on the sprung mass too. */
   let sag = 0;
   for (const w of hero.userData.wheels) sag += (w.flat || 0);
-  body.position.y = car.heave - (sag / 4) * WHEEL_R * 0.3;
+  body.position.y = renderHeave - (sag / 4) * WHEEL_R * 0.3;
   // local x is forward and local z is lateral, so roll goes on x and pitch on z
-  body.rotation.set(car.roll, 0, car.pitch);
+  body.rotation.set(renderRoll, 0, renderPitch);
   // doors ease toward their target; a slam is a fast ease, not a snap
   for (const d of Object.values(hero.userData.doors || {})) {
     d.pivot.rotation.y += (d.target - d.pivot.rotation.y) * Math.min(1, dt * d.speed);
