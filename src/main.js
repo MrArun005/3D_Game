@@ -2173,7 +2173,15 @@ function frameBody() {
   physicsAccumulator += dt;
   let guard = 0;
   if (!activeVehicle || activeVehicle === carVehicle) {
-    while (physicsAccumulator >= STEP && guard++ < 4) {
+    /* guard 8, not 4. Four steps of 1/120 is 33.3 ms of simulated time, so at
+       any frame slower than 30 fps the simulation could not keep up with the
+       clock: it fell behind by the difference every frame and the car crawled
+       in slow motion while the world did not -- "frame by frame rather than
+       racing". Eight covers down to 15 fps. The guard is there to stop a
+       death spiral, and stepVehicle costs 1.8 us (measured, 120k steps), so
+       eight of them is 14 us a frame -- the spiral it was guarding against
+       does not exist. */
+    while (physicsAccumulator >= STEP && guard++ < 8) {
       stepVehicle(car, STEP);
       physicsAccumulator -= STEP;
     }
