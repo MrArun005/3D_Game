@@ -161,7 +161,13 @@ setAnisotropy(renderer.capabilities?.getMaxAnisotropy?.() ?? 16);
 
 const scene = createScene(DAY);
 window.scene = scene;
-const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.5, 8000);
+/* far 14000, not 8000. The sky dome is a radius-9000 sphere recentred on the
+   car every frame (sky.js:74, main.js dome.position.set), so EVERY vertex of it
+   sits ~9000 m from the camera: any far plane under ~9010 clips the entire dome
+   and the sky renders black at noon. Measured 2026-09-16 at Little Tokyo 12:00,
+   same viewpoint: far 8000 top-quarter mean RGB (43,51,56) -- black -- against
+   (53,65,69) with 14000. Depth precision is bought at the NEAR plane, not here. */
+const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.5, 14000);
 const { sun, hemi } = createLights(scene, DAY, isLite);
 const { dome, stars, sunSprite, sunRaySprite } = createSky(scene, renderer, DAY);
 

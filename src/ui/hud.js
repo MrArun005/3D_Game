@@ -108,12 +108,13 @@ export class Hud {
     }
     if (!this.vehicleTag) this.vehicleTag = document.getElementById('vehicle-tag');
     if (this.vehicleTag) {
-      let tag = 'CORVETTE C8 ZR1 · RWD';
+      let tag = 'CAMARO 350 · V8';   // the default body (vendorCars.DEFAULT_BODY); the table below names the rest
       if (vehicleType === 'helicopter') tag = 'BELL 206 · ROTOR';
       else if (vehicleType === 'tank') tag = 'M1 ABRAMS · 120MM';
       else if (typeof localStorage !== 'undefined') {
         const body = localStorage.getItem('hb.body');
-        if (body === 's-monza') tag = 'FERRARI MONZA SP1 · RWD';
+        if (body === 's-corvette-zr1') tag = 'CORVETTE C8 ZR1 · RWD';
+        else if (body === 's-monza') tag = 'FERRARI MONZA SP1 · RWD';
         else if (body === 's-corvette-c6r') tag = 'CORVETTE C6.R · GT2';
         else if (body === 's-camaro-jewel') tag = "'67 CAMARO SS · V8";
         else if (body === 's-camaro-patrol') tag = 'CAMARO PATROL · POLICE';
