@@ -25,6 +25,8 @@ export const CATALOGUE = [
   { file: 's-camaro-patrol', name: 'CAMARO PATROL',     price: 6000 },
   { file: 's-porsche-gt3r',  name: '992 GT3 R',         price: 7500 },
   { file: 's-f40-comp',      name: 'F40 COMPETIZIONE',  price: 9000 },
+  // Procedural bodies (vehicle/waymo.js) — no vendor file, no licence
+  { file: 'p-waymo',         name: 'WAYMO I-PACE',      price: 5200 },
   // Standard & Street Fleet
   { file: 'q-sports',     name: 'SPORTS COUPE',  price: 0 },
   { file: 'q-normal1',    name: 'SALOON',        price: 500 },

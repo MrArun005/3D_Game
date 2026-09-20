@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { BODY_TYPES, BODY_KEYS } from '../vehicle/config.js';
+import { buildWaymoIPace, IPACE_SPEC } from '../vehicle/waymo.js';
 import { toTex } from './textures.js';
 
 /**
@@ -64,6 +65,9 @@ export const BODIES = {
   's-monza':         { src: 's', file: 'monza',         front: '+z' },
   // 2026-09-13, from Arun's downloads. Long axis Z like the Chevrolets; '+z' is the family default -- flip if one drives backwards.
   's-porsche-gt3r':  { src: 's', file: 'porsche-gt3r',  front: '+z' },
+  /* Procedural bodies: built in code, no file on disk. `p-waymo` is the Waymo
+     Jaguar I-Pace (vehicle/waymo.js), authored from memory with zero assets. */
+  'p-waymo': { src: 'p', file: 'waymo-ipace' },
   's-f40-comp':      { src: 's', file: 'f40-comp',      front: '+z', pose: 'end' },   // rigged: rest pose has the door OPEN, its one clip is 'DoorFrontLeftClose'
 };
 /** Traffic / parked style -> body id. */
@@ -280,6 +284,21 @@ function buildKitFromObj(group, spec, { wheels: keepWheels = true } = {}) {
 /** Any body id -> { paint, detail, detailMat, lodBody }, from either source. */
 export async function fetchKit(id, spec, assets, opts = {}) {
   const def = BODIES[id] ?? BODIES['q-sports'];
+  if (def.src === 'p') {
+    /* Procedural whole-group body (the Waymo I-Pace). Same contract as the
+       's' path: nose +X, centred, base at y=0 — the builder guarantees it,
+       so only the length is scaled onto the caller's spec. Wheels are its
+       own (static), like every whole-group body. */
+    const group = buildWaymoIPace();
+    const k = spec.L / IPACE_SPEC.L;
+    group.scale.setScalar(k);
+    group.updateMatrixWorld(true);
+    group.traverse((o) => { if (o.isMesh) { o.receiveShadow = true; o.frustumCulled = false; } });
+    // no driver in a Waymo: the eye sits mid-cabin at the sensor operator's row
+    const eye = new THREE.Vector3(-0.05 * spec.L, 0.98 * k, -0.36 * k);
+    const cockpit = { back: -eye.x, up: eye.y - 0.62, side: eye.z };
+    return { group, paint: null, detail: null, detailMat: null, lodBody: null, cockpit };
+  }
   if (def.src === 's') {
     // whole textured model, nose to +X, bottom at 0, scaled by LENGTH so the proportions stay real
     const gltf = await fetchGltf(def.file, SBASE);
