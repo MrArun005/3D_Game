@@ -47,6 +47,32 @@ test('cab-forward glazing: screen starts early, tail glass is high', () => {
   assert.equal(ipaceClassify(2.3, 0.1, 0.8), 'body');
 });
 
+/* Both of these were real bugs, caught on screen and fixed. */
+test('the windscreen survives the roof cut (rule order)', () => {
+  // over the screen the section's TOP is the glass, so hf runs to ~1 there.
+  // Cutting the roof (hf > 0.86) before the screen rule painted it all white.
+  assert.equal(ipaceClassify(1.8, 0.95, 0.2), 'glass');
+  assert.equal(ipaceClassify(4.15, 0.95, 0.2), 'glass');   // backlight, same trap
+  // but the roof BETWEEN the screens is still bodywork
+  assert.equal(ipaceClassify(3.0, 0.95, 0.2), 'body');
+});
+
+test('the nose and tail wear a dark panel proud of the loft cap', () => {
+  // loft() caps its own ends but winds them inward, so on a DoubleSide paint
+  // both ends read as washed-out grey slabs. The fix is a cladding panel that
+  // stands proud enough to win the depth test against that coplanar face.
+  const ends = [];
+  car.traverse((o) => {
+    if (!o.isMesh) return;
+    const b = new THREE.Box3().setFromObject(o);
+    if (b.max.x - b.min.x < 0.03 && b.max.y < 1.1 && o.material.color.getHex() === 0x14161a) ends.push(b);
+  });
+  assert.equal(ends.length, 2, 'one dark end panel at each end');
+  const xs = ends.map((b) => (b.min.x + b.max.x) / 2).sort((a, b) => a - b);
+  assert.ok(xs[0] < -IPACE_SPEC.L / 2, 'tail panel proud of the tail station');
+  assert.ok(xs[1] > IPACE_SPEC.L / 2, 'nose panel proud of the nose station');
+});
+
 test('rule 4: every mesh in the model carries a real UV attribute', () => {
   let meshes = 0;
   car.traverse((o) => {

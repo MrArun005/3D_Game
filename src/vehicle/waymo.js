@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { M4, mergeGeos, loft } from '../core/geometry.js';
+import { M4, mergeGeos, loft, section } from '../core/geometry.js';
 import { buildStations } from './config.js';
 import { buildTyre, buildRim } from './model.js';
 
@@ -25,13 +25,41 @@ import { buildTyre, buildRim } from './model.js';
  * one THREE.Group, nose along +X, centred on its footprint in X/Z, tyre
  * contact plane at y = 0. Wheels are static, like every vendor body.
  */
+/**
+ * The roofline, as hand-placed landmarks. It is DENSIFIED before it reaches
+ * buildStations: every point in `top` becomes a loft station, and the glazing
+ * boundary is decided per quad, so on the sparse key polyline the raked
+ * A- and D-pillars came out as a visible staircase of body-coloured steps
+ * across the side glass. Interpolating the same shape at 0.16 m puts a station
+ * close enough to every pillar crossing that the edge reads as a line.
+ * The shape is unchanged: these are points ON the original polyline.
+ */
+const IPACE_TOP_KEY = [
+  [0, 0.70], [0.22, 0.88], [0.60, 1.00], [1.05, 1.06], [1.28, 1.14],
+  [2.05, 1.52], [2.55, 1.565], [3.10, 1.545], [3.65, 1.46], [4.15, 1.34],
+  [4.45, 1.24], [4.68, 0.98],
+];
+
+/** Insert points along a polyline so no span exceeds `step`. Shape unchanged. */
+export function densify(pts, step = 0.16) {
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
+    const n = Math.max(1, Math.ceil((x1 - x0) / step));
+    for (let k = 1; k <= n; k++) {
+      const t = k / n;
+      out.push([x0 + (x1 - x0) * t, y0 + (y1 - y0) * t]);
+    }
+  }
+  return out;
+}
+
 export const IPACE_SPEC = {
   L: 4.68, axleF: 0.86, axleR: 3.85, wheelR: 0.36, ride: 0.175, wMax: 0.95,
   bonnetY: 1.02, roofY: 1.56, beltY: 0.92, tumble: 0.72, detail: 1,
-  top: [[0, 0.70], [0.22, 0.88], [0.60, 1.00], [1.05, 1.06], [1.28, 1.14],
-        [2.05, 1.52], [2.55, 1.565], [3.10, 1.545], [3.65, 1.46], [4.15, 1.34],
-        [4.45, 1.24], [4.68, 0.98]],
+  top: densify(IPACE_TOP_KEY),
 };
+
 export const IPACE_TRACK = 1.62;
 
 /**
@@ -45,9 +73,22 @@ export function ipaceClassify(xm, hf, wf) {
   const aPillar = 1.30 + hf * 0.72;
   const dPillar = 3.98 - hf * 0.50;
   const bPillar = xm > 2.50 && xm < 2.70;
-  if (wf > 0.56 && !bPillar && xm > aPillar && xm < dPillar && hf < 0.90) return 'glass';
-  if (wf < 0.68 && hf > 0.28 && xm > 1.32 && xm < 2.28) return 'glass';   // windscreen
-  if (wf < 0.68 && hf > 0.42 && xm > 3.98 && xm < 4.42) return 'glass';   // backlight
+  /* The greenhouse is cut on HEIGHT alone, never on width.
+     The hero's classifier gates glass on `wf` (|z| as a fraction of the
+     section's widest half-width) as well, and on this body that produced
+     ragged white shards stabbing into the screens: `wf` and `hf` vary
+     independently per quad, so their two boundaries cross at a different place
+     on every station and the intersection is jagged rather than a line. A pure
+     `hf` band gives the cabin one clean waistline and one clean roof edge, and
+     the pillars come from `xm` — which is what actually shapes a greenhouse.
+     `wf` is kept in the signature to match hullClassify/stuntClassify. */
+  /* Order matters: the screens come FIRST. Over the windscreen the section's
+     TOP surface is the glass, so hf runs up to ~1 there — cutting the roof off
+     before this rule painted the whole windscreen white. */
+  if (hf > 0.28 && xm > 1.32 && xm < 2.28) return 'glass';               // windscreen
+  if (hf > 0.42 && xm > 3.98 && xm < 4.42) return 'glass';               // backlight
+  if (hf > 0.86) return 'body';                                          // roof panel
+  if (!bPillar && xm > aPillar && xm < dPillar) return 'glass';          // side glass
   return 'body';
 }
 
@@ -85,6 +126,58 @@ function halfWidth(stations, x) {
   const a = stations[i], b = stations[i + 1];
   const t = Math.max(0, Math.min(1, (x - a[0]) / Math.max(1e-4, b[0] - a[0])));
   return a[4] + (b[4] - a[4]) * t;
+}
+
+/**
+ * Close an open end of the loft.
+ *
+ * `loft()` DOES close its ends, but it winds those caps inward: on a
+ * DoubleSide paint the nose and tail came out as flat, washed-out grey slabs
+ * that did not even change colour with the paint, because all that reached
+ * them was the clearcoat's environment term (measured by raycasting the nose
+ * plane: two surfaces at x = 2.34, the paint cap and this one). So this fan is
+ * not closing a hole — it is a panel that has to WIN the depth test against a
+ * coplanar face, which is why it stands `PROUD` of the station rather than on
+ * it. A fan over the ring's own section fits the opening exactly, with no gap
+ * to line up by hand.
+ *
+ * `dir` is the outward normal along x: -1 at the nose (station 0), +1 at the
+ * tail. Winding is chosen per triangle from the sign it produces, so the cap
+ * is lit as an outside face whichever way the section happens to wind.
+ */
+function capGeo(st, dir) {
+  const ring = section(st);                       // [z, y] pairs, closed
+  const n = ring.length;
+  let cy = 0, cz = 0;
+  for (const [z, y] of ring) { cy += y; cz += z; }
+  cy /= n; cz /= n;
+  /* 12 mm proud of the station plane. Coplanar with the loft's own cap it
+     z-fought and lost, which is the whole reason the first pass looked
+     unchanged. Small enough to read as a panel let into the bodywork. */
+  const PROUD = 0.012;
+  const x = st[0] + dir * PROUD;
+  const P = [], N = [], U = [];
+  // UVs off the ring's own bounding box, so a cap can take a decal later (rule 4)
+  let y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const [z, y] of ring) {
+    y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+    z0 = Math.min(z0, z); z1 = Math.max(z1, z);
+  }
+  const uv = (z, y) => [(z - z0) / Math.max(1e-4, z1 - z0), (y - y0) / Math.max(1e-4, y1 - y0)];
+  for (let k = 0; k < n; k++) {
+    const a = ring[k], b = ring[(k + 1) % n];
+    // x-component of cross(a - c, b - c) for points in the y/z plane
+    const sign = (a[1] - cy) * (b[0] - cz) - (a[0] - cz) * (b[1] - cy);
+    const [p, q] = Math.sign(sign) === Math.sign(dir) ? [a, b] : [b, a];
+    P.push(x, cy, cz, x, p[1], p[0], x, q[1], q[0]);
+    for (let i = 0; i < 3; i++) N.push(dir, 0, 0);
+    U.push(...uv(cz, cy), ...uv(p[0], p[1]), ...uv(q[0], q[1]));
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(P), 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(N), 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(U), 2));
+  return g;
 }
 
 /** The roof lidar "top hat": plinth, dome, sensor waist, accent ring. */
@@ -149,6 +242,18 @@ export function buildWaymoIPace(mats = buildWaymoMaterials()) {
   body.receiveShadow = true;
   const glass = new THREE.Mesh(hull.glass, mats.glass);
   shell.add(body, glass);
+
+  /* Nose and tail caps. The nose one is CLADDING, not paint: on the real car
+     that face is the black grille aperture and the bumper below it, and it is
+     the cheapest way to stop a 1.1 m washed-out panel staring out of the
+     front. The tail takes the same treatment: on the real car that face is the
+     dark hatch applique the lamp bar runs across, and the lamp bar and plate
+     already sit on it. */
+  const noseCap = new THREE.Mesh(capGeo(stations[0], -1), mats.cladding);
+  const tailCap = new THREE.Mesh(capGeo(stations[stations.length - 1], 1), mats.cladding);
+  noseCap.castShadow = true; tailCap.castShadow = true;
+  noseCap.receiveShadow = true; tailCap.receiveShadow = true;
+  shell.add(noseCap, tailCap);
 
   const roofY = spec.roofY + 0.005;
 
