@@ -480,12 +480,20 @@ export async function loadHeroSkin(assets, hero, file = DEFAULT_BODY) {
   u.loftHull ??= u.hull;
   const hull = u.loftHull;
   if (!hull) return false;
-  if (u.skin) { u.skin.parent?.remove(u.skin); u.skin = null; }
+  /* Two fits can be in flight at once -- the boot skin and the race's
+     equipRaceCar('s-porsche-gt3r') a moment later -- and both used to read
+     u.skin as null before their await, so both bodies ended up on the car:
+     the census found the Camaro's 24 meshes drawn beside the GT3's 43. The
+     generation counter lets the newer fit win and the older one step aside;
+     the stale skin is removed AFTER the await, when it actually exists. */
+  const gen = u.skinGen = (u.skinGen ?? 0) + 1;
   hull.geometry.computeBoundingBox();
   const bb = hull.geometry.boundingBox;                 // shell space: nose at 0, tail at +L
   const L = bb.max.x - bb.min.x, W = bb.max.z - bb.min.z;
   const kit = await fetchKit(file, { L, wMax: W / 2 }, assets, { wheels: false }).catch((e) => { console.warn('hero skin', file, e.message); return null; });
   if (!kit) return false;
+  if (u.skinGen !== gen) return false;                  // a newer fit landed while this one loaded
+  if (u.skin) { u.skin.parent?.remove(u.skin); u.skin = null; }
 
   const shellG = hull.parent;
   if (kit.group) {

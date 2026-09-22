@@ -199,7 +199,7 @@ export function makeTileable(material) {
  * geometry. Only geometry we cloned is ours -- the shared assets.geo.* is
  * still being drawn by every other live cell.
  */
-function releaseCell(group) {
+export function releaseCell(group) {
   group.traverse((o) => {
     if (!o.isMesh) return;
     if (o.isInstancedMesh) o.dispose();

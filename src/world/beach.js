@@ -505,7 +505,10 @@ export function buildBeach(scene, district, day = true, catalogue = null) {
     }
 
     batch.emit(props, { lod: 0 }).then(() => {
-      props.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.receiveShadow = true; } });
+      /* NOT frustumCulled = false: this group is not a render bundle, so culling is
+         free, and the flag also defeated the shadow cameras' culling -- 613k tris of
+         balustrade were cast into the cascades from 1.3 km away (census 2026-09-22). */
+      props.traverse((o) => { if (o.isMesh) { o.receiveShadow = true; o.geometry?.computeBoundingSphere?.(); } });
     });
   }
 

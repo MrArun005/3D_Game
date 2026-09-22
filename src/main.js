@@ -29,7 +29,7 @@ import { BillboardSystem } from './world/billboards.js';
 import { StreetLife } from './world/streetLife.js';
 import { Airspace } from './world/airspace.js';
 import { Catalogue, dressCarMaterials } from './world/catalogue.js';
-import { City } from './world/city.js';
+import { City, releaseCell } from './world/city.js';
 import { DistrictWorld } from './world/districtWorld.js';
 import { loadDistrict } from './world/district.js';
 import { buildSurrounds } from './world/surrounds.js';
@@ -1259,8 +1259,6 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   hud.useDistrict(district);              // minimap draws real streets, not a lattice
   navigation = new Navigation(district);
   hud.useNavigation(navigation);
-  for (const g of city.cells.values()) scene.remove(g);
-  city.cells.clear();
   /* PRE-WARM THE CATALOGUE (2026-09-14).
      Every asset is fetched and parsed HERE, behind the boot screen, instead of
      on the frame a chunk first asks for it. The whole library is small -- 141
@@ -1316,6 +1314,14 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
 
   setBootProgress(70, 'Building the streets…');
   world = new DistrictWorld(scene, assets, district, { day: DAY, catalogue, lite: isLite, only: RACE_MODE ? isRacewayArea : null });
+  /* Retire the legacy 130 m grid HERE, at the swap, and not a page earlier.
+     It used to be cleared before the catalogue pre-warm, whose awaits let the
+     frame loop keep ticking world.update() on the City for a few seconds --
+     and it rebuilt all 25 cells around the origin, which nothing removed
+     again: 683 direct draws / 409k tris / 331k shadow-caster tris a frame in
+     BOTH modes, 2.7 km from the car (census 2026-09-22). */
+  for (const g of city.cells.values()) { scene.remove(g); releaseCell(g); }
+  city.cells.clear();
   window._world = world;
   world.camera = camera;                  // chunk-level frustum culling for the render bundles
   /* Before the LightPool: it decides at construction whether to allocate hero
@@ -2046,7 +2052,14 @@ car.obstacles = getObstacles;
 car.buildings = (x, z) => (world.nearbyBuildings ? world.nearbyBuildings(x, z) : null);
 
 resetCar(car);
-city.update(car.x, car.z);
+/* No top-level city.update() here any more (2026-09-22). It built the retired
+   130 m legacy grid -- 25 cells at the ORIGIN, 683 direct draws, 409k tris,
+   331k of them shadow casters, frustumCulled=false -- and because this module
+   has top-level awaits above, it ran AFTER the district loader had already
+   cleared those cells (main.js ~1262), so nothing ever removed them again.
+   Measured live: 49% of free roam's direct draws and 73% of race mode's, for
+   a grid 2.7 km from the car. The frame loop's world.update() streams the
+   legacy grid on its own if the district ever fails to load. */
 traffic.cars.forEach((t) => traffic.spawn(t, car, true));
 
 // THREE.Clock is deprecated in 0.185 and this needs two lines, not a class

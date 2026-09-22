@@ -588,8 +588,14 @@ export class DistrictWorld {
       const pl = this.parkedLod.get(key);
       if (pl) {
         if (pl.ring !== d) { pl.ring = d; (pl.near[0] ?? pl.far[0])?.parent && ((pl.near[0] ?? pl.far[0]).parent.needsUpdate = true); }
-        for (const m of pl.near) { m.visible = d <= 1; m.castShadow = d === 0; }
-        for (const m of pl.far) m.visible = d > 1;
+        /* Full body + detail (glass, tyres, trim) in the chunk you stand in
+           ONLY; the 492-tri body LOD from the next ring out. The detail mesh
+           was riding the near ring to d <= 1: 212 near cars at 2,449 tris each
+           (585 body + 1,864 detail) = 519k tris, 395k of it detail, for cars
+           one chunk over -- 4x the '492-tri parked LOD' this file quotes
+           (census 2026-09-22). Ring 2+ already showed the far LOD alone. */
+        for (const m of pl.near) { m.visible = d === 0; m.castShadow = d === 0; }
+        for (const m of pl.far) m.visible = d > 0;
         /* Shadows from the chunk you are standing in, and nowhere else.
            389 near parked cars were casting 950k triangles into the cascades
            -- more than the entire authored prop kit -- to draw a row of
@@ -2117,10 +2123,16 @@ export class DistrictWorld {
       merged.userData.owned = true;
       merged.computeBoundingSphere();
       const am = new THREE.Mesh(merged, artMaterial(key));
-      am.castShadow = true; am.receiveShadow = true;
+      /* The 'emit' bucket is the window PANES -- coplanar with reveals the
+         opaque wall bucket already shadows. They were 575k of free roam's
+         2.40M shadow-caster triangles (24%, census 2026-09-22) for shadows
+         that are never separable from the wall's. Everything else casts. */
+      am.castShadow = key !== 'emit'; am.receiveShadow = true;
       am.frustumCulled = false;                       // bundle contents are culled at record time (see the header)
-      am.userData.shell = true;                       // casts into the far cascades like a shell
-      am.layers.enable(SHADOW_FAR_LAYER);
+      if (key !== 'emit') {
+        am.userData.shell = true;                     // casts into the far cascades like a shell
+        am.layers.enable(SHADOW_FAR_LAYER);
+      }
       group.add(am);
     }
     // one merged mesh per kit per chunk: the whole Kenney buildings placed above

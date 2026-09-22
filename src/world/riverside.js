@@ -168,7 +168,8 @@ export function buildRiverside(scene, district, day = true, catalogue = null) {
       }
     }
     batch.emit(props, { lod: 1 }).then(() => {
-      props.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.receiveShadow = true; } });
+      // culled like the beach props: not a bundle, and 194k tris of trees were casting from across the map
+      props.traverse((o) => { if (o.isMesh) { o.receiveShadow = true; o.geometry?.computeBoundingSphere?.(); } });
     });
   }
 
