@@ -82,6 +82,24 @@ export const RIGS = [
   { back: 1.9, up: 0.30, side: 0.36, aim: 18.0, aimUp: -0.3, fov: 72, lag: 26.0, tilt: 1, rigid: 1, near: 0.15, cockpit: 1 },
 ];
 
+/**
+ * Is (x, z) inside any collision box, grown by `pad`? The boxes are
+ * districtWorld's { x, z, hw, hd, angle } footprints; a box's +X is
+ * (cos a, sin a) as in vehicle/collision.js:resolveBoxes. Pure, tested.
+ */
+export function insideBoxes(x, z, boxes, pad = 0.6) {
+  if (!boxes) return false;
+  for (const b of boxes) {
+    const dx = x - b.x, dz = z - b.z;
+    const r = b.hw + b.hd + pad;
+    if (Math.abs(dx) > r || Math.abs(dz) > r) continue;   // broad phase before trig
+    const ca = Math.cos(b.angle || 0), sa = Math.sin(b.angle || 0);
+    const lx = dx * ca + dz * sa, lz = -dx * sa + dz * ca;
+    if (Math.abs(lx) < b.hw + pad && Math.abs(lz) < b.hd + pad) return true;
+  }
+  return false;
+}
+
 export class ChaseCamera {
   constructor(camera) {
     this.camera = camera;
@@ -173,9 +191,14 @@ export class ChaseCamera {
          clipped off the bottom of the frame ("I don't see the car fully"). 0.47
          of the rig is as close as it goes; past that the camera clips through
          the wall for a moment rather than making the car unreadable. */
+      /* Buildings too (2026-09-22): the road test alone let the lens sit inside
+         a facade wherever a building stands on the pavement line or a corner
+         cuts across the view. `this.buildings` is world.nearbyBuildings, set
+         by main; one lookup per frame, reused by the three steps. */
+      const boxes = this.buildings?.(carX, carZ);
       for (let i = 0; i < 3; i++) {
         const tx = carX - cy * back, tz = carZ + sy * back;
-        if (roadDepth(tx, tz) < WALK_W - 0.5) break;
+        if (roadDepth(tx, tz) < WALK_W - 0.5 && !insideBoxes(tx, tz, boxes)) break;
         back *= 0.78;
       }
     }

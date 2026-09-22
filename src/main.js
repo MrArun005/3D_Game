@@ -1673,6 +1673,7 @@ const CARS = +(new URLSearchParams(location.search).get('cars') ?? NaN);
 const traffic = new Traffic(scene, assets, RACE_MODE ? 0 : (Number.isFinite(CARS) ? CARS : (DAY ? Q.traffic : (Q.trafficNight ?? Q.traffic))), !DAY);   // race mode: rivals only, no civilians; preset 14 / 26 / 36 (40 at night on high, the old DAY ? 36 : 40)
 officerPool(scene);   // start the rig fetch at boot: acquire() returns null while it is in flight, and the first squad of a session would otherwise be the old boxes   // Phase 5: denser, and lit at night
 const chase = new ChaseCamera(camera);
+chase.buildings = (x, z) => (world?.nearbyBuildings ? world.nearbyBuildings(x, z) : null);   // the lens pulls in rather than sit inside a facade
 const weather = createWeather(scene, { hemi, dome: () => dome, onStrike: (delay) => audio.thunder?.(delay) });   // always built: rain comes in night spells (rainSpell) on the day cycle, and all night with ?night
 const hud = new Hud();
 let navigation = null;
