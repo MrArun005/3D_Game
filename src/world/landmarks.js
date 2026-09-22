@@ -597,6 +597,44 @@ export class Landmarks {
     const towerH = 34.0;
     const halfW = width / 2;
 
+    /* Overhead highway portal sign: ONE material + canvas for both towers. It
+       was built inside the tower loop, so the two towers carried two identical
+       1024x256 canvas textures and (after the merge below) two sign draws
+       instead of one -- measured 9 merged meshes, 8 once hoisted. */
+    let portalSignMat = null;
+    if (typeof document !== 'undefined') {
+      const signCanvas = document.createElement('canvas');
+      signCanvas.width = 1024; signCanvas.height = 256;
+      const sctx = signCanvas.getContext('2d');
+      sctx.fillStyle = '#0e1824';
+      sctx.fillRect(0, 0, 1024, 256);
+      sctx.strokeStyle = '#3fd2ff';
+      sctx.lineWidth = 10;
+      sctx.strokeRect(6, 6, 1012, 244);
+      sctx.font = '900 62px system-ui, -apple-system, sans-serif';
+      sctx.textAlign = 'center';
+      sctx.textBaseline = 'middle';
+      sctx.fillStyle = '#ffffff';
+      sctx.shadowColor = '#00e5ff';
+      sctx.shadowBlur = 18;
+      sctx.fillText('HALSTEAD LIFT BRIDGE', 512, 90);
+      sctx.font = '700 42px system-ui, -apple-system, sans-serif';
+      sctx.fillStyle = '#39ffb0';
+      sctx.shadowColor = '#39ffb0';
+      sctx.shadowBlur = 12;
+      sctx.fillText('VERTICAL CLEARANCE 7.6M · EST. 1928', 512, 168);
+
+      const signTex = new THREE.CanvasTexture(signCanvas);
+      signTex.colorSpace = THREE.SRGBColorSpace;
+      portalSignMat = new THREE.MeshStandardMaterial({
+        map: signTex,
+        emissiveMap: signTex,
+        emissive: 0xffffff,
+        emissiveIntensity: 2.4,
+        roughness: 0.3,
+      });
+    }
+
     for (const tPos of towerPositions) {
       const towerGroup = new THREE.Group();
       towerGroup.position.set(tPos, deckY, 0);
@@ -672,39 +710,8 @@ export class Landmarks {
       topTie.position.set(0, towerH, 0);
       towerGroup.add(topTie);
 
-      // Overhead highway portal sign
-      if (typeof document !== 'undefined') {
-        const signCanvas = document.createElement('canvas');
-        signCanvas.width = 1024; signCanvas.height = 256;
-        const sctx = signCanvas.getContext('2d');
-        sctx.fillStyle = '#0e1824';
-        sctx.fillRect(0, 0, 1024, 256);
-        sctx.strokeStyle = '#3fd2ff';
-        sctx.lineWidth = 10;
-        sctx.strokeRect(6, 6, 1012, 244);
-        sctx.font = '900 62px system-ui, -apple-system, sans-serif';
-        sctx.textAlign = 'center';
-        sctx.textBaseline = 'middle';
-        sctx.fillStyle = '#ffffff';
-        sctx.shadowColor = '#00e5ff';
-        sctx.shadowBlur = 18;
-        sctx.fillText('HALSTEAD LIFT BRIDGE', 512, 90);
-        sctx.font = '700 42px system-ui, -apple-system, sans-serif';
-        sctx.fillStyle = '#39ffb0';
-        sctx.shadowColor = '#39ffb0';
-        sctx.shadowBlur = 12;
-        sctx.fillText('VERTICAL CLEARANCE 7.6M · EST. 1928', 512, 168);
-
-        const signTex = new THREE.CanvasTexture(signCanvas);
-        signTex.colorSpace = THREE.SRGBColorSpace;
-        const portalSignMat = new THREE.MeshStandardMaterial({
-          map: signTex,
-          emissiveMap: signTex,
-          emissive: 0xffffff,
-          emissiveIntensity: 2.4,
-          roughness: 0.3,
-        });
-
+      // Overhead highway portal sign, both faces
+      if (portalSignMat) {
         for (const faceDir of [-1, 1]) {
           const signMesh = new THREE.Mesh(new THREE.PlaneGeometry(16.0, 3.4), portalSignMat);
           signMesh.position.set(faceDir * 1.25, 8.2, 0);
@@ -768,7 +775,39 @@ export class Landmarks {
     // Transform whole bridge group along Halstead Lift Bridge vector
     group.position.set(ax, 0, az);
     group.rotation.y = -yaw;
-    this.scene.add(group);
-    console.info('Halstead Lift Bridge 3D Architecture installed at', ax, az, 'length:', L);
+
+    /* Bake the parts into ONE mesh per material + shadow flags. Census
+       2026-09-22 (free roam, build 57cabc7, in-browser): this group was 353
+       DIRECT draws for 5,332 triangles -- 25% of all direct draws, the single
+       largest group. Nothing in it moves or is looked up later (no this.*,
+       no name lookups, the beacon/nav lights are static emissive materials),
+       so everything merges. Bucketing on castShadow/receiveShadow as well as
+       material keeps the caster set exactly what it was (14 casters: footings,
+       columns, portal beams) instead of promoting 260 truss chords into the
+       shadow pass. Each part owns its own geometry, so the world matrix is
+       applied in place and the part geometry disposed after the merge
+       (rule 5). Measured in node against the same stubs: 353 meshes -> 8,
+       5,332 triangles -> 5,332, casters 14 parts -> 2 merged meshes. */
+    group.updateMatrixWorld(true);
+    const buckets = new Map();
+    group.traverse((o) => {
+      if (!o.isMesh) return;
+      const key = `${o.material.uuid}|${o.castShadow}|${o.receiveShadow}`;
+      const b = buckets.get(key) ?? buckets.set(key, { mat: o.material, cast: o.castShadow, recv: o.receiveShadow, geos: [] }).get(key);
+      b.geos.push(o.geometry.applyMatrix4(o.matrixWorld));
+    });
+    const baked = new THREE.Group();
+    baked.name = 'HalsteadLiftBridge';   // same name as before, so the census keeps grouping it
+    for (const { mat, cast, recv, geos } of buckets.values()) {
+      const merged = mergeGeometries(geos, false);
+      for (const g of geos) g.dispose();
+      if (!merged) continue;
+      merged.computeBoundingSphere();
+      const m = new THREE.Mesh(merged, mat);
+      m.castShadow = cast; m.receiveShadow = recv;
+      baked.add(m);
+    }
+    this.scene.add(baked);
+    console.info('Halstead Lift Bridge 3D Architecture installed at', ax, az, 'length:', L, 'draws:', baked.children.length);
   }
 }
