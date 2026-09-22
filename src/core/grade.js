@@ -117,6 +117,12 @@ export function createGrade(renderer, scene, camera, {
   if (withAO) {
     aoPass = ao(depthTex, normalTex, camera);
     aoPass.radius.value = 0.42;
+    /* Half-resolution AO (2026-09-22): GTAO was running at full resolution,
+       16 samples, every pixel -- the single most expensive pass in the frame.
+       GTA V computes SSAO at half res too; the denoiser hides the upscale.
+       ~4x fewer AO fragments and half the samples. */
+    aoPass.resolutionScale = 0.5;
+    aoPass.samples.value = 8;
     /* convertToTexture keeps the denoiser out of the output shader */
     const aoDenoised = convertToTexture(
       denoise(aoPass.getTextureNode(), depthTex, normalTex, camera));

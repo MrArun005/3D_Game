@@ -40,6 +40,7 @@ import { createCarState, resetCar, stepVehicle } from './vehicle/dynamics.js';
 import { lerpPose, copyPose } from './vehicle/interp.js';
 import { isTouchDevice, isMobile } from './core/device.js';
 import { createTouch } from './game/touch.js';
+import { createGovernor } from './core/governor.js';
 import { mergeDrive } from './game/input.js';
 import { Vehicle, CarVehicle } from './game/vehicle.js';
 import { HelicopterVehicle } from './game/flight.js';
@@ -135,7 +136,11 @@ setBootProgress(60, 'Initializing TSL post-processing pipeline…');
    the last. ?desktop / ?mobile override detection (core/device.js). */
 const TOUCH = isTouchDevice();
 const MOBILE = isMobile();
-const isLite = MOBILE || (typeof location !== 'undefined' && new URLSearchParams(location.search).has('lite'));
+/* hb.lite is written by the frame-rate governor when a machine stays slow
+   even at half resolution; ?full clears it. */
+let savedLite = false;
+try { if (new URLSearchParams(location.search).has('full')) localStorage.removeItem('hb.lite'); savedLite = localStorage.getItem('hb.lite') === '1'; } catch { /* private mode */ }
+const isLite = MOBILE || savedLite || (typeof location !== 'undefined' && new URLSearchParams(location.search).has('lite'));
 if (TOUCH) document.body.classList.add('touch');
 const grade = createGrade(renderer, scene, camera, {
   ao: !isLite && !new URLSearchParams(location.search).has('noao'),
@@ -1724,6 +1729,8 @@ addEventListener('mousemove', (e) => {
   else chase.look(e.movementX, e.movementY);
 });
 
+const basePR = Math.min(window.devicePixelRatio || 1, 1.0);   // renderer.js runs at 1.0; never render above it
+const governor = new URLSearchParams(location.search).has('fixedres') ? null : createGovernor({ min: 0.5 });
 const onResize = () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
@@ -2260,6 +2267,15 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   if (onFoot.active) audio.heartbeat?.(health, dt);   // under 25% you hear your own heart, quickening toward the end
   grade.setHurt?.(Math.max(hurtPulse, onFoot.active && health < 0.4 ? (0.4 - health) * 1.6 : 0));   // a hit flashes it; under 40% it stays
   grade.render(renderer, now / 1000);
+  // dynamic resolution: the render scales itself down when frames run long (core/governor.js); ?fixedres turns it off
+  if (governor) {
+    const g = governor.step(dt * 1000);
+    if (g.changed) { renderer.setPixelRatio(basePR * g.scale); onResize(); }
+    if (g.giveUp && !isLite) {
+      try { localStorage.setItem('hb.lite', '1'); } catch { /* private mode */ }
+      hud.flash('PERFORMANCE MODE SAVED · RELOAD FOR SMOOTHER PLAY (?full UNDOES)');
+    }
+  }
   const renderMs = performance.now() - tRender0;
   performance.mark('render-end');
   performance.mark('frame-end');

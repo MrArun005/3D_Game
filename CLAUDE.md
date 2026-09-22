@@ -141,6 +141,12 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
     `catalogue.emitWorstMs`); vite splits `three`, `three-addons`, `net` from
     game code (index 572 kB, was 1.86 MB in one chunk); the district fetch
     starts before `renderer.init()`.
+  - **Frame-rate governor (2026-09-22, `core/governor.js`, tested)**: dynamic
+    resolution -- pixel ratio scales 1.0 -> 0.5 when the ~0.75 s average runs
+    over ~17 ms, climbs back after a 3 s cool-down; still slow at 0.5 for 6 s
+    writes `hb.lite` (next load = lite tier) with a toast. `?fixedres` off,
+    `?full` clears hb.lite. GTAO now half resolution, 8 samples (was full res,
+    16) -- the most expensive pass in the frame.
   - **Brief pass (2026-09-11, `docs/BRIEF-2026-09-11.md`)**: the game is
     the first screen (light gradient card at the bottom, ALL CONTROLS in a
     `<details>`), the hero is red (0xb3161c), the chase camera banks into
