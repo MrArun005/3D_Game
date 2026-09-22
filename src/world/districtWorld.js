@@ -588,14 +588,15 @@ export class DistrictWorld {
       const pl = this.parkedLod.get(key);
       if (pl) {
         if (pl.ring !== d) { pl.ring = d; (pl.near[0] ?? pl.far[0])?.parent && ((pl.near[0] ?? pl.far[0]).parent.needsUpdate = true); }
-        /* Full body + detail (glass, tyres, trim) in the chunk you stand in
-           ONLY; the 492-tri body LOD from the next ring out. The detail mesh
-           was riding the near ring to d <= 1: 212 near cars at 2,449 tris each
-           (585 body + 1,864 detail) = 519k tris, 395k of it detail, for cars
-           one chunk over -- 4x the '492-tri parked LOD' this file quotes
-           (census 2026-09-22). Ring 2+ already showed the far LOD alone. */
-        for (const m of pl.near) { m.visible = d === 0; m.castShadow = d === 0; }
-        for (const m of pl.far) m.visible = d > 0;
+        /* Full body + detail to d <= 1, the 492-tri LOD beyond. Moving the
+           swap to d === 0 (tried 2026-09-22, -395k tris of glass/tyres/trim)
+           put the pop at the edge of the chunk you STAND in: a parked car
+           beside you flipped full <-> low-poly every time you crossed a chunk
+           line -- 'the cars are flickering'. The swap stays a street away;
+           the saving has to come from a detail mesh that is cheaper, not
+           nearer. Shadows still cast only from the standing chunk. */
+        for (const m of pl.near) { m.visible = d <= 1; m.castShadow = d === 0; }
+        for (const m of pl.far) m.visible = d > 1;
         /* Shadows from the chunk you are standing in, and nowhere else.
            389 near parked cars were casting 950k triangles into the cascades
            -- more than the entire authored prop kit -- to draw a row of
