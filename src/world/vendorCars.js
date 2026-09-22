@@ -67,6 +67,78 @@ export const BODIES = {
   's-f40-comp':      { src: 's', file: 'f40-comp',      front: '+z', pose: 'end' },   // rigged: rest pose has the door OPEN, its one clip is 'DoorFrontLeftClose'
 };
 /** Traffic / parked style -> body id. */
+/**
+ * One mesh per material, not one per part.
+ *
+ * A Sketchfab body is a parts library: the C8 ZR1 arrives as 978 mesh nodes
+ * (29 materials), the Monza 301 (71), the C6.R 100 (20), the '67 Camaro 83
+ * (20). Every node is a draw call in the scene pass and again in each shadow
+ * cascade it casts into, so the ZR1 alone was ~1,000 direct draws a frame
+ * before a single building was drawn -- measured 2026-09-22 (node walk of the
+ * GLB JSON: draws/pass = nodes with a mesh). The size gate above already keeps
+ * the jewellery out of the shadow pass; this keeps it out of the scene pass.
+ *
+ * Bake each part's transform (the mixer has already posed the doors and
+ * updateMatrixWorld has run) into a float copy of its geometry, expressed in
+ * the wrap's frame so the wrap keeps its turn and scale, and merge everything
+ * that shares a material, a cast-shadow verdict and an attribute set. Skinned
+ * or morphing parts are left alone (none of the eight bodies has any). The
+ * source geometries are NOT disposed: fetchGltf caches the parsed scene and
+ * the garage re-wears bodies from that cache.
+ *
+ * Attributes go through toFloat because a quantized (KHR_mesh_quantization)
+ * position is a normalized Int16 -- applyMatrix4 on that truncates every
+ * coordinate to -1/0/1, the exact trap catalogue.js:deQuantize records.
+ */
+function mergeByMaterial(wrap, group) {
+  const toFloat = (a) => {
+    if (a.array instanceof Float32Array && !a.normalized) return a.clone();
+    const n = a.count, k = a.itemSize, out = new Float32Array(n * k);
+    for (let i = 0; i < n; i++) {
+      out[i * k] = a.getX(i);
+      if (k > 1) out[i * k + 1] = a.getY(i);
+      if (k > 2) out[i * k + 2] = a.getZ(i);
+      if (k > 3) out[i * k + 3] = a.getW(i);
+    }
+    return new THREE.BufferAttribute(out, k);
+  };
+  const inv = new THREE.Matrix4().copy(wrap.matrixWorld).invert();
+  const local = new THREE.Matrix4();
+  const buckets = new Map();
+  const kept = [];
+  group.traverse((o) => {
+    if (!o.isMesh) return;
+    if (o.isSkinnedMesh || o.morphTargetInfluences?.length || Array.isArray(o.material)) { kept.push(o); return; }
+    const g = o.geometry;
+    const sig = Object.keys(g.attributes).sort().join(',') + (g.index ? '|i' : '|n');
+    const key = `${o.material.uuid}|${o.castShadow ? 1 : 0}|${sig}`;
+    const geo = new THREE.BufferGeometry();
+    for (const name of Object.keys(g.attributes)) geo.setAttribute(name, toFloat(g.attributes[name]));
+    if (g.index) geo.setIndex(g.index.clone());
+    local.multiplyMatrices(inv, o.matrixWorld);
+    geo.applyMatrix4(local);
+    let b = buckets.get(key);
+    if (!b) buckets.set(key, b = { material: o.material, castShadow: o.castShadow, geos: [] });
+    b.geos.push(geo);
+  });
+  if (buckets.size === 0) return;
+  let before = 0;
+  group.traverse((o) => { if (o.isMesh) before++; });
+  wrap.remove(group);
+  for (const o of kept) wrap.attach(o);
+  for (const b of buckets.values()) {
+    const merged = b.geos.length === 1 ? b.geos[0] : mergeGeometries(b.geos, false);
+    if (!merged) { for (const g of b.geos) { const m = new THREE.Mesh(g, b.material); m.castShadow = b.castShadow; m.receiveShadow = true; m.frustumCulled = false; wrap.add(m); } continue; }
+    if (b.geos.length > 1) for (const g of b.geos) g.dispose();   // the parts are copies; the merge owns the result
+    merged.computeBoundingSphere();
+    const m = new THREE.Mesh(merged, b.material);
+    m.castShadow = b.castShadow; m.receiveShadow = true; m.frustumCulled = false;
+    m.geometry.userData.owned = true;
+    wrap.add(m);
+  }
+  console.info(`vendor body merged: ${before} parts -> ${wrap.children.length} draws`);
+}
+
 export const KENNEY_CARS = {
   sedan: 'q-normal1', hatch: 'q-normal2', suv: 'q-suv', van: 'k-van',
   wagon: 'k-suv-luxury', pickup: 'k-truck',
@@ -370,6 +442,7 @@ export async function fetchKit(id, spec, assets, opts = {}) {
        loft's seat and put the eye in the passenger seat with no wheel in view. */
     if (!eye) eye = new THREE.Vector3(ws.x * 0.03 - 0.40, ws.y * 0.74, -0.36);   // and 20 cm further back on the box path to match   // 0.06 put the 992's eye past its wheel and 0.74 of the height into its headliner; 0.03 / 0.70 frame both it and the C8
     const cockpit = { back: -eye.x, up: eye.y - 0.62, side: eye.z };   // camera.js: back is rearward-positive, up is over car.y (= ground + 0.62)
+    mergeByMaterial(wrap, group);
     return { group: wrap, paint: null, detail: null, detailMat: null, lodBody: null, cockpit };
   }
   if (def.src === 'q') {
