@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { seed, rp, rr, ri, pick } from '../core/rng.js';
-import { cv, toTex, shade, noiseWash } from './textures.js';
+import { cv, toTex, shade, noiseWash, normalFromCanvas } from './textures.js';
 
 export const TOWER = 'tower', MID = 'mid', LOFT = 'loft', PODIUM = 'podium', DECK = 'deck';
 /** Mix is weighted toward glass towers and offices, not brick. */
@@ -249,11 +249,21 @@ export function paintFacade(kind, variant) {
   else if (kind === PODIUM) paintPodium(g, e, spec, fh, variant, mc);
   else paintDeck(g, e, spec, fh, variant);
 
-  return { map: toTex(mc), emissive: toTex(ec) };
+  /* Relief for daylight (2026-09-22): a normal map derived from the painted
+     facade's own luminance, so dark window reveals read as recessed and
+     mullions, spandrels and panel joints catch the sun. Half resolution
+     (256x512) keeps it to ~0.7 MB per variant, ~11 MB for all fifteen. */
+  const half = cv(FW / 2, FH / 2);
+  half.getContext('2d').drawImage(mc, 0, 0, FW / 2, FH / 2);
+  return { map: toTex(mc), emissive: toTex(ec), normal: normalFromCanvas(half, 2.2) };
 }
 
+/* material -> relief normal map. A side table, not userData: Material.copy()
+   JSON-clones userData, which would serialise the canvas to a data URL. */
+export const RELIEF = new WeakMap();
+
 function facadeMaterial(t, glass) {
-  return new THREE.MeshStandardMaterial({
+  const m = new THREE.MeshStandardMaterial({
     map: t.map,
     emissive: 0xffffff,
     emissiveMap: t.emissive,
@@ -265,6 +275,8 @@ function facadeMaterial(t, glass) {
     polygonOffsetFactor: 1,
     polygonOffsetUnits: 1,
   });
+  RELIEF.set(m, t.normal);   // sampled through the tiled UV in city.js:makeTileable (not .normalMap: it would read the untiled UV)
+  return m;
 }
 
 /* window bays per facade tile, matching each paint* function's column count */

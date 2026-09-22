@@ -155,6 +155,11 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
     screen derivatives. Emissive only, so it shows at night; no draws, no
     fetches. Unverified in a browser -- if rooms slide the WRONG way as you
     pass, the sT/sB sign terms are the knob.
+  - **Facade relief (2026-09-22)**: a half-res normal map per facade variant
+    from the painted luminance (`facades.js` -> `RELIEF` WeakMap, NOT userData:
+    copy() JSON-clones userData), applied in `makeTileable` through the tiled
+    UV with a hand-built frame (the boxes have no tangents). ~11 MB VRAM for
+    all fifteen. If reveals look raised instead of recessed, negate tn.xy.
   - **Brief pass (2026-09-11, `docs/BRIEF-2026-09-11.md`)**: the game is
     the first screen (light gradient card at the bottom, ALL CONTROLS in a
     `<details>`), the hero is red (0xb3161c), the chase camera banks into

@@ -2,13 +2,13 @@ import * as THREE from 'three';
 import {
   attribute, texture, uv, materialReference, instanceIndex,
   floor, fract, sin, dot, step, mix, vec2, vec3, float, positionWorld, smoothstep,
-  normalWorld, cameraPosition, normalize, cross, dFdx, dFdy, sign, abs, max, min, select } from 'three/tsl';
+  normalWorld, cameraPosition, normalize, cross, dFdx, dFdy, sign, abs, max, min, select, cameraViewMatrix, vec4 } from 'three/tsl';
 import { mulberry32 } from '../core/rng.js';
 import { M4 } from '../core/geometry.js';
 import {
   CELL, ROAD_HALF, PARKING, WALK_W, CORR_HALF, KERB_H, BLOCK,
 } from './metrics.js';
-import { KINDS, ARCH, TOWER, MID, LOFT, DECK, PODIUM } from './facades.js';
+import { KINDS, ARCH, TOWER, MID, LOFT, DECK, PODIUM, RELIEF } from './facades.js';
 import { signalHeads, signalState, LAMP_COLOURS } from './signals.js';
 import { PAINT_COLOURS, BODY_KEYS, BODY_TYPES } from '../vehicle/config.js';
 const _sigColor = new THREE.Color();   // scratch for updateSignals (allocation guard test)
@@ -34,6 +34,7 @@ export function makeTileable(material) {
      with an untiled 0..1 UV -- one four-storey tile stretched over a whole
      tower, which is the exact bug this function exists to fix. `copy()`
      carries the maps, colours and flags across. */
+  const reliefTex = RELIEF.get(material) ?? null;   // read before the node copy replaces `material`
   if (!material.isNodeMaterial) {
     const node = new THREE.MeshStandardNodeMaterial();
     node.copy(material);
@@ -84,6 +85,23 @@ export function makeTileable(material) {
      height and the tile's V, so no texture had to be repainted. */
   const grime = float(1).sub(smoothstep(3.5, 0.2, positionWorld.y).mul(0.32))
     .sub(smoothstep(0.86, 1.0, fract(scaled.y)).mul(0.12));
+  /* Facade relief (2026-09-22). The facade boxes carry no tangents, so three's
+     normalMap() cannot build a TBN; the frame is written out instead: B is
+     world up, T = up x N, and the sign U runs along T comes from screen
+     derivatives (the same frame the interior mapping uses below). */
+  const relief = reliefTex;
+  if (relief) {
+    const N0 = normalize(normalWorld);
+    const T0 = normalize(cross(vec3(0, 1, 0), N0).add(vec3(1e-5, 0, 0)));
+    const su = sign(dFdx(scaled.x).mul(dot(dFdx(positionWorld), T0)).add(dFdy(scaled.x).mul(dot(dFdy(positionWorld), T0)))).add(1e-6);
+    const sv = sign(dFdx(scaled.y).mul(dFdx(positionWorld).y).add(dFdy(scaled.y).mul(dFdy(positionWorld).y))).add(1e-6);
+    const tn = texture(relief, scaled).xyz.mul(2).sub(1);
+    // normalFromCanvas stores y in canvas space (down); the tile's V runs up
+    const nW = normalize(N0.mul(tn.z).add(T0.mul(tn.x.mul(sign(su)))).add(vec3(0, 1, 0).mul(tn.y.negate().mul(sign(sv)))));
+    // flat roofs (|N.y| ~ 1) keep their own normal
+    const nFinal = mix(nW, N0, step(0.7, abs(N0.y)));
+    material.normalNode = normalize(cameraViewMatrix.mul(vec4(nFinal, 0)).xyz);
+  }
   if (material.map) {
     material.colorNode = texture(material.map, scaled)
       .mul(materialReference('color', 'color', material)).mul(grime);
