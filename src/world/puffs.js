@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { toTex } from './textures.js';
 import { additive } from '../core/additive.js';
+import { spriteCloud } from '../core/spriteCloud.js';
 
 /**
  * Smoke and dust, one draw. A pool of N soft-disc points: each puff has a
@@ -32,6 +33,7 @@ export class Puffs {
       map: discTex(), size, sizeAttenuation: true, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })));
     this.mesh.frustumCulled = false; this.mesh.renderOrder = 5;
+    spriteCloud(this.mesh);   // sized puffs: WebGPU draws Points at 1 px
     scene.add(this.mesh);
     this.next = 0; this.any = false;
   }

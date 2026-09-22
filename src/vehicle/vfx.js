@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { additive } from '../core/additive.js';
 import { toTex } from '../world/textures.js';
+import { spriteCloud } from '../core/spriteCloud.js';
 
 /**
  * Master Vehicle Visual Effects Suite:
@@ -111,6 +112,7 @@ export class VehicleVFX {
       depthWrite: false,
     }));
     this.sparks = new THREE.Points(geo, mat);
+    spriteCloud(this.sparks, { bloom: 0.8 });   // WebGPU draws Points at 1 px
     this.scene.add(this.sparks);
   }
 
@@ -155,6 +157,7 @@ export class VehicleVFX {
       blending: THREE.NormalBlending,
     });
     this.smoke = new THREE.Points(geo, mat);
+    spriteCloud(this.smoke);
     this.scene.add(this.smoke);
   }
 

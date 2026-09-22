@@ -48,6 +48,7 @@ const SPRAY_N = 220;
  * Cheap: two point clouds, no lights.
  */
 import { newState as newLightning, step as lightningStep } from './lightning.js';
+import { spriteCloud } from '../core/spriteCloud.js';
 
 /**
  * `hemi` is the night rig's hemisphere light: a strike multiplies it for a
@@ -94,6 +95,7 @@ export function createWeather(scene, { hemi = null, onStrike = null, dome = null
   rain.material.mrtNode = NO_NORMAL;
   rain.frustumCulled = false;
   rain.renderOrder = 4;
+  spriteCloud(rain);   // sized streaks: WebGPU draws Points at 1 px
   scene.add(rain);
 
   const sprayGeo = new THREE.BufferGeometry();
@@ -107,6 +109,7 @@ export function createWeather(scene, { hemi = null, onStrike = null, dome = null
   spray.material.mrtNode = NO_NORMAL;
   spray.frustumCulled = false;
   spray.renderOrder = 5;
+  spriteCloud(spray);
   scene.add(spray);
 
   const wrap = (v, c, half) => {

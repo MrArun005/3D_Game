@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { additive, glow } from '../core/additive.js';
+import { spriteCloud } from '../core/spriteCloud.js';
 
 const FIRE_AT = Infinity;   // damage fraction at which the car catches fire; Infinity = never (ponytail: no blast)
 const _dentScratch = new THREE.Vector3();
@@ -112,6 +113,7 @@ export class Damage {
     });
     const pts = new THREE.Points(g, mat);
     pts.frustumCulled = false;
+    spriteCloud(pts, { bloom: 0.6 });   // fire: sized and blooming (WebGPU draws Points at 1 px)
     pts.visible = false;
     scene.add(pts);
     this.points = pts;
@@ -162,6 +164,7 @@ export class Damage {
     }));
     const p = new THREE.Points(g, m);
     p.frustumCulled = false;
+    spriteCloud(p, { bloom: 0.8 });
     p.visible = false;
     scene.add(p);
     // life and per-particle lateral drift, kept off the GPU

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mrt, vec4 } from 'three/tsl';
 import { groundHeightAt } from './metrics.js';
+import { spriteCloud } from '../core/spriteCloud.js';
 
 /**
  * Destructible street furniture.
@@ -390,6 +391,7 @@ export class Debris {
     if (!mat.mrtNode) mat.mrtNode = mrt({ normal: vec4(0) });
     const pts = new THREE.Points(geo, mat);
     pts.frustumCulled = false;
+    spriteCloud(pts, { bloom: blending === THREE.AdditiveBlending ? 0.5 : 0 });   // sized sprites: WebGPU draws Points at 1 px
     this.group.add(pts);
     return pts;
   }

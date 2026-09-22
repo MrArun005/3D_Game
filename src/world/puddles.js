@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { additive } from '../core/additive.js';
+import { spriteCloud } from '../core/spriteCloud.js';
 
 /**
  * Realistic wet road puddles and water splashes.
@@ -125,6 +126,7 @@ export class PuddleSystem {
     }));
 
     this.sprayParticles = new THREE.Points(geo, mat);
+    spriteCloud(this.sprayParticles);   // WebGPU draws Points at 1 px
     this.scene.add(this.sprayParticles);
   }
 

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { glow } from '../core/additive.js';
 import { groundHeightAt } from '../world/metrics.js';
 import { ARSENAL, spreadFor, heatAfterShot, heatAfterRest } from './weapons.js';
+import { spriteCloud } from '../core/spriteCloud.js';
 
 const CASINGS = 24;
 const _m4 = new THREE.Matrix4();
@@ -78,6 +79,7 @@ export class Weapon {
        every spark as occlusion (the rain speckle bug, CLAUDE.md 2026-08-31). */
     glow(sparkMat, 1.3);
     this.sparks = new THREE.Points(sparkGeo, sparkMat);
+    spriteCloud(this.sparks, { bloom: 0.8 });   // WebGPU draws Points at 1 px
     scene.add(this.sparks);
 
     /* Brass. One InstancedMesh of CASINGS small boxes; a shot ejects one to
@@ -115,6 +117,7 @@ export class Weapon {
     this.bloodGeo = bloodGeo;
     const blood = new THREE.Points(bloodGeo, new THREE.PointsMaterial({ color: 0x6e0f14, size: 0.11, transparent: true, opacity: 0.85, depthWrite: false }));
     blood.frustumCulled = false;
+    spriteCloud(blood);
     scene.add(blood);
     this.blood = blood;
   }

@@ -102,6 +102,17 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
 
 ## Current state
 
+- **Particles are sprites now (2026-09-22, `core/spriteCloud.js`)**: every
+  `THREE.Points` particle system (sparks x3, fire x2, puffs, tyre smoke, rain,
+  road spray, puddle spray, steam, geyser, wind debris, blood, breakables) is
+  converted in place: its position/colour arrays are re-wrapped as
+  InstancedBufferAttributes on the same geometry, an instanced Sprite child
+  reads them plus the PointsMaterial's size/colour/opacity by reference, and
+  the Points material stops drawing. Owners are unchanged. Size = points size
+  x 0.55 (tan of half the lens). Hot ones bloom via glow(). Stars stay 1 px
+  on purpose. No-op under plain three (tests). Unverified in a browser: if a
+  system is too big or small, the call-site's PointsMaterial size is the knob.
+
 - **2026-09-09 review + fix pass** (`docs/REVIEW-2026-09-09-GTA.md`, ranked
   top-12 with file:line). Landed the same day, all unverified visually:
   - **Night is the clock's.** `clock.js:nightFactor(hour)` (pure, tested)

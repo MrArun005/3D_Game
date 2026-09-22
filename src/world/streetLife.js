@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { additive } from '../core/additive.js';
+import { spriteCloud } from '../core/spriteCloud.js';
 
 /**
  * Street-level urban atmosphere & chaos:
@@ -65,6 +66,7 @@ export class StreetLife {
       blending: THREE.NormalBlending,
     });
     this.steamMesh = new THREE.Points(geo, mat);
+    spriteCloud(this.steamMesh);   // WebGPU draws Points at 1 px
     this.scene.add(this.steamMesh);
 
     // Pick 12 manhole centers
@@ -152,6 +154,7 @@ export class StreetLife {
       depthWrite: false,
     }));
     this.geyserMesh = new THREE.Points(gGeo, gMat);
+    spriteCloud(this.geyserMesh);
     this.scene.add(this.geyserMesh);
   }
 
@@ -181,6 +184,7 @@ export class StreetLife {
       opacity: 0.8,
     });
     this.debrisMesh = new THREE.Points(geo, mat);
+    spriteCloud(this.debrisMesh);
     this.scene.add(this.debrisMesh);
   }
 
