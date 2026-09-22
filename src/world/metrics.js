@@ -29,11 +29,25 @@ export function roadDepth(x, z) {
   return Math.min(dx - ROAD_HALF, dz - ROAD_HALF);
 }
 
+/* Off the pavement the ground is whatever block the wheel is on (2026-09-22):
+   park grass slides but rolls, yards / lots / vacant plots are gravel and dirt
+   that grip better and drag less than the old catch-all, and anything else off
+   the plan keeps the old rough value. Only consulted off the pavement, so the
+   on-road cost is unchanged. */
+const GROUND = {
+  park:   { grip: 0.52, drag: 11.0 },
+  yard:   { grip: 0.60, drag: 8.0 },
+  lot:    { grip: 0.62, drag: 7.0 },
+  vacant: { grip: 0.56, drag: 9.5 },
+};
+const ROUGH = { grip: 0.45, drag: 16.0 };
+
 export function surfaceAt(x, z) {
   const d = roadDepth(x, z);
   if (d <= 0) return { grip: 1.0, drag: 0, kerb: 0, off: 0 };
   if (d < WALK_W) return { grip: 0.62, drag: 5.5, kerb: 1, off: d };
-  return { grip: 0.45, drag: 16.0, kerb: 1, off: d };
+  const g = GROUND[DISTRICT?.blockTypeAt?.(x, z)] ?? ROUGH;
+  return { grip: g.grip, drag: g.drag, kerb: 1, off: d };
 }
 
 

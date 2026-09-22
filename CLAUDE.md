@@ -102,6 +102,18 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
 
 ## Current state
 
+- **After the 2026-09-22 merge of the review branch into main**: main's
+  systems were kept wherever both sides built one (clock profiles, DRS,
+  dynamics frame fix, interior mapping, relief). Ported on top: wall scrape
+  (`collision.js:scrape`), 0.95 mu*Fz brake cap (fronts still lock ~23% of a
+  100-0: free-wheel chatter, the implicit wheel reaction is NOT ported),
+  camera bank + building-aware pull-in (`camera.js:insideBoxes`), half-res
+  GTAO, touch controls, out-of-sight spawning and drive-off surplus cruisers
+  (`traffic.js:inView`), fatal hits/shots for pedestrians (`p.dead`), ground
+  types off-road (`district.blockTypeAt` -> `metrics.js GROUND`). Open: night
+  environment map is still the noon PMREM (a runtime swap may recompile
+  pipelines; needs a browser to measure).
+
 - **Particles are sprites now (2026-09-22, `core/spriteCloud.js`)**: every
   `THREE.Points` particle system (sparks x3, fire x2, puffs, tyre smoke, rain,
   road spray, puddle spray, steam, geyser, wind debris, blood, breakables) is

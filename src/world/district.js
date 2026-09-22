@@ -197,6 +197,20 @@ export class District {
     return best;
   }
 
+  /** The type of the block under (x, z) ('park', 'yard', 'lot', ...), or null.
+   *  One grid cell (each block is registered in every cell its bounding circle
+   *  touches) and a rotated-rectangle test; the physics asks per off-road wheel. */
+  blockTypeAt(x, z) {
+    const ids = this.blockGrid.get(key(Math.floor(x / CELL), Math.floor(z / CELL)));
+    if (!ids) return null;
+    for (const i of ids) {
+      const b = this.blocks[i]; if (!b) continue;
+      const dx = x - b.x, dz = z - b.y, ca = Math.cos(b.angle || 0), sa = Math.sin(b.angle || 0);
+      if (Math.abs(dx * ca + dz * sa) <= b.w / 2 && Math.abs(-dx * sa + dz * ca) <= b.h / 2) return b.type ?? null;
+    }
+    return null;
+  }
+
   blocksNear(x, z, radius) {
     const out = new Set();
     const r = Math.ceil(radius / CELL);
