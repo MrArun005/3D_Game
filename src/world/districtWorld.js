@@ -15,7 +15,7 @@ import { buildTokyoBuilding, frontRotation, tokyoMaterial, buildTokyoStreet, wir
 import { loadTokyoTowers, towerFor } from './tokyoTowers.js';
 import { loadTerraces, terraceFor, TERRACES } from './terraceModels.js';
 import { loadIndustrial, industrialYard, INDUSTRIAL } from './industrialYard.js';
-import { tileUv, SIGN_TILES } from './signs.js';
+import { tokyoCell, tokyoBoardMesh } from './tokyoSigns.js';
 import { buildDecals, decalMaterial, decalGeometry } from './decals.js';
 import { buildGlare, setGlareRing } from './glare.js';
 import { buildSpan, signatureBridge } from './spans.js';
@@ -1598,6 +1598,19 @@ export class DistrictWorld {
     const blocks = this.blkByChunk.get(k) ?? [];
     const kitPlaced = {};          // kit -> [geometry with matrix applied] (whole Kenney buildings)
     const tokyoParts = [], tokyoBoards = [], tokyoProps = [], tokyoHeads = [];   // Little Tokyo: our own buildings (world/tokyo.js), one mesh per chunk
+    /* A board into the chunk's Tokyo atlas mesh (world/tokyoSigns.js). The cell
+       is a hash of its world position, so a shop wears the same sign every load;
+       a vertical board rolls a quarter turn about its normal so the kanban tile's
+       long axis runs up the column. `yaw` is the board's own facing plus the
+       building's two turns. */
+    const pushTokyoBoard = (bd, M, yaw) => {
+      const p = new THREE.Vector3(bd.x, bd.y, bd.z).applyMatrix4(M);
+      const cell = tokyoCell(bd.kind ?? (bd.vertical ? 'v' : 'h'), hash(p.x * 0.37 + bd.y, p.z * 1.3));
+      const m = bd.vertical
+        ? new THREE.Matrix4().compose(p, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, Math.PI / 2, 'YXZ')), new THREE.Vector3(bd.h, bd.w, 1))
+        : mat4(p.x, p.y, p.z, -yaw, bd.w, bd.h, 1);
+      tokyoBoards.push({ m, cell });
+    };
     const artParts = new Map();    // the self-built styles (world/artBuildings.js): material key -> [geo], one mesh per key per chunk; boards and lamps ride tokyoBoards / tokyoHeads
     const slabs = { block: [], park: [], lot: [], vacant: [] };
     const facades = {}, bases = {};
@@ -1747,16 +1760,7 @@ export class DistrictWorld {
           tokyoParts.push(b.geo);
           const _p = new THREE.Vector3();
           for (const lp of b.lamps ?? []) { _p.set(lp.x, lp.y, lp.z).applyMatrix4(M); tokyoHeads.push({ x: _p.x, y: _p.y, z: _p.z, colour: lp.colour, neon: lp.neon, intensity: lp.intensity, range: lp.range, glare: lp.glare }); }   // the kanban as candidates for the real night lights
-          for (const bd of b.boards) {
-            _p.set(bd.x, bd.y, bd.z).applyMatrix4(M);
-            const yaw = bd.yaw + rot - bl.angle;   // the same two turns, applied to the board's facing
-            const [u, v] = tileUv(Math.floor(hash(_p.x * 0.37 + bd.y, _p.z * 1.3) * SIGN_TILES), true);
-            if (bd.vertical) {
-              // roll the quad a quarter turn about its normal: the tile's long axis runs up the column
-              const m = new THREE.Matrix4().compose(_p.clone(), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, Math.PI / 2, 'YXZ')), new THREE.Vector3(bd.h, bd.w, 1));
-              tokyoBoards.push({ m, u, v });
-            } else tokyoBoards.push({ m: mat4(_p.x, _p.y, _p.z, -yaw, bd.w, bd.h, 1), u, v });
-          }
+          for (const bd of b.boards) pushTokyoBoard(bd, M, bd.yaw + rot - bl.angle);   // the same two turns, applied to the board's facing
           boxes.push({ x: sx, z: sz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: b.height, district: bl.district, tokyo: true });
           // kerbside life in front of it (kit props, placed by us): a vending machine at one corner, sometimes an A-frame or a stall
           {
@@ -1791,15 +1795,7 @@ export class DistrictWorld {
           for (const p of b.parts) { p.geo.applyMatrix4(M); (artParts.get(p.mat) ?? artParts.set(p.mat, []).get(p.mat)).push(p.geo); }
           const _p = new THREE.Vector3();
           for (const lp of b.lamps ?? []) { _p.set(lp.x, lp.y, lp.z).applyMatrix4(M); tokyoHeads.push({ x: _p.x, y: _p.y, z: _p.z, colour: lp.colour, neon: lp.neon, intensity: lp.intensity, range: lp.range, glare: lp.glare }); }
-          for (const bd of b.boards ?? []) {   // same as the Tokyo branch above
-            _p.set(bd.x, bd.y, bd.z).applyMatrix4(M);
-            const yaw = bd.yaw + rot - bl.angle;
-            const [u, v] = tileUv(Math.floor(hash(_p.x * 0.37 + bd.y, _p.z * 1.3) * SIGN_TILES), true);
-            if (bd.vertical) {
-              const m = new THREE.Matrix4().compose(_p.clone(), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, Math.PI / 2, 'YXZ')), new THREE.Vector3(bd.h, bd.w, 1));
-              tokyoBoards.push({ m, u, v });
-            } else tokyoBoards.push({ m: mat4(_p.x, _p.y, _p.z, -yaw, bd.w, bd.h, 1), u, v });
-          }
+          for (const bd of b.boards ?? []) pushTokyoBoard(bd, M, bd.yaw + rot - bl.angle);   // same as the Tokyo branch above
           _p.set(0, 0, 0).applyMatrix4(M);   // the built footprint's centre (moved if clipped), half sizes back in the block's frame
           boxes.push({ x: _p.x, z: _p.z, angle: bl.angle, hw: swap ? bhd : bhw, hd: swap ? bhw : bhd, height: b.height, district: bl.district, art: true });
           continue;
@@ -2011,7 +2007,7 @@ export class DistrictWorld {
       group.add(faces);
       this.facadeGroups.set(k, faces);
       const fbatch = new InstanceBatch(this.catalogue);
-      const signs = [...tokyoBoards], windows = [];   // Little Tokyo's kanban and fascias ride the same atlas quads
+      const signs = [], windows = [];   // Little Tokyo's boards have their own atlas and mesh (added after the shop signs below)
       for (const p of tokyoProps) fbatch.add(p.name, placeAsset(p.x, KERB_H, p.z, p.yaw));   // and its kerbside props
       // sliced: the frontage walk (modules, signs, windows, side walls) was the worst step
       for (let i = 0; i < dressable.length; i++) { dressFacades(fbatch, dressable.slice(i, i + 1), this.district, roadDepth, signs, windows); yield* tick('dressFacades'); }   // see dressRoofs above: yield on the clock, not on a count
@@ -2040,6 +2036,8 @@ export class DistrictWorld {
           this.heroLightsByChunk.set(k, hero); }
         faces.add(sm);
       }
+      // Little Tokyo's boards: fascias, kanban, tenant signs and screens, all in one instanced draw
+      if (tokyoBoards.length) faces.add(tokyoBoardMesh(tokyoBoards));
       if (windows.length) {
         const wg = A.geo.sign.clone();
         wg.userData.owned = true;

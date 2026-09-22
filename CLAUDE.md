@@ -102,6 +102,27 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
 
 ## Current state
 
+- **Little Tokyo boards, Shibuya pass (2026-09-23, `world/tokyoSigns.js`)**:
+  Tokyo's boards have their own 2048^2 atlas, material and ONE InstancedMesh
+  per chunk (`tokyoBoardMesh`, per-instance `aCell` = u0, v0, du, dv; +1
+  draw per Tokyo chunk). Matched to `shibuya-day.jpg`/`shibuya2.jpg`: 24
+  horizontal lightboxes (4:1, white/yellow/red/magenta/green/blue, bold
+  Japanese + English), 24 vertical kanban painted a quarter turn round so
+  the rolled quad stands the characters upright (ー drawn as ｜), and 8 2:1
+  screen ads the shader cycles every 8 s (index decoded from aCell; tested).
+  Lit 0.06 day -> 0.8 night for boards (a white box sits at the bloom
+  threshold), 0.85 -> 1.2 for screens, via setTokyoNight; `BOARD_NIGHT` is
+  the knob if night reads too hot. `tokyo.js`'s street face is zoned: end A
+  flat kanban or column, end B projecting vertical kanban (the old blade
+  boards faced INTO their own box, both faces culled -- test), a tenant sign
+  per storey in the spandrels, a screen on 35%/70% of 7+/12+ storey
+  buildings, fascias in shop widths (one was a 16:1 stretch of a 4:1 tile;
+  boards now 3.0-5.4:1). Three lighter walls (`LIGHT`) for ribbon-glass
+  office slabs; lit windows 22% -> 30%. Measured over 200 buildings: mean
+  tris 2238 -> 2106, sign area 97.7 -> 103.9 m^2. Atlas checked in a
+  headless render only, not yet in the game. The shared atlas's Tokyo tiles
+  stay for `dressing.js` (small footprints, `?notokyo`).
+
 - **Balanced preset (2026-09-22)**: Auto now picks `balanced` on an
   integrated GPU (was medium): near shadows + bloom kept, SMAA off, 0.55 MP,
   traffic 18 / crowd 110 / far 80, 3x3 ring. The owner's M2 Air ran Medium

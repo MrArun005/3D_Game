@@ -129,3 +129,67 @@ test('the shrine is one small geometry with a lit lantern window', async () => {
   const em = s.geo.attributes.emit.array; let lit = 0; for (let i = 0; i < em.length; i += 3) if (em[i] > 0) lit++;
   assert.ok(lit > 0);
 });
+
+import { tokyoCell } from '../src/world/tokyoSigns.js';
+
+test('every board has a shape the Tokyo atlas draws, and none stretches its tile badly', () => {
+  // the atlas tiles: h 4:1, v 1:4 (drawn for the rolled quad), s 2:1. Before 2026-09-23 a fascia ran to 16:1 on a 4:1 tile.
+  const bad = [];
+  for (let s = 1; s <= 200; s++) {
+    for (const bd of buildTokyoBuilding(s * 7 + 1, 3 + (s % 6), 3 + (s % 5) * 1.3, 10 + (s % 9) * 6).boards) {
+      const k = bd.kind;
+      const a = k === 'v' ? bd.h / bd.w : bd.w / bd.h;
+      const ok = k === 'h' ? a >= 2.8 && a <= 6.2 : k === 'v' ? a >= 2.3 && a <= 5.6 : k === 's' ? Math.abs(a - 2) < 0.05 : false;
+      if (!ok || (k === 'v') !== !!bd.vertical) bad.push(`${k} ${bd.w.toFixed(2)}x${bd.h.toFixed(2)}`);
+    }
+  }
+  assert.deepEqual(bad.slice(0, 5), [], `${bad.length} boards off their tile's shape`);
+});
+
+test('the two faces of a projecting kanban look out of their lightbox, not into it', () => {
+  let pairs = 0;
+  for (let s = 1; s <= 40; s++) {
+    const v = buildTokyoBuilding(s * 11, 5, 6, 30).boards.filter((bd) => bd.kind === 'v');
+    for (const a of v) for (const b of v) {
+      if (a === b || a.x !== b.x || a.y !== b.y || !(b.z - a.z > 0.15 && b.z - a.z < 0.3)) continue;
+      pairs++;
+      // normal = (sin yaw, 0, cos yaw): the face on the +z side must point +z, the other -z
+      assert.ok(Math.cos(b.yaw) > 0.9 && Math.cos(a.yaw) < -0.9, `faces ${a.yaw.toFixed(2)} / ${b.yaw.toFixed(2)} look inward`);
+    }
+  }
+  assert.ok(pairs >= 40, `projecting kanban pairs ${pairs}`);
+});
+
+test('tall buildings carry a video screen, and the tenant signs stop under it', () => {
+  let screens = 0;
+  for (let s = 1; s <= 60; s++) {
+    const b = buildTokyoBuilding(s * 31, 6, 7, 50);
+    const sc = b.boards.find((bd) => bd.kind === 's');
+    if (!sc) continue;
+    screens++;
+    const tenants = b.boards.filter((bd) => bd.kind === 'h' && bd.h === 0.62);
+    assert.ok(tenants.every((t) => t.y + t.h / 2 < sc.y - sc.h / 2), 'a tenant sign runs into the screen');
+  }
+  assert.ok(screens >= 25, `screens on 12+ storey buildings: ${screens}/60`);
+});
+
+test('tokyoCell maps each board shape into its own atlas region, and the shader can decode a screen', () => {
+  const [u, v, du, dv] = tokyoCell('h', 0);
+  assert.deepEqual([u, v, du, dv], [0, 1 - 128 / 2048, 0.25, 0.0625]);
+  for (let i = 0; i < 24; i++) {
+    const vc = tokyoCell('v', i / 24);
+    assert.ok(vc[1] >= 0.25 - 1e-9 && vc[1] + vc[3] <= 0.625 + 1e-9, `kanban tile ${i} outside rows 6-11`);
+  }
+  // the material recovers a screen's ad index as k = u0*4 + (1 - v0*8)*4: it must be 0..7, once each
+  const ks = new Set();
+  for (let i = 0; i < 8; i++) {
+    const [su, sv, sdu, sdv] = tokyoCell('s', i / 8);
+    assert.equal(sdv, 0.125);
+    assert.equal(sdu, 0.25);
+    const k = su * 4 + (1 - sv * 8) * 4;
+    assert.ok(Number.isInteger(k) && k >= 0 && k < 8, `screen ${i} decodes to ${k}`);
+    ks.add(k);
+  }
+  assert.equal(ks.size, 8, 'every screen ad reachable');
+  for (const c of [tokyoCell('s', 1), tokyoCell('nope', 0.5), tokyoCell('h', -3)]) assert.ok(c.every((x) => x >= 0 && x <= 1), 'cells stay inside the atlas');
+});

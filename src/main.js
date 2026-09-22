@@ -76,6 +76,7 @@ import { Crosshair, DecalPool, ADS, ADS_BLEND_S, spreadToPixels, spreadFor, reco
 import { Tracers } from './game/tracers.js';
 import { Puffs } from './world/puffs.js';
 import { tokyoMaterial, setTokyoNight } from './world/tokyo.js';
+import { tokyoBoardMesh } from './world/tokyoSigns.js';
 import { setGlareNight } from './world/glare.js';
 import { setWindowNight, setSignNight } from './world/signs.js';
 import { FarTraffic } from './world/farTraffic.js';
@@ -2849,6 +2850,8 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
       dwm.setMatrixAt(0, new THREE.Matrix4().makeTranslation(0, -50, 0));
       dummyGroup.add(dwm);
     }
+    // Little Tokyo's boards, the same way: an InstancedMesh carrying aCell. Also paints their atlas now, not in the first Tokyo chunk.
+    dummyGroup.add(tokyoBoardMesh([{ m: new THREE.Matrix4().makeTranslation(0, -50, 0), cell: [0, 0, 0.25, 0.0625] }]));
     scene.add(dummyGroup);
 
     const hidden = [];
