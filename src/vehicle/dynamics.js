@@ -317,9 +317,22 @@ export function stepVehicle(car, dt) {
     car.yawRate += (want - car.yawRate) * kin * Math.min(1, dt * 9);
   }
 
-  car.vx = u * fwd.x + v * rgt.x;
-  car.vz = u * fwd.z + v * rgt.z;
+  /* Back to the world frame with the NEW heading, not the one the step began
+     with. The body-frame coupling above (u += v*r, v -= u*r) is the rotation
+     of a frame that turns by r*dt this step; re-expressing [u, v] with the
+     OLD fwd/rgt applied that rotation to the velocity itself, so the path
+     turned with the body regardless of grip -- a car on rails. Measured, a
+     held key at 120 km/h: tyres producing 0.51 g while the velocity heading
+     turned 63 deg in one second (0.5 g can bend it 8); the GT3 96 deg at
+     2.83 rad/s, the whole view whipping round -- 'the screen flickers rather
+     than the car turning'. With the new heading: 1.0 g / 13 deg per second
+     for the road cars, 1.7 g / 20 for the GT3, body yaw == path heading. The
+     bug predates the 2026-09-16 handling pass; that pass's lower yaw inertia
+     is what made it violent. */
   car.yaw += car.yawRate * dt;
+  { const cy2 = Math.cos(car.yaw), sy2 = Math.sin(car.yaw);
+    car.vx = u * cy2 + v * sy2;
+    car.vz = -u * sy2 + v * cy2; }
   car.x += car.vx * dt;
   car.z += car.vz * dt;
 
