@@ -76,7 +76,11 @@ function crumple(mesh, local, radius, depth, rng) {
   }
   if (!touched) return false;
   pos.needsUpdate = true;
-  mesh.geometry.computeVertexNormals();
+  const now = performance.now();
+  if (now - (mesh._lastNormTime || 0) > 120) {
+    mesh._lastNormTime = now;
+    mesh.geometry.computeVertexNormals();
+  }
   return true;
 }
 
@@ -208,7 +212,10 @@ export class Damage {
    */
   hit(force, at = null) {
     if (force <= 1.8) return;                    // kerbs and taps do nothing
-    const bite = Math.min(0.11, (force - 1.8) * 0.009);
+    /* Guardian Armor (reputation.js perks, score >= 300): a quarter less damage
+       taken. The perk was listed on the phone for weeks and consumed nowhere. */
+    const armour = (typeof window !== 'undefined' && (window._reputation?.score ?? 0) >= 300) ? 0.75 : 1;
+    const bite = Math.min(0.3, (force - 1.8) * 0.02)   /* per contact EVENT now (main gates hit() on car.hitAt): a 10 m/s wall bites 0.16, 15 m/s 0.26 -- before, un-gated, it bit 0.11 every frame of the envelope */ * armour;
     this.value = Math.min(1, this.value + bite);
     // a scrape along a wall reports every frame; one dent per 0.12 s is what the eye sees anyway
     if (at && this.t - (this.lastDent ?? -1) > 0.12) { this.lastDent = this.t; this.#dent(force, at); }
@@ -289,8 +296,8 @@ export class Damage {
 
     this.#wear(d);
 
-    // a hurt engine will not pull: this is felt long before it is seen
-    car.damageTorqueScale = 1 - d * 0.55;
+    // keep engine torque responsive and punchy for thrilling police pursuit
+    car.damageTorqueScale = Math.max(0.88, 1 - d * 0.12);
 
     /* Smoke is the WARNING, and it stops being the story the moment there are
        flames -- a burning car seen through its own soot is just a grey smudge.

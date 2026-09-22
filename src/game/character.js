@@ -385,11 +385,16 @@ export class Character {
     return ms;
   }
 
-  update(dt, x, y, z, yaw, speed, isGrounded = true) {
+  /* A NEGATIVE speed means backing up: the caller keeps you facing the camera
+     and we play the walk clip in reverse, which is what a backpedal is. Every
+     decision below reads the magnitude. */
+  update(dt, x, y, z, yaw, speed, isGrounded = true, rollLean = 0, pitchLean = 0) {
+    const backing = speed < 0;
+    speed = Math.abs(speed);
     if (!this.ready) return;
     this._bones = this._bones && this._bonesRoot === this.root.children[0] ? this._bones : (this._bonesRoot = this.root.children[0], new Map());
     this.root.position.set(x, y, z);
-    this.root.rotation.y = -yaw + Math.PI / 2;
+    this.root.rotation.set(pitchLean * 0.5, -yaw + Math.PI / 2, rollLean, 'YXZ');
     this.#updateFace(dt);
 
     if (!(this.busyUntil > performance.now())) {
@@ -400,7 +405,13 @@ export class Character {
           this.play('jump', 0.12);
         }
       } else {
-        this.play(speed > 4.2 ? 'run' : speed > 0.35 ? 'walk' : 'idle', 0.2);
+        /* The walk clip is authored for ~1.9 m/s and the run clip for ~5.2.
+           Default movement here is 3.2 m/s -- a jog in real terms -- so picking
+           'walk' for it forced playback to 1.68x (the old clamp ceiling) and the
+           character speed-walked. Anything above a crouch/ADS gait now takes the
+           RUN clip and simply plays it slower: 3.2 m/s reads as a relaxed jog at
+           0.62x, sprint lands near 1.15x. Measured in the browser 2026-09-12. */
+        this.play(backing ? 'walk' : speed > 2.4 ? 'run' : speed > 0.35 ? 'walk' : 'idle', 0.2);
       }
     }
     // the clips are authored at their own pace; nudge playback so the feet
@@ -409,7 +420,8 @@ export class Character {
       if (this.current === this.actions.jump || this.current === this.actions.runningJump) {
         this.current.timeScale = 1.05;
       } else {
-        this.current.timeScale = speed > 0.35 ? Math.max(0.6, Math.min(1.7, speed / (speed > 4.2 ? 5.2 : 1.9))) : 1;
+        const rate = speed > 0.35 ? Math.max(0.55, Math.min(1.45, speed / (!backing && speed > 2.4 ? 5.2 : 1.9))) : 1;
+        this.current.timeScale = backing ? -rate : rate;
       }
     }
     this.mixer.update(dt);

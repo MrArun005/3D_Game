@@ -95,7 +95,20 @@ export class Phone {
     nav.querySelector('#tab-contacts').onclick = () => this.#switchTab('contacts');
     nav.querySelector('#tab-intel').onclick = () => this.#switchTab('intel');
 
-    // (the floating '#phone-btn' sat on the tacho; the prompt bar already says M)
+    // On-screen toggle trigger button
+    const trigger = document.createElement('button');
+    trigger.id = 'phone-btn';
+    trigger.style.cssText = `
+      position: fixed; right: 28px; bottom: 24px; z-index: 90;
+      padding: 10px 18px; background: linear-gradient(135deg, #2980b9, #2c3e50);
+      color: #fff; border: 1px solid rgba(255,255,255,0.3); border-radius: 20px;
+      font-weight: 800; font-size: 13px; letter-spacing: 1px; cursor: pointer;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.5);
+    `;
+    trigger.textContent = 'PHONE';
+    trigger.onclick = () => this.toggle();
+    trigger.style.display = 'none';
+    document.body.appendChild(trigger);
   }
 
   #switchTab(tab) {
@@ -118,6 +131,27 @@ export class Phone {
     this.content.innerHTML = '';
 
     if (this.tab === 'missions') {
+      // Halstead International Raceway Featured Circuit Card
+      const raceCard = document.createElement('div');
+      raceCard.style.cssText = 'background: linear-gradient(135deg, rgba(230,126,34,0.2), rgba(231,76,60,0.25)); border: 1px solid rgba(243,156,18,0.5); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; box-shadow: 0 4px 16px rgba(243,156,18,0.2);';
+      raceCard.innerHTML = `
+        <div style="font-weight: 800; font-size: 13px; color: #f39c12;">🏎️ HALSTEAD RACEWAY</div>
+        <div style="font-size: 11px; color: #eee;">2.34 km Circuit · 3 Laps · 5 AI Rivals</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top: 6px;">
+          <div style="font-weight:800; color:#2ecc71; font-size:12px;">+$12,000 PURSE</div>
+          <button id="phone-raceway-btn" style="padding: 5px 12px; border-radius: 6px; border:none; background:#e67e22; color:#fff; font-weight:700; font-size:11px; cursor:pointer;">
+            RACE NOW
+          </button>
+        </div>
+      `;
+      raceCard.querySelector('#phone-raceway-btn').onclick = () => {
+        if (typeof window !== 'undefined' && window._startCircuitRace) {
+          window._startCircuitRace();
+          this.toggle(false);
+        }
+      };
+      this.content.appendChild(raceCard);
+
       STORY_MISSIONS.forEach((m) => {
         const card = document.createElement('div');
         card.style.cssText = 'background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 4px;';
@@ -438,7 +472,7 @@ export class Phone {
       sprayCard.innerHTML = `
         <div>
           <div style="font-weight:800; font-size:13px; color:#e74c3c;">PAY 'N' SPRAY HOTLINE</div>
-          <div style="font-size:11px; color:#aaa;">$${REPAIR} · Repaint chassis & lose the heat (below 3★)</div>
+          <div style="font-size:11px; color:#aaa;">from $${REPAIR} · priced by damage · lose the heat (below 3★)</div>
         </div>
         <button id="spray-btn" style="padding:8px 14px; border-radius:8px; border:none; background:#c0392b; color:#fff; font-weight:800; font-size:11px; cursor:pointer;">
           WIPE HEAT

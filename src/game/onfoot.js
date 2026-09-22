@@ -16,7 +16,7 @@ import { Character, CHARACTERS } from '../game/character.js';
  */
 
 const WALK = 3.2;
-const RUN = 7.0;
+const RUN = 6.0;        // 21.6 km/h: still a clear sprint, and the run clip plays at ~1.15x instead of 1.35x (character.js)
 const ACCEL = 32;
 const RADIUS = 0.42;
 const GRAVITY = 18.0;
@@ -33,8 +33,16 @@ export class OnFoot {
     this.active = false;
     this.bob = 0;
     this.camYaw = 0;
+    this.lookT = 99;      // seconds since the last mouse look; the camera only follows once you stop steering it
     this.camPitch = 0.08;
     this.camPos = new THREE.Vector3();
+    /* The camera eases toward its over-the-shoulder target with a 0.002^dt
+       lag, which is right while you walk and wrong the moment you step out:
+       camPos was never reset, so the first frames on foot flew in from the
+       origin (or from wherever you last got out) -- at low frame rates the
+       whole street swooped past and the hero was nowhere in frame. exit()
+       arms this and the next update() lands the camera on its target. */
+    this.camSnap = true;
     /* Set by main.js each frame from the shooting layer. ads is 0..1 (the
        sights coming up over ADS_BLEND_S), crouch is a toggle. Both only change
        the camera and the feet; the gun reads them separately. */
@@ -71,26 +79,54 @@ export class OnFoot {
     this.character.onReady = () => { this.group.visible = false; this.character.show(this.active); };
   }
 
-  /** Step out of the car, standing at the driver's door. */
-  exit(car, elevationAt = null) {
-    const side = car.yaw + Math.PI / 2;     // left of travel
-    this.x = car.x + Math.cos(side) * 1.85;
-    this.z = car.z - Math.sin(side) * 1.85;
+  /**
+   * Step out without materialising inside a wall or another car. A blocked
+   * driver's door falls back to the passenger side, then behind the vehicle.
+   */
+  exit(car, elevationAt = null, resolvePosition = null, canStandAt = null) {
+    const yaw = car.yaw || 0;
+    const side = yaw + Math.PI / 2; // driver's side (the hero uses doorFR)
+    const candidates = [
+      { x: car.x + Math.cos(side) * 1.85, z: car.z - Math.sin(side) * 1.85 },
+      { x: car.x - Math.cos(side) * 1.85, z: car.z + Math.sin(side) * 1.85 },
+      { x: car.x - Math.cos(yaw) * 2.55, z: car.z + Math.sin(yaw) * 2.55 },
+    ];
+    let chosen = null;
+    let fallback = null;
+    for (const candidate of candidates) {
+      if (canStandAt && !canStandAt(candidate.x, candidate.z)) continue;
+      const resolved = resolvePosition ? resolvePosition(candidate.x, candidate.z, RADIUS) : [candidate.x, candidate.z];
+      const x = resolved[0], z = resolved[1];
+      const correction = Math.hypot(x - candidate.x, z - candidate.z);
+      if (!fallback || correction < fallback.correction) fallback = { x, z, correction };
+      // Kerbs may require a tiny correction; a larger correction means this
+      // lane is occupied, so try the next exit position.
+      if (correction <= 0.18) { chosen = { x, z }; break; }
+    }
+    // A vehicle in water may have no valid dismount point at all. Leave the
+    // player in it rather than spawning them into water.
+    if (!chosen && !fallback && canStandAt) return false;
+    chosen ||= fallback || candidates[0];
+    this.x = chosen.x;
+    this.z = chosen.z;
     this.groundY = elevationAt ? elevationAt(this.x, this.z) : (car.y !== undefined ? car.y - 0.62 : 0);
     this.y = this.groundY;
     this.vy = 0;
     this.isGrounded = true;
-    this.yaw = car.yaw;
-    this.camYaw = car.yaw;
+    this.yaw = yaw;
+    this.camYaw = yaw;
     this.camPitch = 0.08;
     this.vx = 0; this.vz = 0;
     this.active = true;
+    this.camSnap = true;
     if (this.character.ready) this.character.show(true);
     else this.group.visible = true;
+    return true;
   }
 
   /** Mouse delta, in pixels -- the same free look the chase camera has. */
   look(dx, dy) {
+    if (dx || dy) this.lookT = 0;        // the player is steering the camera: auto-follow stands down
     this.camYaw -= dx * 0.0032;
     this.camPitch = Math.max(-0.6, Math.min(0.9, this.camPitch - dy * 0.0026));
   }
@@ -146,6 +182,10 @@ export class OnFoot {
 
     // Elevation & ground tracking
     this.groundY = elevationAt ? elevationAt(this.x, this.z) : 0;
+    /* Fell through: more than 2.5 m under the ground the sampler reports
+       (a hill edge, a quay lip, an elevation seam) and gravity would only
+       take you further. Put you back on it. */
+    if (this.y < this.groundY - 2.5) { this.y = this.groundY; this.vy = 0; this.isGrounded = true; }
 
     // Jump trigger
     this.jumpCooldown = Math.max(0, this.jumpCooldown - dt);
@@ -175,20 +215,39 @@ export class OnFoot {
 
     const speed = Math.hypot(this.vx, this.vz);
     this.speed = speed;                       // read by the weapon sway in main.js
+    /* Backing up: face the CAMERA, not the travel. Turning to face velocity is
+       right when you run somewhere, but on `S` it spun you 180 and ran you at
+       the lens -- you watched your own face and could not see where you were
+       going. Auto-rotating the camera instead is a trap: movement is
+       camera-relative, so the camera chasing your heading makes `back` become
+       `forward` and you spiral (test 3 catches exactly that). So we hold the
+       facing and let the character play its walk backwards. */
+    this.backing = false;
+    let turnRate = 0;
     if (speed > 0.2) {
-      const targetYaw = Math.atan2(-this.vz, this.vx);
+      const camFX = Math.cos(this.camYaw), camFZ = -Math.sin(this.camYaw);
+      const along = (this.vx * camFX + this.vz * camFZ) / speed;
+      this.backing = along < -0.35 && this.ads < 0.05;
+      const targetYaw = this.backing ? this.camYaw : Math.atan2(-this.vz, this.vx);
       let diff = targetYaw - this.yaw;
       while (diff < -Math.PI) diff += Math.PI * 2;
       while (diff > Math.PI) diff -= Math.PI * 2;
+      turnRate = diff;
       this.yaw += diff * Math.min(1, dt * 14);
     }
     this.bob += dt * speed * 2.1;
 
+    // Locomotion bank roll: tilt torso smoothly into rapid direction cuts
+    this.rollLean = (this.rollLean || 0) + (-turnRate * Math.min(1, speed / RUN) * 0.28 - (this.rollLean || 0)) * Math.min(1, dt * 12);
+    // Forward lean proportional to acceleration
+    this.pitchLean = (this.pitchLean || 0) + ((speed / RUN) * 0.12 - (this.pitchLean || 0)) * Math.min(1, dt * 8);
+
     if (this.character.ready) {
-      this.character.update(dt, this.x, this.y, this.z, this.yaw, speed, this.isGrounded);
+      this.character.update(dt, this.x, this.y, this.z, this.yaw, this.backing ? -speed : speed, this.isGrounded, this.rollLean, this.pitchLean);
     } else {
       this.group.position.set(this.x, this.y + Math.abs(Math.sin(this.bob)) * 0.055, this.z);
       this.group.rotation.y = -this.yaw + Math.PI / 2;
+      this.group.rotation.z = this.rollLean;
     }
 
     // Camera: over the shoulder, smoothly tracking position and elevation
@@ -204,6 +263,7 @@ export class OnFoot {
       const tx = this.x - Math.cos(this.camYaw) * back * flat + lx;
       const tz = this.z + Math.sin(this.camYaw) * back * flat + lz;
       const ty = this.y + up + Math.sin(this.camPitch) * back;
+      if (this.camSnap) { this.camPos.set(tx, ty, tz); this.camSnap = false; }
       const k = 1 - Math.pow(0.002, dt);
       this.camPos.x += (tx - this.camPos.x) * k;
       this.camPos.y += (ty - this.camPos.y) * k;

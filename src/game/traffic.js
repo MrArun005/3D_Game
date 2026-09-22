@@ -6,8 +6,10 @@ import { personGeometry } from '../world/beach.js';
 import { PAINT_COLOURS, BODY_KEYS, BODY_TYPES } from '../vehicle/config.js';
 import { groundHeightAt } from '../world/metrics.js';
 import { buildOfficer, poseOfficer, PoseBlender, lookAt, officerMaterial, dressOfficer } from '../world/officer.js';
+import { officerPool } from '../world/officerSkinned.js';
 import { buildWeaponMesh, ARSENAL } from './weapons.js';
-import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED, pickRooftops, coverSide, evasionDecay, searchRadius, crimeWitnessed, shouldFire } from './policeAi.js';
+import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED, pickRooftops, coverSide, evasionDecay, searchRadius, crimeWitnessed, shouldFire,
+  assignRoles, rushPlan, moveTarget, stepToward, fireControl, bystanderInLine, RUSH_COOL_S } from './policeAi.js';
 import { roofsNear } from '../world/districtWorld.js';
 import { glow } from '../core/additive.js';
 
@@ -96,6 +98,7 @@ export class Traffic {
        just traffic with a different opinion about where to go and whether red
        means stop -- all the path, gate and leader machinery is already here. */
     this.wanted = 0;
+    this.holdFire = false;            // WASTED clip playing: officers keep their positions but do not fire (main.js onDeath)
     this.cool = 0;                    // seconds of clean driving
     this.bustT = 0;                   // how long they have had you surrounded
     this.police = [];
@@ -103,6 +106,11 @@ export class Traffic {
   }
 
   /** Report a collision. `tag` says what was hit; `force` is closing speed. */
+  /** The rival field and the line it drives. Empty until startRace(). */
+  racers = [];
+  racePath = null;
+  playerLeg = 0;
+
   reportCrime(tag, force) {
     const worth = tag === 'police' ? 1.3
                 : tag === 'person' ? 1.5
@@ -110,7 +118,9 @@ export class Traffic {
                 : 0;                                  // walls and parked cars: nobody cares
     if (!worth) return;
     const px = this.player?.x ?? 0, pz = this.player?.z ?? 0;
-    if (!crimeWitnessed(tag, px, pz, this.crowd?.people ?? [], this.police, this.wanted)) return;   // nobody saw it (policeAi.crimeWitnessed)
+    // Underworld Network (reputation <= -750): witnesses and cruisers must be half as close to report you
+    const reach = (typeof window !== 'undefined' && (window._reputation?.score ?? 0) <= -750) ? 0.5 : 1;
+    if (!crimeWitnessed(tag, px, pz, this.crowd?.people ?? [], this.police, this.wanted, reach)) return;   // nobody saw it (policeAi.crimeWitnessed)
     // one pedestrian is about two stars, not five: `force` is m/s, so the
     // multiplier has to be gentle or a single hit at speed maxes the meter
     const gain = worth * Math.min(1.4, 0.5 + force * 0.05);
@@ -249,6 +259,7 @@ export class Traffic {
   /** Send everyone home: used when the player is arrested. */
   standDown() {
     this.wanted = 0;
+    this.holdFire = false;
     this.cool = 0;
     this.bustT = 0;
     for (const c of this.police) {
@@ -258,7 +269,12 @@ export class Traffic {
       c.deployed = false;
       c.deployT = 0; c.holdT = 0;
       if (c.officer) c.officer.visible = false;
+      c.sk = officerPool(this.scene).release(c.sk);   // standDown fires on every arrest and on a repair below 3 stars: without this the rig is left standing in the road and the pool leaks a slot
     }
+  }
+
+  makeCar(force) {
+    return this.#makeCar(force);
   }
 
   #makeCar(force) {
@@ -341,6 +357,131 @@ export class Traffic {
       reach: spec.L * 0.5 + 0.6,
       x: 0, z: 0, yaw: 0, stopped: false,
     };
+  }
+
+  /* ------------------------------------------------------------------ race
+     RIVALS: a field of cars that races you along a fixed route.
+
+     They are ordinary fleet cars -- #makeCar gives them the same vendor
+     bodies, paint, brake lights and headlamps as civilian traffic -- driven by
+     #steerToward, which is the same routine that already makes a cruiser chase
+     you at 1.7x cruise. Nothing new is modelled; a rival is a traffic car with
+     a route instead of a lane and no interest in the speed limit.
+
+     They follow the ROAD GRAPH between marks, not straight lines. Aiming a car
+     at a waypoint 800 m away drives it through buildings and across the river;
+     Navigation already answers "how do I drive from here to there", so the
+     race path is those answers stitched end to end. Height comes from
+     groundHeightAt, which folds in elevationAt, so the field climbs the bridges
+     with you rather than swimming under them.
+     ------------------------------------------------------------------------ */
+
+  /**
+   * Put a field of rivals on the start line.
+   *
+   * @param path   the driving line as [{x, z}, ...] -- already expanded
+   *               through the road graph by the caller
+   * @param count  how many rivals
+   * @param yaw    the start heading, so they line up facing the right way
+   */
+  startRace(path, count = 5, yaw = 0) {
+    this.endRace();
+    if (!path || path.length < 2) return 0;
+    this.racePath = path;
+    this.racers = [];
+    for (let i = 0; i < count; i++) {
+      const c = this.#makeCar();
+      c.live = true;
+      c.isRacer = true;
+      c.mesh.visible = true;
+      /* Staggered on a grid behind the line, two per row, so they do not all
+         spawn inside each other and shove the field apart on frame one. */
+      const row = Math.floor(i / 2), side = (i % 2) ? 1 : -1;
+      const back = 6 + row * 7, over = side * 3.0;
+      c.x = path[0].x - Math.cos(yaw) * back - Math.sin(yaw) * over;
+      c.z = path[0].z + Math.sin(yaw) * back - Math.cos(yaw) * over;
+      c.yaw = yaw;
+      c.speed = 0;
+      c.leg = 0;                       // how far along racePath this rival is
+      /* Skill spreads the field. Without it five identical cars drive the same
+         line at the same speed for 5.7 km and finish in a tangle. */
+      c.skill = 0.86 + (i / Math.max(1, count - 1)) * 0.26;
+      c.raceCap = 26 * c.skill;        // m/s: ~94 km/h for the slowest, ~122 for the quickest
+      c.mesh.position.set(c.x, groundHeightAt(c.x, c.z), c.z);
+      c.mesh.rotation.y = c.yaw;
+      this.racers.push(c);
+    }
+    return this.racers.length;
+  }
+
+  /** Take the field off the road and out of the scene. */
+  endRace() {
+    for (const c of this.racers ?? []) { c.live = false; if (c.mesh) c.mesh.visible = false; }
+    this.racers = [];
+    this.racePath = null;
+  }
+
+  /** Drive the field one step. Called from update(). */
+  #driveRacers(dt) {
+    const path = this.racePath;
+    if (!path || !this.racers?.length) return;
+    for (const c of this.racers) {
+      if (!c.live) continue;
+      /* Advance along the line by PROXIMITY, and let a rival skip a point it
+         has already passed -- a car that clips a corner wide can end up nearer
+         point n+1 than point n, and without the skip it turns round to collect
+         the one it missed. */
+      let guard = 0;
+      while (c.leg < path.length - 1 && guard++ < 8) {
+        const p = path[c.leg];
+        if (Math.hypot(p.x - c.x, p.z - c.z) < 14) c.leg++;
+        else break;
+      }
+      const t = path[Math.min(c.leg, path.length - 1)];
+      // aim a little PAST the point so they carry speed through a corner
+      const nx = path[Math.min(c.leg + 1, path.length - 1)];
+      const aimX = t.x * 0.7 + nx.x * 0.3, aimZ = t.z * 0.7 + nx.z * 0.3;
+      this.#steerToward(c, aimX, aimZ, dt, 0, c.raceCap);
+      c.mesh.position.set(c.x, groundHeightAt(c.x, c.z), c.z);
+      c.mesh.rotation.y = c.yaw;
+      if (c.leg >= path.length - 1) { c.finished = true; c.speed *= 0.97; }
+    }
+  }
+
+  /**
+   * Where everyone is, best first.
+   *
+   * Progress is (points cleared, then how close to the next one), which is the
+   * only ordering that survives a rival taking a different line: raw distance
+   * to the finish puts a car that has cut across the map ahead of one properly
+   * three marks up the road.
+   */
+  raceStandings(player) {
+    const path = this.racePath;
+    if (!path) return [];
+    const progress = (x, z, leg) => {
+      const t = path[Math.min(leg, path.length - 1)];
+      return leg * 1e6 - Math.hypot(t.x - x, t.z - z);
+    };
+    let pLeg = this.playerLeg ?? 0;
+    let guard = 0;
+    while (pLeg < path.length - 1 && guard++ < 8) {
+      const p = path[pLeg];
+      if (Math.hypot(p.x - player.x, p.z - player.z) < 22) pLeg++;
+      else break;
+    }
+    this.playerLeg = pLeg;
+    const field = [{ who: 'YOU', p: progress(player.x, player.z, pLeg) }];
+    for (const c of this.racers ?? []) field.push({ who: c.style, p: progress(c.x, c.z, c.leg) });
+    field.sort((a, b) => b.p - a.p);
+    return field;
+  }
+
+  /** Your place in the field, 1-based, and how many are racing. */
+  racePlace(player) {
+    if (!this.racePath) return null;
+    const f = this.raceStandings(player);
+    return { place: f.findIndex((e) => e.who === 'YOU') + 1, of: f.length };
   }
 
   /**
@@ -883,6 +1024,7 @@ export class Traffic {
   }
 
   update(player, dt, time) {
+    this.#driveRacers(dt);
     /* One building scan for the whole frame: every shooter is within ~65 m of
        the player, so the player's 9-chunk neighbourhood serves them all. Eleven
        per-shooter scans at four stars were eleven allocations a frame. */
@@ -906,6 +1048,20 @@ export class Traffic {
     this.time = time !== undefined ? time : this.time + dt;
     const t = this.time;
     this.player = player;
+    /* Street Intimidation (reputation <= -300): civilians ahead of you yield.
+       Coming up fast behind a car, it puts its foot down and pulls on for a
+       few seconds (the same flee boost the fugitive chases use), one in five
+       with a horn. Outlaws get an open road; everyone else sits in traffic. */
+    if (typeof window !== 'undefined' && (window._reputation?.score ?? 0) <= -300 && Math.abs(player.fwdSpeed ?? 0) > 14) {
+      const fx = Math.cos(player.yaw ?? 0), fz = -Math.sin(player.yaw ?? 0);
+      for (const v of this.cars) {
+        if (!v.live || v.fleeT > 0) continue;
+        const dx = v.x - player.x, dz = v.z - player.z, d = Math.hypot(dx, dz);
+        if (d > 30 || d < 3 || dx * fx + dz * fz < d * 0.8) continue;   // ahead of you, in your lane's cone
+        v.baseCruise ??= v.cruise; v.cruise = Math.max(v.cruise, v.baseCruise * 1.45); v.fleeT = 4;
+        if (this.rand() < 0.2) this.honk?.(v.x, v.z);
+      }
+    }
     this.#updateWanted(player, dt, t);
     /* Two ways to lose them (policeAi.evasionDecay): get 240 m clear of
        every cruiser, or break line of sight and stay unseen for ten seconds
@@ -928,7 +1084,9 @@ export class Traffic {
     }
     if (this.wanted > 0) {
       this.cool = ((this._nearest ?? Infinity) > 240 && !this.eyesOn) ? this.cool + dt : 0;
-      const rate = evasionDecay({ hot: this.hot, eyesOn: this.eyesOn, coldFor: this.coldFor, nearest: this._nearest ?? Infinity, wanted: this.wanted, cool: this.cool });
+      let rate = evasionDecay({ hot: this.hot, eyesOn: this.eyesOn, coldFor: this.coldFor, nearest: this._nearest ?? Infinity, wanted: this.wanted, cool: this.cool });
+      // Civic Priority (reputation >= 750): heat drops half again as fast. Listed as a perk since the phone shipped; consumed here since 2026-09-08.
+      if (rate > 0 && typeof window !== 'undefined' && (window._reputation?.score ?? 0) >= 750) rate *= 1.5;
       if (rate > 0) {
         const before = this.wanted;
         this.wanted = Math.max(0, this.wanted - dt * rate);
@@ -949,8 +1107,34 @@ export class Traffic {
     const policeActive = lit.length > 0;
     const nearLit = (x, z, r) => { for (let i = 0; i < lit.length; i++) { const q = lit[i]; if (Math.hypot(q.x - x, q.z - z) < r) return true; } return false; };
 
-    for (const car of this.cars) {
+    /* Far tier (2026-09-22). A civilian more than 220 m out (despawn is 320)
+       is a few pixels on the horizon: it steps every 4th frame with dt*4,
+       staggered by index so a quarter of the far cars step each frame. Every
+       integration in this loop uses `step`, so speed and distance per second
+       are unchanged and the stop-line clamp below is a hard constraint at any
+       step; the accel lag (limit - speed) * 2.2 * step stays under 1 up to
+       step = 0.45 s, so a 4x step never overshoots the limit. Whatever matters
+       stays per frame: cars within 220 m, a fugitive being chased (fleeT > 0),
+       hunt / chase / ramming. `farEvery` is the bench's off switch (1).
+       Bench, scratchpad/rec/traffic-bench.mjs (node, 40 cars, 29 near / 11
+       far, 600 frames at 1/60): farEvery=1 reproduces the old positions bit
+       for bit; farEvery=4 costs 0.030 -> 0.025 ms per update, and with the
+       route dice fixed 25 of 40 cars sit within 5 cm of the per-frame run
+       after 10 s (speeds equal) -- the rest differ by a light or lane
+       decision sampled a frame apart, the worst two straddling the 220 m
+       line itself. */
+    const farEvery = this.farEvery ?? 4;
+    const frame = this._frame = ((this._frame ?? 0) + 1) | 0;
+    const cars = this.cars;
+    for (let i = 0; i < cars.length; i++) {
+      const car = cars[i];
       if (!car.live) { this.spawn(car, player, false); continue; }
+      let step = dt;
+      const pdx = car.x - player.x, pdz = car.z - player.z;
+      if (pdx * pdx + pdz * pdz > 220 * 220 && !car.hunt && !car.chase && !(car.ramming > 0) && !(car.fleeT > 0)) {
+        if ((i + frame) % farEvery !== 0) continue;
+        step = dt * farEvery;
+      }
 
       // keep at least a junction of path in front of us
       let guard = 0;
@@ -975,7 +1159,13 @@ export class Traffic {
           // amber only stops you if you could still pull up for it
           const mustStop = state === 'red'
             || (state === 'amber' && gap > car.speed * 1.1);
-          if (mustStop && gap > -0.05) {      // never drag a committed car back
+          /* -0.05: never drag a committed car back. A far-tier car (step = 4 dt)
+             checks the line a quarter as often, so it can already be
+             speed * (step - dt) past it when it looks -- and then bolt through a
+             red the per-frame car stopped for (bench: one car 61.7 m ahead
+             after 10 s). Widen the window by exactly that overshoot: zero for a
+             per-frame car, up to ~1.1 m at 17 m/s for a far one. */
+          if (mustStop && gap > -0.05 - car.speed * (step - dt)) {
             hold = gate.s;
             limit = Math.min(limit, Math.sqrt(Math.max(0, gap) * 2 * 4.5));
           }
@@ -990,7 +1180,7 @@ export class Traffic {
          with a cooldown so a jam is a scatter of horns, not a chord. The player
          parked across a lane gets the same treatment -- that is the point. */
       if (!car.hunt && lead < 1.0 && car.speed < 0.6) {
-        car.stuckT = (car.stuckT ?? 0) + dt;
+        car.stuckT = (car.stuckT ?? 0) + step;
         if (car.stuckT > 2.5 + this.rand() * 2) { car.stuckT = -2 - this.rand() * 4; this.honk?.(car.x, car.z); }
       } else if ((car.stuckT ?? 0) > 0) car.stuckT = 0;
       /* Sirens: civilians within 70 m of a pursuit slow to a crawl and drift
@@ -1001,10 +1191,10 @@ export class Traffic {
       }
 
       const accel = limit > car.speed ? 4.5 : 9.0;
-      car.speed += Math.max(-accel, Math.min(accel, limit - car.speed)) * dt * 2.2;
+      car.speed += Math.max(-accel, Math.min(accel, limit - car.speed)) * step * 2.2;
       car.stopped = car.speed < 0.4;
       if (car.laneCooldown > 0) {
-        car.laneCooldown -= dt;
+        car.laneCooldown -= step;
         if (car.laneCooldown <= 0) {
           car.changingLane = false;
           if (car.lane !== 0 && !car.hunt) {
@@ -1014,18 +1204,19 @@ export class Traffic {
         }
       }
       if (car.panic > 0) {
-        car.panic -= dt;
+        car.panic -= step;
         const flash = Math.sin(t * 18) > 0;
         car.brakeMat.emissiveIntensity = flash ? 3.2 : 0.2;
       } else {
         car.brakeMat.emissiveIntensity = limit < car.speed - 0.3 || car.stopped ? 2.4 : 0.35;
       }
 
-      car.s += car.speed * dt;
+      car.s += car.speed * step;
       if (hold !== null && car.s > hold) { car.s = hold; car.speed = 0; }
       this.#place(car);
 
-      if (Math.hypot(car.x - player.x, car.z - player.z) > 320) {
+      const ddx = car.x - player.x, ddz = car.z - player.z;
+      if (ddx * ddx + ddz * ddz > 320 * 320) {   // same 320 m despawn, squared: no hypot per car
         car.live = false;
         car.mesh.visible = false;
       }
@@ -1059,15 +1250,60 @@ export class Traffic {
        anyone else had climbed out -- you were nicked by one officer while
        four cruisers were still parking. Now it only counts while at least
        two are out, or one if that is all there is. */
-    const out = this.police.filter((c) => c.live && c.deployed);
+    /* Perf (2026-09-22): this block allocated three filter() arrays, one
+       map() array and one object per deployed officer EVERY frame (6-10
+       allocations a frame, more at four stars), all consumed within the same
+       frame. The three lists are now module-lifetime arrays refilled in place
+       and each officer keeps one `_mate` record that is updated, not rebuilt:
+       zero steady-state allocations. Same membership, same order. */
+    const out = this._out ??= []; out.length = 0;
+    let near = false;
+    for (let i = 0; i < this.police.length; i++) {
+      const c = this.police[i];
+      if (!c.live || !c.deployed) continue;
+      out.push(c);
+      if (!near && Math.hypot(c.x - player.x, c.z - player.z) < 13) near = true;
+    }
     const enough = out.length >= Math.min(2, this.#wantedCars());
-    const near = out.some((c) => Math.hypot(c.x - player.x, c.z - player.z) < 13);
     this.bustT = (enough && near) ? this.bustT + dt : Math.max(0, this.bustT - dt);
     if (this.bustT > 5.5 && this.onBust) { this.bustT = 0; this.onBust(); return; }
 
     const want = this.#wantedCars();
     while (this.police.length < want) this.police.push(this.#makePolice());
-    this._free = this.police.filter((q) => q.live && q.mode === 'free');   // was rebuilt per cruiser per frame
+    const free = this._free ??= []; free.length = 0;   // was rebuilt per cruiser per frame, then per frame; now refilled in place
+    /* Bounding overwatch (policeAi.assignRoles): one man moves, the rest keep
+       your head down. Decided for the WHOLE squad once a frame -- per officer
+       it is a crowd, because nobody can see what anyone else is doing. */
+    const squad = this._squad ??= []; squad.length = 0;
+    const mates = this._mates ??= []; mates.length = 0;   // built ONCE a frame; bystanderInLine skips anything within 1.2 m of the shooter, so each officer excludes himself
+    for (let i = 0; i < this.police.length; i++) {
+      const q = this.police[i];
+      if (!q.live) continue;
+      if (q.mode === 'free') free.push(q);
+      if (q.deployed && !q.down) {
+        squad.push(q);
+        const m = q._mate ??= { x: 0, z: 0, y: 1.0, r: 0.5 };
+        m.x = q.coverX; m.z = q.coverZ;
+        mates.push(m);
+      }
+    }
+    this._rushing = 0;
+    if (squad.length) {
+      for (const q of squad) q.gap = Math.hypot(q.officer.position.x - player.x, q.officer.position.z - player.z);
+      const roles = assignRoles(squad, { wanted: Math.floor(this.wanted) });
+      squad.forEach((q, k) => { q.role = roles[k]; });
+      for (const q of squad) if (q.state === 'rush') this._rushing++;
+      // cover candidates, refreshed twice a second: the far side of every parked solid and every cruiser
+      this._coverT = (this._coverT ?? 0) - dt;
+      if (this._coverT <= 0 || !this._covers) {
+        this._coverT = 0.5;
+        const away = (x, z, r) => { const a = Math.atan2(z - player.z, x - player.x); return { x: x + Math.cos(a) * r, z: z + Math.sin(a) * r }; };
+        const solids = this.world?.nearbyParked ? this.world.nearbyParked(player.x, player.z) : [];
+        this._covers = [];
+        for (const s of solids) if (s.tag === 'parked') this._covers.push(away(s.x, s.z, (s.radius ?? 1) + 0.8));
+        for (const q of this.police) if (q.live) this._covers.push(away(q.x, q.z, 2.4));
+      }
+    }
     for (let i = 0; i < this.police.length; i++) {
       const c = this.police[i];
       if (i >= want) { c.live = false; c.mesh.visible = false; continue; }
@@ -1122,7 +1358,7 @@ export class Traffic {
         const lit = c.respondT > 0 && Math.floor(t * 6) % 2;
         if (c.bar) { c.bar[0].emissiveIntensity = lit ? 5.5 : 0.15; c.bar[1].emissiveIntensity = c.respondT > 0 && !lit ? 5.5 : 0.15; }
         if (c.pool) { c.pool.visible = c.respondT > 0; c.pool.material = poolMat(lit ? 0xff2a1c : 0x2f6dff); }
-        if (c.deployed) { c.deployed = false; c.officer.visible = false; }
+        if (c.deployed) { c.deployed = false; c.officer.visible = false; c.sk = officerPool(this.scene).release(c.sk); }
         c.mode = 'road'; c.best = Infinity; c.stale = 0; c.deployT = 0;
         if (gap > 320) { c.live = false; c.mesh.visible = false; continue; }
         this.#driveRoad(c, player, dt);
@@ -1195,6 +1431,8 @@ export class Traffic {
         }
         c.gun.geometry = buildWeaponMesh(c.gunKind).geometry;
         c.flash.position.x = ARSENAL[c.gunKind].muzzle;
+        c.sk = officerPool(this.scene, { max: 4 }).acquire(c.slot + 1, swat);   // null past the cap: he stays a primitive officer
+        c.sk?.takeOver(c.joints, c.gun);
         { const cs = coverSide(c.x, c.z, c.yaw, player.x, player.z); c.coverX = cs.x; c.coverZ = cs.z; }   // the door away from you, car between
         if (swat) {
           this.chatter?.radioPool?.('swat');
@@ -1205,6 +1443,7 @@ export class Traffic {
         c.deployed = false;
         c.officer.visible = false;
         c.holdT = 0;
+        c.sk = officerPool(this.scene).release(c.sk);
       }
 
       if (c.deployed) {
@@ -1220,9 +1459,10 @@ export class Traffic {
         if (c.down > 0) {
           c.down += dt;
           poseOfficer(c.joints, 'fall', Math.min(1, c.down / 0.6));
+          c.sk?.sync(dt, c.officer, 'fall', 0, 0, 0, 0);
           if (c.gun) c.gun.visible = false; if (c.flash) c.flash.visible = false;
           if (c.down > 10.5) c.officer.position.y -= dt * 0.9;   // the last seconds: the body sinks out of the street rather than blinking off
-          if (c.down > 12) { c.deployed = false; c.officer.visible = false; c.live = false; c.mesh.visible = false; c.mode = 'road'; }
+          if (c.down > 12) { c.deployed = false; c.officer.visible = false; c.live = false; c.mesh.visible = false; c.mode = 'road'; c.sk = officerPool(this.scene).release(c.sk); }
           continue;
         }
         const ty = (player.y ?? 0) + targetProfile(!!player.onFoot, !!player.crouch).y;
@@ -1248,7 +1488,13 @@ export class Traffic {
         }
         c.quietFor = (player.firedAt !== undefined && performance.now() - player.firedAt < 1500) ? 0 : c.quietFor + dt;
         c.stateT += dt;
-        const next = nextState({ state: c.state, hp: c.hp, gap, playerSpeed: player.speed ?? 0, quietFor: c.quietFor, canSee, burstLeft: c.burstLeft, t: c.stateT, playerOnFoot: !!player.onFoot });
+        // a mover with no plan gets one; rushPlan returns null when there is no cover worth crossing for, and then he simply does not rush
+        if ((c.role === 'rush' || c.role === 'flank') && c.state !== 'rush' && !c.dest && (c.rushCool ?? 0) <= 0) {
+          const plan = rushPlan(c, { px: player.x, pz: player.z, covers: this._covers || [] });   // reads c.coverX/coverZ: no per-frame copy of the officer
+          if (plan) { c.dest = plan; c.rushTime = plan.time; }
+        }
+        const next = nextState({ state: c.state, hp: c.hp, gap, playerSpeed: player.speed ?? 0, quietFor: c.quietFor, canSee, burstLeft: c.burstLeft, t: c.stateT, playerOnFoot: !!player.onFoot,
+          role: c.role, dest: c.dest, reloadLeft: c.reloadLeft, arrived: c.arrived, rushTime: c.rushTime });
         if (next !== c.state) {
           if (next === 'peek') {
             const b = burstFor(c.gunKind); c.burstLeft = b.shots; c.fireT = 0.12;
@@ -1264,11 +1510,20 @@ export class Traffic {
           else if (next === 'advance') this.chatter?.radioPool?.('advance');
           else if (next === 'arrest') this.chatter?.radioPool?.('arrest');
           else if (next === 'peek' && c.state === 'cover' && c.stateT > 3) this.chatter?.radioPool?.('pinned');
+          if (next === 'rush') { c.arrived = false; this.chatter?.radioPool?.('advance'); }
+          if (c.state === 'rush') { c.rushCool = RUSH_COOL_S; if (c.dest?.flank) c.flanks = (c.flanks ?? 0) + 1; c.dest = null; }
           c.state = next; c.stateT = 0;
         }
-        if (c.state === 'advance' && c.toX !== undefined) {
-          const k = Math.min(1, c.stateT);   // nextState ends the advance at t >= 1, so this is the whole walk
-          c.coverX = c.fromX + (c.toX - c.fromX) * k; c.coverZ = c.fromZ + (c.toZ - c.fromZ) * k;
+        /* He WALKS or RUNS to where he wants to be. coverX/coverZ is his position
+           (the mesh is placed from it below); moveTarget says where, stepToward
+           moves him, moveSpeed is what the model animates to -- 0 standing,
+           ~1.6 walking, 4.4+ running. */
+        c.rushCool = Math.max(0, (c.rushCool ?? 0) - dt);   // WITHOUT this every officer rushes exactly once and then stands still for the rest of the fight: assignRoles gates movers on rushCool <= 0
+        {
+          const m = moveTarget(c, { px: player.x, pz: player.z });   // reads c.coverX/coverZ, not the cruiser's c.x/c.z
+          const st = stepToward(c.coverX, c.coverZ, m.x, m.z, m.speed, dt);
+          c.coverX = st.x; c.coverZ = st.z; c.arrived = st.arrived;
+          c.moveSpeed = dt > 0 ? st.moved / dt : 0;
         }
         const sx = c.coverX, sz = c.coverZ;
         // he faces where he thinks you are: you, with a line; where he last had you, without one for a few seconds
@@ -1286,11 +1541,14 @@ export class Traffic {
            a sidearm, or bent over you with the cuffs out. */
         c.poseT += dt;
         const arresting = c.state === 'arrest';
-        const want = arresting ? 'cuff' : c.state === 'peek' ? 'peek' : c.state === 'advance' ? 'walk' : 'crouch';
+        const want = arresting ? 'cuff' : c.state === 'peek' ? 'peek' : (c.moveSpeed ?? 0) > 0.3 ? 'walk' : 'crouch';   // the pose follows the FEET, so rush, advance and arrest all walk
         if (want !== c.pose) c.pose = want;
-        c.blender.apply(c.joints, c.pose, c.state === 'advance' ? c.poseT * 6 : c.poseT, dt, c.pose === 'peek' ? 0.12 : 0.22);
+        // the stride clock ACCUMULATES the scaled dt: multiplying a running poseT by a speed factor snapped the phase by tens of seconds every time he started or stopped running
+        c.strideT = (c.strideT ?? 0) + dt * (1 + (c.moveSpeed ?? 0) * 1.9);
+        c.blender.apply(c.joints, c.pose, c.strideT, dt, c.pose === 'peek' ? 0.12 : 0.22);
         // eyes on you: the head turns toward the player within what a neck allows
         lookAt(c.joints, Math.atan2(-(fz - sz), fx - sx) - face);
+        c.sk?.sync(dt, c.officer, c.pose, fx, ty, fz, c.hitT);
         if (c.hitT > 0) {   // the stagger rides on top of whatever pose he is in
           c.hitT -= dt;
           const k = Math.max(0, c.hitT / 0.35);
@@ -1302,17 +1560,24 @@ export class Traffic {
         /* Fire only from 'peek', only with a line, one aimed shot per weapon
            cycle inside the burst. Each shot is a real ray with the officer's
            skill on top of the weapon's spread; a miss is heard, not felt. */
-        c.fireT -= dt;
         if (c.flash) c.flash.visible = c.fireT > -0.06 && c.fireT < 0 && c.state === 'peek';
-        if (c.reloading > 0) { c.reloading -= dt; c.burstLeft = 0; }   // a reload is a burst that never comes; he goes back to cover
-        if (c.state === 'peek' && c.burstLeft > 0 && c.fireT <= -0.06 && shouldFire(Math.floor(this.wanted), c.quietFor)) {   // one star: they come to cuff you, and shoot only if you have
-          const b = burstFor(c.gunKind);
-          c.fireT = b.gap;
-          c.burstLeft--;
-          if (c.burstLeft === 0) c.fireT = b.pause;
-          // a shotgun at street range is the whole spread of pellets, three pistol rounds' worth
-          const landed = canSee && this.fireAt(c.officer.position.x, gunY, c.officer.position.z, player, c.gunKind, Math.floor(this.wanted), 1, c.gunKind === 'shotgun' ? 3 : 1);
+        /* fireControl owns the trigger now: burst discipline, an aim settle before
+           the first round, a reload that costs time, and suppression while a
+           team-mate is crossing. No shooting through a civilian or through the
+           man who is rushing (this._mates is built once a frame, above). */
+        const inLine = bystanderInLine(c.coverX, gunY, c.coverZ, player.x, ty, player.z, this.crowd?.people ?? [])
+          || bystanderInLine(c.coverX, gunY, c.coverZ, player.x, ty, player.z, this._mates || []);
+        const f = fireControl(c, {
+          dt, canSee, blocked: !!inLine || !!this.holdFire,
+          stars: Math.floor(this.wanted), quietFor: c.quietFor,
+          suppressing: c.role === 'suppress' && this._rushing > 0,
+        });
+        c.fireT = f.fireT; c.burstLeft = f.burstLeft; c.ammo = f.ammo; c.settleLeft = f.settleLeft; c.reloadLeft = f.reloadLeft;
+        if (f.reloadStart) this.chatter?.radioPool?.('reload');   // magazine out: the shout, and the gun is down for ARSENAL[kind].reload
+        if (f.fire) {
+          const landed = this.fireAt(c.officer.position.x, gunY, c.officer.position.z, player, c.gunKind, Math.floor(this.wanted), 1, c.gunKind === 'shotgun' ? 3 : 1);
           this.crowd?.panic?.(c.officer.position.x, c.officer.position.z, 20);
+          c.sk?.kick();
           if (!landed && this.decals && player.onFoot) {
             // the round went somewhere: a mark in the road a stride from you says how close
             const a = this.rand() * Math.PI * 2, r = 0.6 + this.rand() * 1.6;
@@ -1402,26 +1667,38 @@ export class Traffic {
     let nearest = Infinity;
     let leaderSpeed = car.cruise;
 
-    const ahead = (x, z, spd = 0) => {
-      const dx = x - car.x, dz = z - car.z;
-      const fx = Math.cos(car.yaw), fz = -Math.sin(car.yaw);
+    /* Perf (2026-09-22): this is the one O(N^2) loop in traffic -- every car
+       against every car, every frame. It used to allocate an `ahead` closure
+       per car and take cos+sin of the SAME yaw inside it for every other car
+       (40 cars: 40 closures + 3,280 trig calls a frame). Now the trig is taken
+       once per car (82 calls) and a squared-distance gate skips any pair too
+       far to pass BOTH tests: along < look and side < 2.2 imply
+       dx^2+dz^2 = along^2+side^2 < look^2+2.2^2, so the gate is exact -- same
+       `nearest`, same `leaderSpeed`, same lane-change decisions. Microbench
+       (scratchpad/leader-bench.mjs, 40 cars x 40 others + player, node,
+       identical results asserted over 80,000 car-updates): 43.3 us -> 4.6 us
+       per update() for this loop (9.4x); 3,200 -> 80 trig calls, 40 -> 0
+       closures a frame. */
+    const cx = car.x, cz = car.z;
+    const fx = Math.cos(car.yaw), fz = -Math.sin(car.yaw);
+    const reach2 = look * look + 2.2 * 2.2;
+    const cars = this.cars;
+    for (let i = 0; i < cars.length; i++) {
+      const other = cars[i];
+      if (other === car || !other.live) continue;
+      const dx = other.x - cx, dz = other.z - cz;
+      if (dx * dx + dz * dz >= reach2) continue;
+      const along = dx * fx + dz * fz;
+      if (along <= 0 || along >= look || along >= nearest) continue;
+      const side = Math.abs(dx * -fz + dz * fx);
+      if (side < 2.2) { nearest = along; leaderSpeed = other.speed ?? 0; }
+    }
+    {
+      const dx = player.x - cx, dz = player.z - cz;
       const along = dx * fx + dz * fz;
       const side = Math.abs(dx * -fz + dz * fx);
-      if (along > 0 && along < look && side < 2.2) {
-        if (along < nearest) {
-          nearest = along;
-          leaderSpeed = spd;
-        }
-        return along;
-      }
-      return Infinity;
-    };
-
-    for (const other of this.cars) {
-      if (other === car || !other.live) continue;
-      ahead(other.x, other.z, other.speed);
+      if (along > 0 && along < look && side < 2.2 && along < nearest) { nearest = along; leaderSpeed = player.speed || 0; }
     }
-    ahead(player.x, player.z, player.speed || 0);
 
     if (nearest === Infinity) return Infinity;
 

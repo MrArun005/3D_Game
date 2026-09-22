@@ -40,6 +40,14 @@ export function buildSurrounds(scene, bounds, day = true) {
   const cx = bounds.w / 2, cz = bounds.h / 2;
   const APRON = 900;                     // flat ground between fence and foothills
   const RANGE = 3400;                    // depth of the mountain belt itself
+  /* Peak scale. At 1.0 the crests ran to ~2.3 km and, cresting ~4.5 km from
+     the Little Tokyo street, subtended ~24 degrees: a wall across the end of
+     every avenue, and one a 10 degree sunset sun could never clear -- the sun
+     sprite had to be parked IN FRONT of the range to be seen at all, which
+     is a sticker, not a sun. A real distant range subtends 5-10 degrees. 0.40
+     puts the crests near 900 m (~11 deg), so the sun sits on the ridge line
+     and the range silhouettes against it, the way it does in the reference. */
+  const PEAK = 0.40;
 
   /* No apron plate here: water.js owns the single ground surface, because it
      is the only place that knows where the bay and the river are cut out of
@@ -55,8 +63,14 @@ export function buildSurrounds(scene, bounds, day = true) {
   const N = 120;
   const pos = [], idx = [], col = [], ramps = [];
   const c = new THREE.Color();
-  const rock = day ? [0x4a5340, 0x5d6450, 0x6f7361, 0x83836f, 0x9a9583] : [0x1c2430, 0x232c3a, 0x2a3442, 0x323a46, 0x39414d];
-  const snow = day ? 0xe8eef2 : 0x8a97a8;
+  /* Every day band must sit DARKER than the fog colour (renderer.js FOG_DAY,
+     0x93b7de since 2026-09-08 -- the sky's own colour, so the range now fades
+     INTO the sky rather than toward a paler haze): aerial perspective is a dark thing fading into pale haze, and a
+     range painted paler than its own haze reads as a white paper wall standing
+     in front of the sky -- which is what the 2026-09-08 docks frames showed.
+     Snow only on the highest peaks. */
+  const rock = day ? [0x3c4636, 0x48523f, 0x565c4a, 0x636555, 0x6e6e62] : [0x1c2430, 0x232c3a, 0x2a3442, 0x323a46, 0x39414d];
+  const snow = day ? 0xcfd6dc : 0x8a97a8;
 
   for (let j = 0; j <= N; j++) {
     for (let i = 0; i <= N; i++) {
@@ -71,15 +85,16 @@ export function buildSurrounds(scene, bounds, day = true) {
       // no mountains to seaward: the east side of the map is open ocean
       const t = x > half.x * 0.92 ? 0 : Math.max(0, Math.min(1, d));
       const ramp = t * t * (3 - 2 * t);
-      const h = ramp * (420 + ridge(x / 760, z / 760) * 1850) - 2;
+      const h = ramp * (420 + ridge(x / 760, z / 760) * 1850) * PEAK - 2;
+      const hn = h / PEAK;   // the band and snow thresholds below were written at PEAK 1.0
       pos.push(cx + x, h, cz + z);
       ramps.push(ramp);
       const lit = ridge(x / 620, z / 620);
       /* Band by ALTITUDE first, then break the band with noise. Picking the
          colour from noise alone gave a range with no vertical structure --
          everything the same speckled grey, which is why it read as haze. */
-      const band = Math.min(rock.length - 1, Math.floor((h / 1500) * rock.length + lit * 1.1));
-      c.setHex(h > 1250 + lit * 320 ? snow : rock[Math.max(0, band)]);
+      const band = Math.min(rock.length - 1, Math.floor((hn / 1500) * rock.length + lit * 1.1));
+      c.setHex(hn > 1550 + lit * 320 ? snow : rock[Math.max(0, band)]);
       col.push(c.r, c.g, c.b);
     }
   }
@@ -99,6 +114,18 @@ export function buildSurrounds(scene, bounds, day = true) {
   g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
   g.setIndex(idx);
   g.computeVertexNormals();
+  /* Slope shading: a steep face in a vertex-coloured, flat-shaded range gets
+     the same colour as a plateau, so the ridges read as bands of paint. Darken
+     by how far the vertex normal leans off vertical -- cheap, and it is what
+     gives the facets a sense of rock. */
+  {
+    const nrm = g.attributes.normal, colA = g.attributes.color;
+    for (let i = 0; i < colA.count; i++) {
+      const k = 0.62 + 0.38 * Math.max(0, nrm.getY(i));
+      colA.setXYZ(i, colA.getX(i) * k, colA.getY(i) * k, colA.getZ(i) * k);
+    }
+    colA.needsUpdate = true;
+  }
   const hills = new THREE.Mesh(g, new THREE.MeshLambertMaterial({
     vertexColors: true, flatShading: true,
   }));
@@ -136,7 +163,7 @@ export function buildSurrounds(scene, bounds, day = true) {
   fg.computeVertexNormals();
   group.add(new THREE.Mesh(fg, new THREE.MeshBasicMaterial({
     map: linkTex, transparent: true, alphaTest: 0.35,
-    side: THREE.DoubleSide, fog: true,
+    side: THREE.DoubleSide, fog: false,
   })));
 
   const postGeo = new THREE.CylinderGeometry(0.055, 0.055, H + 0.12, 6);

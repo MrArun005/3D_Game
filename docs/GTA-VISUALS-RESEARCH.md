@@ -86,19 +86,70 @@ Gaps, in the order they would change the frame most:
    `beamPool` cones and lamp caps, but no sprite glare, so distant lamps and
    headlights vanish instead of twinkling. One instanced quad pool per chunk;
    the sign heads and lamp caps already exist as positions (`headsByChunk`).
-2. **DONE 2026-09-05 (lamps; far headlights still open).** Distant light sprites. Beyond the 3×3 ring, traffic and lamps stop
+2. **DONE 2026-09-05 lamps, 2026-09-12 far headlights (`world/farTraffic.js`, 220 phantom cars, one draw).** Distant light sprites. Beyond the 3×3 ring, traffic and lamps stop
    existing. A 32×32 sprite per lamp head and two per far car along the
    road graph is the cheapest thing GTA does and the reason its city reads
    as alive to the horizon. Our far stand-ins carry masts and beacons; the
    street level has nothing.
-3. **Per-channel tone mapping.** Check what three's filmic node does to a
-   pure (2, 0, 0) — if it desaturates toward white, the neon core goes
-   white before it blooms, which is exactly the "haze" we fought at bloom
-   1.35. Painting the white core into the sign atlas instead is the GTA way.
-4. **Exposure-derived bloom threshold** rather than a fixed 0.85: night
+3. **MEASURED 2026-09-08 — per-channel tone mapping. Not the culprit at 2.0,
+   and the real problem is hue-dependent.** Ported three r185's
+   `agxToneMapping` (three.webgpu.js:41562, matrices and the contrast
+   polynomial verbatim) and ran it on paper. A pure (2, 0, 0) comes out
+   (0.943, 0.226, 0.154) — 100% saturation in, **84% out**. It does NOT go
+   white, so the "haze" at bloom 1.35 was the bloom, not the tone curve.
+
+   What it does do is desaturate **harder the brighter you push**, and by very
+   different amounts per hue (day exposure 1.05):
+
+   | input | output | sat in → out |
+   | --- | --- | --- |
+   | red (2,0,0) | (0.943, 0.226, 0.154) | 100% → **84%** |
+   | red (4,0,0) | (1.000, 0.382, 0.282) | 100% → 72% |
+   | red (8,0,0) | (1.000, 0.560, 0.445) | 100% → **55%** |
+   | magenta (2,0,2) | (0.838, 0.364, 0.795) | 100% → 57% |
+   | cyan (0,2,2) | (0.441, 0.766, 0.764) | 100% → **41%** |
+   | sodium (2,1.2,0.3) | (0.774, 0.635, 0.416) | 85% → 46% |
+
+   Two things follow. **Brightness is bought with saturation** — a tube at 8.0
+   keeps barely half its colour, so reach for bloom and the glare sprite to
+   make a sign read bright, not for emissive intensity. And **cyan pays more
+   than twice what red pays** (41% vs 84% at the same 2.0). The Tokyo palette
+   is six-in-ten magenta/cyan, which is precisely the pair AgX flattens most,
+   so a cyan tube needs a LOWER intensity than a red one to read as the same
+   colour — the instinct to brighten it makes it whiter. Night exposure 1.15
+   changes these by under two points, so the day/night pair is not the issue.
+   Painting the white core into the sign atlas is still the GTA way and still
+   worth doing; it just is not a fix for a problem the curve is causing.
+
+   **The governing rule, measured: AgX retention is a function of BRIGHTNESS,
+   not of chroma.** One sky hue (0.63, 0.80, 1.00) swept by value — source
+   saturation constant at 37% throughout:
+
+   | source | value | on screen | screen sat | kept |
+   | --- | --- | --- | --- | --- |
+   | (161,204,255) | 255 | (166,187,205) | 19.0% | **52%** |
+   | (132,168,210) | 210 | (146,168,189) | 22.8% | 61% |
+   | (107,136,170) | 170 | (124,147,169) | 26.6% | 72% |
+   | (82,104,130) | 130 | (98,120,141) | 30.5% | 83% |
+   | (57,72,90) | 90 | (66,85,104) | 36.5% | **100%** |
+
+   So **you cannot have a colour that is both bright and saturated** through
+   this curve — that is AgX doing its job, rolling highlights to neutral so
+   they never clip with a hue shift. Two consequences worth holding on to:
+
+   - **The noon sky can only be so blue.** A bright horizon keeps ~half its
+     chroma; the zenith keeps 92% because it is dark. Solving the gradient for
+     a target on-screen saturation produces a *dark slate* sky (#898b8d at the
+     horizon) — correct arithmetic, wrong picture. The honest ceiling for a
+     bright noon sky is what the current stops give, and reaching past it means
+     changing the tone curve or the exposure, not the texture.
+   - **It is the same lever as the neon.** A tube at 8.0 keeps half its colour
+     for exactly this reason: it is bright, not because it is red. Brightness
+     is always paid for in chroma here.
+4. **DONE 2026-09-12 (`bloomThresholdFor`, T*ref/exposure, night 0.85 unchanged).** Exposure-derived bloom threshold rather than a fixed 0.85: night
    exposure 1.15 with a fixed threshold is why the day/night bloom retune is
    a manual pair of numbers.
-5. **Anamorphic streak sprite** on headlights within ~20° of the camera.
+5. **DONE 2026-09-12 (`world/streaks.js`).** Anamorphic streak sprite on headlights within ~20° of the camera.
    Cheap, and it is the single most recognisable GTA-night signature.
 6. **Light-shaft map** (half-res ray march against the sun shadow) for dusk;
    ours is a fog colour only.

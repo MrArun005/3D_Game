@@ -1,6 +1,24 @@
 import { defineConfig } from 'vite';
+import { rmSync } from 'node:fs';
+import { join } from 'node:path';
+
+/* What ships is what the game can load. public/ also holds things the game
+   never asks for, and Vite copies the whole folder: the two avatar wardrobe
+   GLBs (22 MB, ?me=6/7 only, and unlicensed dev fixtures per NOTICE.md -- do
+   not ship), and concept paintings. Measured 2026-09-16: dist 185 -> ~152 MB
+   with these gone and the source map off. Everything else in public/ is
+   referenced by manifest.json, textures/library.json or a loader path in src/;
+   the next 80 MB is the Sketchfab cars and props themselves, which is a
+   compression job (KTX2 / meshopt), not a pruning one. */
+const DIST_PRUNE = ['models/avatar', 'concept_docklands.jpg', 'concept_vibrant_boulevard.jpg'];
+const pruneDist = () => ({
+  name: 'prune-dist',
+  apply: 'build',
+  closeBundle() { for (const f of DIST_PRUNE) rmSync(join('dist', f), { recursive: true, force: true }); },
+});
 
 export default defineConfig({
+  plugins: [pruneDist()],
   /* Tier 0.3: the whole app builds against three/webgpu.
      `three/webgpu` is a SEPARATE module identity from `three` -- classes from
      one are not instanceof the other -- so there is no way to run both side
@@ -41,7 +59,7 @@ export default defineConfig({
      parallel. `three` is ~1.3 MB on its own, so the warning limit is set to
      what it honestly is rather than silenced. */
   build: {
-    target: 'es2022', outDir: 'dist', sourcemap: true,
+    target: 'es2022', outDir: 'dist', sourcemap: false,
     chunkSizeWarningLimit: 1400,
     rollupOptions: {
       output: {

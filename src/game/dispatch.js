@@ -22,6 +22,16 @@ export class DispatchService {
 
     this.dispatchedVehicles = [];
     this.blips = []; // for minimap / radar
+
+    /* The helicopter's searchlight and the tank's muzzle flash live in the
+       scene from boot, at zero intensity, and the vehicles borrow them. A light
+       added later changes the light count in every material: the WebGPU
+       backend recompiles every pipeline, and the frame loop stopped for ~2 s
+       on every dispatch (measured 2026-09-12, rAF counter: 0 frames for 1.5 s).
+       Cost: one spot + one point light in the light loop, same as `?lights=N+1`. */
+    this.spot = new THREE.SpotLight(0xf4f8ff, 0, 160, 0.24, 0.5, 1.2);
+    this.flash = new THREE.PointLight(0xffaa33, 0, 16);
+    scene.add(this.spot, this.spot.target, this.flash);
   }
 
   /**
@@ -46,6 +56,7 @@ export class DispatchService {
       z: pad.z,
       yaw: pad.yaw || 0,
       running: true,
+      spot: this.spot,
     });
 
     this.dispatchedVehicles.push(heli);
@@ -61,6 +72,11 @@ export class DispatchService {
 
     return heli;
   }
+
+  /* Free requests for the scripted tour (featureTour.js calls requestTank; it did
+     not exist, so the tank scene threw). Wanted 3 waives the Warstock fee. */
+  requestTank(pos, wanted = 0) { return this.dispatchTank(pos, Math.max(3, wanted)); }
+  requestHelicopter(pos) { const cash = this.garage.cash; this.garage.cash = Math.max(cash, 2500); const h = this.dispatchHelicopter(pos); this.garage.cash = cash; return h; }
 
   /**
    * Dispatches a 55-tonne Rhino Tank via heavy cargo drop.
@@ -90,6 +106,7 @@ export class DispatchService {
       y: dropSite.y,
       z: dropSite.z,
       yaw: dropSite.yaw,
+      flash: this.flash,
     });
 
     this.dispatchedVehicles.push(tank);

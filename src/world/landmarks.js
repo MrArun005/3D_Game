@@ -1,5 +1,84 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { buildLandmark } from './skyline.js';
+import { tokyoMaterial } from './tokyo.js';
+import { buildLiftBridge, LIFT_BRIDGE } from './liftBridge.js';
+import { artMaterial } from './artBuildings.js';
+import { SHADOW_FAR_LAYER } from '../core/renderer.js';
+
+/**
+ * Poly Haven's modular tenement facade is a PARTS LIBRARY laid out on a display
+ * grid, not a wall (measured 2026-09-10: 3 m wide x 3 m tall modules whose
+ * origin is their right edge on the wall plane z=0, front facing +Z; the
+ * window and door inserts share the wall module's origin; dado and cornice
+ * are 3 m mouldings, crown is the 0.75 m parapet; *_end and pier pieces close
+ * the ends). This assembles a tenement of `bays` x `floors` from it: each bay
+ * keeps one window type up its full height (tenements stack their openings),
+ * every fourth bay is a doorway, the dado moulding runs along the base with
+ * the door cut-outs, cornice and crown finish the top, piers close both ends.
+ * ~140 module clones are merged per material (5 materials -> 5 draws).
+ */
+const KIT_BAY = 3, KIT_STOREY = 3;
+export function assembleTenement(gltf, bays = 17, floors = 4, seed = 7) {
+  const lib = new Map();                                   // family -> first node of that family
+  gltf.scene.traverse((o) => { const fam = (o.name || '').replace(/_\d+$/, ''); if (fam && !lib.has(fam) && o !== gltf.scene) lib.set(fam, o); });
+  const parts = [];                                        // { node, x, y, mirror }
+  const put = (fam, x, y, mirror = false) => { const n = lib.get(fam); if (n) parts.push({ node: n, x, y, mirror }); else console.warn('tenement kit: no part', fam); };
+  let st = seed >>> 0; const rnd = () => { st ^= st << 13; st >>>= 0; st ^= st >> 17; st ^= st << 5; st >>>= 0; return st / 4294967296; };
+  const WINDOWS = ['centered_large', 'centered_small', 'offset_small', 'centered_double'];
+  const DOORS = ['door_window_small', 'door_centered_small', 'door_offset_small', 'door_centered_large'];
+  for (let b = 0; b < bays; b++) {
+    const x = -KIT_BAY * b;                                // this bay's right edge
+    const col = WINDOWS[Math.floor(rnd() * WINDOWS.length)];
+    const door = b % 4 === 2 ? DOORS[Math.floor(rnd() * DOORS.length)] : null;
+    for (let f = 0; f < floors; f++) {
+      const y = KIT_STOREY * f;
+      if (f === 0 && door) { put(`wall_${door}`, x, y); put(door, x, y); }
+      else { put(`wall_window_${col}`, x, y); put(`window_${col}`, x, y); }
+    }
+    put(door ? `dado_${door}` : 'dado_standard_standard', x, 0);
+    put('cornice_standard_standard', x, KIT_STOREY * floors);
+    put('crown_standard_standard', x, KIT_STOREY * floors + 0.2);
+  }
+  const left = -KIT_BAY * bays;
+  for (const [x, mirror] of [[0, false], [left, true]]) {
+    for (let f = 0; f < floors; f++) put('wall_pier_standard', x, KIT_STOREY * f, mirror);
+    put('dado_end', x, 0, mirror); put('cornice_end', x, KIT_STOREY * floors, mirror); put('crown_end', x, KIT_STOREY * floors + 0.2, mirror);
+  }
+  // bake: every part's meshes into one geometry per material
+  const byMat = new Map();
+  const m4 = new THREE.Matrix4(), place = new THREE.Matrix4();
+  for (const p of parts) {
+    p.node.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(p.node.matrixWorld).invert();   // strip the display-grid placement
+    place.compose(new THREE.Vector3(p.x, p.y, 0), new THREE.Quaternion(), new THREE.Vector3(p.mirror ? -1 : 1, 1, 1));
+    p.node.traverse((o) => {
+      if (!o.isMesh) return;
+      const rel = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);   // never alias the target of multiplyMatrices
+      m4.multiplyMatrices(place, rel);
+      let g = o.geometry.clone().applyMatrix4(m4);
+      if (p.mirror) { const idx = g.index; if (idx) { for (let i = 0; i < idx.count; i += 3) { const t = idx.getX(i); idx.setX(i, idx.getX(i + 2)); idx.setX(i + 2, t); } } }   // a mirrored part flips its winding
+      const keep = new THREE.BufferGeometry();
+      for (const k of ['position', 'normal', 'uv']) if (g.attributes[k]) keep.setAttribute(k, g.attributes[k]);
+      if (g.index) keep.setIndex(g.index);
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      const mat = mats[0];
+      (byMat.get(mat) ?? byMat.set(mat, []).get(mat)).push(keep.index ? keep.toNonIndexed() : keep);
+    });
+  }
+  const group = new THREE.Group();
+  for (const [mat, geos] of byMat) {
+    const merged = mergeGeometries(geos, false);
+    if (!merged) continue;
+    merged.computeBoundingBox();
+    const mesh = new THREE.Mesh(merged, mat);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+  group.userData.tenement = { bays, floors, width: KIT_BAY * bays, height: KIT_STOREY * floors + 0.95, draws: group.children.length, parts: parts.length };
+  return group;
+}
 
 /**
  * Landmarks: one-off set pieces the owner brought in (Sketchfab), placed on
@@ -12,8 +91,9 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 const BASE = '/models/vendor/sketchfab/props/';
 const LANDMARKS = [
   { file: 'gun-shop',    district: 'OLD QUARTER',  minW: 8,  name: "Schneider's Guns" },
-  { file: 'supermarket', district: 'THE FLATS',    minW: 30, name: 'Flats Supermarket' },
-  { file: 'street-set',  district: 'VELLERY ROW',  minW: 12, name: 'Vellery corner' },
+  // heavy: 133k and 94k triangles (budget for a large prop is 6k) -- they do not cast into the shadow cascades
+  { file: 'supermarket', district: 'THE FLATS',    minW: 30, name: 'Flats Supermarket', heavy: true },
+  { file: 'street-set',  district: 'VELLERY ROW',  minW: 12, name: 'Vellery corner', heavy: true },
   {
     file: '/models/vendor/kenney/commercial/building-skyscraper-d.glb',
     district: 'KINGSWAY',
@@ -35,39 +115,288 @@ const LANDMARKS = [
     targetW: 20,
     name: 'Harbour Point Turbine & Signal',
   },
+  /* A FRONTAGE, not a prop (2026-09-10): Poly Haven's CC0 modular tenement
+     facade (James Ray Cock), 51.5 x 17 m assembled, detail on its +Z face,
+     doors at y = -1 over a 1 m foundation. It stands at the lot edge facing
+     the nearest road with a plain massing block behind it, so from the
+     street it is a real Old Quarter block and from the alley a building,
+     not a stage flat. 10.6 MB and ~39k tris -- one of these in the city,
+     lazily loaded like every landmark, keeps the initial download under
+     the 25 MB budget; the factory set (13.8 MB) waits for KTX2. */
+  {
+    file: '/models/vendor/polyhaven/modular_urban_apartments_facade.glb',
+    district: 'OLD QUARTER',
+    minW: 44,
+    maxScale: 1.0,
+    frontage: { assemble: { bays: 17, floors: 4 }, groundY: 0, depth: 14, colour: 0x6f5548 },
+    name: 'Old Quarter tenements',
+  },
+  /* Ours, authored in Blender (tools/blender/build_tokyo_neon_building.py):
+     four seeded neon towers -- konbini ground floor, ribbon windows,
+     cantilevered kanban blades, rooftop gantry and mast. They stand on the
+     four free LITTLE TOKYO blocks (292, 297, 309 vacant, 313 lot), which
+     tokyo.js leaves empty because the plan gives them no footprints.
+     `frontage.depth: 0` uses the road-facing probe WITHOUT the plaster body:
+     these are whole buildings, not stage flats. Metre-accurate, so
+     maxScale 1. ~5k tris and 13 primitives each. */
+];
+
+/**
+ * PHASE 6, the authored set pieces (world/skyline.js).
+ *
+ * Every position here was computed from the plan, not eyeballed: for each
+ * district's empty blocks, the longest straight road run whose axis passes
+ * through the block, then the point on that axis inside the block, then the
+ * block-aligned yaw nearest the street's own direction (a building stands
+ * square to its plot; a 40 degree twist to face the camera reads as a prop).
+ * `view` is the street it terminates and how far you can see it from. The
+ * script lives in the phase report; the numbers are the answer.
+ *
+ * `block` is reserved before #place() runs, so the vendor landmarks (the
+ * tenement wants any 44 m Old Quarter lot) never land on top of one.
+ */
+const SKYLINE = [
+  { kind: 'crane_cluster', x: 2339.3, z: 1954.5, yaw: 1.151, block: 497, district: 'HARBOUR POINT', name: 'Halstead Container Terminal', view: 'road 168 (26 m), 1023 m' },
+  { kind: 'grain_silo', x: 2440.3, z: 2010.6, yaw: 2.722, block: 497, district: 'HARBOUR POINT', name: 'Harbour Point grain elevator', view: 'road 169 (26 m), 1086 m' },
+  { kind: 'gas_holder', x: 3304.0, z: 1051.8, yaw: -3.052, block: 315, district: 'STEELGATE', name: 'Steelgate gas holder', view: 'road 172 (26 m), 1416 m' },
+  { kind: 'flare_stack', x: 3387.3, z: 1084.4, yaw: 1.661, block: 315, district: 'STEELGATE', name: 'Steelgate flare stack', view: 'road 84 (30 m), 1105 m' },
+  { kind: 'fly_tower', x: 768.8, z: 2341.5, yaw: 0.040, block: 370, district: 'THE FLATS', name: 'The Rialto', view: 'DOCK ROAD (30 m), 1736 m' },
+  { kind: 'market_hall', x: 761.9, z: 2068.3, yaw: 1.611, block: 347, district: 'THE FLATS', name: 'Flats Market Hall', view: 'road 104 (19 m), 1161 m' },
+  /* Not on a block: a gantry ACROSS road 219, 33 m clear of the nearest
+     junction, ~335 m of straight approach from the north and ~927 m from the
+     south. The posts stand on the pavements; nothing is solid in the road.
+     Moved 12 m down the street from the first pass's (1618.0, 2102.7): the
+     west post there was 2.5 m INSIDE a 14x14 m footprint on block 421 (this
+     is the one landmark not placed on an empty block, so it is the one the
+     plot check could not catch). Here both posts stand 2.0 m off the tarmac
+     and 5.1 m / 16.5 m clear of the nearest building. */
+  { kind: 'arcade_sign', x: 1616.6, z: 2114.6, yaw: 1.451, district: 'VELLERY ROW', name: 'Vellery Row arcade', view: 'road 219 (18 m), ~927 m south / ~335 m north' },
+  { kind: 'church', x: 1383.6, z: 1660.9, yaw: -2.962, block: 272, district: 'OLD QUARTER', name: 'St Halstead in the Quarter', view: 'road 115 (19 m), 1436 m' },
+  { kind: 'clock_tower', x: 1491.6, z: 1564.0, yaw: -1.391, block: 266, district: 'OLD QUARTER', name: 'Old Quarter clock tower', view: 'road 217 (18 m), 1466 m' },
+  { kind: 'water_tower', x: 816.7, z: 1664.3, yaw: -1.791, block: 182, district: 'MARROW HILL', name: 'Marrow Hill water tower', view: 'road 198 (22 m), 1356 m' },
+  { kind: 'bandstand', x: 1257.6, z: 771.0, yaw: -1.611, block: 83, district: 'GREENFELL PARK', name: 'Greenfell bandstand', view: 'road 126 (14 m), 1079 m' },
+  { kind: 'glasshouse', x: 1304.8, z: 843.0, yaw: 3.102, block: 83, district: 'GREENFELL PARK', name: 'Greenfell palm house', view: 'road 56 (20 m), 1330 m' },
 ];
 
 export class Landmarks {
-  constructor(scene, district) {
-    this.scene = scene; this.district = district; this.placed = [];
+  constructor(scene, district, world = null) {
+    this.scene = scene; this.district = district; this.world = world; this.placed = [];
+    this.usedBlocks = new Set();     // block ids the skyline took; #place() must not offer them to a vendor model
+    this.solids = [];                // world-frame collision boxes, in districtWorld's own { x, z, hw, hd, angle, height } shape
+    this.keepOut = [];               // world-frame ground footprints the dressing must not scatter into
+    this.#buildSkyline();
     this.#buildTokyoArch();
     this.#buildHalsteadLiftBridge();
     this.#place();
+  }
+
+  /**
+   * The twelve authored landmarks. One merged geometry each, one draw each,
+   * bound to tokyoMaterial() -- vertex colour plus the `emit` attribute, so
+   * their lit parts come up on the city's own night curve (main's
+   * setTokyoNight) with no new material to keep in step. They are NOT in a
+   * chunk: they live for the session, frustum-culled like any mesh, and they
+   * enable SHADOW_FAR_LAYER because at 400 m they are only ever seen by the
+   * far shadow cascades.
+   */
+  #buildSkyline() {
+    const heads = [];
+    let tris = 0;
+    /* The signature bridge: two lattice towers, sheaves, counterweights on
+       cables and a through-truss you drive inside (world/liftBridge.js). It is
+       built whole here rather than per chunk, because it is one object 381 m
+       long -- world/spans.js deliberately skips this bridge (signatureBridge)
+       so the two do not both build piers along it. Modelled span-DOWN: a
+       raised span would cut the road. Parts come back per material key, the
+       same keys the self-built styles use. */
+    try {
+      const lb = buildLiftBridge(LIFT_BRIDGE.a, LIFT_BRIDGE.b, LIFT_BRIDGE.width);
+      const byKey = new Map();
+      for (const p of lb.parts) (byKey.get(p.mat) ?? byKey.set(p.mat, []).get(p.mat)).push(p.geo);
+      for (const [key, geos] of byKey) {
+        const merged = mergeGeometries(geos, false);
+        for (const g of geos) g.dispose();
+        if (!merged) continue;
+        merged.computeBoundingSphere();
+        const m = new THREE.Mesh(merged, artMaterial(key));
+        m.name = `liftbridge_${key}`;
+        m.castShadow = true; m.receiveShadow = true;
+        m.layers.enable(SHADOW_FAR_LAYER);
+        this.scene.add(m);
+      }
+      /* Its solids come back in the bridge's own frame (local: true), so they
+         go through the same local-to-world turn the skyline pieces use. The
+         car must pass BETWEEN the legs, so these are per-leg clusters, never a
+         box across the deck. */
+      const ang = LIFT_BRIDGE.angle, ca = Math.cos(ang), sa = Math.sin(ang);
+      for (const b of lb.solids ?? []) {
+        const wx = LIFT_BRIDGE.x + b.x * ca - b.z * sa;
+        const wz = LIFT_BRIDGE.z + b.x * sa + b.z * ca;
+        this.solids.push({ x: wx, z: wz, hw: b.hw, hd: b.hd, angle: ang, height: b.height, district: LIFT_BRIDGE.district, landmark: true });
+      }
+      for (const l of lb.lamps ?? []) {
+        const wx = LIFT_BRIDGE.x + l.x * ca - l.z * sa;
+        const wz = LIFT_BRIDGE.z + l.x * sa + l.z * ca;
+        heads.push({ x: wx, y: l.y, z: wz, colour: l.colour ?? 0xffd9a0 });
+      }
+    } catch (e) { console.warn('lift bridge', e.message); }
+
+    for (const s of SKYLINE) {
+      let lm;
+      try { lm = buildLandmark(s.kind, s.seed ?? 7); } catch (e) { console.warn('skyline', s.kind, e.message); continue; }
+      const mesh = new THREE.Mesh(lm.geo, tokyoMaterial());
+      mesh.name = `landmark_${s.kind}`;
+      mesh.position.set(s.x, 0, s.z);
+      mesh.rotation.y = s.yaw;
+      mesh.castShadow = true; mesh.receiveShadow = true;
+      mesh.layers.enable(SHADOW_FAR_LAYER);
+      this.scene.add(mesh);
+      /* three's rotation.y turns local +X to (cos yaw, -sin yaw), while a
+         collision box's own `angle` turns its +X to (cos a, sin a)
+         (vehicle/collision.js:resolveBoxes) -- so the box angle is -yaw. */
+      const cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);
+      const toWorld = (lx, lz) => [s.x + lx * cy + lz * sy, s.z - lx * sy + lz * cy];
+      for (const b of lm.solids) {
+        const [wx, wz] = toWorld(b.x, b.z);
+        this.solids.push({ x: wx, z: wz, hw: b.hw, hd: b.hd, angle: -s.yaw + (b.angle ?? 0), height: b.height, district: s.district, landmark: true });
+      }
+      for (const l of lm.lights) {
+        const [wx, wz] = toWorld(l.x, l.z);
+        heads.push({ x: wx, y: l.y, z: wz, colour: l.colour, range: l.range });
+      }
+      /* Keep-out. Reserving the BLOCK stops another building landing here; it
+         does not stop the scatterers, and every plot in the table is exactly
+         the type they dress: dressing.js drops YARD_KIT/HARBOUR_KIT on an
+         11 m grid over every lot/vacant/yard and PARK_KIT on a 9 m grid over
+         every park, and districtWorld's own park loop plants trees on an 11 m
+         grid -- a skip inside the gas holder drum and poplars inside the palm
+         house. Publish the GROUND footprint (vertices below 8 m, so the
+         crane's boom still has containers standing under it) and let them
+         ask. Three one-line callers, listed in the review. */
+      const pos = lm.geo.attributes.position;
+      let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+      for (let i = 0; i < pos.count; i++) {
+        if (pos.getY(i) >= 8) continue;
+        const px = pos.getX(i), pz = pos.getZ(i);
+        if (px < mnx) mnx = px; if (px > mxx) mxx = px;
+        if (pz < mnz) mnz = pz; if (pz > mxz) mxz = pz;
+      }
+      if (mnx < Infinity) {
+        const [kx, kz] = toWorld((mnx + mxx) / 2, (mnz + mxz) / 2);
+        this.keepOut.push({ x: kx, z: kz, cy, sy, hw: (mxx - mnx) / 2, hd: (mxz - mnz) / 2 });
+      }
+      if (s.block !== undefined) this.usedBlocks.add(s.block);
+      this.placed.push({ ...s, tris: lm.tris, height: lm.height });
+      tris += lm.tris;
+    }
+    /* The two scatterers both hold the District, not the world, so this is
+       the one object both can reach without a new argument. */
+    this.district.landmarkKeepOut = (x, z, pad) => this.keepOutAt(x, z, pad);
+    if (this.world) {
+      /* The night pool reads hero lights straight out of this map
+         (game/lighting.js:#hero) and nothing else writes to it, so a key of
+         our own is the whole wiring. Collision goes through
+         world.extraSolids, which districtWorld folds into each chunk's box
+         list as it builds -- see the hook in the phase report. */
+      (this.world.heroLightsByChunk ??= new Map()).set('landmarks', heads);
+      this.world.extraSolids = this.solids;
+    }
+    console.info(`skyline: ${this.placed.length} landmarks, ${tris} triangles, ${this.solids.length} solids, ${heads.length} hero lights`);
+  }
+
+  /**
+   * Is (x, z) standing on a landmark? The dressing asks before it drops a
+   * prop or a tree. Rects, in each landmark's own frame -- twelve of them, so
+   * a linear scan is the whole algorithm; it runs per grid cell as a chunk
+   * builds, never in the frame loop.
+   */
+  keepOutAt(x, z, pad = 1.5) {
+    for (const k of this.keepOut) {
+      const dx = x - k.x, dz = z - k.z;
+      if (Math.abs(dx * k.cy - dz * k.sy) <= k.hw + pad
+       && Math.abs(dx * k.sy + dz * k.cy) <= k.hd + pad) return true;
+    }
+    return false;
   }
 
   async #place() {
     const loader = new GLTFLoader();
     const used = new Set();
     await Promise.all(LANDMARKS.map(async (lm) => {
-      const lots = this.district.blocks.filter((b) => (b.type === 'lot' || b.type === 'vacant') && b.district === lm.district && !used.has(b) && Math.min(b.w, b.h) >= lm.minW)
+      const lots = this.district.blocks.filter((b) => (b.type === 'lot' || b.type === 'vacant') && b.district === lm.district && !used.has(b) && !this.usedBlocks.has(b.id) && Math.min(b.w, b.h) >= lm.minW)
         .sort((a, b) => Math.min(a.w, a.h) - Math.min(b.w, b.h));
-      const lot = lots[0] ?? this.district.blocks.filter((b) => (b.type === 'lot' || b.type === 'vacant') && !used.has(b) && Math.min(b.w, b.h) >= lm.minW).sort((a, b) => Math.min(a.w, a.h) - Math.min(b.w, b.h))[0];
+      const lot = lots[0] ?? this.district.blocks.filter((b) => (b.type === 'lot' || b.type === 'vacant') && !used.has(b) && !this.usedBlocks.has(b.id) && Math.min(b.w, b.h) >= lm.minW).sort((a, b) => Math.min(a.w, a.h) - Math.min(b.w, b.h))[0];
       if (!lot) { console.warn('landmark: no lot for', lm.file); return; }
       used.add(lot);
       const path = lm.file.startsWith('/') ? lm.file : BASE + lm.file + '.glb';
+      /* Is the file even there? Poly Haven GLBs are CC0 downloads that
+         .gitignore deliberately excludes (public/models/vendor/polyhaven/*.glb)
+         and tools/polyhaven.mjs restores from a local download. On a machine
+         without that download the request 404s to an HTML page, GLTFLoader
+         tries to parse "<!DOCTYPE" as glTF, and every boot logs a JSON error
+         that reads like a corrupt asset. Check first; skip with the fix named. */
+      try {
+        const head = await fetch(path, { method: 'HEAD' });
+        /* `ok` is not enough: Vite's server answers a missing file with 200 and
+           index.html (SPA fallback), which is exactly the "<!DOCTYPE" that
+           GLTFLoader then chokes on. A GLB is application/octet-stream or
+           model/gltf-binary; anything text/html is the fallback page. */
+        const type = head.headers.get('content-type') || '';
+        if (!head.ok || /text\/html/i.test(type)) {
+          console.info(`landmark skipped: ${lm.name} -- ${path} is not downloaded (run tools/polyhaven.mjs)`);
+          return;
+        }
+      } catch { /* offline or blocked HEAD: fall through and let the load decide */ }
       let gltf; try { gltf = await new Promise((res, rej) => loader.load(path, res, undefined, rej)); } catch (e) { console.warn('landmark', lm.file, e.message); return; }
-      const obj = gltf.scene;
+      let obj = gltf.scene;
+      if (lm.frontage?.assemble) {
+        obj = assembleTenement(gltf, lm.frontage.assemble.bays, lm.frontage.assemble.floors);
+        console.info(`tenement assembled: ${JSON.stringify(obj.userData.tenement)}`);
+      }
       obj.updateMatrixWorld(true);
       const bb = new THREE.Box3().setFromObject(obj), size = bb.getSize(new THREE.Vector3()), c = bb.getCenter(new THREE.Vector3());
       const maxK = lm.maxScale ?? 1.6;
       const k = lm.targetW ? (lm.targetW / size.x) : Math.min((lot.w - 3) / size.x, (lot.h - 3) / size.z, maxK);        // fit the lot or scale to target dimension
       const wrap = new THREE.Group();
-      obj.position.set(-c.x, -bb.min.y, -c.z);
+      obj.position.set(-c.x, -(lm.frontage?.groundY ?? bb.min.y), -c.z);
       wrap.add(obj);
       wrap.scale.setScalar(k);
       wrap.position.set(lot.x, 0.15, lot.y);
       wrap.rotation.y = lot.angle;
-      wrap.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      if (lm.frontage) {
+        /* Face the road. Four candidate yaws; the facade's +Z normal probes
+           8 m past the lot edge and the most-on-tarmac one wins
+           (district.tarmacDepth is negative on the carriageway). The facade
+           has to fit along the lot axis it stands on, so a 44 m side is
+           never offered a 51 m wall. Then slide it to that edge. */
+        const D = this.district, fw = size.x * k, fd = size.z * k;
+        let best = null;
+        for (let q = 0; q < 4; q++) {
+          const yaw = lot.angle + q * Math.PI / 2;
+          const along = (q % 2 === 0) ? lot.w : lot.h;     // lot axis the wall runs along
+          const out = (q % 2 === 0) ? lot.h : lot.w;       // lot axis the normal points along
+          if (along < fw + 1) continue;
+          const nx = Math.sin(yaw), nz = Math.cos(yaw);
+          const depth = D.tarmacDepth ? D.tarmacDepth(lot.x + nx * (out / 2 + 8), lot.y + nz * (out / 2 + 8)) : 0;
+          if (!best || depth < best.depth) best = { yaw, nx, nz, out, depth };
+        }
+        if (best) {
+          wrap.rotation.y = best.yaw;
+          const push = best.out / 2 - fd / 2 - 1.0;
+          wrap.position.x += best.nx * push; wrap.position.z += best.nz * push;
+          // the block behind the wall: the facade's own height, the frontage depth, a plain plaster body and a flat roof
+          // depth 0 = the model IS the building (the Blender neon towers); only a stage flat needs a body behind it
+          const H = (bb.max.y - (lm.frontage.groundY ?? bb.min.y));
+          if (lm.frontage.depth > 0) {
+            const body = new THREE.Mesh(new THREE.BoxGeometry(size.x - 0.3, H - 0.6, lm.frontage.depth), new THREE.MeshStandardMaterial({ color: lm.frontage.colour, roughness: 0.92, metalness: 0 }));
+            body.position.set(0, (H - 0.6) / 2, -(size.z / 2 + lm.frontage.depth / 2) + 0.15);
+            body.castShadow = true; body.receiveShadow = true;
+            obj.parent.add(body);
+          }
+          console.info(`frontage ${lm.name}: yaw ${best.yaw.toFixed(2)}, road depth ${best.depth.toFixed(1)} m`);
+        }
+      }
+      wrap.traverse((o) => { if (o.isMesh) { o.castShadow = !lm.heavy; o.receiveShadow = true; } });
       this.scene.add(wrap);
       this.placed.push({ ...lm, x: lot.x, z: lot.y, scale: k });
       console.info(`landmark ${lm.name} at ${lot.x | 0},${lot.y | 0} (${lm.district}) x${k.toFixed(2)}`);
@@ -268,6 +597,44 @@ export class Landmarks {
     const towerH = 34.0;
     const halfW = width / 2;
 
+    /* Overhead highway portal sign: ONE material + canvas for both towers. It
+       was built inside the tower loop, so the two towers carried two identical
+       1024x256 canvas textures and (after the merge below) two sign draws
+       instead of one -- measured 9 merged meshes, 8 once hoisted. */
+    let portalSignMat = null;
+    if (typeof document !== 'undefined') {
+      const signCanvas = document.createElement('canvas');
+      signCanvas.width = 1024; signCanvas.height = 256;
+      const sctx = signCanvas.getContext('2d');
+      sctx.fillStyle = '#0e1824';
+      sctx.fillRect(0, 0, 1024, 256);
+      sctx.strokeStyle = '#3fd2ff';
+      sctx.lineWidth = 10;
+      sctx.strokeRect(6, 6, 1012, 244);
+      sctx.font = '900 62px system-ui, -apple-system, sans-serif';
+      sctx.textAlign = 'center';
+      sctx.textBaseline = 'middle';
+      sctx.fillStyle = '#ffffff';
+      sctx.shadowColor = '#00e5ff';
+      sctx.shadowBlur = 18;
+      sctx.fillText('HALSTEAD LIFT BRIDGE', 512, 90);
+      sctx.font = '700 42px system-ui, -apple-system, sans-serif';
+      sctx.fillStyle = '#39ffb0';
+      sctx.shadowColor = '#39ffb0';
+      sctx.shadowBlur = 12;
+      sctx.fillText('VERTICAL CLEARANCE 7.6M · EST. 1928', 512, 168);
+
+      const signTex = new THREE.CanvasTexture(signCanvas);
+      signTex.colorSpace = THREE.SRGBColorSpace;
+      portalSignMat = new THREE.MeshStandardMaterial({
+        map: signTex,
+        emissiveMap: signTex,
+        emissive: 0xffffff,
+        emissiveIntensity: 2.4,
+        roughness: 0.3,
+      });
+    }
+
     for (const tPos of towerPositions) {
       const towerGroup = new THREE.Group();
       towerGroup.position.set(tPos, deckY, 0);
@@ -343,39 +710,8 @@ export class Landmarks {
       topTie.position.set(0, towerH, 0);
       towerGroup.add(topTie);
 
-      // Overhead highway portal sign
-      if (typeof document !== 'undefined') {
-        const signCanvas = document.createElement('canvas');
-        signCanvas.width = 1024; signCanvas.height = 256;
-        const sctx = signCanvas.getContext('2d');
-        sctx.fillStyle = '#0e1824';
-        sctx.fillRect(0, 0, 1024, 256);
-        sctx.strokeStyle = '#3fd2ff';
-        sctx.lineWidth = 10;
-        sctx.strokeRect(6, 6, 1012, 244);
-        sctx.font = '900 62px system-ui, -apple-system, sans-serif';
-        sctx.textAlign = 'center';
-        sctx.textBaseline = 'middle';
-        sctx.fillStyle = '#ffffff';
-        sctx.shadowColor = '#00e5ff';
-        sctx.shadowBlur = 18;
-        sctx.fillText('HALSTEAD LIFT BRIDGE', 512, 90);
-        sctx.font = '700 42px system-ui, -apple-system, sans-serif';
-        sctx.fillStyle = '#39ffb0';
-        sctx.shadowColor = '#39ffb0';
-        sctx.shadowBlur = 12;
-        sctx.fillText('VERTICAL CLEARANCE 7.6M · EST. 1928', 512, 168);
-
-        const signTex = new THREE.CanvasTexture(signCanvas);
-        signTex.colorSpace = THREE.SRGBColorSpace;
-        const portalSignMat = new THREE.MeshStandardMaterial({
-          map: signTex,
-          emissiveMap: signTex,
-          emissive: 0xffffff,
-          emissiveIntensity: 2.4,
-          roughness: 0.3,
-        });
-
+      // Overhead highway portal sign, both faces
+      if (portalSignMat) {
         for (const faceDir of [-1, 1]) {
           const signMesh = new THREE.Mesh(new THREE.PlaneGeometry(16.0, 3.4), portalSignMat);
           signMesh.position.set(faceDir * 1.25, 8.2, 0);
@@ -439,7 +775,39 @@ export class Landmarks {
     // Transform whole bridge group along Halstead Lift Bridge vector
     group.position.set(ax, 0, az);
     group.rotation.y = -yaw;
-    this.scene.add(group);
-    console.info('Halstead Lift Bridge 3D Architecture installed at', ax, az, 'length:', L);
+
+    /* Bake the parts into ONE mesh per material + shadow flags. Census
+       2026-09-22 (free roam, build 57cabc7, in-browser): this group was 353
+       DIRECT draws for 5,332 triangles -- 25% of all direct draws, the single
+       largest group. Nothing in it moves or is looked up later (no this.*,
+       no name lookups, the beacon/nav lights are static emissive materials),
+       so everything merges. Bucketing on castShadow/receiveShadow as well as
+       material keeps the caster set exactly what it was (14 casters: footings,
+       columns, portal beams) instead of promoting 260 truss chords into the
+       shadow pass. Each part owns its own geometry, so the world matrix is
+       applied in place and the part geometry disposed after the merge
+       (rule 5). Measured in node against the same stubs: 353 meshes -> 8,
+       5,332 triangles -> 5,332, casters 14 parts -> 2 merged meshes. */
+    group.updateMatrixWorld(true);
+    const buckets = new Map();
+    group.traverse((o) => {
+      if (!o.isMesh) return;
+      const key = `${o.material.uuid}|${o.castShadow}|${o.receiveShadow}`;
+      const b = buckets.get(key) ?? buckets.set(key, { mat: o.material, cast: o.castShadow, recv: o.receiveShadow, geos: [] }).get(key);
+      b.geos.push(o.geometry.applyMatrix4(o.matrixWorld));
+    });
+    const baked = new THREE.Group();
+    baked.name = 'HalsteadLiftBridge';   // same name as before, so the census keeps grouping it
+    for (const { mat, cast, recv, geos } of buckets.values()) {
+      const merged = mergeGeometries(geos, false);
+      for (const g of geos) g.dispose();
+      if (!merged) continue;
+      merged.computeBoundingSphere();
+      const m = new THREE.Mesh(merged, mat);
+      m.castShadow = cast; m.receiveShadow = recv;
+      baked.add(m);
+    }
+    this.scene.add(baked);
+    console.info('Halstead Lift Bridge 3D Architecture installed at', ax, az, 'length:', L, 'draws:', baked.children.length);
   }
 }

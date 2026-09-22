@@ -24,27 +24,33 @@ export function setGlareRing(x, z, r) { ringCentre.value.set(x, 0, z); ringR.val
 
 let TEX = null;
 
-/* 128^2: six thin streaks through the centre with a soft falloff. The disc is
-   done in the shader (length of the uv), so the texture only carries streaks. */
+/* 128^2: a hot core plus TWO faint anamorphic streaks (GTA's counter-rotating
+   pair). Six rays through the centre read as a cartoon star on every lamp and
+   kanban — the disc falloff is in the shader, the texture only carries the pair. */
 function streakTexture() {
   const c = document.createElement('canvas'); c.width = c.height = 128;
   const g = c.getContext('2d');
   g.fillStyle = '#000'; g.fillRect(0, 0, 128, 128);
   g.translate(64, 64);
   g.globalCompositeOperation = 'lighter';
-  for (let i = 0; i < 6; i++) {
-    const grad = g.createLinearGradient(-64, 0, 64, 0);
-    grad.addColorStop(0, 'rgba(255,255,255,0)'); grad.addColorStop(0.5, 'rgba(255,255,255,0.9)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = grad;
-    g.rotate(Math.PI / 6);
-    g.fillRect(-64, i % 2 ? -1.2 : -0.7, 128, i % 2 ? 2.4 : 1.4);
-  }
+  const hx = g.createLinearGradient(-64, 0, 64, 0);
+  hx.addColorStop(0, 'rgba(255,255,255,0)');
+  hx.addColorStop(0.5, 'rgba(255,255,255,0.5)');
+  hx.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = hx;
+  g.fillRect(-64, -0.55, 128, 1.1);
+  const vy = g.createLinearGradient(0, -40, 0, 40);
+  vy.addColorStop(0, 'rgba(255,255,255,0)');
+  vy.addColorStop(0.5, 'rgba(255,255,255,0.18)');
+  vy.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = vy;
+  g.fillRect(-0.4, -40, 0.8, 80);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.NoColorSpace;
   return t;
 }
 
-function glareMaterial(posAttr, colAttr, phAttr, far = false) {
+function glareMaterial(posAttr, colAttr, phAttr, far = false, scAttr = null) {
   TEX ??= streakTexture();
   const m = new THREE.SpriteNodeMaterial({
     transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, fog: false,
@@ -57,21 +63,24 @@ function glareMaterial(posAttr, colAttr, phAttr, far = false) {
     const d = pos.sub(ringCentre);
     const inside = max(abs(d.x), abs(d.z)).lessThan(ringR);
     m.positionNode = pos;
-    m.scaleNode = select(inside, vec2(0), vec2(2.6));
+    m.scaleNode = select(inside, vec2(0), vec2(1.6));
   } else {
     /* The head position is the CENTRE of the lamp cap / kanban it belongs to, so a
        plain depth test loses the sprite inside its own head. Pull it 0.8 m toward
        the camera: still hidden by a building in front, never by the head itself. */
     m.positionNode = pos.add(cameraPosition.sub(pos).normalize().mul(0.8));
-    m.scaleNode = vec2(3.6);   // metres (size attenuation is the sprite's own perspective)
+    if (scAttr) {
+      const sc = instancedBufferAttribute(scAttr);
+      m.scaleNode = vec2(sc, sc);
+    } else m.scaleNode = vec2(1.7);
   }
   const c = uv().sub(0.5);
   const rot = (ang) => vec2(c.x.mul(cos(ang)).sub(c.y.mul(sin(ang))), c.x.mul(sin(ang)).add(c.y.mul(cos(ang)))).add(0.5);
   const a = time.mul(0.45).add(ph);
   const streaks = texture(TEX, rot(a)).r.add(texture(TEX, rot(a.negate().mul(1.3))).r).mul(0.5);
   const disc = smoothstep(float(0.5), float(0.05), length(c));          // soft halo, 1 at the centre
-  const core = smoothstep(float(0.16), float(0.0), length(c));          // hot centre, blooms
-  const sh = disc.mul(disc).mul(0.7).add(streaks.mul(0.9)).add(core.mul(1.2));
+  const core = smoothstep(float(0.14), float(0.0), length(c));          // hot centre, blooms
+  const sh = disc.mul(disc).mul(0.9).add(streaks.mul(0.22)).add(core.mul(1.35));
   const col = colour.mul(sh).mul(glareNight);
   m.colorNode = vec4(col, 1);   // additive: colour is the whole contribution
   /* NOT additive()'s zero-normal guard: on a quad a zero normal reads as full
@@ -90,16 +99,19 @@ function glareMaterial(posAttr, colAttr, phAttr, far = false) {
 export function buildGlare(heads, seed = 1, far = false) {
   if (!heads.length) return null;
   const n = heads.length;
-  const pos = new Float32Array(n * 3), col = new Float32Array(n * 3), ph = new Float32Array(n);
+  const pos = new Float32Array(n * 3), col = new Float32Array(n * 3), ph = new Float32Array(n), sc = new Float32Array(n);
   const c = new THREE.Color();
   heads.forEach((h, i) => {
     pos[i * 3] = h.x; pos[i * 3 + 1] = h.y; pos[i * 3 + 2] = h.z;
     c.setHex(h.colour ?? 0xffb060);
-    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+    const boost = h.neon ? 1.55 : 1;
+    col[i * 3] = c.r * boost; col[i * 3 + 1] = c.g * boost; col[i * 3 + 2] = c.b * boost;
     ph[i] = ((seed * 7919 + i * 104729) % 628) / 100;
+    sc[i] = h.glare ?? (h.neon ? 2.5 : 1.7);
   });
   const posAttr = new THREE.InstancedBufferAttribute(pos, 3), colAttr = new THREE.InstancedBufferAttribute(col, 3), phAttr = new THREE.InstancedBufferAttribute(ph, 1);
-  const sp = new THREE.Sprite(glareMaterial(posAttr, colAttr, phAttr, far));
+  const scAttr = far ? null : new THREE.InstancedBufferAttribute(sc, 1);
+  const sp = new THREE.Sprite(glareMaterial(posAttr, colAttr, phAttr, far, scAttr));
   sp.count = n;
   sp.frustumCulled = false;      // bundle contents are culled as a chunk
   sp.renderOrder = 3;

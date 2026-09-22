@@ -9,7 +9,10 @@ Optimised copies of files supplied by the project owner from ~/Downloads. Not CC
 - corvette-zr1.glb: 2025_chevrolet_corvette_zr1 — author Ddiaz Design (https://sketchfab.com/ddiaz-design) — licence CC-BY-NC-SA-4.0 (http://creativecommons.org/licenses/by-nc-sa/4.0/) — https://sketchfab.com/3d-models/2025-chevrolet-corvette-zr1-9df7e489a49c4820b09d3fdde7271e78
 - monza.glb: 2023_chevrolet_monza — author Ddiaz Design (https://sketchfab.com/ddiaz-design) — licence CC-BY-NC-SA-4.0 (http://creativecommons.org/licenses/by-nc-sa/4.0/) — https://sketchfab.com/3d-models/2023-chevrolet-monza-dfda867b4f3b4696819b3e55d04d6db4
 
-Five of the six are CC-BY-NC-SA-4.0: attribution, NON-COMMERCIAL, share-alike. They are dev / personal-build content and must be removed before any sale or public release. corvette-c6r is CC-BY-4.0 (attribution only). All are branded Chevrolet models; CC licences do not clear trademarks.
+- porsche-gt3r.glb: 2024_porsche_992_gt3_r — supplied by the project owner 2026-09-13 (~/Downloads, Sketchfab export). Author and licence NOT yet recorded: the Sketchfab page was not supplied with the file. Treat as NON-COMMERCIAL until confirmed.
+- f40-comp.glb: 1989_ferrari_f40_competizione — supplied by the project owner 2026-09-13 (~/Downloads, Sketchfab export). Author and licence NOT yet recorded, same caveat.
+
+Five of the six Chevrolets are CC-BY-NC-SA-4.0: attribution, NON-COMMERCIAL, share-alike. They are dev / personal-build content and must be removed before any sale or public release. corvette-c6r is CC-BY-4.0 (attribution only). All are branded Chevrolet models; CC licences do not clear trademarks.
 
 ## Set pieces (landmarks)
 

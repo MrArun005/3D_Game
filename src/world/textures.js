@@ -28,6 +28,26 @@ export function shade(hex, k) {
   return `rgb(${f(r)},${f(g)},${f(b)})`;
 }
 
+/**
+ * Per-pixel dither, to break 8-bit banding in a smooth gradient.
+ *
+ * A vertical gradient over 512 px steps roughly every two pixels, and those
+ * steps stretched across a 9000 m dome are Mach bands -- the eye reads the
+ * interference between them and the sphere's own tessellation as a faint
+ * moire. Half an LSB of noise per pixel removes it outright and is invisible
+ * as noise. Seeded like everything else here, so the sky is identical on
+ * every load.
+ */
+export function ditherCanvas(g, w, h, amp = 1.5) {
+  const img = g.getImageData(0, 0, w, h);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const n = (rp() - 0.5) * 2 * amp;
+    d[i] += n; d[i + 1] += n; d[i + 2] += n;      // Uint8ClampedArray clamps for us
+  }
+  g.putImageData(img, 0, 0);
+}
+
 /** Scattered soft blobs — the base of every grimy surface here. */
 export function noiseWash(g, w, h, n, alpha, tint) {
   for (let i = 0; i < n; i++) {
@@ -47,33 +67,21 @@ export function texAsphalt(kind) {
   const W = ROAD_HALF * 2;
   const px = S / W;
 
-  g.fillStyle = '#25272b'; g.fillRect(0, 0, S, S);
-  noiseWash(g, S, S, 900, 0.1, '14,15,18');
-  noiseWash(g, S, S, 500, 0.07, '76,80,88');
-  for (let i = 0; i < 240; i++) {
-    g.fillStyle = `rgba(${ri(110, 155)},${ri(110, 155)},${ri(115, 160)},${rr(0.04, 0.12)})`;
-    g.fillRect(rp() * S, rp() * S, rr(1, 3), rr(1, 3));
-  }
-  for (let i = 0; i < 26; i++) {
-    g.fillStyle = `rgba(18,19,22,${rr(0.2, 0.45)})`;
-    g.beginPath();
-    g.ellipse(rp() * S, rp() * S, rr(20, 90), rr(10, 50), rp() * 3, 0, 7);
-    g.fill();
-  }
-  g.strokeStyle = 'rgba(14,15,18,0.55)'; g.lineWidth = 2.5;
-  for (let i = 0; i < 8; i++) {
-    const y = rp() * S;
-    g.beginPath(); g.moveTo(0, y);
-    g.bezierCurveTo(S * 0.3, y + rr(-40, 40), S * 0.7, y + rr(-40, 40), S, y + rr(-30, 30));
-    g.stroke();
+  // Clean, dark, high-grade asphalt with fine mineral aggregate (zero dirty blobs or oil patches)
+  g.fillStyle = '#202226'; g.fillRect(0, 0, S, S);
+  noiseWash(g, S, S, 140, 0.035, '15,16,18');
+  for (let i = 0; i < 650; i++) {
+    g.fillStyle = `rgba(${ri(130, 165)},${ri(130, 165)},${ri(135, 170)},${rr(0.03, 0.07)})`;
+    g.fillRect(rp() * S, rp() * S, rr(1, 2), rr(1, 2));
   }
 
-  const paint = 'rgba(206,208,202,0.78)';
+  const paint = 'rgba(240,242,246,0.92)';
+  const yellowPaint = 'rgba(235,195,55,0.94)';
   const line = (xm, wm, dash) => {
     g.fillStyle = paint;
     const x = xm * px, w2 = wm * px;
     if (!dash) { g.fillRect(x - w2 / 2, 0, w2, S); return; }
-    const segment = 3.0 * px, gap = 4.5 * px;
+    const segment = 3.2 * px, gap = 4.2 * px;
     for (let y = 0; y < S; y += segment + gap) g.fillRect(x - w2 / 2, y, w2, segment);
   };
 
@@ -86,9 +94,10 @@ export function texAsphalt(kind) {
     line(W - PARKING - 0.06, 0.12, false);
     line(PARKING + LANE, 0.12, true);
     line(W - PARKING - LANE, 0.12, true);
-    g.fillStyle = paint;
-    g.fillRect((W / 2) * px - 0.3 * px, 0, 0.12 * px, S);
-    g.fillRect((W / 2) * px + 0.18 * px, 0, 0.12 * px, S);
+    // Double solid center line in highway yellow
+    g.fillStyle = yellowPaint;
+    g.fillRect((W / 2) * px - 0.26 * px, 0, 0.12 * px, S);
+    g.fillRect((W / 2) * px + 0.14 * px, 0, 0.12 * px, S);
     g.globalAlpha = 0.32;
     for (let y = 0; y < S; y += 5.6 * px) {
       g.fillRect(0, y, PARKING * px * 0.55, 0.11 * px);
@@ -160,9 +169,19 @@ export function texPool() {
 /* Two skies. Day is not "night, brighter": the horizon haze has to be lighter
    AND less saturated than the zenith, or distant geometry never separates from
    the sky and the whole city reads as a flat cut-out. */
+/* The pale horizon is deliberate and stays: without aerial perspective the
+   distant geometry never separates from the sky and the city reads as a flat
+   cut-out. What was wrong was its WIDTH. The white ran 0.482..0.53, which is
+   about 8 degrees of elevation, and from a street you are looking straight
+   into that band -- every daytime frame read overcast-white even though the
+   zenith was already a good deep blue nobody in a city ever looks at. Now the
+   haze is a ~3.5 degree band sitting on the horizon line itself, with real
+   blue by v 0.55 (about 9 degrees up), so aerial perspective still works
+   where distant buildings actually meet the sky. */
 const SKY_DAY = [
-  [0.00, '#7f95ad'], [0.40, '#b3c5d6'], [0.482, '#e0e6ea'], [0.50, '#ece9df'],
-  [0.53, '#bfd3e9'], [0.64, '#7ea8d9'], [0.80, '#3f78bf'], [1.00, '#1f4f98'],
+  [0.00, '#7f95ad'], [0.40, '#a8bccd'], [0.492, '#cfdae4'], [0.50, '#e7e5dd'],
+  [0.512, '#c4d7ec'], [0.55, '#93b7de'], [0.66, '#6b9bd1'], [0.82, '#3f78bf'],
+  [1.00, '#1f4f98'],
 ];
 
 
@@ -178,12 +197,29 @@ const SKY_DAY = [
  * whole sky being pale.
  */
 function texDaySky(sunDir) {
-  const W = 1024, H = 512;
+  /* 2048x1024, was 1024x512. Stretched over a 9 km dome a texel covered ~10
+     screen pixels at the default lens, which is why the sun disc and cloud edges
+     looked soft and -- see below -- why a per-texel dither read as a grid. */
+  const W = 2048, H = 1024;
   const c = cv(W, H), g = c.getContext('2d');
   // canvas y = 0 is the top of the texture = v = 1 = zenith
   const gr = g.createLinearGradient(0, H, 0, 0);
   for (const [at, col] of SKY_DAY) gr.addColorStop(at, col);
   g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  /* Break the ramp before anything is painted on top of it. The noiseWash
+     further down only ever covered the top half, so the horizon -- the half
+     you actually see from a street -- had no dither at all. Seeded on its own
+     stream so the cloud placement below is byte-identical to before. */
+  /* NO texel dither here any more. ditherCanvas(g, W, H, 1.6) was added to
+     break 8-bit banding in the ramp, but it adds +/-1.6 of white noise PER
+     TEXEL, and the dome magnifies every texel to a ~5-10 px square: Arun's
+     "the sky in daylight is a mess out on top of the city" was that noise as
+     a visible grid, aliasing against the sphere's latitude rows into rings.
+     Banding is a DISPLAY-quantisation problem and is broken at display time by
+     the grade's film grain (clock.js profiles, `grain`), where the noise is one
+     screen pixel wide, not one sky texel. The seed stays so the cloud RNG
+     stream below is unchanged. */
+  seed(17);
 
   // where the sun sits on the dome
   let su = 0.62, sv = 0.78;
@@ -277,6 +313,29 @@ export function texSky(day = false, sunDir = null) {
   gr.addColorStop(1.0, '#0d1424');
   g.fillStyle = gr; g.fillRect(0, 0, 64, 512);
   return toTex(c);
+}
+
+/**
+ * Dry vs wet carriageway look. The frame loop used to write a "half-wet"
+ * roughness / env / bump even when `wet` was 0, so a dry noon road kept the
+ * night gloss and the asphalt grain specular-highlighted as cobbles.
+ *
+ * Dry: matte, almost-flat bump, env barely there.
+ * Wet: roughness 0.14, env 3.7, bump faded so water fills the grain.
+ */
+export function wetTarmacLook(wet, night = 0) {
+  const w = Math.max(0, Math.min(1, +wet || 0));
+  const n = Math.max(0, Math.min(1, +night || 0));
+  return {
+    /* night-dry ~0.44 so coloured point lights spec on the road. The wet floor
+       is 0.22, not 0.14: at 0.14 the highlight is a mirror, and a mirror-sharp
+       highlight on a normal-mapped surface seen at a grazing angle aliases --
+       that is the road FLICKERING as you drive, not a texture problem. 0.22
+       still mirrors the neon, it just resolves. */
+    roughness: (0.82 - 0.38 * n) * (1 - w) + 0.22 * w,
+    envMapIntensity: 0.25 + 3.45 * w,
+    normalScale: 0.28 - 0.13 * w,
+  };
 }
 
 /**

@@ -8,7 +8,13 @@
   <style>
 /* photo mode (P) hides the HUD so a shot is just the frame */
 body.photo #minimap, body.photo #cluster, body.photo #readout, body.photo #dials, body.photo #stats,
-body.photo #wanted, body.photo #mission, body.photo #gta-chat, body.photo #gameplay-prompt-bar, body.photo #ammo, body.photo #arsenal, body.photo #health, body.photo #flight-banner, body.photo #area-toast { display: none; }
+body.photo #mission, body.photo #place, body.photo #gta-chat, body.photo #phone-btn,
+body.photo #gameplay-prompt-bar, body.photo #wanted, body.photo #ammo, body.photo #arsenal, body.photo #health, body.photo #flight-banner, body.photo #area-toast, body.photo #touch { display: none !important; }
+/* title-card quality toggle (style.css is another agent's file today) */
+#hud .quality{margin:14px auto 0;font-size:11px;letter-spacing:.24em;color:#78859a;cursor:pointer;user-select:none}
+#hud .quality b{color:#e6c489;font-weight:600}
+#hud .quality small{display:block;margin-top:4px;font-size:10px;letter-spacing:.14em;color:#5f6c80}
+#hud .quality:hover b{color:#f0d6a4}
   </style>
 </head>
 <body>
@@ -38,6 +44,7 @@ body.photo #wanted, body.photo #mission, body.photo #gta-chat, body.photo #gamep
 
   <div id="cluster">
     <div id="readout">
+      <div id="vehicle-tag">CORVETTE C8 ZR1 · RWD</div>
       <div id="kph">0<small>KM/H</small></div>
       <div id="gear">GEAR <b>N</b></div>
       <div id="trip">TRIP <b>0.0</b> KM</div>
@@ -47,26 +54,29 @@ body.photo #wanted, body.photo #mission, body.photo #gta-chat, body.photo #gamep
 
   <div id="hud">
     <div class="card">
-      <h1>Halstead Bay</h1>
-      <p>Blue hour. Rain on the glass. Nobody waiting for you.</p>
-      <div class="keys">
-        <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive &nbsp; <kbd>Space</kbd> handbrake &nbsp; <kbd>C</kbd> camera &nbsp; <kbd>F</kbd> enter / exit &nbsp; <kbd>M</kbd> phone &nbsp; <kbd>Tab</kbd> map &nbsp; mouse look after clicking
+      <div class="eyebrow">HALSTEAD BAY</div>
+      <h1>Nightfall Drive</h1>
+      <p>Open streets. A port city that does not sleep. Nobody waiting for you.</p>
+      <div class="modes" role="group" aria-label="How do you want to start">
+        <button type="button" class="mode active" data-mode="free"><b>Free roam</b><span>Eleven districts, the harbour, the metro and the hills. Just drive.</span></button>
+        <button type="button" class="mode" data-mode="jobs"><b>Street jobs</b><span>Courier runs, fares, getaways and street races. Cash, rating, heat.</span></button>
+        <button type="button" class="mode" data-mode="story"><b>Heists</b><span>Three jobs from the phone, from the harbour jewel to the weapons raid.</span></button>
+        <button type="button" class="mode" data-mode="range"><b>Shooting range</b><span>Six boards, sixty seconds. Learn the recoil before it matters.</span></button>
+        <button type="button" class="mode" data-mode="holdout"><b>Hold-out</b><span>Pick your ground and the city comes to you. 180 seconds.</span></button>
       </div>
-      <details>
-        <summary>ALL CONTROLS</summary>
-        <div class="keys all">
-          <kbd>Shift</kbd> hold gear &nbsp; <kbd>H</kbd> lights &nbsp; <kbd>I</kbd> horn &nbsp; <kbd>R</kbd> reset &nbsp; <kbd>U</kbd> mute &nbsp; <kbd>P</kbd> photo mode &nbsp; <kbd>L</kbd> radio &nbsp; <kbd>G</kbd> take job &nbsp; <kbd>B</kbd> garage &nbsp; <kbd>N</kbd> buy &nbsp; <kbd>J</kbd> multiplayer &nbsp; <kbd>K</kbd> character<br />
-          <kbd>E</kbd> or <kbd>LMB</kbd> fire / punch &nbsp; <kbd>RMB</kbd> aim &nbsp; <kbd>X</kbd> reload &nbsp; <kbd>0</kbd> fists &nbsp; <kbd>1</kbd>–<kbd>4</kbd> guns &nbsp; <kbd>5</kbd> grenades &nbsp; <kbd>6</kbd> sniper &nbsp; <kbd>C</kbd> crouch (on foot) &nbsp; <kbd>Q</kbd> lean / look back<br />
-          Helicopter: <kbd>W</kbd> forward, <kbd>S</kbd> brake, <kbd>Space</kbd> climb, <kbd>Shift</kbd> descend, <kbd>A</kbd>/<kbd>D</kbd> turn &nbsp;·&nbsp; Tank: <kbd>A</kbd>/<kbd>D</kbd> pivot, <kbd>LMB</kbd> cannon<br />
-          Pad: RT throttle · LT brake · left stick steer · A handbrake · LB hold gear · Y camera · X lights · B enter/exit · RB fire · View reset · Start job
-        </div>
-      </details>
+      <div class="go">ENTER THE CITY</div>
+      <!-- core/quality.js presets; main.js cycles Auto -> Low -> Medium -> High on click and reloads on ENTER when the choice differs from what booted -->
+      <div class="quality" role="button" tabindex="0" title="Quality preset: Low / Medium / High / Auto">QUALITY · <b>AUTO</b> <small>click to change</small></div>
+      <div class="keys">
+        <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive &nbsp; <kbd>Space</kbd> handbrake &nbsp; <kbd>Shift</kbd> hold gear &nbsp; <kbd>F</kbd> get out / get in &nbsp; <kbd>C</kbd> camera &nbsp; <kbd>H</kbd> lights<br />
+        <kbd>G</kbd> take a job &nbsp; <kbd>M</kbd> phone (heists, range, hold-out, garage, heli, tank) &nbsp; <kbd>Tab</kbd> map &nbsp; <kbd>P</kbd> photo mode &nbsp; <kbd>L</kbd> radio<br />
+        On foot: <kbd>1</kbd>–<kbd>5</kbd> weapons &nbsp; <kbd>RMB</kbd> aim &nbsp; <kbd>E</kbd>/<kbd>LMB</kbd> fire &nbsp; <kbd>X</kbd> reload &nbsp; <kbd>C</kbd> crouch &nbsp; pad supported &nbsp; mouse look after clicking
+      </div>
       <div class="touchkeys">
         Drag the left strip to steer &nbsp;·&nbsp; GAS / BRAKE pedals on the right &nbsp;·&nbsp; HANDBRAKE, CAM, HORN, LIGHTS, EXIT up top<br />
         On foot: left thumb stick to walk, drag the right half to look, RUN / JUMP / USE / FIRE / AIM on the right<br />
         PHONE and MAP buttons replace M and Tab &nbsp;·&nbsp; landscape only
       </div>
-      <div class="go"><span class="mouse">click once, then drive</span><span class="tap">tap to start</span></div>
     </div>
   </div>
 

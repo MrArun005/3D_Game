@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { BODY_TYPES, BODY_KEYS } from '../vehicle/config.js';
 import { toTex } from './textures.js';
 
@@ -61,8 +62,83 @@ export const BODIES = {
   's-camaro-patrol': { src: 's', file: 'camaro-patrol', front: '+z' },
   's-corvette-zr1':  { src: 's', file: 'corvette-zr1',  front: '+z' },
   's-monza':         { src: 's', file: 'monza',         front: '+z' },
+  // 2026-09-13, from Arun's downloads. Long axis Z like the Chevrolets; '+z' is the family default -- flip if one drives backwards.
+  's-porsche-gt3r':  { src: 's', file: 'porsche-gt3r',  front: '+z' },
+  's-f40-comp':      { src: 's', file: 'f40-comp',      front: '+z', pose: 'end' },   // rigged: rest pose has the door OPEN, its one clip is 'DoorFrontLeftClose'
 };
 /** Traffic / parked style -> body id. */
+/**
+ * One mesh per material, not one per part.
+ *
+ * A Sketchfab body is a parts library: the C8 ZR1 arrives as 978 mesh nodes
+ * (29 materials), the Monza 301 (71), the C6.R 100 (20), the '67 Camaro 83
+ * (20). Every node is a draw call in the scene pass and again in each shadow
+ * cascade it casts into, so the ZR1 alone was ~1,000 direct draws a frame
+ * before a single building was drawn -- measured 2026-09-22 (node walk of the
+ * GLB JSON: draws/pass = nodes with a mesh). The size gate above already keeps
+ * the jewellery out of the shadow pass; this keeps it out of the scene pass.
+ *
+ * Bake each part's transform (the mixer has already posed the doors and
+ * updateMatrixWorld has run) into a float copy of its geometry, expressed in
+ * the wrap's frame so the wrap keeps its turn and scale, and merge everything
+ * that shares a material, a cast-shadow verdict and an attribute set. Skinned
+ * or morphing parts are left alone (none of the eight bodies has any). The
+ * source geometries are NOT disposed: fetchGltf caches the parsed scene and
+ * the garage re-wears bodies from that cache.
+ *
+ * Attributes go through toFloat because a quantized (KHR_mesh_quantization)
+ * position is a normalized Int16 -- applyMatrix4 on that truncates every
+ * coordinate to -1/0/1, the exact trap catalogue.js:deQuantize records.
+ */
+function mergeByMaterial(wrap, group) {
+  const toFloat = (a) => {
+    if (a.array instanceof Float32Array && !a.normalized) return a.clone();
+    const n = a.count, k = a.itemSize, out = new Float32Array(n * k);
+    for (let i = 0; i < n; i++) {
+      out[i * k] = a.getX(i);
+      if (k > 1) out[i * k + 1] = a.getY(i);
+      if (k > 2) out[i * k + 2] = a.getZ(i);
+      if (k > 3) out[i * k + 3] = a.getW(i);
+    }
+    return new THREE.BufferAttribute(out, k);
+  };
+  const inv = new THREE.Matrix4().copy(wrap.matrixWorld).invert();
+  const local = new THREE.Matrix4();
+  const buckets = new Map();
+  const kept = [];
+  group.traverse((o) => {
+    if (!o.isMesh) return;
+    if (o.isSkinnedMesh || o.morphTargetInfluences?.length || Array.isArray(o.material)) { kept.push(o); return; }
+    const g = o.geometry;
+    const sig = Object.keys(g.attributes).sort().join(',') + (g.index ? '|i' : '|n');
+    const key = `${o.material.uuid}|${o.castShadow ? 1 : 0}|${sig}`;
+    const geo = new THREE.BufferGeometry();
+    for (const name of Object.keys(g.attributes)) geo.setAttribute(name, toFloat(g.attributes[name]));
+    if (g.index) geo.setIndex(g.index.clone());
+    local.multiplyMatrices(inv, o.matrixWorld);
+    geo.applyMatrix4(local);
+    let b = buckets.get(key);
+    if (!b) buckets.set(key, b = { material: o.material, castShadow: o.castShadow, geos: [] });
+    b.geos.push(geo);
+  });
+  if (buckets.size === 0) return;
+  let before = 0;
+  group.traverse((o) => { if (o.isMesh) before++; });
+  wrap.remove(group);
+  for (const o of kept) wrap.attach(o);
+  for (const b of buckets.values()) {
+    const merged = b.geos.length === 1 ? b.geos[0] : mergeGeometries(b.geos, false);
+    if (!merged) { for (const g of b.geos) { const m = new THREE.Mesh(g, b.material); m.castShadow = b.castShadow; m.receiveShadow = true; m.frustumCulled = false; wrap.add(m); } continue; }
+    if (b.geos.length > 1) for (const g of b.geos) g.dispose();   // the parts are copies; the merge owns the result
+    merged.computeBoundingSphere();
+    const m = new THREE.Mesh(merged, b.material);
+    m.castShadow = b.castShadow; m.receiveShadow = true; m.frustumCulled = false;
+    m.geometry.userData.owned = true;
+    wrap.add(m);
+  }
+  console.info(`vendor body merged: ${before} parts -> ${wrap.children.length} draws`);
+}
+
 export const KENNEY_CARS = {
   sedan: 'q-normal1', hatch: 'q-normal2', suv: 'q-suv', van: 'k-van',
   wagon: 'k-suv-luxury', pickup: 'k-truck',
@@ -73,7 +149,14 @@ export const KENNEY_CARS = {
 };
 /* Spawn weights: the pooled fleet picks a style per car at start, so common
    bodies are listed several times and the heavy textured ones once. */
-const STYLE_WEIGHT = { sedan: 4, hatch: 3, suv: 3, van: 2, wagon: 2, pickup: 2, taxi: 3, hatch2: 2, sports: 1, sports2: 1, chev1: 1, chev2: 1, chev3: 1 };
+/* The Sketchfab cars are OUT of ambient traffic (2026-09-11): 28k-50k
+   triangles each against a 4k traffic budget, and a shadow caster apiece.
+   They stay in the garage as cars you buy; the roads run on the Quaternius
+   and Kenney fleet. */
+const STYLE_WEIGHT = { sedan: 4, hatch: 3, suv: 3, van: 2, wagon: 2, pickup: 2, taxi: 3, hatch2: 2, sports: 1, sports2: 1, chev1: 0, chev2: 0, chev3: 0 };   // explicit 0: the picker defaults a missing key to 1
+/* Never bodywork, whatever else a car is made of -- the fallback below may
+   pick a neutral as the paint, but never one of these. */
+const NON_PAINT = new Set(['windows', 'window', 'glass', 'headlights', 'taillights', 'lights', 'chrome', 'tyre', 'tire', 'rubber']);
 const NEUTRAL = new Set(['black', 'grey', 'gray', 'windows', 'window', 'glass', 'headlights', 'taillights', 'chrome', 'silver', 'lights', 'darkgrey', 'darkgray', 'white', 'tyre', 'tire', 'rubber']);
 // styles with no spec of their own borrow the sedan's dimensions
 const SPEC_OF = { taxi: 'sedan', police: 'sedan', sports: 'sedan', sports2: 'sedan', hatch2: 'hatch', chev1: 'sedan', chev2: 'sedan', chev3: 'sedan' };
@@ -221,6 +304,21 @@ function buildKitFromObj(group, spec, { wheels: keepWheels = true } = {}) {
   for (const m of bodies) { const p = m.geometry.attributes.position.array; for (const g of groupsOf(m)) { let a = 0; for (let v = g.start; v < g.start + g.count; v += 3) a += faceArea(p, v * 3); const n = (g.mat.name || '').toLowerCase(); area.set(n, (area.get(n) || 0) + a); colourOf.set(n, g.mat.color); } }
   let paintName = null, best = -1;
   for (const [n, a] of area) if (!NEUTRAL.has(n.replace(/[^a-z]/g, '')) && a > best) { best = a; paintName = n; }
+  /* Every material neutral -- which is SUV and SportsCar2 exactly: their MTLs
+     carry only Black, Grey, Headlights, TailLights, White, Windows, and all six
+     are in NEUTRAL. paintName stayed null, no group matched it, paintParts came
+     out EMPTY, and mergeGeometries([]) reads geometries[0].index and throws
+     "Cannot read properties of undefined (reading 'index')" -- which is why two
+     of the fleet's body styles silently fell back to the loft.
+     A white or grey car is still a car: fall back to the largest material that
+     CANNOT be bodywork-excluded. NEUTRAL stays as it is, because its job is to
+     stop a chrome bumper winning the hue vote on a car that has a real colour. */
+  if (!paintName) {
+    for (const [n, a] of area) {
+      if (NON_PAINT.has(n.replace(/[^a-z]/g, '')) || a <= best) continue;
+      best = a; paintName = n;
+    }
+  }
   // split: paint ranges vs detail ranges (detail gets vertex colours)
   const paintParts = [], detailParts = [];
   const slice = (m, g, withColour) => {
@@ -234,6 +332,8 @@ function buildKitFromObj(group, spec, { wheels: keepWheels = true } = {}) {
   // every part carries a colour attribute (paint parts too) so mergeGeometries accepts any mix of them
   for (const m of bodies) for (const g of groupsOf(m)) ((g.mat.name || '').toLowerCase() === paintName ? paintParts : detailParts).push(slice(m, g, true));
   if (keepWheels) for (const w of wheels) for (const g of groupsOf(w)) detailParts.push(slice(w, g, true));
+  // a clear failure beats mergeGeometries reading geometries[0].index on an empty array
+  if (!paintParts.length) throw new Error(`no paint material found (materials: ${[...area.keys()].join(', ')})`);
   const paint = mergeGeometries(paintParts, false), detail = mergeGeometries(detailParts, false);
   const all = mergeGeometries([...paintParts, ...detailParts], false);
   if (!paint || !detail || !all) throw new Error('merge failed (mixed attributes)');
@@ -255,7 +355,28 @@ export async function fetchKit(id, spec, assets, opts = {}) {
   if (def.src === 's') {
     // whole textured model, nose to +X, bottom at 0, scaled by LENGTH so the proportions stay real
     const gltf = await fetchGltf(def.file, SBASE);
-    const group = gltf.scene.clone(true);
+    /* SkeletonUtils.clone, not Object3D.clone. The F40 Competizione export is
+       SKINNED (wheels rigged to bones); a plain clone(true) leaves each
+       SkinnedMesh bound to the bones under the ORIGINAL, never-placed root, so
+       the body rendered at the world origin -- 155k triangles loaded with no
+       error and nothing on screen but the under-glow. SkeletonUtils rebinds the
+       clone to its own bones; on an unskinned scene it is a plain deep clone. */
+    const group = skeletonClone(gltf.scene);
+    /* Some rigged exports ship with their doors/hood OPEN as the rest pose and
+       an animation that closes them (the F40: one 3 s clip, 'DoorFrontLeftClose').
+       `pose: 'end'` plays every clip to its last frame once, so the bones settle
+       in the closed state, and the mixer is dropped -- nothing drives them after. */
+    if (def.pose === 'end' && gltf.animations?.length) {
+      const mixer = new THREE.AnimationMixer(group);
+      let dur = 0;
+      for (const clip of gltf.animations) {
+        /* LoopOnce + clamp, or the default LoopRepeat WRAPS at the end and
+           update(duration) lands back on frame 0 -- the door open again. */
+        const a = mixer.clipAction(clip); a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; a.play();
+        dur = Math.max(dur, clip.duration);
+      }
+      mixer.update(dur + 0.01);
+    }
     group.updateMatrixWorld(true);
     const bb = new THREE.Box3().setFromObject(group), size = bb.getSize(new THREE.Vector3()), c = bb.getCenter(new THREE.Vector3());
     const zLong = size.z >= size.x;
@@ -266,8 +387,63 @@ export async function fetchKit(id, spec, assets, opts = {}) {
     const turn = zLong ? (def.front === '-z' ? -Math.PI / 2 : Math.PI / 2) : (def.front === '-x' ? Math.PI : 0);
     wrap.rotation.y = turn;
     const k = spec.L / len; wrap.scale.set(k, k, k);
-    wrap.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
-    return { group: wrap, paint: null, detail: null, detailMat: null, lodBody: null };
+    /* Shadow casting is gated by SIZE (2026-09-13). A Sketchfab body is a
+       parts library: the C8 arrives as 976 meshes, 656 of them wheel spokes,
+       lug bolts and calliper badges. Every one was a caster, and cascade 0
+       redraws every caster -- measured in the browser as 985 of the frame's
+       2411 direct draws (41%), the single largest consumer in the game.
+       Anything whose world bounding radius is under 0.20 m sits INSIDE the
+       car's own silhouette, so its shadow is never separable from the body's;
+       the measured distribution has its natural break exactly there
+       (183 casters above 0.15 m, 68 above 0.20 m). Panels, glass and tyres
+       stay; the jewellery stops. Do not raise this to "fix" a draw count --
+       the wheel rims live just above it. */
+    wrap.updateMatrixWorld(true);
+    const SHADOW_MIN_R = 0.20;
+    wrap.traverse((o) => {
+      if (o.isMesh) {
+        const g = o.geometry;
+        if (!g.boundingSphere) g.computeBoundingSphere();
+        const e = o.matrixWorld.elements;
+        const scale = Math.hypot(e[0], e[1], e[2]);
+        o.castShadow = (g.boundingSphere?.radius ?? 0) * scale > SHADOW_MIN_R;
+        o.receiveShadow = true;
+        o.frustumCulled = false;
+        if (o.material) {
+          if (o.material.metalness !== undefined) {
+            o.material.envMapIntensity = 1.4;
+          }
+        }
+      }
+    });
+    /* Where the driver's eye is IN THIS BODY, for the cockpit camera (camera.js
+       merges it over the loft-tuned numbers). The loft's seat sits at local
+       (2.1, 1.0, +0.36) and the cockpit rig was measured against it; a vendor
+       body puts its seat wherever the real car does -- the F40 and the 911 well
+       forward, the C8 further back -- so a fixed eye ended up in the dash or over
+       the roof: "steering, dashboard not visible properly". Prefer the model's
+       own steering wheel node when it has one (the F40 rig names it), sit 0.42 m
+       behind it and 0.30 m above its hub; otherwise fall back to the box: eye at
+       the car's centre, 0.74 of its height, on the loft's side of the cabin. */
+    wrap.updateMatrixWorld(true);
+    const wb = new THREE.Box3().setFromObject(wrap), ws = wb.getSize(new THREE.Vector3());
+    let eye = null;
+    // Arun's perfect_racing_pov: the head sits ~0.6 m behind the hub, so the whole wheel and cluster fit in the lower half
+    wrap.traverse((o) => {
+      if (!eye && /steer/i.test(o.name)) eye = o.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(-0.82, 0.22, 0));   // Arun asked for more distance from the wheel: 0.82 m behind the hub
+    });
+    // a low car with a high hub (the F40: roof ~1.1 m) put the eye through its headliner at +0.36; never above 76% of the body
+    if (eye) eye.y = Math.min(eye.y, ws.y * 0.76);
+    /* Fallback, calibrated on the C8 and the 992: 0.74 of the box height put the
+       eye at 0.90 m in both, which read right; the car's CENTRE did not -- the
+       911's seats are ~0.5 m ahead of it (rear engine) and from there you were at
+       the B-pillar looking at roll cage and roof. 6% of the length forward covers
+       both. And -0.36: every vendor body here is left-hand drive; +0.36 was the
+       loft's seat and put the eye in the passenger seat with no wheel in view. */
+    if (!eye) eye = new THREE.Vector3(ws.x * 0.03 - 0.40, ws.y * 0.74, -0.36);   // and 20 cm further back on the box path to match   // 0.06 put the 992's eye past its wheel and 0.74 of the height into its headliner; 0.03 / 0.70 frame both it and the C8
+    const cockpit = { back: -eye.x, up: eye.y - 0.62, side: eye.z };   // camera.js: back is rearward-positive, up is over car.y (= ground + 0.62)
+    mergeByMaterial(wrap, group);
+    return { group: wrap, paint: null, detail: null, detailMat: null, lodBody: null, cockpit };
   }
   if (def.src === 'q') {
     const group = await fetchObj(def.file);
@@ -286,58 +462,73 @@ export async function fetchKit(id, spec, assets, opts = {}) {
 }
 
 /**
- * The hero wears a Kenney body too (item 1 of the visual list, 2026-09-02).
- *
- * The lofted hull stays as the PHYSICS and damage carrier -- its wheels
- * steer and spin, its interior, driver, steering wheel and lamps stay -- but
- * the visible skin becomes the kit's sports sedan, scaled to the hull's own
- * length and width so nothing downstream (camera offsets, collision probes,
- * door hinge maths) moves. Hidden: the hull body and glass, the four hinged
- * doors and the box trim. The paint mesh shares the hero's `paint` material
- * so damage soot and stolen-car colours still apply, and it becomes
- * userData.hull so the crumple lands on what you see. Known loss: the doors
- * no longer swing open on a carjack; the body is one piece.
+ * The hero car skin loader. Supports both procedural/Quaternius kits and
+ * full-fidelity high-poly Sketchfab hero bodies (e.g. Corvette C8 ZR1, Monza).
  */
-export async function loadHeroSkin(assets, hero, file = 'q-sports') {
+/* THE default car, in one place (2026-09-15). It used to live in three:
+   here, main.js:initialBody and garage.js:fitted, each hardcoded to
+   's-corvette-zr1'. Changing main.js alone did nothing -- the garage constructs
+   after it, sets its own default, and stamps it into localStorage 'hb.body',
+   so the yellow Corvette came back on every boot. Measured: cleared the key
+   before load, and it read 's-corvette-zr1' again 24 s later.
+   camaro-350 is the deep blue one: `CarPaint` #001b8a, the only shipped body
+   whose most-saturated material is paint rather than lights or calipers. */
+export const DEFAULT_BODY = 's-camaro-350';
+
+export async function loadHeroSkin(assets, hero, file = DEFAULT_BODY) {
   const u = hero.userData;
-  /* Re-fits: after the first skin userData.hull is the Kenney paint mesh, not
-     the loft -- measuring that (and its parent, the old skin group) put the
-     second body nowhere. Keep the loft hull as the fixed reference. */
   u.loftHull ??= u.hull;
   const hull = u.loftHull;
   if (!hull) return false;
-  if (u.skin) { u.skin.parent?.remove(u.skin); u.skin = null; }
+  /* Two fits can be in flight at once -- the boot skin and the race's
+     equipRaceCar('s-porsche-gt3r') a moment later -- and both used to read
+     u.skin as null before their await, so both bodies ended up on the car:
+     the census found the Camaro's 24 meshes drawn beside the GT3's 43. The
+     generation counter lets the newer fit win and the older one step aside;
+     the stale skin is removed AFTER the await, when it actually exists. */
+  const gen = u.skinGen = (u.skinGen ?? 0) + 1;
   hull.geometry.computeBoundingBox();
   const bb = hull.geometry.boundingBox;                 // shell space: nose at 0, tail at +L
   const L = bb.max.x - bb.min.x, W = bb.max.z - bb.min.z;
   const kit = await fetchKit(file, { L, wMax: W / 2 }, assets, { wheels: false }).catch((e) => { console.warn('hero skin', file, e.message); return null; });
   if (!kit) return false;
+  if (u.skinGen !== gen) return false;                  // a newer fit landed while this one loaded
+  if (u.skin) { u.skin.parent?.remove(u.skin); u.skin = null; }
+
+  const shellG = hull.parent;
   if (kit.group) {
-    // a whole textured body (Sketchfab): hide the loft skin, hang the group where the hull centre is
-    const shellG = hull.parent, trimG = assets.carMats.trim, paintG = hull.material, glassG = u.glass?.material;
-    shellG.traverse((o) => { if (o.isMesh && (o.material === paintG || o.material === glassG || o.material === trimG)) o.visible = false; });
+    // Whole textured body (Sketchfab): hide procedural loft shell & procedural wheels
+    shellG.traverse((o) => { if (o.isMesh) o.visible = false; });
+    u.cockpit = kit.cockpit ?? null;   // the eye for this body's own interior (camera.js cockpit rig)
+    if (u.wheels) {
+      for (const w of u.wheels) if (w.steer) w.steer.visible = false;
+    }
     const cxG = (bb.min.x + bb.max.x) / 2;
-    kit.group.position.set(shellG.position.x - cxG, bb.min.y, 0);
+    // Tyre contact plane is at y=0, perfectly seated on the asphalt
+    kit.group.position.set(shellG.position.x - cxG, 0, 0);
     shellG.parent.add(kit.group);
     u.skin = kit.group;
     u.hull = hull;                                         // dents land on the hidden loft: invisible, harmless
     return true;
   }
-  const shell = hull.parent;
-  // hide the loft skin: body, glass, doors and trim; keep lamps, interior, driver, wheel
+
+  // Restore procedural shell & wheels when switching to standard or Quaternius body
+  shellG.traverse((o) => { if (o.isMesh) o.visible = true; });
+  u.cockpit = null;   // back on the loft: its interior, its tuned eye
+  if (u.wheels) {
+    for (const w of u.wheels) if (w.steer) w.steer.visible = true;
+  }
   const trim = assets.carMats.trim, paint = hull.material, glass = u.glass?.material;
-  shell.traverse((o) => { if (o.isMesh && (o.material === paint || o.material === glass || o.material === trim)) o.visible = false; });
+  shellG.traverse((o) => { if (o.isMesh && (o.material === paint || o.material === glass || o.material === trim)) o.visible = false; });
   const paintGeo = kit.paint.clone();                    // the hero crumples its own copy
   paintGeo.userData.owned = true;
   const skin = new THREE.Group();
-  // the kit body is centred and faces +X; the hull is centred at (min+max)/2 in shell space, which the
-  // half-turned shell puts at CG_X - centre in body space, nose forward
   const cx = (bb.min.x + bb.max.x) / 2;
-  skin.position.set(shell.position.x - cx, bb.min.y, 0);
+  skin.position.set(shellG.position.x - cx, bb.min.y, 0);
   const pm = new THREE.Mesh(paintGeo, paint); pm.castShadow = true; pm.receiveShadow = true;
   const dm = new THREE.Mesh(kit.detail, kit.detailMat); dm.castShadow = true; dm.receiveShadow = true;
   skin.add(pm, dm);
-  shell.parent.add(skin);
+  shellG.parent.add(skin);
   u.hull = pm;                                           // damage.attach() reads this
   u.skin = skin;
   return true;

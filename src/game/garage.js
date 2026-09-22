@@ -1,6 +1,31 @@
-import { loadHeroSkin } from '../world/vendorCars.js';
+import { loadHeroSkin, DEFAULT_BODY } from '../world/vendorCars.js';
+import { getVehicleProfile } from '../vehicle/config.js';
+
+/* The chop shop (2026-09-09). Drive a car you do not OWN -- a carjack or a
+   break-in fits the victim's body without buying it -- to the Steelgate
+   warehouse and press N inside 60 m: it pays 35% of the showroom price (a
+   fifth more with the Chop Shop perk, reputation <= -80), costs 40
+   reputation, and puts you back in the last body you actually owned. It is
+   the heist_2 weapons stash, so the map's one criminal address stays one
+   address. The AR scanner (intel.js) quotes the same number over traffic. */
+export const CHOP_SHOP = { x: 3662, z: 1221, r: 60, name: 'STEELGATE CHOP SHOP' };
+export function chopValue(file, outlaw = false) {
+  const c = CATALOGUE.find((k) => k.file === file);
+  const base = Math.max(200, Math.round((c?.price ?? 600) * 0.35));
+  return outlaw ? Math.round(base * 1.2) : base;
+}
 
 export const CATALOGUE = [
+  // Premier High-Poly PBR Hero Sports Cars
+  { file: 's-corvette-zr1',  name: 'CORVETTE C8 ZR1',   price: 0 },
+  { file: 's-monza',         name: 'MONZA SP1',         price: 4500 },
+  { file: 's-corvette-c6r',  name: 'C6.R GT2',          price: 5000 },
+  { file: 's-camaro-jewel',  name: "'67 CAMARO SS",     price: 3500 },
+  { file: 's-camaro-350',    name: "'67 CAMARO 350",    price: 4000 },
+  { file: 's-camaro-patrol', name: 'CAMARO PATROL',     price: 6000 },
+  { file: 's-porsche-gt3r',  name: '992 GT3 R',         price: 7500 },
+  { file: 's-f40-comp',      name: 'F40 COMPETIZIONE',  price: 9000 },
+  // Standard & Street Fleet
   { file: 'q-sports',     name: 'SPORTS COUPE',  price: 0 },
   { file: 'q-normal1',    name: 'SALOON',        price: 500 },
   { file: 'q-normal2',    name: 'COMPACT',       price: 700 },
@@ -12,31 +37,36 @@ export const CATALOGUE = [
   { file: 'k-suv-luxury', name: 'LUXURY SUV',    price: 2600 },
   { file: 'q-sports2',    name: 'SUPERCAR',      price: 3800 },
   { file: 'q-cop',        name: 'CRUISER',       price: 4000 },
-  // owner-supplied Sketchfab bodies: real PBR, hero-only
-  { file: 's-camaro-jewel',  name: "'67 CAMARO SS",     price: 6500 },
-  { file: 's-camaro-350',    name: "'67 CAMARO 350",    price: 7500 },
-  { file: 's-corvette-c6r',  name: 'C6.R GT2',          price: 9000 },
-  { file: 's-camaro-patrol', name: 'CAMARO PATROL',     price: 9500 },
-  { file: 's-corvette-zr1',  name: 'CORVETTE ZR1',      price: 14000 },
-  { file: 's-monza',         name: 'MONZA',             price: 12000 },
 ];
-export const REPAIR = 150;
+export const REPAIR = 150;   // the minimum (a scuffed wing); the real price is repairCost below
+/* Repair is priced by the damage on the car, plus a respray when you are hot:
+   a scuffed wing is $100, a wreck at 100% is $700, and the police pay-off is
+   $200 on top. A flat $150 (2026-09-08 and before) made crashing free. */
+export const repairCost = (damage, hot) => Math.round(100 + 600 * Math.min(1, damage)) + (hot ? 200 : 0);
 
 export class Garage {
-  constructor(jobs, assets, hero, damage, hud) {
+  constructor(jobs, assets, hero, damage, hud, car = null) {
     this.jobs = jobs;
     this.assets = assets;
     this.hero = hero;
     this.damage = damage;
     this.hud = hud;
+    this.car = car;
 
-    let owned = ['q-sports'];
-    try { const v = JSON.parse(localStorage.getItem('hb.garage') || '["q-sports"]'); if (Array.isArray(v)) owned = v; } catch { /* corrupt or private mode: the default car */ }
+    /* The default body and premier race cars are owned by default for instant track readiness.
+       Parsed under a guard: a corrupt hb.garage threw inside the district init and the city never loaded. */
+    let owned = ['q-sports', DEFAULT_BODY, 's-porsche-gt3r', 's-corvette-c6r'];
+    try { const v = JSON.parse(localStorage.getItem('hb.garage') || 'null'); if (Array.isArray(v)) owned = v; } catch { /* corrupt or private mode */ }
     this.owned = new Set(owned);
-    this.fitted = localStorage.getItem('hb.body') || 'q-sports';
-    if (!CATALOGUE.some((c) => c.file === this.fitted)) this.fitted = 'q-sports';
+    this.fitted = localStorage.getItem('hb.body') || DEFAULT_BODY;   // ONE default: vendorCars.DEFAULT_BODY
+    if (!CATALOGUE.some((c) => c.file === this.fitted)) this.fitted = DEFAULT_BODY;
     this.cursor = CATALOGUE.findIndex((c) => c.file === this.fitted);
     this.browsing = false;
+    this.lastOwned = this.owned.has(this.fitted) ? this.fitted : 'q-sports';   // what the chop shop hands you back
+
+    if (this.car) {
+      this.car.profile = getVehicleProfile(this.fitted);
+    }
 
     // Performance & NOS Tuning
     this.stage = Number(localStorage.getItem('hb.tune_stage') || 1);
@@ -109,9 +139,23 @@ export class Garage {
   async act() {
     const c = CATALOGUE[this.cursor];
     if (!this.browsing || c.file === this.fitted) {
+      // a stolen body: the only thing N does with it is sell it, and only at the chop shop
+      if (!this.owned.has(this.fitted)) {
+        const at = this.where?.();
+        const d = at ? Math.hypot(at.x - CHOP_SHOP.x, at.z - CHOP_SHOP.z) : Infinity;
+        const rep = (typeof window !== 'undefined') ? window._reputation : null;
+        const pay = chopValue(this.fitted, (rep?.score ?? 0) <= -80);
+        const name = CATALOGUE.find((k) => k.file === this.fitted)?.name ?? this.fitted.toUpperCase();
+        if (d > CHOP_SHOP.r) { this.hud.flash(`STOLEN ${name} · CHOP $${pay} AT ${CHOP_SHOP.name} (${Math.round(d)} m)`); return; }
+        this.addCash(pay, `CHOP SHOP · ${name}`);
+        rep?.adjust(-40, 'CHOP SHOP SALE');
+        await this.wear(this.lastOwned);
+        return;
+      }
       // repair -- and a respray: below three stars the garage also loses the police (GTA's Pay 'n' Spray; main wires onRepair)
       const heat = this.heat?.() ?? 0;
       if (this.damage?.value <= 0.02 && heat <= 0) { this.hud.flash('NOTHING TO REPAIR'); return; }
+      const REPAIR = repairCost(this.damage?.value ?? 0, heat > 0);
       if (!this.spendCash(REPAIR)) { this.hud.flash(`REPAIR $${REPAIR} · NOT ENOUGH CASH`); return; }
       this.damage?.repair();
       const cleared = this.onRepair?.();
@@ -128,7 +172,9 @@ export class Garage {
 
   /** Drive what you stole: fit a body without buying it. */
   async wear(file) {
-    if (file && file !== this.fitted) await this.#fit(file);
+    if (!file || file === this.fitted) return;
+    if (this.owned.has(this.fitted)) this.lastOwned = this.fitted;   // remember what to come back to
+    await this.#fit(file);
   }
 
   async #fit(file) {
@@ -137,12 +183,22 @@ export class Garage {
     const ok = await loadHeroSkin(this.assets, this.hero, file);
     if (!ok) { this.hud.flash('GARAGE CLOSED'); return; }
     this.fitted = file;
+    if (this.car) {
+      this.car.profile = getVehicleProfile(file);
+    }
     this.damage?.attach(this.hero);
     try {
       localStorage.setItem('hb.body', file);
       localStorage.setItem('hb.garage', JSON.stringify([...this.owned]));
     } catch { /* private mode */ }
     this.browsing = false;
+  }
+
+  /** Immediately equip and fit a dedicated race car */
+  async equipRaceCar(file = 's-porsche-gt3r') {
+    this.owned.add(file);
+    await this.#fit(file);
+    return true;
   }
 
   /** Hold Shift to trigger nitrous boost */
@@ -171,7 +227,8 @@ export class Garage {
     const heat = this.heat?.() ?? 0;
     if (heat >= 3) { this.hud.flash('PAY \'N\' SPRAY · THEY KNOW THE DRIVER · LOSE A STAR FIRST'); return false; }
     if (this.damage?.value <= 0.02 && heat <= 0) { this.hud.flash('NOTHING TO REPAIR'); return false; }
-    if (!this.spendCash(REPAIR)) { this.hud.flash(`PAY 'N' SPRAY · $${REPAIR} · NOT ENOUGH CASH`); return false; }
+    const price = repairCost(this.damage?.value ?? 0, heat > 0);   // the same price the garage counter charges (act)
+    if (!this.spendCash(price)) { this.hud.flash(`PAY 'N' SPRAY · $${price} · NOT ENOUGH CASH`); return false; }
     this.damage?.repair();
     const cleared = this.onRepair?.();
     const colors = [0x991111, 0x113399, 0x111111, 0xd0c020, 0x157733, 0xee5500, 0x882288];
@@ -179,7 +236,7 @@ export class Garage {
     if (this.hero?.userData?.hull?.material) {
       this.hero.userData.hull.material.color.setHex(newColor);
     }
-    this.hud.flash(cleared ? `RESPRAYED · HEAT GONE · -$${REPAIR}` : `RESPRAYED · -$${REPAIR}`);
+    this.hud.flash(cleared ? `RESPRAYED · HEAT GONE · -$${price}` : `RESPRAYED · -$${price}`);
     return true;
   }
 

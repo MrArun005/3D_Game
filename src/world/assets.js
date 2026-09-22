@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { additive } from '../core/additive.js';
-import { texAsphalt, texWalk, texPool, toTex, cv, normalFromCanvas } from './textures.js';
+import { texAsphalt, texWalk, texPool, toTex, cv, normalFromCanvas, anisotropyOf } from './textures.js';
 import { buildFacadeMaterials, buildBaseMaterials, BASE_H } from './facades.js';
 import { makeTileable } from './city.js';
 import { texSignAtlas, buildSignMaterial, signGeometry, buildWindowMaterial } from './signs.js';
@@ -33,9 +33,30 @@ export function createAssets() {
 
   const box = new THREE.BoxGeometry(1, 1, 1);
   box.translate(0, 0.5, 0);      // origin at the footprint, so scale.y is height
+  /* A pitched roof, unit-sized: eaves at y=0 on a 1x1 footprint, ridge along X
+     at y=1. Two slopes, two gable ends, no soffit (nobody sees it). UVs are
+     planar per face so an instance scaled to a house tiles in metres on its
+     own slope. 8 triangles; the suburbs' single strongest "houses" cue. */
+  const gable = (() => {
+    const p = [], n = [], u = [];
+    const tri = (a, b, c, nx, ny, nz, ua, ub, uc) => { p.push(...a, ...b, ...c); for (let i = 0; i < 3; i++) n.push(nx, ny, nz); u.push(...ua, ...ub, ...uc); };
+    const s = Math.SQRT1_2;
+    tri([-0.5, 0, 0.5], [0.5, 0, 0.5], [0.5, 1, 0], 0, s, s, [0, 0], [1, 0], [1, 1]);      // +z slope
+    tri([-0.5, 0, 0.5], [0.5, 1, 0], [-0.5, 1, 0], 0, s, s, [0, 0], [1, 1], [0, 1]);
+    tri([0.5, 0, -0.5], [-0.5, 0, -0.5], [-0.5, 1, 0], 0, s, -s, [0, 0], [1, 0], [1, 1]);  // -z slope
+    tri([0.5, 0, -0.5], [-0.5, 1, 0], [0.5, 1, 0], 0, s, -s, [0, 0], [1, 1], [0, 1]);
+    tri([0.5, 0, 0.5], [0.5, 0, -0.5], [0.5, 1, 0], 1, 0, 0, [0, 0], [1, 0], [0.5, 1]);    // gable ends
+    tri([-0.5, 0, -0.5], [-0.5, 0, 0.5], [-0.5, 1, 0], -1, 0, 0, [0, 0], [1, 0], [0.5, 1]);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(n, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(u, 2));
+    return g;
+  })();
 
   const geo = {
     box,
+    gable,
     plane: new THREE.PlaneGeometry(1, 1),
     lens: new THREE.SphereGeometry(0.09, 8, 6),
     lamp: buildStreetLamp(),
@@ -59,7 +80,7 @@ export function createAssets() {
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.repeat.set(tile, tile);
     t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-    t.anisotropy = 8;
+    t.anisotropy = anisotropyOf();   // the device max (main.js sets it): the road is the one surface always seen at a grazing angle, where 8 samples still shimmer
     return t;
   };
   const setORM = (m, ormTex) => {
@@ -81,20 +102,20 @@ export function createAssets() {
       const m = new THREE.MeshStandardMaterial({
         map: loadPBR('/textures/asphalt_albedo.png', true, 2),
         normalMap: loadPBR('/textures/asphalt_normal.png', false, 2),
-        normalScale: new THREE.Vector2(0.8, 0.8),
+        normalScale: new THREE.Vector2(0.28, 0.28),
         roughnessMap: orm,
         metalnessMap: orm,
-        roughness: 0.48, metalness: 0.04, envMapIntensity: 1.1,
+        roughness: 0.82, metalness: 0.0, envMapIntensity: 0.25,
       });
       orm.channel = 0;
       return m;
     })(),
     // road paint, drawn as geometry a hair above the tarmac
     paint: new THREE.MeshBasicMaterial({
-      color: 0xd6d8d2, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+      color: 0xd6d8d2, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
     }),
     paintWarm: new THREE.MeshBasicMaterial({
-      color: 0xd8c24a, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+      color: 0xd8c24a, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
     }),
     kerbFace: new THREE.MeshLambertMaterial({ color: 0x9a9a94 }),
     intersection: new THREE.MeshStandardMaterial({
@@ -124,6 +145,7 @@ export function createAssets() {
       return m;
     })(),
     roof: new THREE.MeshLambertMaterial({ color: 0x2a2e34 }),
+    roofPitch: new THREE.MeshStandardMaterial({ color: 0x4a4644, roughness: 0.92, metalness: 0 }),   // slate; a pitched roof reads by its shape, not its tile
     roofGlass: new THREE.MeshStandardMaterial({
       color: 0x1a222c, roughness: 0.18, metalness: 0.55, envMapIntensity: 1.35,
     }),
@@ -156,17 +178,17 @@ export function createAssets() {
     lampCone: additive(new THREE.MeshBasicMaterial({
       color: 0xffd499, transparent: true, opacity: 0.12,
       blending: THREE.AdditiveBlending, depthWrite: false,
-      side: THREE.DoubleSide, fog: true,
+      side: THREE.DoubleSide, fog: false,
     })),
     bark: new THREE.MeshLambertMaterial({ color: 0x312b25 }),
-    leaf: new THREE.MeshLambertMaterial({ color: 0x283126 }),
+    leaf: new THREE.MeshStandardMaterial({ color: 0x2f4328, roughness: 0.92, metalness: 0 }),
     bin: new THREE.MeshStandardMaterial({ color: 0x282c31, roughness: 0.7, metalness: 0.4 }),
     tailDim: new THREE.MeshStandardMaterial({
       color: 0x4a1013, emissive: 0xa8181c, emissiveIntensity: 0.7, roughness: 0.3,
     }),
     pool: additive(new THREE.MeshBasicMaterial({
       map: pool, transparent: true, blending: THREE.AdditiveBlending,
-      depthWrite: false, opacity: 1.0, fog: true,
+      depthWrite: false, opacity: 1.0, fog: false,
     })),
     // one white material for every parked car; colour comes per instance, so a
     // whole street of mixed cars is one draw call per silhouette

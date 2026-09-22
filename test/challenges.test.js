@@ -94,7 +94,8 @@ test('Jobs dispatches contracts, handles pickup boarding, and rewards completion
   // the kind is rolled with Math.random; pin it to a FARE (KINDS[1]) -- a getaway
   // starts at 2 stars and correctly refuses to pay out while still hot
   const realRandom = Math.random; let first = true;
-  Math.random = () => (first ? (first = false, 0.5) : realRandom());   // only the kind roll is pinned; #pick keeps real randomness
+  const KINDS_N = 4, FARE_I = 1;   // jobs.js KINDS: courier, fare, getaway, race
+  Math.random = () => (first ? (first = false, (FARE_I + 0.5) / KINDS_N) : realRandom());   // only the kind roll is pinned; #pick keeps real randomness
   try { jobs.toggle({ x: 0, z: 0 }); } finally { Math.random = realRandom; }
   assert.equal(jobs.job?.kind, 'fare');
 

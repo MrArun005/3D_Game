@@ -29,7 +29,7 @@ export class Puffs {
     g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
     g.setAttribute('color', new THREE.BufferAttribute(this.col, 3));
     this.mesh = new THREE.Points(g, additive(new THREE.PointsMaterial({
-      map: discTex(), size, sizeAttenuation: true, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: true,
+      map: discTex(), size, sizeAttenuation: true, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })));
     this.mesh.frustumCulled = false; this.mesh.renderOrder = 5;
     scene.add(this.mesh);

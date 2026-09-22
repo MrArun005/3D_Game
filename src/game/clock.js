@@ -1,47 +1,199 @@
 import * as THREE from 'three';
 
+// Diurnal color grade anchor profiles
 
-/** Phase edges, in hours. Night 20.5-5.2, dusk 18-20.5, dawn 5.2-7.2, day otherwise. */
-export const NIGHT_FROM = 20.5, NIGHT_TO = 5.2, DUSK_FROM = 18.0, DAWN_TO = 7.2;
+const DIURNAL_PROFILES = {
+  DAY: {
+    sat: 1.10,
+    vibrance: 0.08,
+    contrast: 0.40,
+    split: 0.40,
+    shadowTint: [0.94, 0.97, 1.02],
+    midTint: [1.0, 1.0, 1.0],
+    highTint: [1.06, 1.01, 0.95],
+    slope: [1.02, 1.01, 1.0],
+    offset: [-0.012, -0.012, -0.010],
+    power: [1.02, 1.02, 1.02],
+    bloomStrength: 0.35,
+    bloomRadius: 0.35,
+    bloomThreshold: 0.85,
+    vignette: 0.35,
+    grain: 0.012,
+    filmic: 0.0,
+  },
+  /* Dusk is the hour this city looks best -- low sun down the long streets,
+     glass going gold on one face and blue on the other, signs just lighting --
+     and it was graded as a slightly weaker DAY. Now it splits hard: warm,
+     lifted highlights against genuinely blue shadows (that separation is what
+     makes a building read as two planes rather than one flat wall), more
+     saturation and contrast than day, and enough bloom that the first lit
+     windows and the sun off the glass bloom while the sky does not. `filmic`
+     comes half on so the sodium and the first neon keep their colour through
+     the tone map instead of washing toward white as AgX does. */
+  DUSK: {
+    sat: 1.34,
+    vibrance: 0.28,
+    contrast: 0.52,
+    split: 1.0,
+    shadowTint: [0.86, 0.92, 1.12],
+    midTint: [1.05, 1.0, 0.96],
+    highTint: [1.20, 1.03, 0.82],
+    slope: [1.07, 1.02, 0.95],
+    offset: [-0.018, -0.016, -0.010],
+    power: [1.02, 1.03, 1.04],
+    bloomStrength: 0.40,   // same reason as NIGHT below: far more emissive area than this was tuned against
+    bloomRadius: 0.40,
+    bloomThreshold: 0.95,
+    vignette: 0.48,
+    grain: 0.018,
+    filmic: 0.5,
+  },
+  NIGHT: {
+    sat: 1.32,
+    vibrance: 0.22,
+    contrast: 0.24,
+    split: 1.0,
+    shadowTint: [0.92, 0.93, 1.06],
+    midTint: [0.98, 0.98, 1.02],
+    highTint: [1.08, 0.97, 1.05],
+    slope: [1.01, 1.0, 1.04],
+    offset: [-0.01, -0.01, -0.005],
+    power: [1.03, 1.03, 1.02],
+    /* Retuned 2026-09-13. 0.95 / 0.55 / 0.85 was correct when a building
+       carried ~8 lit sign panels; the Little Tokyo signage pass took that to
+       ~40, and bloom scales with EMISSIVE AREA, not with how bright any one
+       sign is. The street went milky -- "fog settled on the lights". Proved it
+       with ?nobloom, which is crisp. The fix is to raise the threshold so only
+       the hot tubes (emissive 2.4) bloom and the sign faces (~1.0) do not,
+       and to cut strength to match. Same direction the 1.35/0.72/0.72 -> 0.95
+       retune went, just further, because there is far more emitter now. */
+    bloomStrength: 0.48,
+    bloomRadius: 0.40,
+    bloomThreshold: 1.05,
+    vignette: 0.62,
+    grain: 0.030,
+    filmic: 1.0,   // per-channel Hable tone map (grade.js): neon keeps its chroma
+  },
+  DAWN: {
+    sat: 0.98,
+    vibrance: 0.02,
+    contrast: 0.28,
+    split: 0.50,
+    shadowTint: [0.95, 0.97, 1.04],
+    midTint: [1.0, 1.0, 1.0],
+    highTint: [1.08, 1.03, 0.98],
+    slope: [1.0, 1.0, 1.0],
+    offset: [0.01, 0.01, 0.01],
+    power: [0.98, 0.98, 0.98],
+    bloomStrength: 0.60,
+    bloomRadius: 0.38,
+    bloomThreshold: 0.30,
+    vignette: 0.40,
+    grain: 0.020,
+    filmic: 0.0,
+  },
+};
 
-/**
- * How far into the night the hour is, 0 (day) .. 1 (deep night). Pure, so it
- * is testable and so every consumer -- the lamp stagger, LightPool, traffic
- * headlamps, Tokyo neon, glare, exposure, the grade -- reads the SAME curve.
- * Dusk climbs 18.0 -> 19.8 and holds 1 through the night; dawn falls 5.4 -> 7.0.
- */
-export function nightFactor(hour) {
-  const h = ((hour % 24) + 24) % 24;
-  if (h >= NIGHT_FROM || h < NIGHT_TO) return 1;
-  if (h >= DUSK_FROM) return Math.max(0, Math.min(1, (h - DUSK_FROM) / 1.8));
-  if (h < DAWN_TO) return Math.max(0, Math.min(1, 1 - (h - 5.4) / 1.6));
-  return 0;
+export function interpolateGradeProfile(hour, weather) {
+  let wNight = 0, wDawn = 0, wDay = 0, wDusk = 0;
+
+  if (hour < 5.0 || hour >= 21.0) {
+    wNight = 1.0;
+  } else if (hour >= 5.0 && hour < 7.5) {
+    const t = (hour - 5.0) / 2.5;
+    wNight = 1.0 - t;
+    wDawn = t;
+  } else if (hour >= 7.5 && hour < 9.5) {
+    const t = (hour - 7.5) / 2.0;
+    wDawn = 1.0 - t;
+    wDay = t;
+  } else if (hour >= 9.5 && hour < 16.0) {
+    wDay = 1.0;
+  } else if (hour >= 16.0 && hour < 19.5) {
+    const t = (hour - 16.0) / 3.5;
+    wDay = 1.0 - t;
+    wDusk = t;
+  } else if (hour >= 19.5 && hour < 21.0) {
+    const t = (hour - 19.5) / 1.5;
+    wDusk = 1.0 - t;
+    wNight = t;
+  }
+
+  const pDay = DIURNAL_PROFILES.DAY;
+  const pDusk = DIURNAL_PROFILES.DUSK;
+  const pNight = DIURNAL_PROFILES.NIGHT;
+  const pDawn = DIURNAL_PROFILES.DAWN;
+
+  const blendVal = (k) => pDay[k] * wDay + pDusk[k] * wDusk + pNight[k] * wNight + pDawn[k] * wDawn;
+  const blendVec = (k) => [
+    pDay[k][0] * wDay + pDusk[k][0] * wDusk + pNight[k][0] * wNight + pDawn[k][0] * wDawn,
+    pDay[k][1] * wDay + pDusk[k][1] * wDusk + pNight[k][1] * wNight + pDawn[k][1] * wDawn,
+    pDay[k][2] * wDay + pDusk[k][2] * wDusk + pNight[k][2] * wNight + pDawn[k][2] * wDawn,
+  ];
+
+  let sat = blendVal('sat');
+  let vibrance = blendVal('vibrance');
+  let contrast = blendVal('contrast');
+  let split = blendVal('split');
+  let vignette = blendVal('vignette');
+  let grain = blendVal('grain');
+  let bloomStrength = blendVal('bloomStrength');
+  let bloomRadius = blendVal('bloomRadius');
+  let bloomThreshold = blendVal('bloomThreshold');
+  const filmic = blendVal('filmic');
+
+  let shadowTint = blendVec('shadowTint');
+  let midTint = blendVec('midTint');
+  let highTint = blendVec('highTint');
+  let slope = blendVec('slope');
+  let offset = blendVec('offset');
+  let power = blendVec('power');
+
+  // Atmospheric weather adjustments
+  if (weather === 'OVERCAST') {
+    sat *= 0.86;
+    contrast *= 0.90;
+    vignette += 0.05;
+    shadowTint = [shadowTint[0] * 0.96, shadowTint[1] * 0.98, shadowTint[2] * 1.02];
+  } else if (weather === 'RAIN') {
+    sat *= 0.92;
+    contrast += 0.04;
+    vignette += 0.08;
+    grain += 0.005;
+  } else if (weather === 'STORM') {
+    sat *= 0.88;
+    contrast += 0.06;
+    vignette += 0.14;
+    grain += 0.010;
+  }
+
+  return {
+    sat, vibrance, contrast, split, vignette, grain,
+    bloomStrength, bloomRadius, bloomThreshold, filmic,
+    shadowTint, midTint, highTint,
+    slope, offset, power,
+  };
 }
-// update() names its local `nightFactor` after the curve; this alias keeps the call unshadowed
-const nightFactorFn = nightFactor;
 
 /**
  * 24-minute real-world day-night clock with smooth dynamic celestial cycle,
- * dynamic solar vector and lighting states (Day, Sunset, Night, Dawn).
- * ONE rig: the day sun + CSM, the hemisphere, the day dome and the day asset
- * palette (main.js daylightAssets) are what exist, and this drives every
- * night-only quantity from `nightFactor` -- `?night` is just a start hour.
- * Weather is world/weather.js's business (rainSpell); the clock does not roll it.
+ * dynamic solar vector, lighting states (Day, Sunset, Night, Dawn),
+ * and weather transitions.
  */
 export class GameClock {
   constructor({ startHour = 19.5, speed = 1.0 } = {}) {
     this.hour = startHour; // 0.0 - 24.0
     this.timeScale = speed; // 1 real min = 1 game hr (1 sec = 1 game min)
-    this.nightFactor = nightFactor(startHour);
+    this.weather = 'CLEAR'; // CLEAR, OVERCAST, RAIN, STORM
+    this.weatherTimer = 0;
 
     this.sunPosition = new THREE.Vector3();
     this.sunColor = new THREE.Color();
     this.hemiSky = new THREE.Color();
     this.hemiGround = new THREE.Color();
-    this.fogColor = new THREE.Color();
   }
 
-  update(dt, { sun, hemi, scene, grade, renderer, lightPool, traffic, assets, player, dome, stars } = {}) {
+  update(dt, { sun, hemi, scene, grade, lightPool, heroLights, weatherSystem, assets, player, dome, stars, sunSprite, sunRaySprite } = {}) {
     // 24 minutes real time = 24 game hours => dt / 60 hours per second
     this.hour = (this.hour + (dt / 60) * this.timeScale) % 24;
 
@@ -54,23 +206,72 @@ export class GameClock {
     const px = player?.x ?? 2350;
     const pz = player?.z ?? 1350;
     const sunDist = 420;
-    this.sunPosition.set(px - cosH * sunDist, Math.max(30, sinH * sunDist), pz + 120 * Math.cos(sunAngle * 0.5));
+    /* The height floor was a flat 30 (4 degrees at this distance). Golden hour
+       sweeps 30 deg at 16:00 down to 4 at 18:00, and by 17:30 the sun sat at 9
+       degrees -- straight into the flank of a 60 m building across a 34 m
+       street, so every facade on the avenue was in its neighbour's shadow and
+       the city rendered flat. 150 holds the golden sun at ~20 degrees, which
+       shades the lower storeys and rakes the upper two thirds: lit tops over
+       neon-lit shade, which is the reference frame. */
+    /* 150 (~20 deg) was the floor while the sun still came in square to the
+       street and had to clear the rooftops to light anything. Once the azimuth
+       runs ALONG the avenue nothing blocks it, so the sun can sit properly low
+       -- ~10 deg -- which is what puts the disc at the vanishing point and rakes
+       the facades at grazing incidence instead of lighting them from above. */
+    const sunFloor = (this.hour >= 16.0 && this.hour < 18.0) ? 95 : 30;   // ~12.7 deg: just above the ~11 deg ridge (surrounds.js PEAK), so the disc sits ON the skyline
+    /* Golden hour also swings the AZIMUTH up the avenue. The solar arc is pure
+       east-west and Little Tokyo's only street runs north-south, so at 16:00-18:00
+       the sun was always square to the facades: every building stood in its
+       neighbour's shadow (a 60 m block at 24 deg shades the opposite wall to 45 m
+       across a 34 m street -- checked, and that is why the city rendered flat and
+       cold no matter how warm the light was made). Biasing it toward +Z puts the
+       sun at the end of the road, so it back-rakes the canyon, rims the facade
+       edges and throws the long shadows down the lane toward the camera. This is
+       a deliberate cheat -- the sun is not where an ephemeris would put it -- but
+       the reference frame is a sun down the street, and the project is stylised. */
+    const goldenT = Math.max(0, Math.min(1, (this.hour - 15.6) / 0.8)) * Math.max(0, Math.min(1, (18.4 - this.hour) / 0.8));
+    const bias = 1.0 * goldenT;   // fully up the avenue: the disc lands in the middle of the road, not off to one side
+    this.sunPosition.set(
+      px - cosH * sunDist * (1 - bias),
+      Math.max(sunFloor, sinH * sunDist),
+      pz + 120 * Math.cos(sunAngle * 0.5) + bias * sunDist,
+    );
 
     // Determine diurnal phase weights
-    const isNight = this.hour >= NIGHT_FROM || this.hour < NIGHT_TO;
-    const isDusk = this.hour >= DUSK_FROM && this.hour < NIGHT_FROM;
-    const isDawn = this.hour >= NIGHT_TO && this.hour < DAWN_TO;
-    const isDay = !isNight && !isDusk && !isDawn;
+    const isNight = this.hour >= 20.5 || this.hour < 5.2;
+    const isDusk = this.hour >= 18.0 && this.hour < 20.5;
+    const isGolden = this.hour >= 16.0 && this.hour < 18.0;
+    const isDawn = this.hour >= 5.2 && this.hour < 7.2;
+    const isDay = !isNight && !isDusk && !isDawn && !isGolden;
 
     let sunIntensity = 0;
     let hemiIntensity = 0.5;
 
-    if (isDay) {
+    if (isGolden) {
+      // Golden Hour (16:00 - 18:00) — Low, warm dramatic sun, long building shadows, golden road sheen
+      const t = (this.hour - 16.0) / 2.0; // 0 to 1
+      this.sunColor.setRGB(1.0, 0.86 - t * 0.22, 0.52 - t * 0.20);
+      /* The fill used to be BLUE here (0.58, 0.68, 0.85) -- a noon sky colour on
+         a golden-hour scene. Every unlit facade took that as its only light and
+         came out cold blue-grey, which is why the city looked like it was in
+         permanent overcast while the sun was warm. At this hour the whole sky
+         dome IS the amber the sun is, so the fill is warm and the shadow side
+         goes amber-brown rather than blue. */
+      this.hemiSky.setRGB(1.00 - t * 0.04, 0.78 - t * 0.16, 0.56 - t * 0.16);
+      this.hemiGround.setRGB(0.50 - t * 0.10, 0.38 - t * 0.10, 0.28 - t * 0.08);
+      /* setHex, not setRGB. setRGB takes LINEAR, so the old (0.44, 0.36, 0.40)
+         displayed as ~#b0a1a8 -- a pale mauve. The range sits 3.4 km out and
+         linear fog far is 3800, so the mountains resolve to EXACTLY the fog
+         colour: that pale mauve was the flat pink paper wall across the end of
+         the street. A range has to be DARKER than the sky behind it to read as
+         a silhouette (see the same note in surrounds.js). Warm and deep. */
+      sunIntensity = 4.3 - t * 0.5;   // the lit faces have to WIN against the fill, or there is no rake
+      hemiIntensity = 0.60 - t * 0.06;
+    } else if (isDay) {
       const dayFactor = Math.min(1, Math.max(0, sinH));
       this.sunColor.setRGB(1.0, 0.95, 0.86);
       this.hemiSky.setRGB(0.66, 0.77, 0.88);
       this.hemiGround.setRGB(0.56, 0.53, 0.45);
-      this.fogColor.setRGB(0.72, 0.79, 0.87);
       sunIntensity = 2.8 + dayFactor * 0.8;
       hemiIntensity = 0.55;
     } else if (isDusk) {
@@ -78,7 +279,6 @@ export class GameClock {
       this.sunColor.setRGB(1.0, 0.52 - t * 0.2, 0.25);
       this.hemiSky.setRGB(0.48 - t * 0.3, 0.38 - t * 0.25, 0.55 - t * 0.3);
       this.hemiGround.setRGB(0.42 - t * 0.3, 0.30 - t * 0.2, 0.24 - t * 0.15);
-      this.fogColor.setRGB(0.78 - t * 0.55, 0.52 - t * 0.38, 0.42 - t * 0.28);
       sunIntensity = Math.max(0.2, 3.0 * (1 - t * 0.85));
       hemiIntensity = 0.45 - t * 0.22;
     } else if (isDawn) {
@@ -86,7 +286,6 @@ export class GameClock {
       this.sunColor.setRGB(1.0, 0.75 + t * 0.2, 0.55 + t * 0.3);
       this.hemiSky.setRGB(0.35 + t * 0.3, 0.48 + t * 0.3, 0.68 + t * 0.2);
       this.hemiGround.setRGB(0.25 + t * 0.3, 0.28 + t * 0.25, 0.26 + t * 0.2);
-      this.fogColor.setRGB(0.55 + t * 0.2, 0.65 + t * 0.15, 0.78 + t * 0.1);
       sunIntensity = 1.0 + t * 1.8;
       hemiIntensity = 0.32 + t * 0.23;
     } else {
@@ -94,7 +293,6 @@ export class GameClock {
       this.sunColor.setRGB(0.16, 0.24, 0.42);
       this.hemiSky.setRGB(0.06, 0.09, 0.16);
       this.hemiGround.setRGB(0.03, 0.045, 0.07);
-      this.fogColor.setRGB(0.022, 0.028, 0.06);   // darker than the dome, or fogged silhouettes (the far hills) stand out pale against the sky
       sunIntensity = 0.30; // Soft moon key -- the pale far mountains were lit like dusk at 0.42
       hemiIntensity = 0.17;
     }
@@ -115,12 +313,8 @@ export class GameClock {
       hemi.intensity = hemiIntensity;
     }
     if (scene) {
-      if (scene.fog) {
-        scene.fog.color.copy(this.fogColor);
-        scene.fog.density = isNight ? 0.0028 : isDusk ? 0.00028 : 0.00018;
-      }
       // Phase 2 ownership: Sky radiance & HDRI environment intensity follows solar cycle
-      scene.environmentIntensity = isDay ? 1.15 : (isDusk || isDawn) ? 0.80 : 0.24;   // night: the cover art is ink, not slate
+      scene.environmentIntensity = (isDay || isGolden) ? 1.05 : (isDusk || isDawn) ? 0.80 : 0.24;   // night: the cover art is ink, not slate
     }
 
     // Phase 2 ownership: synchronize sky dome rotation & tint and stars visibility
@@ -128,6 +322,19 @@ export class GameClock {
       dome.rotation.y = sunAngle;
       if (dome.material) {
         if (isDay) dome.material.color.setRGB(1.0, 1.0, 1.0);
+        /* GOLDEN HOUR HAD NO BRANCH. 16:00-18:00 fell through every else-if to
+           the final `else` and painted the dome INK (0.03, 0.035, 0.075) -- so
+           the sky went night-navy at 16:00 while the clock was still running a
+           3.6-intensity warm sun. Worse than the sky: the PMREM environment is
+           built from this dome, so an inked dome means the city gets no ambient
+           at all, and with a 9-degree sun blocked by its own buildings every
+           facade rendered flat and unlit. This one branch is most of "the
+           evening is broken". Tint stays a multiplier on the day sky texture
+           (linear, like isDay's white), warming and dropping as the sun sets. */
+        else if (isGolden) {
+          const t = (this.hour - 16.0) / 2.0;
+          dome.material.color.setRGB(1.0 - t * 0.02, 0.80 - t * 0.26, 0.58 - t * 0.30);   // amber, not a cream-tinted noon sky
+        }
         else if (isDusk) {
           const t = (this.hour - 18.0) / 2.5;
           dome.material.color.setRGB(1.0, Math.max(0.2, 0.95 - t * 0.65), Math.max(0.15, 0.90 - t * 0.70));
@@ -139,32 +346,66 @@ export class GameClock {
         }
       }
     }
+    /* Park the sun sprite on the real light direction, out past the mountain
+       ring so the range silhouettes against it. Because golden hour biases the
+       azimuth up the avenue, this puts the disc at the end of the street -- the
+       rays that rake the buildings and the sun you can see are now the same
+       direction, which is the whole point of it being a sprite and not a blob
+       baked into the sky texture. */
+    if (sunSprite) {
+      const show = goldenT > 0.01 || isDusk;
+      sunSprite.visible = show;
+      if (sunRaySprite) sunRaySprite.visible = show;
+      if (show) {
+        const dx = this.sunPosition.x - px, dy = this.sunPosition.y, dz = this.sunPosition.z - pz;
+        /* BEHIND the mountain range, not in front of it. 7000 is past the belt's
+           outer edge (~5.8 km from the map centre), so the ridge silhouettes
+           against the disc and the corona spills over the skyline -- the first
+           version parked it at 2400, inside the ring, and it drew on top of the
+           mountains like a sticker. The ridge is low enough now (surrounds.js
+           PEAK) that a ~12 degree sun clears it. */
+        const L = Math.hypot(dx, dy, dz) || 1, D = 7000;
+        const sx = px + (dx / L) * D, sy = (dy / L) * D, sz = pz + (dz / L) * D;
+        sunSprite.position.set(sx, sy, sz);
+        // lower sun, bigger and redder: the atmosphere we do not simulate
+        const low = 1 - Math.min(1, (dy / L) / 0.45);
+        const fade = isDusk ? Math.max(0, 1 - (this.hour - 18.0) / 1.6) : Math.min(1, goldenT * 1.4);
+        sunSprite.scale.setScalar(820 + low * 620);   // core is ~1/10 of the quad: ~0.7 deg at 7 km
+        sunSprite.material.opacity = fade;
+        sunSprite.material.color.setRGB(1.0, 0.86 - low * 0.22, 0.66 - low * 0.34);
+        if (sunRaySprite) {
+          sunRaySprite.position.set(sx, sy, sz);
+          sunRaySprite.scale.setScalar(2600 + low * 1400);
+          sunRaySprite.material.opacity = fade * (0.95 + low * 0.45);   // rays strengthen as the sun reddens; the soft texture needs this much to read as shafts at all
+          sunRaySprite.material.color.copy(sunSprite.material.color);
+        }
+      }
+    }
     if (stars && stars.material) {
       stars.material.opacity = isNight ? 0.75 : isDusk ? ((this.hour - 18.0) / 2.5) * 0.4 : 0.0;
       stars.visible = stars.material.opacity > 0.02;
     }
 
-    // Task 2.3: Staggered dusk switch-on for streetlamps, signs, windows (18.0 - 19.8)
-    const nightFactor = this.nightFactor = nightFactorFn(this.hour);
+    // Task 2.3: Staggered dusk switch-on for streetlamps, signs, windows (18.2 - 19.8)
+    const duskProgress = Math.max(0, Math.min(1, (this.hour - 18.0) / 1.8));
+    const dawnProgress = Math.max(0, Math.min(1, 1 - (this.hour - 5.4) / 1.6));
+    const nightFactor = isNight ? 1 : isDusk ? duskProgress : isDawn ? dawnProgress : 0;
+
+    /* The real point lights ride the same dusk curve as the painted ones, so a
+       lamp's emissive cap and the light it actually casts come up together. */
+    lightPool?.setNight?.(nightFactor);
 
     if (assets) {
       // Stagger 1: Street lamps & sodium pools turn on at 35% dusk
       const lampOn = nightFactor > 0.35;
       if (assets.mat?.pool) assets.mat.pool.opacity = lampOn ? 0.88 * Math.min(1, (nightFactor - 0.35) / 0.3) : 0;
+      if (assets.mat?.lampCone) assets.mat.lampCone.opacity = lampOn ? 0.12 * Math.min(1, (nightFactor - 0.35) / 0.3) : 0;
       if (assets.mat?.lampGlow) assets.mat.lampGlow.emissiveIntensity = lampOn ? 0.15 + 2.0 * nightFactor : 0.15;
 
       // Stagger 2: Commercial neon signs ignite at 20% dusk
       const signOn = nightFactor > 0.20;
-      if (assets.mat?.sign) assets.mat.sign.emissiveIntensity = signOn ? 0.06 + 2.4 * nightFactor : 0.06;   // neon that blooms (grade.setNight threshold 0.72)
+      if (assets.mat?.sign) assets.mat.sign.emissiveIntensity = signOn ? 0.06 + 2.4 * nightFactor : 0.06;   // neon that blooms (grade.setNight threshold 0.85 via bloomThresholdFor)
       if (assets.mat?.beacon) assets.mat.beacon.emissiveIntensity = signOn ? 0.6 + 1.8 * nightFactor : 0.6;
-
-      /* Window quads (signs.js buildWindowMaterial, emissiveIntensity through a
-         materialReference so this write reaches the shader) and the podium
-         bases (facades.js buildBaseMaterials, classic material: a uniform, no
-         bake). daylightAssets() zeroes both at boot; nothing restored them
-         until now, so a day boot that ran into the night had dark windows. */
-      if (assets.mat?.windowQuad) assets.mat.windowQuad.emissiveIntensity = nightFactor > 0.45 ? 0.9 * Math.min(1, (nightFactor - 0.45) / 0.3) : 0;
-      if (assets.base?.materials) for (const m of assets.base.materials) m.emissiveIntensity = 0.05 + 0.85 * (nightFactor > 0.5 ? Math.min(1, (nightFactor - 0.5) / 0.3) : 0);
 
       // Stagger 3: Tower & residential window illumination staggers between 40% and 85% dusk
       if (assets.facades) {
@@ -191,15 +432,20 @@ export class GameClock {
       }
     }
 
-    // Tune post bloom per hour (Task 2.5): subtle during the day, radiant at dusk/night (grade.setNight lerps on a 0..1)
-    if (grade?.setNight) grade.setNight(nightFactor);
-    /* Night ran too dark away from lit facades -- silhouettes on a horizon
-       glow. 1.15 at night lifts the mid-tones without touching the emissive
-       windows (already past the bloom knee); noon stays at 1.0. */
-    if (renderer) renderer.toneMappingExposure = 1.0 + 0.15 * nightFactor;
-    // the real lamp lights and the fleet's headlamps come up with the same curve
-    if (lightPool) lightPool.night = nightFactor;
-    if (traffic?.setNight) traffic.setNight(nightFactor);
+    // Night lighting state: headlights default active at night & dusk if not manually toggled
+    const lightsActive = this.hour >= 18.2 || this.hour < 6.4;
+
+    // Continuous Diurnal & Weather Color Grade Profile
+    // the one writer of the grade's look uniforms; grade.setNight() delegates back here
+    grade?.setGradeProfile?.(interpolateGradeProfile(this.hour, this.weather));
+
+    // Dynamic weather cycle (Task 2.6)
+    this.weatherTimer += dt;
+    if (this.weatherTimer > 360) {
+      this.weatherTimer = 0;
+      const weathers = ['CLEAR', 'OVERCAST', 'RAIN', 'STORM'];
+      this.weather = weathers[Math.floor(Math.random() * weathers.length)];
+    }
   }
 
   get formattedTime() {

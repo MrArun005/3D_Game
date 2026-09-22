@@ -36,14 +36,12 @@ function absorb(car, nx, nz, bite = 1.0, px = 0, pz = 0) {
 
 /**
  * Wall friction on the TANGENTIAL velocity, sized by how hard the hull was
- * pressed into the surface this step. A dry-friction impulse: the normal
- * impulse `absorb` just removed was m*into, so the tangential speed can lose
- * at most MU_WALL*into (plus a little for the depth of the overlap being
- * corrected). A 6 deg scrape presses in at ~0.07 m/s a step and loses a few
- * km/h a second; a head-on has no tangential speed left to lose and stops on
- * the normal alone. This replaces `vx *= 0.88` per probe hit per 120 Hz step,
- * which took a glancing scrape at 60 km/h to a standstill in 0.05 s and made
- * every wall sticky (review 2026-09-09, top-12 #3).
+ * pressed into the surface this step (a dry-friction impulse: the normal
+ * impulse `absorb` removed was m*into, so tangential speed loses at most
+ * MU_WALL*into, plus a little for the overlap being corrected). A 6 deg scrape
+ * loses a few km/h a second; a head-on has no tangential speed and stops on the
+ * normal alone. Replaces `v *= 0.88` per probe hit per 120 Hz step, which took
+ * a glancing scrape at 60 km/h to a standstill in 0.05 s (review 2026-09-09).
  */
 const MU_WALL = 0.35;
 function scrape(car, into, pen) {
@@ -104,10 +102,25 @@ export function resolveBoxes(car, boxes) {
     let hit = false;
 
     for (const b of boxes) {
-      const ca = Math.cos(b.angle), sa = Math.sin(b.angle);
+      /* A structure the car is driving UNDER is not in its way (2026-09-14).
+         This test is otherwise a pure 2D footprint check -- it never read
+         `height` or the car's y -- so every elevated thing that reported a
+         solid was a wall at ground level. A bridge parapet sitting on a 7.6 m
+         deck blocked the road passing beneath the bridge.
+         Only boxes that declare a `baseY` are skipped: a building's footprint
+         has no base to be above, and must keep blocking at every height. */
+      if (b.baseY !== undefined && (car.y ?? 0) + 1.7 < b.baseY) continue;
+      /* Broad phase first, trig after (2026-09-22). hw+hd >= hypot(hw, hd), so
+         this L1 reject keeps every box the old circle kept and the exact
+         probe-in-box test below still decides -- same contacts, same pushes.
+         What it saves is cos+sin+sqrt on every box the hull cannot reach: the
+         list is nearbyBuildings' 60 m window (~100-300 boxes a substep, x120
+         substeps a second). Bench, scratchpad/rec/collision-bench.mjs, N=300,
+         identical state hash over 60,000 steps: 18.2 -> 4.9 us per resolve. */
       const hw = b.hw + PAD, hd = b.hd + PAD;
-      const rough = Math.hypot(hw, hd) + 3.2;
+      const rough = hw + hd + 3.2;
       if (Math.abs(b.x - car.x) > rough || Math.abs(b.z - car.z) > rough) continue;
+      const ca = Math.cos(b.angle), sa = Math.sin(b.angle);
 
       for (const [ppx, ppz] of HULL_PROBES) {
         const px = car.x + fx * ppx + rx * ppz;
@@ -159,6 +172,15 @@ export function resolveObstacles(car, obstacles) {
     if (dxc * dxc + dzc * dzc > rough * rough) continue;
 
     const ofx = Math.cos(o.yaw), ofz = -Math.sin(o.yaw);
+    /* The other body's velocity. A traffic car is not a wall: measuring
+       "into" against the ground made a 40 km/h nudge alongside a 40 km/h car
+       read as a 40 km/h crash, zeroed OUR speed along the normal (a dead stop
+       in the lane), and every re-contact while catching up was another crash
+       -- the "whole game rumbles when you touch a vehicle" bug (2026-09-12).
+       Closing speed is relative; parked cars have none, so nothing changes
+       for them. */
+    const ov = (o.car && o.car.speed) || 0;
+    const ovx = ofx * ov, ovz = ofz * ov;
     for (const so of SELF_OFFSETS) {
       const sx = car.x + fx * so, sz = car.z + fz * so;
       for (const oo of o.offsets) {
@@ -173,24 +195,36 @@ export function resolveObstacles(car, obstacles) {
         // the parked car is immovable, so all of the correction lands on us
         car.x += nx * pen;
         car.z += nz * pen;
-        const into = -(car.vx * nx + car.vz * nz);
-          if (into > 0) {
-            if (into > 1.2) {
-              if (into > (car.impact || 0)) car.hitAt = { x: sx, z: sz };
-              car.impact = Math.max(car.impact || 0, into);
-              // who you hit decides whether anyone comes looking for you
-              if (into > (car.hitForce || 0)) { car.hitForce = into; car.hitTag = o.tag || 'prop'; car.hitRef = o.car || null; }   // hitRef: the traffic car behind the body, for ram damage
-              if (o.car) {
-                o.car.panic = 4.0;
-                o.car.speed = Math.max(0, o.car.speed - into * 0.4 * (car.ramForce || 1.0));
-              }
+        const rvx = car.vx - ovx, rvz = car.vz - ovz;   // our velocity relative to the body we hit
+        const into = -(rvx * nx + rvz * nz);              // closing speed along the contact normal
+        if (into > 0) {
+          /* impact is an EVENT: the closing speed this resolution cancels.
+             The camera, the dents and the sparks key off it once (main.js
+             decays it); a resting or sliding contact closes at ~0 and adds
+             nothing after the first step. */
+          if (into > 1.2) {
+            if (into > (car.impact || 0)) car.hitAt = { x: sx, z: sz };
+            car.impact = Math.max(car.impact || 0, into);
+            /* Who you hit decides whether anyone comes looking for you -- but
+               only if YOU drove into IT. `into` is relative, so a cruiser
+               PIT-ramming you or traffic rear-ending you at the lights closes
+               too; the ground-frame test (what the old code measured) keeps
+               their contact from becoming your crime and their ram from
+               costing THEIR engine (main.js damageVehicle on hitRef). */
+            const ours = -(car.vx * nx + car.vz * nz);
+            if (ours > 0 && into > (car.hitForce || 0)) { car.hitForce = into; car.hitTag = o.tag || 'prop'; car.hitRef = o.car || null; }   // hitRef: the traffic car behind the body, for ram damage
+            if (o.car) {
+              o.car.panic = 4.0;
+              o.car.speed = Math.max(0, o.car.speed - into * 0.4 * (car.ramForce || 1.0));
             }
+          }
           car.vx += nx * into * 1.05;    // a parked car gives a little, a wall none
           car.vz += nz * into * 1.05;
           // glancing blows should slew you, not stop you dead
           const armX = sx - car.x, armZ = sz - car.z;
           car.yawRate += (armX * nz - armZ * nx) * into * 0.05;
-          car.vx *= 0.9; car.vz *= 0.9;
+          // contact friction bleeds the RELATIVE velocity: riding alongside a moving car must not drag us to a halt
+          car.vx = ovx + (car.vx - ovx) * 0.9; car.vz = ovz + (car.vz - ovz) * 0.9;
         }
       }
     }

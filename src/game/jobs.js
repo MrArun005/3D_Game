@@ -9,6 +9,8 @@ import { roadDepth } from '../world/metrics.js';
  *   COURIER  pick up at A, deliver to B against the clock; late = less pay
  *   FARE     a passenger at a kerb; stop inside the ring, drive them across town
  *   GETAWAY  you start hot (2 stars); reach the drop and lose the heat to be paid
+ *   RACE     four checkpoints across the city against a par time; beat it by
+ *            15% for the fast bonus, miss it and the purse shrinks (2026-09-08)
  *
  * Pay is base by distance and district tier, then heat eats it: each wanted
  * star at the drop costs 20%, a clean drop pays a bonus, WASTED or BUSTED
@@ -16,7 +18,7 @@ import { roadDepth } from '../world/metrics.js';
  * (jobs done) opens longer, better-paid jobs. This is the loop; the garage
  * that spends the cash is the next slice.
  */
-const KINDS = ['courier', 'fare', 'getaway'];
+const KINDS = ['courier', 'fare', 'getaway', 'race'];
 const TIER = { KINGSWAY: 3, 'HARBOUR POINT': 2, STEELGATE: 2, 'OLD QUARTER': 2, 'VELLERY ROW': 2,
   NORTHLINE: 1, ASHMOOR: 1, 'MARROW HILL': 1, 'THE FLATS': 1, 'GREENFELL PARK': 1 };
 
@@ -53,11 +55,7 @@ export class Jobs {
       mission.onFinish = (t) => { if (prev) prev(t); this.#finish(t); };
     }
     this.#show();
-    if (grantedBonus && this.hud) {
-      setTimeout(() => {
-        if (this.hud?.flash) this.hud.flash('💰 +$50,000 TEST FUNDS CREDITED! OPEN PHONE [M] TO CALL HELI / TANK');
-      }, 1500);
-    }
+    void grantedBonus;
   }
 
   #districtAt(x, z) {
@@ -89,6 +87,7 @@ export class Jobs {
     }
     const kind = KINDS[(Math.random() * KINDS.length) | 0];
     const rating = 1 + Math.min(3, Math.floor(this.done / 4));          // longer runs as you prove yourself
+    if (kind === 'race') return this.#race(car, rating);
     const a = this.#pick({ x: car.x, z: car.z }, 120, 260 + 80 * rating);
     if (!a) return;
     const b = this.#pick({ x: a.x, z: a.y }, 250, 450 + 120 * rating, a);
@@ -106,6 +105,32 @@ export class Jobs {
     }
     if (kind === 'getaway') { this.traffic.wanted = Math.max(this.traffic.wanted, 2); this.traffic.cool = 0; }   // 'you start hot (2 stars)': reportCrime('police', 6) gave 1.04 and needed a witness
     this.hud.flash(`${kind.toUpperCase()} · $${pay}${limit < Infinity ? ` · ${Math.round(limit)}s` : ''}`);
+    this.#show();
+  }
+
+  /* A street race: four checkpoints chained 150-320 m apart from where you
+     stand, a par time at 15 m/s plus a grace, and the purse by distance and
+     the district you finish in. It rides the same Mission route the other
+     jobs use, so the rings, the beam and the countdown are already there;
+     `pickedUp` is true from the start so the stop-to-load prompts stay quiet. */
+  #race(car, rating) {
+    const pts = [];
+    let from = { x: car.x, z: car.z }, avoid = null, dist = 0;
+    for (let i = 0; i < 4; i++) {
+      const n = this.#pick(from, 150, 320 + 40 * rating, avoid);
+      if (!n) break;
+      dist += Math.hypot(n.x - from.x, n.y - from.z);
+      pts.push(n); avoid = n; from = { x: n.x, z: n.y };
+    }
+    if (pts.length < 3) return;
+    const b = pts[pts.length - 1];
+    const tier = TIER[this.#districtAt(b.x, b.y)] ?? 1;
+    const pay = Math.round((90 + dist * 0.55) * (0.8 + tier * 0.35));
+    const limit = dist / 15 + 8;
+    this.job = { kind: 'race', pay, limit, tier, a: pts[0], b, pickedUp: true, t: 0 };
+    this.mission.route(pts, 'STREET RACE · BEAT THE CLOCK');
+    if (this.navigation) { this.navigation.setWaypoint(pts[0].x, pts[0].y); this.navigation.lastTarget = null; }
+    this.hud.flash(`RACE · ${pay} · PAR ${Math.round(limit)}s`);
     this.#show();
   }
 
@@ -167,6 +192,7 @@ export class Jobs {
     if (j.limit < Infinity && j.t > j.limit) pay = Math.round(pay * Math.max(0.3, 1 - (j.t - j.limit) / j.limit));
     pay = Math.round(pay * Math.max(0.2, 1 - stars * 0.2));
     if (stars === 0 && j.t < (j.limit === Infinity ? 1e9 : j.limit)) pay += 40;   // clean bonus
+    if (j.kind === 'race' && j.t < j.limit * 0.85) pay = Math.round(pay * 1.3);        // fast bonus: a race is about the margin
     if (typeof window !== 'undefined' && window._reputation) {
       if (window._reputation.score >= 80) pay = Math.round(pay * 1.25); // Bounty License perk bonus
       window._reputation.adjust(25, 'CIVIC CONTRACT COMPLETED');
@@ -199,8 +225,9 @@ export class Jobs {
 
   #show() {
     const j = this.job;
-    const line = j ? `${j.kind.toUpperCase()} · $${j.pay}${j.limit < Infinity ? ` · ${Math.max(0, Math.round(j.limit - j.t))}s` : ''}` : `G — TAKE A JOB · ${this.done} DONE`;
-    this.hud.setJob(`$${this.cash.toLocaleString()}   ${line}`);
+    if (!j) { this.hud.setJob(null); return; }
+    const clock = j.limit < Infinity ? ` · ${Math.max(0, Math.round(j.limit - j.t))}s` : '';
+    this.hud.setJob(`${j.kind.toUpperCase()} · $${j.pay}${clock}`);
   }
 }
 

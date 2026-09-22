@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { anisotropyOf } from './textures.js';
+import { fetchCached } from '../core/assetCache.js';
 
 /**
  * The asset catalogue.
@@ -27,6 +28,15 @@ import { anisotropyOf } from './textures.js';
 
 const MANIFEST = '/models/manifest.json';
 const LIBRARY = '/textures/library.json';
+
+/* Family prefix -> library material, for assets whose own material names are
+   per-species rather than per-material. Only what has been verified against
+   public/textures/library.json; anything unmatched still falls through to the
+   declared-materials step and then concrete_cast, as before. */
+const MATERIAL_ALIAS = [
+  [/^(leaf|foliage|canopy|blossom)/i, 'foliage'],
+  [/^(bark|trunk)/i, 'bark'],
+];
 
 /**
  * ORM is one image doing three jobs: occlusion in R, roughness in G,
@@ -126,8 +136,8 @@ export class Catalogue {
   /** Fetch both indexes and build every material. Models load lazily after. */
   async load(renderer) {
     const [manifest, library] = await Promise.all([
-      fetch(MANIFEST).then((r) => r.json()),
-      fetch(LIBRARY).then((r) => r.json()),
+      fetchCached(MANIFEST, 'json'),
+      fetchCached(LIBRARY, 'json'),
     ]);
     this.manifest = manifest;
     /* City-wide BatchedMesh only pays where the device can multi-draw. On a
@@ -140,8 +150,27 @@ export class Catalogue {
     const aniso = anisotropyOf(renderer);
     const loader = new THREE.TextureLoader();
 
+    /* Every texture request is collected (2026-09-15). loader.load() is
+       fire-and-forget: Catalogue.load() resolved, the boot screen dropped, and
+       the 99 library PNGs were still arriving and popping in for seconds
+       afterwards. `texturesReady` lets the boot sequence hold for them, and
+       the lag logger reports "textures still loading" as a spike cause while it
+       is pending. allSettled, not all: one missing PNG must not stall boot. */
+    const texJobs = [];
     const tex = (url, srgb) => {
-      const t = loader.load(url);
+      const t = loader.load(url,
+        () => {}, undefined,
+        (e) => console.warn('texture', url, e?.message ?? 'failed'));
+      texJobs.push(new Promise((res) => {
+        const img = t.image;
+        if (img && (img.complete || img.width)) return res();
+        const done = () => res();
+        // TextureLoader resolves through ImageLoader; poll the texture's image
+        // rather than reach into three's private onLoad plumbing.
+        const tick = () => (t.image && (t.image.complete || t.image.width)) ? done() : setTimeout(tick, 60);
+        setTimeout(tick, 60);
+        setTimeout(done, 15000);   // hard cap: a hung request may not stall boot forever
+      }));
       t.wrapS = t.wrapT = THREE.RepeatWrapping;
       t.anisotropy = aniso;
       t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
@@ -181,8 +210,17 @@ export class Catalogue {
         this.byTag.get(t).push(name);
       }
     }
+    this.texturesLoading = true;
+    this.texturesReady = Promise.allSettled(texJobs).then(() => { this.texturesLoading = false; });
     this.ready = true;
     return this;
+  }
+
+  /** How many assets are mid-fetch right now -- a spike cause for the lag logger. */
+  get pendingLoads() {
+    let n = 0;
+    for (const rec of this.assets.values()) if (rec.loading) n++;
+    return n;
   }
 
   /** Asset names carrying a tag, in manifest order so placement is stable. */
@@ -218,41 +256,48 @@ export class Catalogue {
   }
 
   #loadOne(url, rec) {
-    return new Promise((res, rej) => {
-      LOADER.load(url, (gltf) => {
-        const parts = [];
-        gltf.scene.updateMatrixWorld(true);
-        gltf.scene.traverse((o) => {
-          if (!o.isMesh) return;
-          /* Bake the node transform into the geometry. The alternative is a
-             per-part offset matrix multiplied into every instance, which is
-             the same maths done thousands more times. */
-          const g = deQuantize(o.geometry.clone());
-          g.applyMatrix4(o.matrixWorld);
-          /* Rule 4, for real. Every one of the 201 shipped parts arrived with
-             NO TEXCOORD_0, so the merge step's zero-fill put every texel of
-             every PBR material on one point: brick, glass and timber never
-             actually showed. Box-projection in METRES -- each vertex takes the
-             two axes perpendicular to its normal's dominant axis -- so the
-             library's per-metre tiling reads at true size and a 3.6m bay gets
-             3.6m of brick. Baked positions, so it is done once per asset. */
-          if (!g.attributes.uv) boxProjectUv(g);
-          /* NOT marked `owned`. Catalogue geometry is shared by every chunk
-             that instances the asset, and districtWorld's release sweep
-             disposes anything flagged owned -- so flagging these would free
-             the bench buffer the moment one chunk unloaded and leave every
-             other chunk drawing from a dead VBO. */
-          const matName = this.#materialFor(o, rec);
-          parts.push({
-            geometry: g,
-            material: this.materials.get(matName) ?? FALLBACK,
-            materialName: matName,
-            tris: (g.index ? g.index.count : g.attributes.position.count) / 3,
-          });
+    const parseGltf = (gltf, res) => {
+      const parts = [];
+      gltf.scene.updateMatrixWorld(true);
+      gltf.scene.traverse((o) => {
+        if (!o.isMesh) return;
+        /* Bake the node transform into the geometry. The alternative is a
+           per-part offset matrix multiplied into every instance, which is
+           the same maths done thousands more times. */
+        const g = deQuantize(o.geometry.clone());
+        g.applyMatrix4(o.matrixWorld);
+        /* Rule 4, for real. Every one of the 201 shipped parts arrived with
+           NO TEXCOORD_0, so the merge step's zero-fill put every texel of
+           every PBR material on one point: brick, glass and timber never
+           actually showed. Box-projection in METRES -- each vertex takes the
+           two axes perpendicular to its normal's dominant axis -- so the
+           library's per-metre tiling reads at true size and a 3.6m bay gets
+           3.6m of brick. Baked positions, so it is done once per asset. */
+        if (!g.attributes.uv) boxProjectUv(g);
+        /* NOT marked `owned`. Catalogue geometry is shared by every chunk
+           that instances the asset, and districtWorld's release sweep
+           disposes anything flagged owned -- so flagging these would free
+           the bench buffer the moment one chunk unloaded and leave every
+           other chunk drawing from a dead VBO. */
+        const matName = this.#materialFor(o, rec);
+        parts.push({
+          geometry: g,
+          material: this.materials.get(matName) ?? FALLBACK,
+          materialName: matName,
+          tris: (g.index ? g.index.count : g.attributes.position.count) / 3,
         });
-        res(parts);
-      }, undefined, rej);
-    });
+      });
+      res(parts);
+    };
+
+    return fetchCached(url, 'arrayBuffer')
+      .then((buffer) => new Promise((res, rej) => {
+        const path = url.slice(0, url.lastIndexOf('/') + 1);
+        LOADER.parse(buffer, path, (gltf) => parseGltf(gltf, res), rej);
+      }))
+      .catch(() => new Promise((res, rej) => {
+        LOADER.load(url, (gltf) => parseGltf(gltf, res), undefined, rej);
+      }));
   }
 
   /**
@@ -265,12 +310,42 @@ export class Catalogue {
   #materialFor(mesh, rec) {
     const n = mesh.material?.name;
     if (n && this.materials.has(n)) return n;
+    /* An asset authored outside the library's vocabulary still has to land on
+       a real material. The vegetation set (bark_ginkgo, leaf_sakura, ...) is
+       the first of these: its names are per-SPECIES, the library's are per
+       MATERIAL, and without an alias every one of them falls through the
+       declared-materials step -- which returns the FIRST library name the
+       asset declares, the same one for bark and leaf both -- and then all the
+       way to concrete_cast. Grey stone trees. Matched on the family prefix,
+       which is the part that names a material rather than a species. */
+    if (n) {
+      for (const [re, lib] of MATERIAL_ALIAS) {
+        if (re.test(n) && this.materials.has(lib)) return lib;
+      }
+    }
     const declared = rec.def.materials || [];
     for (const d of declared) if (this.materials.has(d)) return d;
     return 'concrete_cast';
   }
 
   /** Total triangles an asset contributes at a given LOD. */
+  /**
+   * A vertexColors clone of a library material, one per material, for the
+   * merge path's tinted placements (containers). The clone is what keeps a
+   * per-vertex tint off every other prop that shares the material.
+   */
+  tintedMaterial(material) {
+    this._tinted ??= new Map();
+    let m = this._tinted.get(material);
+    if (!m) {
+      m = material.clone();
+      m.vertexColors = true;
+      m.name = `${material.name}:tinted`;
+      this._tinted.set(material, m);
+    }
+    return m;
+  }
+
   trisOf(name, lod = 0) {
     const rec = this.assets.get(name);
     return rec?.def?.tris?.[`lod${lod}`] ?? 0;
@@ -392,11 +467,15 @@ export class InstanceBatch {
     this.tracked = [];
   }
 
-  add(name, matrix) {
+  add(name, matrix, color = null) {
     if (!name) return;
     let list = this.buckets.get(name);
     if (!list) this.buckets.set(name, (list = []));
-    list.push(matrix);
+    /* A Color tints this placement. BatchedMesh.setColorAt() feeds a colour
+       texture the node material multiplies into diffuse (three.webgpu:
+       `batchColor.mul(colorNode)` whenever _colorsTexture exists), so the
+       batched path honours it for free. The per-chunk merge fallback ignores it. */
+    list.push(color ? { matrix, color } : matrix);
   }
 
   #trackRec(name, matrix) {
@@ -446,7 +525,10 @@ export class InstanceBatch {
         for (const p of parts) {
           let b = byMaterial.get(p.material);
           if (!b) byMaterial.set(p.material, (b = []));
-          for (const mm of list) b.push({ geo: p.geometry, part: p, matrix: mm, name });
+          for (const mm of list) {
+            const tinted = mm.isMatrix4 !== true;
+            b.push({ geo: p.geometry, part: p, matrix: tinted ? mm.matrix : mm, color: tinted ? mm.color : null, name });
+          }
         }
       }));
     }
@@ -464,6 +546,7 @@ export class InstanceBatch {
         for (const it of items) {
           const geoId = this.cat.geometryIdFor(b, it.part);
           const id = this.cat.addBatched(b, geoId, it.matrix);
+          if (it.color) b.mesh.setColorAt(id, it.color);
           list.push({ batch: b.mesh, id });
           if (this.trackNames?.has(it.name)) this.#trackRec(it.name, it.matrix).instances.push({ batch: b.mesh, id });
         }
@@ -478,7 +561,19 @@ export class InstanceBatch {
        a hitch the chunk-build budget never even saw because it lives on the
        promise side of the fence. */
     const nextTask = () => new Promise((r) => setTimeout(r, 0));
-    for (const [material, items] of byMaterial) {
+    /* Tinted placements (containers) merge apart from the plain ones: they
+       carry a per-vertex colour under a vertexColors clone of the material,
+       and mergeGeometries refuses to mix a geometry that has a colour
+       attribute with one that has not. One extra draw per chunk that has
+       any -- the yards and the port. (2026-09-08; before this the merge
+       path dropped the colour and every container was grey.) */
+    const merges = [];
+    for (const [material, all] of byMaterial) {
+      const plain = all.filter((it) => !it.color), tinted = all.filter((it) => it.color);
+      if (plain.length) merges.push([material, plain]);
+      if (tinted.length) merges.push([this.cat.tintedMaterial(material), tinted]);
+    }
+    for (const [material, items] of merges) {
       await nextTask();
       if (dead()) return null;   // released mid-merge: nothing built yet for this material
       const geos = [];
@@ -515,6 +610,11 @@ export class InstanceBatch {
           g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
         }
         if (!g.attributes.normal) g.computeVertexNormals();
+        if (it.color) {
+          const n = g.attributes.position.count, col = new Float32Array(n * 3);
+          for (let i = 0; i < n; i++) { col[i * 3] = it.color.r; col[i * 3 + 1] = it.color.g; col[i * 3 + 2] = it.color.b; }
+          g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+        }
         const count = g.attributes.position.count;
         if (this.trackNames?.has(it.name)) {
           pending.push({ rec: this.#trackRec(it.name, it.matrix), start: offset, count });

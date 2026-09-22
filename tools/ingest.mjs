@@ -210,7 +210,13 @@ async function main() {
     console.log(c.dim(`no sources under ${path.relative(ROOT, SRC)}/ yet — see docs/PIPELINE.md`));
   }
 
-  const manifest = { version: 1, generated: new Date().toISOString(), assets: {} };
+  let manifest = { version: 1, generated: new Date().toISOString(), assets: {} };
+  if (ONLY && existsSync(MANIFEST)) {
+    try {
+      manifest = JSON.parse(await (await import('node:fs/promises')).readFile(MANIFEST, 'utf8'));
+      manifest.generated = new Date().toISOString();
+    } catch { /* fallback to fresh */ }
+  }
   let failed = 0;
 
   for (const srcPath of sources) {

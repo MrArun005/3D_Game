@@ -78,10 +78,10 @@ export class HelicopterVehicle extends Vehicle {
       tilt: 1,
     };
 
-    this.#buildModel();
+    this.#buildModel(options.spot);
   }
 
-  #buildModel() {
+  #buildModel(sharedSpot) {
     const group = new THREE.Group();
     group.name = 'Helicopter';
 
@@ -303,7 +303,12 @@ export class HelicopterVehicle extends Vehicle {
     this.tailStrobe = tailStrobe;
 
     // ── Searchlight ──
-    const spot = new THREE.SpotLight(0xf4f8ff, 800, 160, 0.24, 0.5, 1.2);
+    /* Shared with DispatchService when it hands one over: a light ADDED to the
+       scene at runtime changes every material's light count, and the WebGPU
+       backend recompiles every pipeline -- measured 2 s of zero frames the
+       moment a helicopter was dispatched (2026-09-12). The dispatcher's light
+       has been in the scene since boot, so borrowing it costs nothing. */
+    const spot = sharedSpot || new THREE.SpotLight(0xf4f8ff, 800, 160, 0.24, 0.5, 1.2);
     spot.position.set(1.2, -0.6, 0);
     spot.target.position.set(1.2, -50, 0);
     group.add(spot, spot.target);
@@ -330,7 +335,7 @@ export class HelicopterVehicle extends Vehicle {
   enter(player) {
     super.enter(player);
     this.rotorTargetRpm = 1.0;
-    if (this.spot) this.spot.intensity = 800;
+    if (this.spot) { this.mesh?.add(this.spot, this.spot.target); this.spot.intensity = 800; }   // a shared searchlight follows whichever helicopter is flown
   }
 
   exit() {

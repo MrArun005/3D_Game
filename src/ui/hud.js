@@ -2,12 +2,23 @@ import { V } from '../vehicle/config.js';
 import { searchRadius } from '../game/policeAi.js';
 import { CELL } from '../world/metrics.js';
 
+/* flash() timing. An identical line inside DEDUP_MS is dropped outright; a
+   different one queues behind whatever is on screen instead of erasing it. */
+const FLASH_MS = 3200;        // a message on its own
+const FLASH_QUEUED_MS = 1600; // one with others waiting behind it
+const FLASH_DEDUP_MS = 2500;
+
+/* Two messages that differ only in their numbers are the SAME message with a
+   new value ("GET OUT - 4.2s", "GRENADES . 3"). Those must update in place, or
+   a per-frame countdown fills the queue and the screen runs seconds behind. */
+const flashKey = (t) => t.replace(/[\d.,]+/g, '#');
+
 export class Hud {
   constructor() {
     this.dials = document.getElementById('dials').getContext('2d');
     this.map = document.getElementById('minimap').getContext('2d');
     this.kph = document.getElementById('kph');
-    this.trip = document.getElementById('trip');
+    this.trip = document.getElementById('trip');   // trip odometer, car.odo (main.js)
     this.gear = document.getElementById('gear');
     this.stats = document.getElementById('stats');
     this.overlay = document.getElementById('hud');
@@ -49,6 +60,8 @@ export class Hud {
   /** Once Halstead Bay is loaded the minimap draws real streets. */
   useDistrict(d) { this.district = d; }
 
+  useCircuit(circuit) { this.circuit = circuit; }
+
   useNavigation(nav) { this.navigation = nav; }
 
   useClock(clock) { this.clock = clock; }
@@ -57,7 +70,7 @@ export class Hud {
 
   dismiss() { this.overlay.classList.add('gone'); }
 
-  update(car, traffic, mission, net, heli, dt = 1 / 60) {
+  update(car, traffic, mission, net, heli) {
     this.heli = heli;
     const activeV = (typeof window !== 'undefined') ? window._activeVehicle : null;
     const vehicleType = car.type || activeV?.type || 'car';
@@ -68,26 +81,10 @@ export class Hud {
     if (this.flightBanner) {
       this.flightBanner.style.display = vehicleType === 'helicopter' ? 'flex' : 'none';
     }
-    if (this.promptBar) {
-      if (vehicleType === 'helicopter') {
-        this.promptBar.style.display = 'none';
-      } else {
-        this.promptBar.style.display = 'flex';
-        const onFootActive = (typeof window !== 'undefined' && window.onFoot) ? !!window.onFoot.active : false;
-        let html;
-        if (onFootActive) {
-          html = '<span style="color:#39ffb0">🏃 ON FOOT</span> · <span><b>WASD</b> Move</span> · <span><b>SHIFT</b> Sprint</span> · <span><b>SPACE</b> Jump</span> · <span><b>F</b> Enter Vehicle</span> · <span><b>M</b> Phone Heists</span> · <span><b>K</b> Switch Hero</span>';
-        } else if (mission?.active || this.jobLine) {
-          const mText = this.jobLine || mission?.prompt || 'MISSION IN PROGRESS';
-          html = `<span style="color:#ffd23f">🎯 OBJECTIVE</span> · <span>${mText}</span> · <span><b>M</b> Phone</span> · <span><b>G</b> Abort</span>`;
-        } else {
-          html = '<span style="color:#5bc0be">📱 [M] iFruit Phone (Heists & Little Tokyo GPS)</span> · <span>💡 [H] High Beams</span> · <span>💼 [G] Street Jobs</span> · <span>🏃 [F] Step Out</span> · <span>🗺️ [Tab] GPS Map</span>';
-        }
-        if (html !== this._promptHtml) { this._promptHtml = html; this.promptBar.innerHTML = html; }   // innerHTML every frame re-laid the bar out 60 times a second
-      }
-    }
-    this.#drawWanted(traffic, dt);
+    if (this.promptBar) this.promptBar.style.display = 'none';
+    this.#drawWanted(traffic);
     this.#drawMission(mission);
+    this.#drawCircuitRace(car);
     this.net = net;
     const fwd = car.fwdSpeed !== undefined ? car.fwdSpeed : (car.speed || 0);
     const kphVal = Math.round(Math.abs(fwd) * 3.6);
@@ -95,8 +92,7 @@ export class Hud {
       this._lastKph = kphVal;
       this.kph.innerHTML = `${kphVal}<small>KM/H</small>`;
     }
-    // trip odometer (car.odo, metres, accumulated in main.js); one DOM write per 100 m
-    const tripKm = Math.round((car.odo || 0) / 100) / 10;
+    const tripKm = Math.round((car.odo || 0) / 100) / 10;   // one DOM write per 100 m
     if (this.trip && tripKm !== this._lastTrip) { this._lastTrip = tripKm; this.trip.innerHTML = `TRIP <b>${tripKm.toFixed(1)}</b> KM`; }
     let gearStr = '';
     if (vehicleType === 'helicopter') {
@@ -113,14 +109,40 @@ export class Hud {
       this._lastGearStr = gearStr;
       this.gear.innerHTML = gearStr;
     }
+    if (!this.vehicleTag) this.vehicleTag = document.getElementById('vehicle-tag');
+    if (this.vehicleTag) {
+      let tag = 'CAMARO 350 · V8';   // the default body (vendorCars.DEFAULT_BODY); the table below names the rest
+      if (vehicleType === 'helicopter') tag = 'BELL 206 · ROTOR';
+      else if (vehicleType === 'tank') tag = 'M1 ABRAMS · 120MM';
+      else if (typeof localStorage !== 'undefined') {
+        const body = localStorage.getItem('hb.body');
+        if (body === 's-corvette-zr1') tag = 'CORVETTE C8 ZR1 · RWD';
+        else if (body === 's-monza') tag = 'FERRARI MONZA SP1 · RWD';
+        else if (body === 's-corvette-c6r') tag = 'CORVETTE C6.R · GT2';
+        else if (body === 's-camaro-jewel') tag = "'67 CAMARO SS · V8";
+        else if (body === 's-camaro-patrol') tag = 'CAMARO PATROL · POLICE';
+        else if (body === 's-porsche-gt3r') tag = 'PORSCHE 992 GT3 R · GT3';
+        else if (body === 's-f40-comp') tag = 'FERRARI F40 COMPETIZIONE · V8T';
+        else if (body === 'q-sports') tag = 'SPORTS COUPE · RWD';
+      }
+      if (this._lastVehicleTag !== tag) {
+        this._lastVehicleTag = tag;
+        this.vehicleTag.textContent = tag;
+      }
+    }
     this.#drawDials(car);
-    this.#tickWedges(dt);
+    this.#tickWedges(1 / 60);
     this.#drawMap(car, traffic);
     this.#drawMapOverlay(car, traffic, mission);
     this.#drawBigMap(car, mission, traffic);
   }
 
-  setStats(text) { this.stats.textContent = text; }
+  setStats(text) {
+    if (!this.stats) return;
+    const show = typeof location !== 'undefined' && new URLSearchParams(location.search).has('perf');
+    this.stats.style.display = show ? 'block' : 'none';
+    if (show) this.stats.textContent = text;
+  }
 
   /** Tab: the whole city on one canvas -- roads, you, the job markers. Click sets waypoint. */
   toggleMap() {
@@ -478,7 +500,6 @@ export class Hud {
   setArsenal(rows) {
     if (!this.arsEl) {
       const el = document.createElement('div');
-      el.id = 'arsenal';
       el.style.cssText = 'position:fixed;right:26px;bottom:262px;z-index:40;display:flex;gap:6px;pointer-events:none';
       document.body.appendChild(el);
       this.arsEl = el;
@@ -495,7 +516,6 @@ export class Hud {
     const mag = reserve;   // the second number is now the reserve, not the magazine size
     if (!this.ammoEl) {
       const el = document.createElement('div');
-      el.id = 'ammo';
       el.style.cssText = 'position:fixed;right:26px;bottom:190px;z-index:40;text-align:right;'
         + 'font:700 13px ui-monospace,Menlo,monospace;letter-spacing:.08em;color:#dbe4f2;'
         + 'text-shadow:0 2px 8px rgba(0,0,0,.75);pointer-events:none;display:none';
@@ -517,8 +537,7 @@ export class Hud {
   setHealth(v) {
     if (!this.healthEl) {
       const el = document.createElement('div');
-      el.id = 'health';
-      el.style.cssText = 'position:fixed;left:24px;bottom:240px;width:180px;height:7px;z-index:21;'
+      el.style.cssText = 'position:fixed;left:24px;bottom:172px;width:180px;height:7px;'
         + 'background:rgba(10,14,20,.7);border-radius:4px;overflow:hidden;pointer-events:none';
       const bar = document.createElement('div');
       bar.style.cssText = 'height:100%;width:100%;background:#e0503c;transition:width .18s';
@@ -530,34 +549,82 @@ export class Hud {
     this.healthBar.style.width = `${Math.max(0, v) * 100}%`;
   }
 
-  /** A transient line under the mission text. It reaches the chat feed only when the
-      caller names a channel ('DISPATCH', 'RADIO'): every toast mirrored into chat
-      buried the police lines under GEAR/HEADLIGHT/CASH noise. */
+  /**
+   * A transient line under the mission text, unified with the multi-line chat feed.
+   *
+   * De-duplicated and queued (2026-09-12). Callers fire from per-frame code,
+   * and the old flash() both overwrote whatever was on screen and posted
+   * another copy to chat -- the recorded tour caught nine identical VIGILANTE
+   * toasts in a row. Now:
+   *   - the same text again inside 2.5 s is dropped, screen AND chat;
+   *   - the same text with a different NUMBER updates in place (countdowns,
+   *     ammo and grenade counts), and does not re-post to chat;
+   *   - anything else queues and shows in turn, newest four kept.
+   */
   flash(text, channel = null) {
-    this.flashText = text;
-    this.flashUntil = performance.now() + 3200;
-    if (this.chat && text && channel) this.chat.post(channel, text.replace(/^📻\s*/, ''));
+    if (!text) { this.flashText = ''; this.flashUntil = 0; this.flashQ = []; return; }
+    const now = performance.now();
+    const seen = (this.flashSeen ??= new Map());
+    if (now - (seen.get(text) ?? -Infinity) < FLASH_DEDUP_MS) return;
+    seen.set(text, now);
+    if (seen.size > 64) for (const [k, t] of seen) if (now - t > FLASH_DEDUP_MS) seen.delete(k);
+
+    const key = flashKey(text);
+    this.flashQ ??= [];
+    if (this.flashUntil > now && flashKey(this.flashText || '') === key) {
+      this.flashText = text;                                     // same line, new number
+      this.flashUntil = Math.max(this.flashUntil, now + FLASH_QUEUED_MS);
+      return;
+    }
+    const q = this.flashQ.findIndex((t) => flashKey(t) === key);
+    if (q >= 0) { this.flashQ[q] = text; return; }                // ditto, but still waiting
+
+    this.flashQ.push(text);
+    if (this.flashQ.length > 4) this.flashQ.splice(0, this.flashQ.length - 4);
+    this.#pumpFlash(now);
+    if (this.chat && text) {
+      let ch = channel;
+      if (!ch) {
+        if (text.includes('📻')) ch = 'RADIO';
+        else if (/POLICE|WANTED|HEAT|10-/.test(text)) ch = 'DISPATCH';
+      }
+      if (ch && ch !== 'SYSTEM') this.chat.post(ch, text.replace(/^📻\s*/, ''));
+    }
   }
 
-  /** GTA-style area name: one large italic card, low centre, that fades on its own. */
-  area(name) {
-    if (!this.areaEl) {
-      const el = document.createElement('div');
-      el.id = 'area-toast';
-      el.style.cssText = 'position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:45;'
-        + 'font:italic 800 34px/1.1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.04em;color:#ffe8b0;'
-        + 'text-shadow:0 2px 4px rgba(0,0,0,.95),0 0 28px rgba(0,0,0,.7);pointer-events:none;'
-        + 'white-space:nowrap;opacity:0;transition:opacity .5s ease';
-      document.body.appendChild(el);
-      this.areaEl = el;
-    }
-    this.areaEl.textContent = name;
-    clearTimeout(this._areaTimer);
-    requestAnimationFrame(() => { this.areaEl.style.opacity = '1'; });
-    this._areaTimer = setTimeout(() => { this.areaEl.style.opacity = '0'; }, 3200);
+  /** Promote the next queued message once the one on screen has had its time. */
+  #pumpFlash(now = performance.now()) {
+    if (this.flashUntil > now || !this.flashQ?.length) return;
+    this.flashText = this.flashQ.shift();
+    this.flashUntil = now + (this.flashQ.length ? FLASH_QUEUED_MS : FLASH_MS);
+  }
+
+  /**
+   * Cinematic HUD: everything goes but the speed and the objective, with
+   * 2.35:1 bars. The CSS lives in style.css next to the idlecam rule it
+   * follows; this only owns the class.
+   */
+  setCinematic(on) {
+    this.cinematic = on === undefined ? !this.cinematic : !!on;
+    document.body.classList.toggle('cinematic', this.cinematic);
+    return this.cinematic;
   }
   /** Cash and the current job, first line of the mission drawer (jobs.js). */
   setJob(text) { this.jobLine = text; }
+
+  /** The place line: "OLD QUARTER · 15:30 · AFTERNOON", top centre, always on (2026-09-10). */
+  setPlace(text) {
+    if (!this.placeEl) {
+      const el = document.createElement('div');
+      el.id = 'place';
+      el.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);'
+        + 'font:600 11px/1.4 ui-monospace,Consolas,monospace;letter-spacing:.26em;'
+        + 'color:#c9d4e3;text-shadow:0 1px 6px rgba(0,0,0,.85);pointer-events:none;opacity:.88';
+      document.body.appendChild(el);
+      this.placeEl = el;
+    }
+    if (text !== this._place) { this._place = text; this.placeEl.textContent = text; }
+  }
 
   /**
    * Damage direction: a red wedge on the screen edge toward where the round
@@ -730,66 +797,113 @@ export class Hud {
       document.body.appendChild(el);
       this.missionEl = el;
     }
-    if (!mission) { this.#setMissionText(''); return; }
-    const st = mission.status();
+    this.#pumpFlash();
+    const st = mission?.status?.();
     const lines = [];
     if (this.jobLine) lines.push(this.jobLine);
-    if (this.flashUntil > performance.now()) lines.push(this.flashText);
-    if (mission.messageFor > 0 && mission.message) lines.push(mission.message);
-
-    // Turn arrow within 60m
+    if (this.flashUntil > performance.now() && this.flashText) lines.push(this.flashText);
+    if (mission?.messageFor > 0 && mission.message) lines.push(mission.message);
     if (this.navigation?.turnInfo) {
-      lines.unshift(`🧭 ${this.navigation.turnInfo.arrow} ${this.navigation.turnInfo.dir} IN ${this.navigation.turnInfo.dist}m`);
+      lines.unshift(`${this.navigation.turnInfo.arrow} ${this.navigation.turnInfo.dir}  ${this.navigation.turnInfo.dist}m`);
     }
-
     if (st && st.time !== null) {
       lines.push(`CHECKPOINT ${st.line}   ${st.time.toFixed(1)}s`
         + (st.best ? `   BEST ${st.best.toFixed(1)}s` : ''));
-    } else if (!lines.length && st && st.best) {
-      lines.push(`G — START RUN   BEST ${st.best.toFixed(1)}s`);
-    } else if (!mission.active) {
-      // First-minute onboarding sequence (Task 1.7)
-      const elapsed = (performance.now() - (this.bootTime || (this.bootTime = performance.now()))) / 1000;
-      if (elapsed < 8) {
-        lines.push('🎮 DRIVE: WASD / Left Stick · SPACE: Handbrake · Q: Look Back');
-      } else if (elapsed < 16) {
-        lines.push('💼 MISSIONS: Press G or Start to take a contract');
-      } else if (elapsed < 24) {
-        lines.push('📍 GPS: Follow magenta route · TAB for City Map & Waypoints');
-      } else if (!lines.length) {
-        lines.push('G — TAKE A JOB');
-      }
     }
-    this.#setMissionText(lines.join('\n'));
+    this.missionEl.textContent = lines.join('\n');
+    this.missionEl.style.fontSize = '13px';
+    this.missionEl.style.letterSpacing = '1px';
+    this.missionEl.style.color = '#e8eef4';
   }
 
-  #setMissionText(t) { if (t !== this._missionText) { this._missionText = t; this.missionEl.textContent = t; } }
-
-  /** Wanted level, as stars over the minimap. */
-  #drawWanted(traffic, dt = 1 / 60) {
+  /** Wanted level, styled as a modern motorsport pursuit heat badge. */
+  #drawWanted(traffic) {
     const w = traffic ? traffic.wanted : 0;
     if (!this.wantedEl) {
       const el = document.createElement('div');
       el.id = 'wanted';
-      el.style.cssText = 'position:fixed;left:24px;bottom:240px;z-index:21;font:700 26px/1 ui-sans-serif,sans-serif;'   // above the 210 px minimap (style.css #minimap bottom:22px), not inside it
-        + 'letter-spacing:4px;color:#ffb020;text-shadow:0 2px 8px rgba(0,0,0,.8);pointer-events:none';
+      el.style.cssText = 'position:fixed;left:22px;bottom:240px;display:none;align-items:center;gap:8px;'
+        + 'background:rgba(10,14,22,0.88);backdrop-filter:blur(10px);border:1px solid rgba(255,70,50,0.4);'
+        + 'border-radius:20px;padding:6px 14px;box-shadow:0 6px 24px rgba(0,0,0,0.65);pointer-events:none;transition:all 0.3s ease;';
       document.body.appendChild(el);
       this.wantedEl = el;
     }
-    // when an officer has a line on you the stars pulse; no line, they sit still
-    if (traffic?.hot) { this.wantedEl.style.filter = 'drop-shadow(0 0 7px rgba(255,74,74,.95))'; this.wantedEl.style.opacity = '1'; this._coldFor = 0; }
-    else {
-      // nobody has a line on you: after three seconds the stars go grey -- you are evading, keep it up
-      this._coldFor = (this._coldFor ?? 0) + dt;
-      const evading = this._coldFor > 3 && (traffic?.wanted ?? 0) > 0;
-      this.wantedEl.style.filter = evading ? 'grayscale(1)' : '';
-      this.wantedEl.style.opacity = evading ? '0.55' : '1';
-    }
     const n = Math.ceil(w - 0.001);
-    if (n === this.lastWanted) return;
-    if (this.lastWanted !== undefined && n > this.lastWanted && n >= 2) this.flash?.(`WANTED LEVEL ${n}`, 'DISPATCH');   // a new star is news; the first one the stars themselves announce
-    this.lastWanted = n;
-    this.wantedEl.textContent = n > 0 ? '★'.repeat(n) + '☆'.repeat(5 - n) : '';
+    if (n <= 0) {
+      this.wantedEl.style.display = 'none';
+      return;
+    }
+    this.wantedEl.style.display = 'flex';
+    // when an officer has a line on you the badge pulses red; no line, evading
+    if (traffic?.hot) {
+      this.wantedEl.style.borderColor = 'rgba(255,70,50,0.85)';
+      this.wantedEl.style.boxShadow = '0 0 16px rgba(255,70,50,0.5), 0 6px 24px rgba(0,0,0,0.65)';
+      this.wantedEl.style.opacity = '1';
+      this._coldFor = 0;
+    } else {
+      this._coldFor = (this._coldFor ?? 0) + 1 / 60;
+      const evading = this._coldFor > 3;
+      this.wantedEl.style.borderColor = evading ? 'rgba(120,150,190,0.3)' : 'rgba(255,180,50,0.6)';
+      this.wantedEl.style.boxShadow = '0 6px 24px rgba(0,0,0,0.65)';
+      this.wantedEl.style.opacity = evading ? '0.65' : '1';
+    }
+    if (n !== this.lastWanted) {
+      if (this.lastWanted !== undefined && n > this.lastWanted && n >= 2) this.flash?.(`HEAT LEVEL ${n}`);
+      this.lastWanted = n;
+    }
+    const stars = '★'.repeat(n) + '☆'.repeat(5 - n);
+    const hotText = traffic?.hot ? 'POLICE PURSUIT' : 'EVADING';
+    this.wantedEl.innerHTML = `<span style="font:800 11px/1 ui-sans-serif,sans-serif;letter-spacing:0.14em;color:#ff5232;text-transform:uppercase">${hotText} · HEAT ${n}</span><span style="color:#ffb020;font-size:16px;letter-spacing:2px">${stars}</span>`;
+  }
+
+  /** Race HUD widget: position, lap, lap time, and best lap on Halstead International Raceway */
+  #drawCircuitRace(car) {
+    if (!this.circuit) return;
+    const st = this.circuit.getStatus(car);
+
+    if (!this.raceHudEl && typeof document !== 'undefined') {
+      const el = document.createElement('div');
+      el.id = 'circuit-race-hud';
+      el.style.cssText = 'position:fixed;top:48px;right:28px;z-index:65;display:none;flex-direction:column;gap:6px;'
+        + 'background:rgba(12,16,25,0.92);backdrop-filter:blur(12px);border:1px solid rgba(255,190,40,0.45);'
+        + 'border-radius:14px;padding:12px 18px;color:#fff;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;'
+        + 'box-shadow:0 8px 32px rgba(0,0,0,0.7),0 0 16px rgba(255,190,40,0.18);min-width:180px;pointer-events:none;';
+      document.body.appendChild(el);
+      this.raceHudEl = el;
+    }
+
+    if (!this.raceHudEl) return;
+
+    if (st.state === 'racing' || st.state === 'countdown' || st.state === 'finished') {
+      this.raceHudEl.style.display = 'flex';
+      const pCol = st.place === 1 ? '#ffd700' : st.place === 2 ? '#c0c0c0' : st.place === 3 ? '#cd7f32' : '#ffffff';
+      const m = Math.floor(st.currentLapTime / 60), s = Math.floor(st.currentLapTime % 60), cs = Math.floor((st.currentLapTime * 100) % 100);
+      const curStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
+      const bestStr = st.bestLapTime ? `${Math.floor(st.bestLapTime / 60)}:${String(Math.floor(st.bestLapTime % 60)).padStart(2, '0')}.${String(Math.floor((st.bestLapTime * 100) % 100)).padStart(2, '0')}` : '--:--.--';
+
+      this.raceHudEl.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.12);padding-bottom:6px">
+          <span style="font-weight:800;font-size:18px;color:${pCol};letter-spacing:1px">P ${st.place} <span style="font-size:12px;color:#888">/ ${st.fieldCount}</span></span>
+          <span style="font-weight:700;font-size:13px;color:#39ffb0;background:rgba(57,255,176,0.12);padding:2px 6px;border-radius:4px">LAP ${Math.min(st.totalLaps, st.lap)}/${st.totalLaps}</span>
+        </div>
+        <div style="font-size:11px;color:#8899aa;display:flex;justify-content:space-between;margin-top:2px">
+          <span>LAP TIME</span><b style="color:#fff;font-size:13px">${curStr}</b>
+        </div>
+        <div style="font-size:10px;color:#8899aa;display:flex;justify-content:space-between">
+          <span>BEST LAP</span><b style="color:#ffd700">${bestStr}</b>
+        </div>
+        ${st.state === 'countdown' ? `<div style="color:#ffcc00;font-weight:800;font-size:14px;text-align:center;margin-top:4px">START IN ${st.countdown}…</div>` : ''}
+      `;
+    } else if (st.inRaceway) {
+      this.raceHudEl.style.display = 'flex';
+      this.raceHudEl.innerHTML = `
+        <div style="font-weight:800;font-size:12px;color:#ffd700;letter-spacing:1px">HALSTEAD RACEWAY</div>
+        <div style="font-size:11px;color:#8899aa;margin-top:2px">3-Lap Circuit Race</div>
+        <div style="font-size:11px;color:#39ffb0;margin-top:4px">Press <b>[G]</b> or <b>/track</b> to Race</div>
+      `;
+    } else {
+      this.raceHudEl.style.display = 'none';
+    }
   }
 
   #getDialPlate() {

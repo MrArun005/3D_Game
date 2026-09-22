@@ -12,9 +12,15 @@ import { signalState, LAMP_COLOURS } from './signals.js';
 import { BREAK_CLASS } from './breakables.js';
 import { ZEBRA_DEPTH } from '../game/traffic.js';
 import { buildTokyoBuilding, frontRotation, tokyoMaterial, buildTokyoStreet, wireMaterial, buildShrine } from './tokyo.js';
+import { loadTokyoTowers, towerFor } from './tokyoTowers.js';
+import { loadTerraces, terraceFor, TERRACES } from './terraceModels.js';
+import { loadIndustrial, industrialYard, INDUSTRIAL } from './industrialYard.js';
 import { tileUv, SIGN_TILES } from './signs.js';
+import { buildDecals, decalMaterial, decalGeometry } from './decals.js';
 import { buildGlare, setGlareRing } from './glare.js';
-import { BUILD_MS } from '../core/budgets.js';
+import { buildSpan, signatureBridge } from './spans.js';
+import { skirtFoot } from './district.js';
+import { styleFor, buildArt, artMaterial, ART_CAP } from './artBuildings.js';
 
 /**
  * Halstead Bay in three dimensions.
@@ -25,7 +31,8 @@ import { BUILD_MS } from '../core/budgets.js';
  * and a chunk can be thrown away without consulting its neighbours.
  */
 const CHUNK = 256;
-// BUILD_MS (the per-frame build budget) lives in core/budgets.js so the stats overlay reads the same number
+const LOG_SLICES = typeof location !== 'undefined' && new URLSearchParams(location.search).has('slices');
+const BUILD_MS = 2.0;      // 2.0ms budget prevents micro-stutters and drops below 60fps
 const ck = (ix, iz) => `${ix},${iz}`;
 
 /* The file carries footprints, not heights — the 2D planner has no opinion on
@@ -41,7 +48,14 @@ const DISTRICT_SCALE = {
   KINGSWAY: 1.7, NORTHLINE: 0.8, STEELGATE: 0.9, 'HARBOUR POINT': 0.85,
   'OLD QUARTER': 0.8, 'VELLERY ROW': 1.0, ASHMOOR: 0.85,
   'MARROW HILL': 0.8, 'THE FLATS': 0.95, 'GREENFELL PARK': 0.6,
-  'LITTLE TOKYO': 1.15,
+  /* 1.15 made Little Tokyo a low-rise: `row` blocks came out 9-15 m (three
+     storeys) and `mid` 18-35 m, against a 34 m carriageway. That is a
+     boulevard with shops on it, not Shibuya. The reference frames are a
+     continuous 10-20 storey wall either side of the street, so the land here
+     has to work at least as hard as Kingsway's 1.7. tokyo.js caps the result
+     (13 storeys on a wide footprint, 20 otherwise, 26 on a landmark), so this
+     raises the floor of the street without letting a single slab run away. */
+  'LITTLE TOKYO': 2.2,
 };
 const hash = (x, z) => {
   const n = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
@@ -77,23 +91,41 @@ const ARCHETYPE = { tower: TOWER, mid: MID, row: LOFT, yard: DECK, lot: PODIUM }
    long sheds; THE FLATS: stepped residential terraces; NORTHLINE and
    GREENFELL: low suburban rows. Same seed, same city -- these only weight
    the hashed choice. */
+/* 2026-09-08: two new forms. 'gable' -- a pitched roof on a low building
+   (the suburbs and the period rows had flat slabs everywhere, the single
+   loudest "offices, not houses" tell); 'bays' -- full-height projecting bays
+   on a period mid-rise, the relief a Victorian terrace is made of. Both fall
+   through to the box forms when the footprint does not suit them. */
 const DISTRICT_FORM = {
   KINGSWAY:        { forms: { podium: 0.45, setback: 0.35, slab: 0.2 }, style: 'modern' },
-  NORTHLINE:       { forms: { slab: 0.5, wing: 0.3, terrace: 0.2 }, style: 'period' },
+  NORTHLINE:       { forms: { gable: 0.45, slab: 0.25, wing: 0.2, terrace: 0.1 }, style: 'period' },
   STEELGATE:       { forms: { shed: 0.55, slab: 0.3, wing: 0.15 }, style: 'industrial' },
   'HARBOUR POINT': { forms: { shed: 0.4, slab: 0.35, wing: 0.25 }, style: 'industrial' },
-  'OLD QUARTER':   { forms: { wing: 0.45, slab: 0.35, terrace: 0.2 }, style: 'period' },
-  'VELLERY ROW':   { forms: { wing: 0.4, slab: 0.4, setback: 0.2 }, style: 'period' },
-  ASHMOOR:         { forms: { slab: 0.45, wing: 0.35, shed: 0.2 }, style: 'period' },
-  'MARROW HILL':   { forms: { terrace: 0.4, slab: 0.4, wing: 0.2 }, style: 'period' },
-  'THE FLATS':     { forms: { terrace: 0.5, slab: 0.3, setback: 0.2 }, style: 'modern' },
-  'GREENFELL PARK': { forms: { slab: 0.6, wing: 0.4 }, style: 'period' },
+  'OLD QUARTER':   { forms: { wing: 0.3, bays: 0.3, gable: 0.2, slab: 0.2 }, style: 'period' },
+  'VELLERY ROW':   { forms: { bays: 0.35, wing: 0.3, slab: 0.2, setback: 0.15 }, style: 'period' },
+  ASHMOOR:         { forms: { slab: 0.3, wing: 0.3, gable: 0.2, bays: 0.2 }, style: 'period' },
+  'MARROW HILL':   { forms: { gable: 0.35, terrace: 0.3, slab: 0.2, wing: 0.15 }, style: 'period' },
+  'THE FLATS':     { forms: { terrace: 0.4, bays: 0.3, slab: 0.15, setback: 0.15 }, style: 'modern' },
+  'GREENFELL PARK': { forms: { gable: 0.55, slab: 0.25, wing: 0.2 }, style: 'period' },
   'LITTLE TOKYO':   { forms: { tokyo_walkup: 0.55, setback: 0.25, slab: 0.20 }, style: 'tokyo' },
 };
 const pickForm = (forms, r) => { let acc = 0; for (const [k, w] of Object.entries(forms)) { acc += w; if (r < acc) return k; } return 'slab'; };
 /* Foliage is never one green. These multiply the leaf material, so they read
    as the same planting in different light rather than as five paint pots. */
-const LEAF = [0xa8c48a, 0x8fae74, 0xc2cf92, 0x7f9e6c, 0xb6c88d, 0x9dbb85];
+const LEAF = [0x3d5a32, 0x4a6338, 0x2f4a28, 0x455c34, 0x3a522e, 0x486438];
+/* The canopy tint. LEAF's six greens are right for a plane tree and wrong for a
+   cherry, so an AUTHORED species (world/treeModels.js) uses the colour read off
+   its own model instead -- sakura stays pink, the maple red -- while a
+   procedural one keeps the green it always had. Per instance, so it costs
+   nothing: the canopies were already tinted this way. */
+const leafTint = (A, sp, fallback) => A?.geo?.species?.[sp]?.authored
+  ? (A.geo.species[sp].leaf ?? fallback)
+  : fallback;
+
+/* Scratch for the gantry's non-uniform placement matrix. Module scope so the
+   signals pass does not allocate four objects per junction. */
+const _gv = new THREE.Vector3(), _gq = new THREE.Quaternion();
+const _ge = new THREE.Euler(), _gs = new THREE.Vector3();
 
 export class DistrictWorld {
   constructor(scene, assets, district, opts = {}) {
@@ -101,12 +133,31 @@ export class DistrictWorld {
     this.assets = assets;
     this.district = district;
     this.chunks = new Map();
+    /* Arun's authored neon towers, baked once and merged into each Tokyo chunk
+       mesh. Async: chunks build from frame one, so until this lands every
+       footprint falls through to a generated building, and Tokyo chunks built
+       before it are not rebuilt -- the towers simply appear on whatever streams
+       in afterwards, which at boot is everything past the spawn ring. */
+    this.towers = null;
+    loadTokyoTowers().then((t) => { this.towers = t.length ? t : null; })
+      .catch((e) => console.warn('tokyo towers:', e?.message ?? e));
+    /* Arun's terraces, for the three districts whose brief the procedural
+       styles never matched (see terraceModels.js). Async like the towers:
+       until it lands those plots build as they always did. */
+    this.terraces = null;
+    loadTerraces().then((m) => { this.terraces = m.size ? m : null; })
+      .catch((e) => console.warn('terraces:', e?.message ?? e));
+    /* The five industrial modules. Steelgate, Northline and Harbour Point were
+       building on 15-16% of their plots because warehouse caps at 44x40 m and
+       those yards run to 197x101; these lay a whole compound out instead. */
+    this.industrial = null;
+    loadIndustrial().then((m) => { this.industrial = m.size ? m : null; })
+      .catch((e) => console.warn('industrial:', e?.message ?? e));
     // solid parked cars, kept per chunk so collision only ever asks about the
     // ones nearby. The old City had this; the district world shipped without
     // it, which is why kerbside cars went back to being scenery you drive
     // through.
     this.parkedByChunk = new Map();
-    this.parkedVersion = 0;            // bumped whenever any parkedByChunk list changes; nearbyParked() caches on it
     /* Signal heads, per chunk. The traffic has been obeying lights at every
        cross and tee since it moved onto the graph -- there was simply nothing
        to see, so a queue of stopped cars looked like a jam rather than a red. */
@@ -129,14 +180,30 @@ export class DistrictWorld {
     // city-wide BatchedMesh per material (catalogue.js) -- the draw-call fix of 2026-09-02
     if (this.catalogue?.multiDraw) this.catalogue.attach(scene);
     this.propGroups = new Map();
-    this.headsByChunk = new Map();     // chunk key -> [{x,y,z}] lamp heads (night light pool)
+    this.headsByChunk = new Map();
+    this.heroLightsByChunk = new Map();
+    this.gantryArmByNode = new Map();   // node id -> the edge index that carries its gantry
+    this.nodeDegreeById = new Map();    // node id -> how many roads meet there   // chunk key -> [{x,y,z,colour,intensity,range}] block hero lights (game/lighting.js)     // chunk key -> [{x,y,z}] lamp heads (night light pool)
     this.facadeGroups = new Map();
-    this.parkedLod = new Map();
-    this.propRadius = 2;
+    this.parkedLod = new Map();        // chunk key -> { near, far, byBody } parked-car LOD sets (#cullFar swaps them; #buildSteps sets, releaseChunk deletes). Dropped by the lite/radius constructor edit in 22c1c0c and every chunk build died on .set -- keep it.
+    this.isLite = !!opts.lite;
+    this.propRadius = opts.lite ? 1 : (opts.propRadius ?? 2);
     this.nodeById = new Map(district.graph.nodes.map((n) => [n.id, n]));
-    this.radius = 2;   // 5x5 x 256m ~= 1.2km of full-detail street
+    this.radius = opts.lite ? 1 : (opts.radius ?? 2);   // 3x3 in LITE (9 chunks = 768m) or 5x5 in FULL (25 chunks = 1.28km)
 
-    this.#buildFarCity(opts.day);
+    /* RACE MODE (2026-09-16): `opts.only` is a predicate (x, z) => bool. When
+       it is set, a chunk is built only if its 256 m cell touches the area the
+       predicate accepts, and the far-city LOD is not built at all. The
+       raceway sits in the bay with the whole city behind it; layered on top of
+       normal streaming, a race carried every stutter the city has -- chunks
+       streaming in, the far grid flickering at the horizon, 36 civilian cars
+       -- for scenery the driver never looks at. "We can have a separate run
+       for this, so no unnecessary glitch or load on the race." This is that
+       run. DistrictWorld still exists, so the sixteen `world.*` call sites in
+       main.js keep working; they just have nothing to return. */
+    this.only = typeof opts.only === 'function' ? opts.only : null;
+
+    if (!this.only) this.#buildFarCity(opts.day);
 
     // bucket road segments and blocks into chunks once
     this.segByChunk = new Map();
@@ -173,6 +240,38 @@ export class DistrictWorld {
    * the far copies are deliberately a little shorter and a little narrower so
    * they can never fight the real geometry for the same pixel.
    */
+  /** How many roads meet at `nodeId`. Cached: a scan per approach is not free. */
+  #nodeDegree(nodeId) {
+    let n = this.nodeDegreeById.get(nodeId);
+    if (n !== undefined) return n;
+    n = 0;
+    for (const e of this.district.graph.edges) if (e.a === nodeId || e.b === nodeId) n++;
+    this.nodeDegreeById.set(nodeId, n);
+    return n;
+  }
+
+  /** The one approach at `nodeId` that may carry an overhead sign gantry. */
+  #gantryArm(nodeId) {
+    let arm = this.gantryArmByNode.get(nodeId);
+    if (arm !== undefined) return arm;
+    arm = -1;
+    const edges = this.district.graph.edges;
+    for (let i = 0; i < edges.length; i++) {
+      const e = edges[i];
+      if ((e.a !== nodeId && e.b !== nodeId) || e.width <= 26) continue;
+      if (arm < 0 || i < arm) arm = i;
+    }
+    this.gantryArmByNode.set(nodeId, arm);
+    return arm;
+  }
+
+  /** Does this 256 m chunk cell touch the `only` area? Centre and four corners. */
+  #cellTouches(cx, cz) {
+    const x0 = cx * CHUNK, z0 = cz * CHUNK, x1 = x0 + CHUNK, z1 = z0 + CHUNK;
+    const f = this.only;
+    return f(x0 + CHUNK / 2, z0 + CHUNK / 2) || f(x0, z0) || f(x1, z0) || f(x0, z1) || f(x1, z1);
+  }
+
   #buildFarCity(day) {
     const D = this.district;
     const far = new THREE.Group();
@@ -201,9 +300,18 @@ export class DistrictWorld {
     rg.setAttribute('normal', new THREE.BufferAttribute(
       new Float32Array(pos.length).fill(0).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
     rg.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
-    const roads = new THREE.Mesh(rg, this.assets.mat.tarmac);
-    roads.position.y = -0.03;               // always loses to the real tarmac
+    const farTarmac = this.assets.mat.tarmac.clone();
+    farTarmac.polygonOffset = true;
+    farTarmac.polygonOffsetFactor = 4;
+    farTarmac.polygonOffsetUnits = 4;
+    const roads = new THREE.Mesh(rg, farTarmac);
+    roads.position.y = -0.08;               // sits clearly below near tarmac with positive polygonOffset so real roads always cleanly win
     roads.frustumCulled = false;
+    /* The far city RECEIVES the sun's shadow (2026-09-08). Photo presets that
+       stand outside the loaded ring (docks, beach, aerial) see only these
+       meshes as ground, and until now nothing there could take a shadow --
+       which is what the "no far-cascade shadow lands" hunt was looking at. */
+    roads.receiveShadow = true;
     far.add(roads);
 
     const slabs = [], solids = [], uvScale = [];
@@ -237,6 +345,7 @@ export class DistrictWorld {
     slabs.forEach((m, i) => slabMesh.setMatrixAt(i, m));
     slabMesh.instanceMatrix.needsUpdate = true;
     slabMesh.frustumCulled = false;
+    slabMesh.receiveShadow = true;
     far.add(slabMesh);
 
     /* Windows on the skyline.
@@ -349,6 +458,7 @@ export class DistrictWorld {
         for (let dz = -scanRadius; dz <= scanRadius; dz++) {
           const k = ck(ix + dx, iz + dz);
           if (this.chunks.has(k) || this.pending.has(k)) continue;
+          if (this.only && !this.#cellTouches(ix + dx, iz + dz)) continue;   // race mode: outside the raceway, never built
           const d2 = dx * dx + dz * dz;
           // Chunks ahead in velocity vector get higher priority (lower effective d)
           const dotAhead = hasVel ? (dx * normVx + dz * normVz) : 0;
@@ -397,12 +507,9 @@ export class DistrictWorld {
       const b = this.building;
       const t1 = performance.now();
       const done = b.gen.next().done;
-      const stepMs = performance.now() - t1;
-      b.ms = (b.ms || 0) + stepMs;   // whole-chunk cost, across frames
-      // the longest un-yielded step: tick() yields at 1.8 ms, so anything well above that is a merge that needs a yield point
-      b.worstStepMs = Math.max(b.worstStepMs || 0, stepMs);
+      b.ms = (b.ms || 0) + performance.now() - t1;   // whole-chunk cost, across frames
       if (done) {
-        if (wasPrimed && this.onChunkDone) this.onChunkDone(b.ms, b.worstStepMs);
+        if (wasPrimed && this.onChunkDone) this.onChunkDone(b.ms);
         // bundle rule: nothing inside a bundle is culled per object
         b.group.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
         b.group.needsUpdate = true;
@@ -426,8 +533,6 @@ export class DistrictWorld {
       const b = this.building;
       const maxAbandonR = (wasPrimed && speed < 1.0) ? this.radius + 1 : this.radius;
       if (Math.abs(b.cx - ix) > maxAbandonR || Math.abs(b.cz - iz) > maxAbandonR) {
-        // the async InstanceBatch.emit()s already fired for this group check this and tear down what they built
-        b.group.userData.dead = true;
         b.group.traverse((o) => {
           if (o.userData?.batched) this.catalogue.releaseBatched(o.userData.batched);
           if (!o.isMesh) return;
@@ -436,8 +541,7 @@ export class DistrictWorld {
         });
         for (const m of [this.propGroups, this.facadeGroups, this.parkedLod,
                          this.parkedByChunk, this.signalsByChunk,
-                         this.solidsByChunk, this.poolsByChunk, this.headsByChunk]) m.delete(b.k);
-        this.parkedVersion++;
+                         this.solidsByChunk, this.poolsByChunk]) m.delete(b.k);
         this.pending.delete(b.k);
         this.building = null;
         this.#rerecordAll();
@@ -484,6 +588,13 @@ export class DistrictWorld {
       const pl = this.parkedLod.get(key);
       if (pl) {
         if (pl.ring !== d) { pl.ring = d; (pl.near[0] ?? pl.far[0])?.parent && ((pl.near[0] ?? pl.far[0]).parent.needsUpdate = true); }
+        /* Full body + detail to d <= 1, the 492-tri LOD beyond. Moving the
+           swap to d === 0 (tried 2026-09-22, -395k tris of glass/tyres/trim)
+           put the pop at the edge of the chunk you STAND in: a parked car
+           beside you flipped full <-> low-poly every time you crossed a chunk
+           line -- 'the cars are flickering'. The swap stays a street away;
+           the saving has to come from a detail mesh that is cheaper, not
+           nearer. Shadows still cast only from the standing chunk. */
         for (const m of pl.near) { m.visible = d <= 1; m.castShadow = d === 0; }
         for (const m of pl.far) m.visible = d > 1;
         /* Shadows from the chunk you are standing in, and nowhere else.
@@ -513,7 +624,6 @@ export class DistrictWorld {
       const [a, b] = k.split(',').map(Number);
       if (Math.abs(a - ix) > maxReleaseR || Math.abs(b - iz) > maxReleaseR) {
         this.scene.remove(g);
-        g.userData.dead = true;   // a prop batch still merging for this chunk must not land in it (catalogue.js:emit)
         /* Only geometry this chunk built. The old sweep disposed shared
            assets.geo.* buffers that 24 other live chunks were still drawing
            from, forcing a silent GPU re-upload at every chunk boundary. */
@@ -533,7 +643,7 @@ export class DistrictWorld {
         this.solidsByChunk.delete(k);
         this.poolsByChunk.delete(k);
         this.headsByChunk.delete(k);
-        this.parkedVersion++;
+        this.heroLightsByChunk.delete(k);
         this.onBreakablesGone?.(k);
         this.#rerecordAll();
       }
@@ -575,6 +685,7 @@ export class DistrictWorld {
     const stage = (y, hh, k) => {
       fb.m.push(mat4(wx, y, wz, angle, w * k, hh, d * k));
       fb.uv.push((w * k) / tileW, hh / tileH);
+      relief(y, hh, w * k, d * k);
     };
     // a stage of its own footprint (sw x sd), offset (ox, oz) on the block axes
     const stageAt = (y, hh, sw, sd, ox, oz) => {
@@ -582,16 +693,79 @@ export class DistrictWorld {
       fb.m.push(mat4(px, y, pz, angle, sw, hh, sd));
       fb.uv.push(sw / tileW, hh / tileH);
       (glassTop ? out.glassRoofs : out.roofs).push(mat4(px, y + hh - SINK, pz, angle, sw + 0.1, 0.7 + SINK, sd + 0.1));
+      relief(y, hh, sw, sd, ox, oz);
     };
     const cap = (y, hh, k, pad) =>
       (glassTop ? out.glassRoofs : out.roofs).push(
         mat4(wx, y, wz, angle, w * k + pad, hh, d * k + pad));
 
-    let topK = 1;
+    /* Relief: the shells were one scaled box wearing a tiled canvas facade, so
+       a 60 m wall took ONE light value and cast no shadow on itself -- the
+       "extruded cardboard" look. Belt courses every few storeys and pilasters
+       at the corners give the sun something to catch: crisp horizontal and
+       vertical shadow lines down the face. They ride the roof/trim bucket,
+       which is already instanced, so the draw count does not move; the cost is
+       ~10 boxes (120 triangles) a building. Self-built styles (world/buildings)
+       carry their own relief and never come through here. */
+    const relief = (y, hh, sw, sd, ox = 0, oz = 0) => {
+      if (hh < 6 || sw < 5 || sd < 5) return;                   // a shed gets none
+      const band = hh > 40 ? 12 : hh > 20 ? 9 : 6.5;            // a tower's courses sit further apart
+      const [cx, cz] = at(ox, oz);
+      for (let by = y + band; by < y + hh - 1.2; by += band) {
+        out.roofs.push(mat4(cx, by, cz, angle, sw + 0.34, 0.26, sd + 0.34));   // belt course, 0.17 m proud
+      }
+      const pw = Math.min(1.1, sw * 0.12), pd = Math.min(1.1, sd * 0.12), pr = 0.16;
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) {     // corner pilasters, full height
+        const [px, pz] = at(ox + sx * (sw / 2 - pw / 2 + pr * 0.5), oz + sz * (sd / 2 - pd / 2 + pr * 0.5));
+        out.roofs.push(mat4(px, y, pz, angle, pw + pr, hh, pd + pr));
+      }
+    };
+    let topK = 1, pitched = false;
+    /* A parapet lip round a flat roof: 0.6 m up, 0.3 m thick, four boxes in
+       the roof bucket. From the street it IS the roofline; without it the top
+       of every box was a knife edge against the sky. */
+    const lip = (y, sw, sd) => {
+      const t = 0.3, hh = 0.6;
+      for (const s of [-1, 1]) {
+        let [px, pz] = at(0, s * (sd / 2 - t / 2)); out.roofs.push(mat4(px, y, pz, angle, sw, hh, t));
+        [px, pz] = at(s * (sw / 2 - t / 2), 0);     out.roofs.push(mat4(px, y, pz, angle, t, hh, sd));
+      }
+    };
+    const lipY = KERB_H + h + 0.7 - 0.05;          // on top of the final cap (cap() stands 0.7 above h)
     /* District forms first; the old tower/mid setbacks remain as 'setback'
        and the plain box as 'slab'. Every form is still a few instanced boxes
        in the same facade bucket, so the draw count does not move. */
-    if (form === 'wing' && w > 15 && d > 11 && shaft > 6) {
+    if (form === 'gable' && out.gables && shaft <= 13 && w <= 24 && d <= 24) {
+      /* A pitched roof: the shell stops at the eaves and a prism (A.geo.gable,
+         ridge along its local X) sits on it with a 0.45 m overhang, ridge
+         along the longer side, pitch ~35 degrees, capped at 4.5 m tall. The
+         ridge overshoots the planning height by a storey; h stays the
+         collision height, and dressRoofs leaves the slope alone (pitched). */
+      const rh = Math.min(4.5, Math.min(w, d) * 0.36);
+      const wallH = Math.max(3.0, shaft - rh * 0.5);
+      stage(y0, wallH, 1);
+      const along = w >= d;
+      out.gables.push(mat4(wx, y0 + wallH - SINK, wz, angle + (along ? 0 : Math.PI / 2), (along ? w : d) + 0.9, rh, (along ? d : w) + 0.9));
+      pitched = true;
+    } else if (form === 'bays' && w > 9 && shaft > 7) {
+      /* Projecting bays: two or three full-height oriels on both long faces,
+         each its own capped box in the SAME facade bucket, so the window
+         rhythm continues round the bay. Four to six boxes of relief per
+         building -- the cheapest thing a flat period wall can carry. */
+      stage(y0, shaft, 1);
+      cap(KERB_H + h - SINK, 0.7 + SINK, 1, 0.1);
+      const n = w > 18 ? 3 : 2, pitch = w / n, bw = Math.min(3.0, pitch * 0.45), bd = 0.75, bh = shaft - 1.2;
+      for (let i = 0; i < n; i++) {
+        const ox = -w / 2 + pitch * (i + 0.5);
+        for (const side of [-1, 1]) {
+          const [px, pz] = at(ox, side * (d / 2 + bd / 2 - 0.05));
+          fb.m.push(mat4(px, y0, pz, angle, bw, bh, bd));
+          fb.uv.push(bw / tileW, bh / tileH);
+          out.roofs.push(mat4(px, y0 + bh - SINK, pz, angle, bw + 0.3, 0.4 + SINK, bd + 0.3));
+        }
+      }
+      lip(lipY, w + 0.1, d + 0.1);
+    } else if (form === 'wing' && w > 15 && d > 11 && shaft > 6) {
       // an L: the main block along the frontage, a lower wing back on one side
       const side = rand() < 0.5 ? -1 : 1, wingW = w * (0.34 + rand() * 0.12), wingH = shaft * (0.55 + rand() * 0.25);
       stageAt(y0, shaft, w, d * 0.58, 0, -d * 0.21);
@@ -654,10 +828,17 @@ export class DistrictWorld {
       stage(y0 + split - SINK, shaft - split + SINK, k);
       cap(y0 + split - SINK, 0.5 + SINK, 1, 0.12);
       cap(KERB_H + h - SINK, 0.7 + SINK, k, 0.12);
+      lip(lipY, w * k + 0.12, d * k + 0.12);
+      // a plant room, the way every office slab has one
+      if (rand() < 0.6) {
+        const [px, pz] = at((rand() - 0.5) * w * k * 0.3, (rand() - 0.5) * d * k * 0.3);
+        out.roofs.push(mat4(px, lipY - 0.05, pz, angle, Math.max(3, w * k * 0.35), 3.0, Math.max(3, d * k * 0.35)));
+      }
       topK = k;
     } else {
       stage(y0, shaft, 1);
       cap(KERB_H + h - SINK, 0.7 + SINK, 1, 0.1);
+      lip(lipY, w + 0.1, d + 0.1);
     }
 
     if (arch === TOWER) {
@@ -671,7 +852,7 @@ export class DistrictWorld {
         out.masts.push(mat4(wx, KERB_H + h + ch1 + spireH / 2, wz, 0,
           0.22, spireH, 0.22));
       }
-    } else if (w > 12 && rand() < 0.4) {
+    } else if (!pitched && w > 12 && rand() < 0.4) {
       // Roof clutter on commercial mid-rises
       for (let i = 0, n = 1 + Math.floor(rand() * 2); i < n; i++) {
         const r = rand();
@@ -680,6 +861,7 @@ export class DistrictWorld {
                wz + (rand() - 0.5) * d * 0.5, rand() * 6.28, 1, 1, 1));
       }
     }
+    return pitched;
   }
 
   /**
@@ -687,14 +869,8 @@ export class DistrictWorld {
    * real lane pitch, a kerb face, and a pavement behind it. Built per graph
    * edge and trimmed back from both junctions, so nothing is ever painted
    * across a crossroads.
-   *
-   * A generator, driven with `yield*` from #buildSteps: it yields through the
-   * caller's `tick` once per edge, so a chunk on an arterial (~40 edges,
-   * ~2,000 ribbons) no longer lands as one un-yielded step. Nothing touches
-   * `group` until the loop is over -- the four meshes are added together at
-   * the end, so an abandoned build never leaves a half-painted street.
    */
-  *#streetFurniture(edgeIds, group, tick) {
+  #streetFurniture(edgeIds, group) {
     const A = this.assets;
     const white = [], warm = [], kerb = [], kerbN = [], walk = [], walkUv = [], walkN = [];
 
@@ -728,7 +904,6 @@ export class DistrictWorld {
     };
 
     for (const ei of edgeIds) {
-      yield* tick();
       const e = this.district.graph.edges[ei];
       if (e.class === 'freeway' || e.class === 'ramp') continue;
       const half = e.width / 2;
@@ -783,19 +958,59 @@ export class DistrictWorld {
           }
         }
 
-        // edge line, then the kerb it runs alongside, then the pavement
+        /* Edge line, then the kerb it runs alongside, then the pavement --
+           but the kerb and the pavement are CLIPPED where they would land on
+           another road's carriageway.
+
+           Both used to be one unconditional ribbon per side, laid at a fixed
+           offset from this edge's centreline with no idea what else was there.
+           Wherever two roads run close and parallel -- which in a city grid is
+           everywhere, and on the lift bridge is the deck beside its own
+           approach -- one road's footpath was drawn straight over the other's
+           lanes. Measured across the bridge deck at z=2450: tarmac from
+           x=1917 to 1960 (two overlapping carriageways), and the pavement
+           tiles sitting at x=1946 where tarmacDepth reads -12.8. You drove on
+           the footpath while the physics said road. This is the same class of
+           bug, and the same fix, as the 2026-08-31 pass that stopped props and
+           parked cars standing in the road: ask tarmacDepth, which is the
+           minimum over ALL nearby segments.
+
+           No `exclude` is needed. The probe sits at half + 2.4, which is
+           outside THIS edge's own half-width, so our own segment contributes
+           +2.4 there; only another road's tarmac can drive it negative.
+
+           Walked in 6 m steps and emitted as CONTIGUOUS RUNS, so a segment
+           with nothing in the way still costs the single quad it always did
+           and only a clipped one pays for extra geometry. */
+        const STEP = 6;
+        const clear = (o, t0, t1) => {
+          const [cx, cz] = at(o, (t0 + t1) / 2);
+          return this.district.tarmacDepth(cx, cz) > 0.2;
+        };
         for (const side of [-1, 1]) {
           const o = side * (half - 0.45);
           ribbon(white, px0 + nx * o, pz0 + nz * o, px1 + nx * o, pz1 + nz * o, 0.15, 0.02);
-          const kx = side * half;
-          // the kerb face looks back at the road it edges
-          wall(kerb, kerbN, px0 + nx * kx, pz0 + nz * kx, px1 + nx * kx, pz1 + nz * kx,
-               0, KERB_H, -nx * side, -nz * side);
-          const w = side * (half + 2.4);
-          ribbon(walk, px0 + nx * w, pz0 + nz * w, px1 + nx * w, pz1 + nz * w, 4.8, KERB_H, walkN);
+          const kx = side * half, w = side * (half + 2.4);
           // the slab texture is 2.4m; without UVs the pavement is flat colour
-          const v = (s1 - s0) / 2.4, u = 4.8 / 2.4;
-          walkUv.push(0, 0, v, 0, v, u, 0, 0, v, u, 0, u);
+          const u = 4.8 / 2.4;
+          let runStart = null;
+          const flush = (t1) => {
+            if (runStart === null) return;
+            const [qx, qz] = at(w, runStart), [rx, rz] = at(w, t1);
+            ribbon(walk, qx, qz, rx, rz, 4.8, KERB_H, walkN);
+            const v = (t1 - runStart) / 2.4;
+            walkUv.push(0, 0, v, 0, v, u, 0, 0, v, u, 0, u);
+            // the kerb face looks back at the road it edges; it runs with its pavement
+            const [ka, kb] = at(kx, runStart), [kc, kd] = at(kx, t1);
+            wall(kerb, kerbN, ka, kb, kc, kd, 0, KERB_H, -nx * side, -nz * side);
+            runStart = null;
+          };
+          for (let t = s0; t < s1; t += STEP) {
+            const t2 = Math.min(s1, t + STEP);
+            if (clear(w, t, t2)) { if (runStart === null) runStart = t; }
+            else flush(t);
+          }
+          flush(s1);
         }
       }
     }
@@ -821,19 +1036,19 @@ export class DistrictWorld {
    * A signal head on every approach to every signalised junction, wired to the
    * same pure phase function the traffic reads. Lenses are one instanced mesh
    * per chunk whose colours are rewritten each frame.
-   *
-   * A generator like #streetFurniture: yields through `tick` per approach.
-   * Every mesh is added to `group` after the loop (the paint, the zebra,
-   * the lenses, and the authored masts when their async emit lands), so the
-   * chunk is never visible with half its junctions signed.
    */
-  *#signals(edgeIds, group, key, tick) {
+  #signals(edgeIds, group, key) {
     const A = this.assets;
     const posts = [], arms = [], lens = [], meta = [], zebra = [];
     const seen = new Set(), scrambled = new Set();
     const sigBatch = this.catalogue ? new InstanceBatch(this.catalogue) : null;
     const ly = (x, z) => this.district.elevationAt(x, z);
 
+    /* Which approach at a junction carries the overhead gantry.
+       The LOWEST-numbered wide edge at the node, cached. Lowest rather than a
+       hash so it cannot depend on which chunk reached the node first: a node on
+       a chunk seam is built from either side and must choose the same arm both
+       times, or the board appears and disappears as you drive past. */
     /* Junction paint: stop lines and lane arrows.
        Kept here rather than in #streetFurniture because both are positioned
        from the APPROACH -- they need the junction node, the direction into it
@@ -896,7 +1111,6 @@ export class DistrictWorld {
       const e = this.district.graph.edges[ei];
       if (e.class === 'freeway' || e.class === 'ramp') continue;
       for (const end of [e.a, e.b]) {
-        yield* tick();
         const node = this.nodeById.get(end);   // 1789 nodes; a scan per approach is not free
         if (!node || (node.kind !== 'cross' && node.kind !== 'tee')) continue;
         const tag = `${ei}:${end}`;
@@ -942,6 +1156,23 @@ export class DistrictWorld {
           }
         }
 
+        /* WHERE FIVE OR MORE ROADS MEET, PAINT NOTHING (2026-09-14).
+           Every marking below -- crossing, stop line, lane arrows -- is built
+           from ONE approach and laid on the tarmac in front of it. That is
+           right for a crossroads and nonsense past it: counted over the
+           district file, 83 nodes have five or more roads meeting (50 five-way,
+           29 six-way, one seven-way, three eight-way), so a six-way node drew
+           SIX sets of crossing, stop line and arrows across the same few metres
+           of asphalt, overlapping at every angle. That is the "road paintings
+           colliding each other, you cannot tell which road goes where" report,
+           and no amount of nudging the offsets fixes it -- the shapes are
+           correct, there are just too many of them on one piece of ground.
+
+           Bare asphalt reads as an open junction, which is honest. The real
+           answer for these is a roundabout with an island and a circulating
+           lane; until that exists, clean tarmac beats a white scribble. */
+        if (this.#nodeDegree(end) >= 5) continue;
+
         /* A crossing on every signalled approach, and the mast beside it.
            Without one the cars pulled up nose-to-post at the signal itself,
            which is where the pole is, not where a car should stop. */
@@ -970,7 +1201,15 @@ export class DistrictWorld {
            width on most edges. */
         const lanes = Math.max(1, Math.round((half - 1.8) / 3.6));
         const laneW = (half - 1.0) / lanes;
+        /* Only the turn lanes and ONE through lane carry an arrow. A 34 m
+           arterial derives four lanes an approach, so four approaches painted
+           sixteen 5 m arrows into a junction that already carries four zebra
+           crossings, four stop lines and (in Little Tokyo) two diagonal
+           scramble crosswalks -- the tarmac disappeared under white paint.
+           Real arterials mark the turn lanes and leave the through lanes bare. */
         for (let i = 0; i < lanes; i++) {
+          const isTurn = (lanes > 1 && i === lanes - 1) || (lanes > 2 && i === 0);
+          if (!isTurn && i !== 1) continue;
           const off = laneW * (i + 0.5);
           const ax2 = node.x - dx * (stopBack + 9) + -dz * off;
           const az2 = node.y - dz * (stopBack + 9) + dx * off;
@@ -993,11 +1232,49 @@ export class DistrictWorld {
             lens.push(mat4(px + dx * 0.24, KERB_H + 3.82 - k * 0.32, pz + dz * 0.24,
               -yaw, 1, 1, 1));
           }
-          // a gantry where the approach is wide enough to need one
-          if (e.width > 26 && hash(node.x + ei, node.y) < 0.4) {
-            sigBatch.add('props/sign_gantry', placeAsset(
-              node.x - dx * (back + 3), KERB_H + ly(node.x, node.y), node.y - dz * (back + 3),
-              Math.atan2(-dx, -dz)));
+          /* ONE gantry per junction, on ONE approach (2026-09-14).
+             This used to run per approach, so a wide crossroads got a board on
+             every arm. Counted over the district file: 620 gantries across 337
+             junctions, and 200 of those junctions carried TWO OR MORE -- 138
+             with two, 42 with three, 19 with four, one with five. Standing at
+             such a junction you are looking at a wall of identical boards
+             facing different ways, which is what "so many boards on the road,
+             next to each other, of no use" means.
+             `gantryArm` is chosen once per NODE, so exactly one approach can
+             carry it and the choice is stable per city seed. */
+          if (e.width > 26 && ei === this.#gantryArm(end)) {
+            /* STRETCHED ACROSS ITS ROAD, not scaled up (2026-09-14).
+               props/sign_gantry is 9.1 m wide and 6.8 m tall, and the gate
+               above only ever offers it roads WIDER than 26 m -- so at native
+               size both legs stood in the middle of a 26-44 m carriageway
+               instead of spanning it. That is the board you meet planted in
+               the road.
+               The scale has to be NON-UNIFORM, which is why this builds its own
+               matrix instead of calling place(): scaling a 9.1 m gantry up to
+               span 38 m uniformly also makes it 28 m TALL, a signpost the size
+               of an office block. Width follows the road; height stays put. */
+            const gx = Math.min(4.6, (e.width + 4.0) / 9.1);
+            /* The beam is local +X and must lie ACROSS the road, and this yaw
+               is the one that does it. A co-agent changed it to
+               atan2(-dz, dx) with the right reasoning and the wrong result --
+               three.js rotY(t) sends local +X to (cos t, 0, -sin t), so for a
+               road direction (dx, dz) into the junction:
+
+                 atan2(-dx, -dz) -> beam (-dz, dx)   |beam . road| = 0.00  ACROSS
+                 atan2(-dz,  dx) -> beam ( dx, dz)   |beam . road| = 1.00  ALONG
+
+               Checked for an east road, a north road and a diagonal; the dot
+               product is 0.00 and 1.00 respectively in all three. The second
+               form turns the gantry down the carriageway, and since gx stretches
+               local X it would lay a 31-42 m board along the middle of the road
+               instead of spanning it. */
+            const gYaw = Math.atan2(-dx, -dz);
+            _ge.set(0, gYaw, 0);
+            sigBatch.add('props/sign_gantry', new THREE.Matrix4().compose(
+              _gv.set(node.x - dx * (back + 3), KERB_H + ly(node.x, node.y), node.y - dz * (back + 3)),
+              _gq.setFromEuler(_ge),
+              _gs.set(gx, 1, 1),
+            ));
           }
         } else {
           posts.push(mat4(px, KERB_H, pz, -yaw, 0.11, 3.9, 0.11));
@@ -1120,8 +1397,32 @@ export class DistrictWorld {
     const A = this.assets;
     const k = ck(ix, iz);
     let tLast = performance.now();
-    const tick = function* () {
-      if (performance.now() - tLast >= 1.8) {
+    /* A slice is the work BETWEEN two yields, and the budget only holds if
+       every step calls tick(). `label` names the step so the worst slice can
+       be attributed instead of guessed at: districtWorld.worstSlice keeps the
+       longest one seen, and `?slices` logs anything over 8 ms as it happens.
+       Costs one string compare per tick. */
+    const self = this;
+    let tLabel = 'start';
+    /* A hard break between phases. It must reset the clock too: a bare `yield`
+       left tLast pointing at the previous frame, so the next slice measured the
+       time the generator sat PARKED and every worst-slice number was fiction. */
+    const brk = function* (label) {
+      const now = performance.now();
+      const slice = now - tLast;
+      if (slice > (self.worstSlice?.ms ?? 0)) self.worstSlice = { ms: slice, step: tLabel, chunk: k };
+      if (LOG_SLICES && slice > 8) console.info(`[slice] ${slice.toFixed(1)}ms after ${tLabel} (chunk ${k})`);
+      if (label) tLabel = label;
+      yield;
+      tLast = performance.now();
+    };
+    const tick = function* (label) {
+      const now = performance.now();
+      const slice = now - tLast;
+      if (slice > (self.worstSlice?.ms ?? 0)) self.worstSlice = { ms: slice, step: tLabel, chunk: k };
+      if (LOG_SLICES && slice > 8) console.info(`[slice] ${slice.toFixed(1)}ms after ${tLabel} (chunk ${k})`);
+      if (label) tLabel = label;
+      if (slice >= 1.8) {
         yield;
         tLast = performance.now();
       }
@@ -1132,6 +1433,7 @@ export class DistrictWorld {
        fight they provoke is invisible — far cheaper than mitring every join. */
     const D = this.district;
     const boxes = [];              // solid obstacles and footprints in this chunk
+    const spanParts = new Map(), spanHeads = [];   // world/spans.js: pier/fascia/railing/soffit geo by material key, and its lamp heads
     const segs = this.segByChunk.get(k) ?? [];
     if (segs.length) {
       const pos = [], nor = [], uv = [];
@@ -1143,8 +1445,6 @@ export class DistrictWorld {
          ramp nor exists on it. Both are emitted HERE, per segment, from the
          same corner heights the tarmac uses, so they cannot disagree with it. */
       const sk = [], skN = [], skUv = [];      // skirt: deck edge down to ground
-      const pp = [], ppN = [], ppUv = [];      // parapet: 1.0m wall riding the edge
-      const PARAPET_H = 1.0, PARAPET_T = 0.38;
       /* Every quad here is emitted through `face`, which checks the geometric
          normal of the first triangle against the normal the caller INTENDS and
          reverses the corner order if they disagree. The two edges of a road
@@ -1177,7 +1477,7 @@ export class DistrictWorld {
              [0, 1, 0], [[0, 0], [L, 0], [L, t / 2.4], [0, t / 2.4]]);
       };
       for (const id of segs) {
-        yield* tick();
+        yield* tick('roads+spans');
         const s = this.district.segments[id];
         const dx = s.bx - s.ax, dz = s.bz - s.az;
         const L = Math.hypot(dx, dz) || 1;
@@ -1187,9 +1487,24 @@ export class DistrictWorld {
           [s.bx - nx, s.bz - nz], [s.ax - nx, s.az - nz],
         ];
         const tri = [q[0], q[1], q[2], q[0], q[2], q[3]];
-        // sample the deck height per corner so a bridge is a ramp, not a decal
+        /* Deck height: sampled at the two END CENTRES, then applied flat across
+           the width. Sampling each CORNER instead made a road ramp along AND
+           bank across, and spanHeight is a cliff -- full height inside a band
+           of half+5.5 about the bridge polyline, zero outside it. Where the
+           road graph does not sit exactly on that polyline (on HALSTEAD LIFT
+           BRIDGE it runs ~16 m west of it) one kerb landed inside the band and
+           the other outside, so the signature bridge was banked 7.6 m across
+           its 28 m width for 480 m, with one kerb on the ground. 51 of the
+           163 elevated segments had their two long edges more than a metre
+           apart. A real deck is flat across and ramped along, which is exactly
+           what sampling the centreline gives. */
+        const decA = D.elevationAt(s.ax, s.az), decB = D.elevationAt(s.bx, s.bz);
+        const deckY = (px, pz) => {
+          const t = L > 0.001 ? Math.max(0, Math.min(1, ((px - s.ax) * dx + (pz - s.az) * dz) / (L * L))) : 0;
+          return decA + (decB - decA) * t;
+        };
         for (const [px, pz] of tri) {
-          pos.push(px, D.elevationAt(px, pz), pz);
+          pos.push(px, deckY(px, pz), pz);
           nor.push(0, 1, 0);
         }
         // the tile is 18.4m square; stretching one across a 34m carriageway is
@@ -1198,39 +1513,46 @@ export class DistrictWorld {
         uv.push(0, 0, v, 0, v, u, 0, 0, v, u, 0, u);
 
         // elevated? then this segment gets sides
-        const e0 = D.elevationAt(q[0][0], q[0][1]), e1 = D.elevationAt(q[1][0], q[1][1]);
-        const e3 = D.elevationAt(q[3][0], q[3][1]), e2 = D.elevationAt(q[2][0], q[2][1]);
+        const e0 = deckY(q[0][0], q[0][1]), e1 = deckY(q[1][0], q[1][1]);
+        const e3 = deckY(q[3][0], q[3][1]), e2 = deckY(q[2][0], q[2][1]);
         if (Math.max(e0, e1, e2, e3) > 0.12) {
+          /* Piers, fascia, railing, soffit, lamps, joints, abutment --
+             world/spans.js. Clipped to this chunk so the neighbour builds the
+             other half. NOT on the signature bridge: world/liftBridge.js
+             builds that one whole, its own piers and railings included. */
+          const sp = signatureBridge(s, D) ? null : buildSpan(s, D, {
+            bounds: { x0: ix * CHUNK, z0: iz * CHUNK, x1: (ix + 1) * CHUNK, z1: (iz + 1) * CHUNK },
+          });
+          if (sp) {
+            for (const p of sp.parts) (spanParts.get(p.mat) ?? spanParts.set(p.mat, []).get(p.mat)).push(p.geo);
+            for (const lp of sp.lamps) spanHeads.push(lp);
+            for (const b of sp.solids) boxes.push(b);
+          }
           const ground = (px, pz) => (D.inWater && D.inWater(px, pz) ? -2.6 : 0);
           for (const [a, b, ox, oz] of [
             [q[0], q[1],  nx / s.half,  nz / s.half],   // one edge, facing out
             [q[3], q[2], -nx / s.half, -nz / s.half],   // the other
           ]) {
-            const ya = D.elevationAt(a[0], a[1]), yb = D.elevationAt(b[0], b[1]);
-            wall(sk, skN, skUv, a[0], ya, a[1], b[0], yb, b[1], ground(a[0], a[1]), ground(b[0], b[1]), ox, oz);
-            // parapet: outer face, cap, inner face
-            wall(pp, ppN, ppUv, a[0], ya + PARAPET_H, a[1], b[0], yb + PARAPET_H, b[1], ya, yb, ox, oz);
-            top(pp, ppN, ppUv, a[0], ya + PARAPET_H, a[1], b[0], yb + PARAPET_H, b[1], ox, oz, PARAPET_T);
-            const ix = -ox * PARAPET_T, iz = -oz * PARAPET_T;
-            wall(pp, ppN, ppUv, b[0] + ix, yb + PARAPET_H, b[1] + iz, a[0] + ix, ya + PARAPET_H, a[1] + iz, yb, ya, -ox, -oz);
-
-            // solid barrier collision box along elevated parapet edge
-            const segDx = b[0] - a[0], segDz = b[1] - a[1];
-            const segL = Math.hypot(segDx, segDz);
-            if (segL > 0.5) {
-              boxes.push({
-                x: (a[0] + b[0]) / 2 + (ox * PARAPET_T * 0.5),
-                z: (a[1] + b[1]) / 2 + (oz * PARAPET_T * 0.5),
-                hw: segL / 2,
-                hd: PARAPET_T * 0.5 + 0.15,
-                angle: Math.atan2(segDz, segDx),
-              });
-            }
+            const ya = deckY(a[0], a[1]), yb = deckY(b[0], b[1]);   // the deck's own height, so the skirt and parapet cannot disagree with the tarmac
+            /* Over water, or wherever spans.js carries this deck on piers, the
+               skirt is the 0.9 m soffit band those piers hold up -- not a dam to
+               the riverbed, and not a wall with the piers hidden inside it. On a
+               land embankment it stays a wall. `carried` is the UNCLIPPED answer,
+               so every chunk drawing this segment's skirt agrees which it is. */
+            const carried = !!(sp && sp.carried);
+            wall(sk, skN, skUv, a[0], ya, a[1], b[0], yb, b[1],
+                 skirtFoot(ya, carried || D.inOpenWater?.(a[0], a[1]), s.cls),
+                 skirtFoot(yb, carried || D.inOpenWater?.(b[0], b[1]), s.cls), ox, oz);
+            /* The parapet used to be a blank 1 m wall along this edge -- the
+               single worst thing about a bridge here. world/spans.js builds a
+               low upstand and a post-and-rail railing you can see the water
+               through, and returns the matching collision boxes in sp.solids,
+               so both the geometry and the barrier come from one place. */
           }
         }
       }
       const concrete = this.catalogue?.materials.get('concrete_cast') ?? A.mat.kerbFace;
-      for (const [arr, nrm, uvs] of [[sk, skN, skUv], [pp, ppN, ppUv]]) {
+      for (const [arr, nrm, uvs] of [[sk, skN, skUv]]) {
         if (!arr.length) continue;
         const sg = new THREE.BufferGeometry();
         sg.userData.owned = true;
@@ -1249,16 +1571,37 @@ export class DistrictWorld {
       const road = new THREE.Mesh(g, A.mat.tarmac);
       road.receiveShadow = true;
       group.add(road);
+      /* Road wear (world/decals.js): repairs, oil, rubber, kerb salt, gully
+         stains -- ONE instanced draw a chunk. Seeded per road SEGMENT and per
+         junction NODE, so the chunk next door generates the identical stream and
+         `bounds` keeps only its own half: no doubled wear at a seam. Built inside
+         the generator, so it lands before the bundle records. Measured district
+         wide: mean 111 a chunk, worst 308, cap 400, ~0.6 ms. */
+      const wear = buildDecals(segs.map((id) => this.district.segments[id]), this.district, 0x5ea1,
+        { bounds: { x0: ix * CHUNK, z0: iz * CHUNK, x1: (ix + 1) * CHUNK, z1: (iz + 1) * CHUNK } });
+      if (wear.count) {
+        const dg = decalGeometry();
+        dg.userData.owned = true;
+        const dm = new THREE.InstancedMesh(dg, decalMaterial(), wear.count);
+        wear.matrices.forEach((m, i) => dm.setMatrixAt(i, m));
+        dg.setAttribute('aTile', new THREE.InstancedBufferAttribute(wear.tiles, 2));
+        dg.setAttribute('aFade', new THREE.InstancedBufferAttribute(wear.fades, 1));
+        dm.instanceMatrix.needsUpdate = true;
+        dm.computeBoundingSphere();
+        dm.receiveShadow = true;       // no cast: a 12 mm quad's shadow is the road's own
+        group.add(dm);
+      }
     }
-    yield;
+    yield* brk('blocks');
 
     /* --- blocks: a raised slab is its own kerb, and buildings stand on it --- */
     const blocks = this.blkByChunk.get(k) ?? [];
     const kitPlaced = {};          // kit -> [geometry with matrix applied] (whole Kenney buildings)
     const tokyoParts = [], tokyoBoards = [], tokyoProps = [], tokyoHeads = [];   // Little Tokyo: our own buildings (world/tokyo.js), one mesh per chunk
+    const artParts = new Map();    // the self-built styles (world/artBuildings.js): material key -> [geo], one mesh per key per chunk; boards and lamps ride tokyoBoards / tokyoHeads
     const slabs = { block: [], park: [], lot: [], vacant: [] };
     const facades = {}, bases = {};
-    const roofs = [], glassRoofs = [], crowns = [], masts = [];
+    const roofs = [], glassRoofs = [], crowns = [], masts = [], gables = [];
     const plant = { ac: [], tank: [], hut: [] };
     const slabGeo = A.geo.box;
 
@@ -1270,7 +1613,7 @@ export class DistrictWorld {
       slabs[kind].push(mat4(bl.x, 0, bl.y, bl.angle, bl.w, KERB_H, bl.h));
 
       // Little Tokyo's park block carries a small shrine at its centre, in the Tokyo mesh
-      if (bl.district === 'LITTLE TOKYO' && bl.type === 'park' && !NO_TOKYO) {
+      if (bl.district === 'LITTLE TOKYO' && bl.type === 'park' && !(typeof location !== 'undefined' && new URLSearchParams(location.search).has('notokyo'))) {
         const sh = buildShrine(bl.id);
         const shM = mat4(bl.x, KERB_H, bl.y, bl.angle, 1, 1, 1);
         sh.geo.applyMatrix4(shM);
@@ -1285,7 +1628,7 @@ export class DistrictWorld {
       if (!arch) continue;
       const range = HEIGHT[bl.type] || [10, 20];
       for (const g of this.district.buildingsOf(bl.id)) {
-        yield* tick();
+        yield* tick('massing/art/tokyo');
         const scale = DISTRICT_SCALE[bl.district] ?? 1;
         const h = (range[0] + hash(g.x + bl.x, g.y + bl.y) * (range[1] - range[0])) * scale;
         // local footprint -> world, through the block's own transform
@@ -1301,18 +1644,109 @@ export class DistrictWorld {
            by probing tarmac depth around it; the building is built facing +X and
            turned onto that side, then through the block's transform. Its sign
            boards join the chunk's atlas quads. ?notokyo restores the old massing. */
-        if (bl.district === 'LITTLE TOKYO' && !NO_TOKYO && g.w >= 4 && g.d >= 4) {
+        const noTokyo = typeof location !== 'undefined' && new URLSearchParams(location.search).has('notokyo');
+        /* Hoisted: the Tokyo branch below runs FIRST and used to take every
+           Little Tokyo footprint, so a style the art router claims (glass
+           towers, since 2026-09-13) could never land there. Same roll the art
+           branch uses further down, so a footprint resolves to exactly one. */
+        /* An authored terrace wins the row plots of its own district, ahead of
+           the procedural style. These are the districts artBuildings.js flags
+           as a language mismatch -- gable-ended hill terraces for MARROW HILL,
+           inter-war render for ASHMOOR -- and at 308-636 triangles against
+           brickRow's 1,207 mean they cost a third as much. They go into
+           artParts by material key like any other art building, so they merge
+           per key per chunk: real library textures, no extra draws. */
+        /* A big industrial yard becomes a compound rather than one capped
+           warehouse on an empty plot. Same artParts merge as the terraces. */
+        if (this.industrial && INDUSTRIAL.has(bl.district) && bl.type === 'yard' && g.w >= 60 && g.d >= 50) {
+          const yard = industrialYard(this.industrial, wx * 13.7 + wz * 5.1, g.w / 2, g.d / 2);
+          if (yard) {
+            const My = new THREE.Matrix4().makeRotationY(-bl.angle);
+            My.setPosition(wx, KERB_H, wz);
+            for (const p of yard.parts) { p.geo.applyMatrix4(My); (artParts.get(p.mat) ?? artParts.set(p.mat, []).get(p.mat)).push(p.geo); }
+            boxes.push({ x: wx, z: wz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: yard.height, district: bl.district, art: true });
+            continue;
+          }
+        }
+
+        if (this.terraces && TERRACES[bl.district] && g.w >= 6 && g.d >= 6) {
+          const toWorldT = (lx, lz) => [wx + lx * ca - lz * sa, wz + lx * sa + lz * ca];
+          const rotT = frontRotation((x, z) => this.district.tarmacDepth(x, z), toWorldT, g.w / 2, g.d / 2);
+          const swapT = Math.abs(rotT) > Math.PI / 4 && Math.abs(Math.abs(rotT) - Math.PI) > 1e-6;
+          const tr = terraceFor(this.terraces, bl.district, wx * 7.31 + wz * 3.17,
+            swapT ? g.d / 2 : g.w / 2, swapT ? g.w / 2 : g.d / 2, h);
+          if (tr) {
+            const Mt = new THREE.Matrix4().makeRotationY(-bl.angle).multiply(new THREE.Matrix4().makeRotationY(rotT));
+            Mt.setPosition(wx, KERB_H, wz);
+            for (const p of tr.parts) { p.geo.applyMatrix4(Mt); (artParts.get(p.mat) ?? artParts.set(p.mat, []).get(p.mat)).push(p.geo); }
+            boxes.push({ x: wx, z: wz, angle: bl.angle, hw: swapT ? g.d / 2 : g.w / 2, hd: swapT ? g.w / 2 : g.d / 2, height: tr.height, district: bl.district, art: true });
+            continue;
+          }
+        }
+
+        const artStyle = styleFor(bl, g, hash(wx * 0.53, wz * 0.91));
+        if (bl.district === 'LITTLE TOKYO' && !noTokyo && !artStyle && g.w >= 4 && g.d >= 4) {
           const toWorld = (lx, lz) => [wx + lx * ca - lz * sa, wz + lx * sa + lz * ca];
           const rot = frontRotation((x, z) => this.district.tarmacDepth(x, z), toWorld, g.w / 2, g.d / 2);
           const swap = Math.abs(rot) > Math.PI / 4 && Math.abs(Math.abs(rot) - Math.PI) > 1e-6;   // a +/-90 turn swaps the footprint axes
-          const b = buildTokyoBuilding(Math.floor(hash(wx * 0.71, wz * 0.29) * 1e9), swap ? g.d / 2 : g.w / 2, swap ? g.w / 2 : g.d / 2, h);
+          const fhw = swap ? g.d / 2 : g.w / 2, fhd = swap ? g.w / 2 : g.d / 2;
+
+          /* One footprint in three gets one of Arun's authored neon towers
+             instead of a generated building, wherever one fits the plot without
+             being stretched (towerFor refuses past 1.6x/0.5x -- past that the
+             signage smears and it reads worse than a built one). They are baked
+             into the same color/emit/flick vertex format as the rest of this
+             mesh, so they MERGE into it and cost no extra draw; drawn as they
+             ship, 13 materials a building would be 13 draws each. Falls through
+             to the generated building when the GLBs have not landed yet (the
+             load is async and chunks build from frame one) or none fits. */
+          if (this.towers && hash(wx * 0.19, wz * 0.83) < 0.08) {
+            // the plot's own world position is the seed, so the choice is stable per building
+            const tw = towerFor(this.towers, wx * 7.31 + wz * 3.17, fhw, fhd, h);
+            if (tw) {
+              const Mt = new THREE.Matrix4().makeRotationY(-bl.angle).multiply(new THREE.Matrix4().makeRotationY(rot));
+              Mt.setPosition(wx, KERB_H, wz);
+              tw.geo.applyMatrix4(Mt);
+              tokyoParts.push(tw.geo);
+              boxes.push({ x: wx, z: wz, angle: bl.angle, hw: swap ? fhd : fhw, hd: swap ? fhw : fhd, height: tw.height, district: bl.district, tokyo: true });
+              continue;
+            }
+          }
+
+          const b = buildTokyoBuilding(Math.floor(hash(wx * 0.71, wz * 0.29) * 1e9), fhw, fhd, h);
           // local (front +X) -> footprint local (turned onto the street side) -> world (the block's frame), same rotation sense as mat4()
           const M = new THREE.Matrix4().makeRotationY(-bl.angle).multiply(new THREE.Matrix4().makeRotationY(rot));
-          M.setPosition(wx, KERB_H, wz);
+          /* Image 11 shops sit ON the kerb. Footprints are inset in the block,
+             so the camera saw a 26 m void and a blank lot wall. Walk the front
+             face to the pavement: retreat while it is in the road, advance
+             while it is too far back, and stop in the 0.5-1.15 m dead band
+             (which is why this cannot oscillate).
+
+             BOTH directions loop. Measured over all 219 Little Tokyo
+             footprints: 95 of them ship with the front face ALREADY inside the
+             carriageway -- median 3.8 m in, worst 12.7 m -- so a single 0.45 m
+             step back left a shopfront standing in the road. Retreat needs the
+             full 14 m; the advance is capped at 6 m so an interior plot with no
+             street in front of it stays where the planner put it instead of
+             drifting 15 m into its neighbour. */
+          const dir = new THREE.Vector3(1, 0, 0).applyMatrix4(new THREE.Matrix4().makeRotationY(-bl.angle).multiply(new THREE.Matrix4().makeRotationY(rot)));
+          const MAX_OUT = 6.0, MAX_BACK = 14.0;
+          let sx = wx, sz = wz, out = 0, back = 0;
+          for (let i = 0; i < 48; i++) {
+            const d = this.district.tarmacDepth(sx + dir.x * fhw, sz + dir.z * fhw);
+            if (d < 0.5) {
+              if (back >= MAX_BACK) break;
+              sx -= dir.x * 0.45; sz -= dir.z * 0.45; back += 0.45; out -= 0.45;
+              continue;
+            }
+            if (d < 1.15 || out >= MAX_OUT) break;
+            sx += dir.x * 0.55; sz += dir.z * 0.55; out += 0.55;
+          }
+          M.setPosition(sx, KERB_H, sz);
           b.geo.applyMatrix4(M);
           tokyoParts.push(b.geo);
           const _p = new THREE.Vector3();
-          for (const lp of b.lamps ?? []) { _p.set(lp.x, lp.y, lp.z).applyMatrix4(M); tokyoHeads.push({ x: _p.x, y: _p.y, z: _p.z, colour: lp.colour }); }   // the kanban as candidates for the real night lights
+          for (const lp of b.lamps ?? []) { _p.set(lp.x, lp.y, lp.z).applyMatrix4(M); tokyoHeads.push({ x: _p.x, y: _p.y, z: _p.z, colour: lp.colour, neon: lp.neon, intensity: lp.intensity, range: lp.range, glare: lp.glare }); }   // the kanban as candidates for the real night lights
           for (const bd of b.boards) {
             _p.set(bd.x, bd.y, bd.z).applyMatrix4(M);
             const yaw = bd.yaw + rot - bl.angle;   // the same two turns, applied to the board's facing
@@ -1323,7 +1757,7 @@ export class DistrictWorld {
               tokyoBoards.push({ m, u, v });
             } else tokyoBoards.push({ m: mat4(_p.x, _p.y, _p.z, -yaw, bd.w, bd.h, 1), u, v });
           }
-          boxes.push({ x: wx, z: wz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: b.height, district: bl.district, tokyo: true });
+          boxes.push({ x: sx, z: sz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: b.height, district: bl.district, tokyo: true });
           // kerbside life in front of it (kit props, placed by us): a vending machine at one corner, sometimes an A-frame or a stall
           {
             const fw = swap ? g.w / 2 : g.d / 2, fhw = swap ? g.d / 2 : g.w / 2;   // the built building's half sizes
@@ -1334,7 +1768,44 @@ export class DistrictWorld {
           }
           continue;
         }
-        const kd = NO_KIT ? null : KIT_DISTRICT[bl.district];
+        /* The self-built styles (world/buildings/*, dispatched by
+           world/artBuildings.js) take the Tokyo route: built facing +X, turned
+           onto the street side, then through the block's frame. Parts are kept
+           per material key so a wall can wear the library's brick PBR; boards
+           and lamps join the chunk's atlas quads and light heads like the
+           kanban. A plot bigger than the style's envelope is clipped to it
+           with the street face left where it is (the rest of the plot is
+           apron); the collision box is the built footprint. ?noart / ?artall. */
+        const style = artStyle;
+        if (style) {
+          const toWorld = (lx, lz) => [wx + lx * ca - lz * sa, wz + lx * sa + lz * ca];
+          const rot = frontRotation((x, z) => this.district.tarmacDepth(x, z), toWorld, g.w / 2, g.d / 2);
+          const swap = Math.abs(rot) > Math.PI / 4 && Math.abs(Math.abs(rot) - Math.PI) > 1e-6;   // a +/-90 turn swaps the footprint axes
+          const [cw, cd] = ART_CAP[style];
+          const fhw = swap ? g.d / 2 : g.w / 2, fhd = swap ? g.w / 2 : g.d / 2;   // the plot's half sizes in the building's frame (+X street)
+          const bhw = Math.min(fhw, cw), bhd = Math.min(fhd, cd);
+          const b = buildArt(style, Math.floor(hash(wx * 0.71, wz * 0.29) * 1e9), bhw, bhd, h, { rgb: bl.district === 'LITTLE TOKYO' });
+          const M = new THREE.Matrix4().makeRotationY(-bl.angle).multiply(new THREE.Matrix4().makeRotationY(rot));
+          M.setPosition(wx, KERB_H, wz);
+          if (fhw > bhw) M.multiply(new THREE.Matrix4().makeTranslation(fhw - bhw, 0, 0));   // clipped: slide the building up to the street edge
+          for (const p of b.parts) { p.geo.applyMatrix4(M); (artParts.get(p.mat) ?? artParts.set(p.mat, []).get(p.mat)).push(p.geo); }
+          const _p = new THREE.Vector3();
+          for (const lp of b.lamps ?? []) { _p.set(lp.x, lp.y, lp.z).applyMatrix4(M); tokyoHeads.push({ x: _p.x, y: _p.y, z: _p.z, colour: lp.colour, neon: lp.neon, intensity: lp.intensity, range: lp.range, glare: lp.glare }); }
+          for (const bd of b.boards ?? []) {   // same as the Tokyo branch above
+            _p.set(bd.x, bd.y, bd.z).applyMatrix4(M);
+            const yaw = bd.yaw + rot - bl.angle;
+            const [u, v] = tileUv(Math.floor(hash(_p.x * 0.37 + bd.y, _p.z * 1.3) * SIGN_TILES), true);
+            if (bd.vertical) {
+              const m = new THREE.Matrix4().compose(_p.clone(), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, Math.PI / 2, 'YXZ')), new THREE.Vector3(bd.h, bd.w, 1));
+              tokyoBoards.push({ m, u, v });
+            } else tokyoBoards.push({ m: mat4(_p.x, _p.y, _p.z, -yaw, bd.w, bd.h, 1), u, v });
+          }
+          _p.set(0, 0, 0).applyMatrix4(M);   // the built footprint's centre (moved if clipped), half sizes back in the block's frame
+          boxes.push({ x: _p.x, z: _p.z, angle: bl.angle, hw: swap ? bhd : bhw, hd: swap ? bhw : bhd, height: b.height, district: bl.district, art: true });
+          continue;
+        }
+        const noKit = typeof location !== 'undefined' && new URLSearchParams(location.search).has('nokit');
+        const kd = noKit ? null : KIT_DISTRICT[bl.district];
         const kits = this.assets.kitBuildings;
         const kit = kd && kits?.[kd[0]];
         if (kit && hash(wx * 0.37, wz * 0.61) < kd[1] && g.w > 6 && g.d > 6) {
@@ -1349,17 +1820,17 @@ export class DistrictWorld {
           boxes.push({ x: wx, z: wz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: m.h * sy, district: bl.district, kit: true });
           continue;
         }
-        this.#massing(arch, wx, wz, bl.angle, g.w, g.d, h,
-                      { bases, facades, roofs, glassRoofs, crowns, masts, plant }, bl.district, chunkDist2);
-        boxes.push({ x: wx, z: wz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: h, district: bl.district });
+        const pitched = this.#massing(arch, wx, wz, bl.angle, g.w, g.d, h,
+                      { bases, facades, roofs, glassRoofs, crowns, masts, plant, gables }, bl.district, chunkDist2);
+        boxes.push({ x: wx, z: wz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: h, district: bl.district, pitched });
       }
     }
 
-    yield;
-    yield* this.#streetFurniture(this.edgeByChunk.get(k) ?? [], group, tick);
-    yield;
-    yield* this.#signals(this.edgeByChunk.get(k) ?? [], group, k, tick);
-    yield;
+    yield* brk('streetFurniture');
+    this.#streetFurniture(this.edgeByChunk.get(k) ?? [], group);
+    yield* brk('signals');
+    this.#signals(this.edgeByChunk.get(k) ?? [], group, k);
+    yield* brk('lamps');
 
     /* Lamps every 30m down each segment, alternating sides. The old procedural
        city got all its night light from these; the district world shipped
@@ -1369,10 +1840,10 @@ export class DistrictWorld {
     const parked = {}, parkedCol = {};       // keyed by silhouette
     const dressed = !!this.catalogue;
     // one bucket per species, so a street never plants the same tree twice over
-    const trees = { plane: [], pine: [], poplar: [], palm: [] };
-    const leafCol = { plane: [], pine: [], poplar: [], palm: [] };
+    const trees = { plane: [], pine: [], poplar: [], palm: [], sakura: [], ginkgo: [], willow: [], red_maple: [], autumn_oak: [], cypress: [], magnolia: [] };
+    const leafCol = { plane: [], pine: [], poplar: [], palm: [], sakura: [], ginkgo: [], willow: [], red_maple: [], autumn_oak: [], cypress: [], magnolia: [] };
     for (const id of segs) {
-      yield* tick();
+      yield* tick('lamp rows');
       const s2 = this.district.segments[id];
       if (s2.cls === 'freeway' || s2.cls === 'ramp') continue;
       const dx = s2.bx - s2.ax, dz = s2.bz - s2.az;
@@ -1386,32 +1857,49 @@ export class DistrictWorld {
         const pz = s2.az + uz * t + nz * off * side;
         const yaw = Math.atan2(-nz * side, -nx * side);
         const ly = this.district.elevationAt(px, pz);
+        const onTarmac = this.district.tarmacDepth(px, pz) <= 0.2;
         /* With a catalogue loaded the authored lamp and its light pool come
            from dressing.js instead, placed by the same loop -- keeping both
-           would stand a box lamp inside every real one. */
-        if (dressed) continue;
-        // same junction rule as dressing.js: never on anyone's tarmac
-        if (this.district.tarmacDepth(px, pz) <= 0.2) continue;
-        lamps.push(mat4(px, KERB_H + ly, pz, -yaw, 1, 1, 1));
-        solidParked.push({ x: px, z: pz, yaw: 0, offsets: [0],
-                           radius: 0.22, reach: 0.6, tag: 'prop' });
-        heads.push(mat4(px, KERB_H + ly, pz, -yaw, 1, 1, 1));
-        const hx = px + Math.cos(yaw) * 1.42, hz = pz - Math.sin(yaw) * 1.42;
-        pools.push(flat(hx, 0.03 + ly, hz, 13));
-        if (hash(px, pz) < 0.35) {
-          /* Species follows the street it stands on: formal poplars down the
-             arterials, plane trees on the side streets, palms on the water
-             boundary, pines where the map has nothing much else. */
+           would stand a box lamp inside every real one. Trees used to ride
+           that continue, so a dressed city only had the kit cube canopy. */
+        if (!dressed && !onTarmac) {
+          lamps.push(mat4(px, KERB_H + ly, pz, -yaw, 1, 1, 1));
+          solidParked.push({ x: px, z: pz, yaw: 0, offsets: [0],
+                             radius: 0.22, reach: 0.6, tag: 'prop' });
+          heads.push(mat4(px, KERB_H + ly, pz, -yaw, 1, 1, 1));
+          const hx = px + Math.cos(yaw) * 1.42, hz = pz - Math.sin(yaw) * 1.42;
+          pools.push(flat(hx, 0.03 + ly, hz, 13));
+        }
+        if (!onTarmac && hash(px, pz) < 0.35) {
+          /* 10 Masterpiece Species follow the district and street class:
+             - Little Tokyo: Sakura (Cherry blossom), Ginkgo, Japanese Red Maple, Weeping Willow
+             - Marrow Hill / Suburbs: Magnolia, Autumn Oak, London Plane
+             - Waterfront / Boundary: Royal Palm, Coastal Pine
+             - Arterials & Avenues: Italian Cypress, Poplar, Plane */
           const r = hash(pz * 1.7, px * 0.9);
-          const sp = s2.cls === 'arterial' ? (r < 0.62 ? 'poplar' : 'plane')
-                   : s2.cls === 'boundary' ? (r < 0.5 ? 'palm' : 'pine')
-                   : r < 0.72 ? 'plane' : r < 0.88 ? 'poplar' : 'pine';
+          const isTokyo = this.district.name === 'LITTLE TOKYO' || (px > 1950 && px < 2400 && pz > 1300 && pz < 1850);
+          const isWater = s2.cls === 'boundary' || Math.hypot(px - 1850, pz - 2150) < 500;
+          const sp = isTokyo ? (r < 0.45 ? 'sakura' : r < 0.70 ? 'ginkgo' : r < 0.88 ? 'red_maple' : 'willow')
+                   : isWater ? (r < 0.65 ? 'palm' : 'pine')
+                   : s2.cls === 'arterial' ? (r < 0.40 ? 'cypress' : r < 0.70 ? 'poplar' : 'plane')
+                   : r < 0.30 ? 'magnolia' : r < 0.55 ? 'autumn_oak' : r < 0.80 ? 'plane' : 'pine';
           const sc = 0.85 + hash(px, pz) * 0.45;
           const tx = px + nx * 2.2 * side, tz = pz + nz * 2.2 * side;
-          trees[sp].push(mat4(tx, KERB_H, tz, hash(pz, px) * 6.28, sc, sc * (0.9 + hash(px, pz) * 0.3), sc));
-          solidParked.push({ x: tx, z: tz, yaw: 0, offsets: [0],
-                             radius: 0.34, reach: 0.7, tag: 'prop' });
-          leafCol[sp].push(LEAF[Math.floor(r * LEAF.length)]);
+          if (this.district.tarmacDepth(tx, tz) > 0.2) {
+            const ty = KERB_H + this.district.elevationAt(tx, tz);
+            trees[sp].push(mat4(tx, ty, tz, hash(pz, px) * 6.28, sc, sc * (0.9 + hash(px, pz) * 0.3), sc));
+            solidParked.push({ x: tx, z: tz, yaw: 0, offsets: [0],
+                               radius: 0.34, reach: 0.7, tag: 'prop' });
+            const col = sp === 'sakura' ? 0xffb7c5
+                      : sp === 'ginkgo' ? 0xe5cc28
+                      : sp === 'red_maple' ? 0xd61c28
+                      : sp === 'willow' ? 0x6bb854
+                      : sp === 'autumn_oak' ? 0xe67e22
+                      : sp === 'magnolia' ? 0x27ae60
+                      : sp === 'cypress' ? 0x1e5631
+                      : LEAF[Math.floor(r * LEAF.length)];
+            leafCol[sp].push(leafTint(A, sp, col));
+          }
         }
       }
       // kerbside parking on the quieter streets
@@ -1450,6 +1938,32 @@ export class DistrictWorld {
       }
     }
 
+    /* Parks: the kit tree_broadleaf is a chamfered box (lod1 reads as a cube).
+       Same species instances as the kerb, so a park does not add a draw. */
+    for (const bl of blocks) {
+      if (bl.type !== 'park') continue;
+      const ca = Math.cos(bl.angle), sa = Math.sin(bl.angle);
+      const step = 11;
+      for (let lx = -bl.w / 2 + 7; lx < bl.w / 2 - 7; lx += step) {
+        for (let lz = -bl.h / 2 + 7; lz < bl.h / 2 - 7; lz += step) {
+          const r = hash(bl.x + lx, bl.y + lz);
+          if (r > 0.55) continue;
+          const jx = lx + (hash(lz, lx) - 0.5) * step * 0.6;
+          const jz = lz + (hash(lx, lz) - 0.5) * step * 0.6;
+          const px = bl.x + jx * ca - jz * sa;
+          const pz = bl.y + jx * sa + jz * ca;
+          if (this.district.tarmacDepth(px, pz) <= 0.5) continue;
+          if (this.district.landmarkKeepOut?.(px, pz)) continue;   // not inside the bandstand or the palm house
+          const sp = r < 0.55 ? 'plane' : r < 0.78 ? 'poplar' : 'pine';
+          const sc = 1.05 + hash(pz, px) * 0.55;
+          const py = KERB_H + this.district.elevationAt(px, pz);
+          trees[sp].push(mat4(px, py, pz, hash(px, pz) * 6.28, sc, sc * (0.9 + hash(px, pz) * 0.25), sc));
+          leafCol[sp].push(leafTint(A, sp, LEAF[Math.floor(hash(px * 1.3, pz) * LEAF.length)]));
+          solidParked.push({ x: px, z: pz, yaw: 0, offsets: [0], radius: 0.38, reach: 0.8, tag: 'prop' });
+        }
+      }
+    }
+
     /* --- authored dressing ---------------------------------------------
        91 ingested assets, placed from the tables in dressing.js. They go into
        their own child group so the whole lot can be hidden by distance in one
@@ -1465,7 +1979,7 @@ export class DistrictWorld {
          buffers, so world/breakables.js can knock them over (see its header) */
       batch.trackNames = BREAK_CLASS;
       const dressPools = [], dressHeads = [];
-      yield;
+      yield* brk('dressChunk');
       dressChunk(batch, {
         segments: segs.map((id) => this.district.segments[id]),
         blocks, district: this.district, solids: solidParked, pools: dressPools,
@@ -1474,13 +1988,19 @@ export class DistrictWorld {
       // emissive caps on the authored lamps, so the heads bloom at night
       for (const hd of dressHeads) heads.push(mat4(hd.x, hd.y, hd.z, -hd.yaw, 1, 1, 1));
       // lamp-head positions for game/lighting.js: the pool of real lights follows the nearest
-      this.headsByChunk.set(k, [...dressHeads.map((hd) => ({ x: hd.x, y: hd.y, z: hd.z })), ...tokyoHeads]);
+      this.headsByChunk.set(k, [...dressHeads.map((hd) => ({ x: hd.x, y: hd.y, z: hd.z })), ...tokyoHeads, ...spanHeads]);
       // glare sprites on every head (GTA-style; world/glare.js): one instanced Sprite per chunk, fades in with the night
-      { const gl = buildGlare([...dressHeads, ...tokyoHeads], ix * 31 + iz); if (gl) group.add(gl); }
-      yield;
+      { const gl = buildGlare([...dressHeads, ...tokyoHeads, ...spanHeads], ix * 31 + iz); if (gl) group.add(gl); }
+      yield* brk('dressRoofs');
       // sliced: one big dressRoofs was a 10+ ms step against a 4 ms budget
-      const dressable = boxes.filter((b) => !b.tokyo);   // Little Tokyo dresses itself (tokyo.js)
-      for (let i = 0; i < dressable.length; i += 24) { dressRoofs(batch, dressable.slice(i, i + 24), this.district); yield; }
+      const dressable = boxes.filter((b) => !b.tokyo && !b.art);   // Little Tokyo and the self-built styles dress themselves (tokyo.js, artBuildings.js)
+      /* One building at a time, yielding on the CLOCK rather than on a count.
+         A fixed batch cannot know what it is about to cost: measured, 10
+         buildings of facade dressing took 25 ms in a single slice -- a dropped
+         frame every time you crossed into a dense chunk. tick() yields only
+         once 1.8 ms has actually gone, so cheap buildings still batch up and
+         an expensive one yields immediately. Same total work, spread. */
+      for (let i = 0; i < dressable.length; i++) { dressRoofs(batch, dressable.slice(i, i + 1), this.district); yield* tick('dressRoofs'); }
 
       /* Facades are their own batch and their own group. They are far and away
          the most expensive thing in the kit -- a dressed frontage is roughly a
@@ -1494,7 +2014,7 @@ export class DistrictWorld {
       const signs = [...tokyoBoards], windows = [];   // Little Tokyo's kanban and fascias ride the same atlas quads
       for (const p of tokyoProps) fbatch.add(p.name, placeAsset(p.x, KERB_H, p.z, p.yaw));   // and its kerbside props
       // sliced: the frontage walk (modules, signs, windows, side walls) was the worst step
-      for (let i = 0; i < dressable.length; i += 10) { dressFacades(fbatch, dressable.slice(i, i + 10), this.district, roadDepth, signs, windows); yield; }
+      for (let i = 0; i < dressable.length; i++) { dressFacades(fbatch, dressable.slice(i, i + 1), this.district, roadDepth, signs, windows); yield* tick('dressFacades'); }   // see dressRoofs above: yield on the clock, not on a count
       /* Phase 1: the shop signs, one instanced draw per chunk. Per-instance
          atlas cell in aTile; the quad's width/height ride the matrix. They
          live in the facade group so they share its tighter visibility ring.
@@ -1509,6 +2029,15 @@ export class DistrictWorld {
         sm.instanceMatrix.needsUpdate = true;
         sm.computeBoundingSphere();
         sm.receiveShadow = true;
+        /* Phase 5: one warm doorway per ~12 shopfronts, pooled by game/lighting.js.
+           The sign boards ARE the shopfronts, so they are the cheapest honest
+           source of "a lit door someone walks out of". */
+        { const hero = this.heroLightsByChunk.get(k) ?? [];
+          for (let i = 3; i < signs.length; i += 12) {
+            const p = new THREE.Vector3().setFromMatrixPosition(signs[i].m);
+            hero.push({ x: p.x, y: Math.max(2.4, p.y - 1.0), z: p.z, colour: 0xffc07a, intensity: 26, range: 13 });
+          }
+          this.heroLightsByChunk.set(k, hero); }
         faces.add(sm);
       }
       if (windows.length) {
@@ -1537,8 +2066,7 @@ export class DistrictWorld {
         props.userData.shadowRing = undefined;
         group.needsUpdate = true;
       };
-      // emit resolves null when the chunk died (released or abandoned) before the merge landed
-      fbatch.emit(faces, { shadow: false, lod: 1 }).then((g) => { if (g) landed(faces); })
+      fbatch.emit(faces, { shadow: false, lod: 1 }).then(() => landed(faces))
         .catch((e) => console.warn('facades failed:', e.message));
       // fire and forget: the chunk is usable now, the props land a frame later
       /* lod1 throughout. The re-ingested kit is 5.7x heavier at lod0 (31k triangles
@@ -1546,8 +2074,7 @@ export class DistrictWorld {
          LOD chains are finally real -- tree 964/280/272 -- so lod1 lands the kit back
          at the old cost with better geometry. A 3.6m bay's lod0 detail is sub-pixel
          past fifteen metres anyway. */
-      batch.emit(props, { lod: 1 }).then((g) => {
-        if (!g) return;   // dead chunk: breakables.dropChunk already ran, do not re-register a phantom key
+      batch.emit(props, { lod: 1 }).then(() => {
         landed(props);
         if (batch.tracked.length) {
           this.onBreakables?.(k, batch.tracked, solidParked, this.poolsByChunk.get(k));
@@ -1571,7 +2098,6 @@ export class DistrictWorld {
         wires.frustumCulled = false;
         group.add(wires);
       }
-      yield* tick();   // the Tokyo merge is one un-yielded step; start it on a fresh slice
       const merged = mergeGeometries(tokyoParts, false);
       for (const g of tokyoParts) g.dispose();
       if (merged) {
@@ -1584,9 +2110,34 @@ export class DistrictWorld {
         group.add(tm);
       }
     }
+    /* The self-built styles: one mesh per material key per chunk (<= 8), the
+       textured keys on the library PBR sets, 'emit' on the Tokyo material so
+       their windows light with the same night factor. Every part carries the
+       same attribute set (artKit paint: position/normal/uv/color/emit/flick),
+       which mergeGeometries needs. */
+    // span structure rides the self-built styles' per-key meshes: 0 extra draws
+    for (const [key, geos] of spanParts) (artParts.get(key) ?? artParts.set(key, []).get(key)).push(...geos);
+    for (const [key, geos] of artParts) {
+      const merged = mergeGeometries(geos, false);
+      for (const g of geos) g.dispose();
+      if (!merged) continue;
+      merged.userData.owned = true;
+      merged.computeBoundingSphere();
+      const am = new THREE.Mesh(merged, artMaterial(key));
+      /* The 'emit' bucket is the window PANES -- coplanar with reveals the
+         opaque wall bucket already shadows. They were 575k of free roam's
+         2.40M shadow-caster triangles (24%, census 2026-09-22) for shadows
+         that are never separable from the wall's. Everything else casts. */
+      am.castShadow = key !== 'emit'; am.receiveShadow = true;
+      am.frustumCulled = false;                       // bundle contents are culled at record time (see the header)
+      if (key !== 'emit') {
+        am.userData.shell = true;                     // casts into the far cascades like a shell
+        am.layers.enable(SHADOW_FAR_LAYER);
+      }
+      group.add(am);
+    }
     // one merged mesh per kit per chunk: the whole Kenney buildings placed above
     for (const [kitName, geos] of Object.entries(kitPlaced)) {
-      yield* tick();   // one kit merge per slice at most
       const merged = mergeGeometries(geos, false);
       for (const g of geos) g.dispose();
       if (!merged) continue;
@@ -1598,7 +2149,7 @@ export class DistrictWorld {
       km.layers.enable(SHADOW_FAR_LAYER);
       group.add(km);
     }
-    yield;
+    yield* brk('instancing');
     const inst = (geo, mat, list, shadow, colours) => {
       if (!list.length) return;
       const m = new THREE.InstancedMesh(geo, mat, list.length);
@@ -1621,11 +2172,10 @@ export class DistrictWorld {
        rounded rectangle (3.5m kerb return, or a third of the short side on a
        small block) extruded to KERB_H, merged per kind per chunk, so the draw
        count is unchanged and the top carries UVs in metres for the slabs. */
-    const roundedSlab = function* (list) {
+    const roundedSlab = (list) => {
       if (!list.length) return null;
       const geos = [];
       for (const m of list) {
-        yield* tick();   // an ExtrudeGeometry per block; a dense chunk has a dozen
         const e = m.elements;
         const w = Math.hypot(e[0], e[2]), d = Math.hypot(e[8], e[10]);   // scale x, z
         const r = Math.min(3.5, Math.min(w, d) / 3);
@@ -1656,21 +2206,21 @@ export class DistrictWorld {
       merged.computeBoundingSphere();
       return merged;
     };
-    const slabMesh = function* (list, mat) {
-      const g = yield* roundedSlab(list);
+    const slabMesh = (list, mat) => {
+      const g = roundedSlab(list);
       if (!g) return;
       const m = new THREE.Mesh(g, mat);
       m.receiveShadow = true;
       group.add(m);
     };
-    yield* slabMesh(slabs.block, A.mat.walkDistrict ?? A.mat.walk);
-    yield* tick();
-    yield* slabMesh(slabs.park, A.mat.parkGround ?? A.mat.leaf);
-    yield* tick();
-    yield* slabMesh(slabs.lot, A.mat.kerb);
-    yield* tick();
-    yield* slabMesh(slabs.vacant, A.mat.kerb);
-    yield;
+    slabMesh(slabs.block, A.mat.walkDistrict ?? A.mat.walk);
+    yield* tick('slabs-park');
+    slabMesh(slabs.park, A.mat.parkGround ?? A.mat.leaf);
+    yield* tick('slabs-lot');
+    slabMesh(slabs.lot, A.mat.kerb);
+    yield* tick('slabs-vacant');
+    slabMesh(slabs.vacant, A.mat.kerb);
+    yield* brk('lamp inst');
     inst(A.geo.lamp, A.mat.pole, lamps, true);
     /* Two head geometries share one list: the legacy lamp's head is offset to
        sit on its own arm; the authored lamps' cap is origin-centred because
@@ -1681,7 +2231,7 @@ export class DistrictWorld {
       inst(A.geo.species[sp].trunk, A.mat.bark, trees[sp], true);
       inst(A.geo.species[sp].canopy, A.mat.leaf, trees[sp], true, leafCol[sp]);
     }
-    yield;
+    yield* brk('parked fleet');
     /* No glazing on the parked fleet. There are ~390 of them in the streaming
        radius and nobody ever looks into a parked car; adding their windows
        took the scene from 4.9M triangles to 7.5M. */
@@ -1755,9 +2305,10 @@ export class DistrictWorld {
       const [arch, v] = key.split('|');
       tiled(A.facades[arch][+v], facades[key]);
     }
-    yield;
+    yield* brk('tiled bases');
     for (const key of Object.keys(bases)) tiled(A.base.materials[+key], bases[key]);
     inst(slabGeo, A.mat.roof, roofs);
+    inst(A.geo.gable, A.mat.roofPitch, gables, true);   // pitched roofs cast: their shadow is half of what says "roof"
     inst(slabGeo, A.mat.roofGlass, glassRoofs);
     inst(slabGeo, A.mat.crown, crowns);
     inst(slabGeo, A.mat.pole, masts);
@@ -1768,11 +2319,17 @@ export class DistrictWorld {
     inst(A.geo.hut, A.mat.plant, plant.hut, true);
 
     this.parkedByChunk.set(k, solidParked);
-    this.parkedVersion++;    // nearbyParked() caches by chunk + version
     this.solidsByChunk.set(k, boxes);
     this.scene.add(group);   // the last step: the chunk appears whole
   }
 
+  /**
+   * A parked car gets stolen: hide its instance on both LOD meshes and drop
+   * its collision body, so the space it stood in is empty and nothing else
+   * changes. The chunk still owns the buffers; the instance is just scaled to
+   * nothing, which is how #cullFar hides the far stand-ins too. Returns the
+   * paint so the hero can take it.
+   */
   /**
    * Re-record every live chunk's render bundle.
    *
@@ -1813,13 +2370,6 @@ export class DistrictWorld {
     return { draws, tris };
   }
 
-  /**
-   * A parked car gets stolen: hide its instance on both LOD meshes and drop
-   * its collision body, so the space it stood in is empty and nothing else
-   * changes. The chunk still owns the buffers; the instance is just scaled to
-   * nothing, which is how #cullFar hides the far stand-ins too. Returns the
-   * paint so the hero can take it.
-   */
   takeParked(solid) {
     const lod = this.parkedLod.get(solid.chunk);
     const meshes = lod?.byBody?.[solid.body];
@@ -1831,7 +2381,7 @@ export class DistrictWorld {
       }
     }
     const list = this.parkedByChunk.get(solid.chunk);
-    if (list) { const i = list.indexOf(solid); if (i >= 0) { list.splice(i, 1); this.parkedVersion++; } }
+    if (list) { const i = list.indexOf(solid); if (i >= 0) list.splice(i, 1); }
     return solid.colour;
   }
 
@@ -1853,11 +2403,7 @@ export class DistrictWorld {
   /** Collision bodies for the parked cars and street furniture nearby. */
   nearbyParked(x, z, target = null) {
     const ix = Math.floor(x / CHUNK), iz = Math.floor(z / CHUNK);
-    /* Keyed on the player's chunk AND parkedVersion: the version bumps when a
-       chunk's parked cars land, when a chunk is released or abandoned and in
-       takeParked, so a stale list never hands traffic.js a stolen car for LOS. */
-    if (!target && this._parkedCache && this._lastParkedIx === ix && this._lastParkedIz === iz
-        && this._parkedCacheVersion === this.parkedVersion) {
+    if (!target && this._parkedCache && this._lastParkedIx === ix && this._lastParkedIz === iz) {
       return this._parkedCache;
     }
     const out = target || [];
@@ -1874,7 +2420,6 @@ export class DistrictWorld {
       this._parkedCache = out;
       this._lastParkedIx = ix;
       this._lastParkedIz = iz;
-      this._parkedCacheVersion = this.parkedVersion;
     }
     return out;
   }
@@ -1890,11 +2435,6 @@ const _frustum = new THREE.Frustum(), _pv = new THREE.Matrix4(), _box = new THRE
    recording held 1 of 81 objects. Fixed at the renderer; verified 76/76
    recorded afterwards. ?nobundles turns them off for A/B. */
 const USE_BUNDLES = typeof location !== 'undefined' ? !new URLSearchParams(location.search).has('nobundles') : false;
-/* Escape hatches read once at load. These used to be `new URLSearchParams(location.search)`
-   inside the per-footprint loop -- a parse per building, ~1,300 of them per ring. */
-const _flags = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
-const NO_TOKYO = !!_flags?.has('notokyo');   // Little Tokyo falls back to the generic massing
-const NO_KIT = !!_flags?.has('nokit');       // no whole-kit buildings
 const _zero = new THREE.Matrix4().makeScale(0, 0, 0);   // hides an instance in place
 const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
 /** a ground-plane quad, laid flat and scaled — light pools, decals */

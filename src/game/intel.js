@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { chopValue } from './garage.js';
+import { KENNEY_CARS } from '../world/vendorCars.js';
 
 /**
  * Astra-Style Tactical AI Scanner & Multimodal Reconnaissance Engine.
@@ -189,7 +191,8 @@ export class IntelScanner {
             b.label.style.color = '#ff6b7b';
             b.label.textContent = `🚨 POLICE CRUISER · ${speedKmh}KM/H · [THREAT: HIGH]`;
           } else {
-            const chop = 1500 + Math.floor((c.x % 1000) * 4.2);
+            // what the Steelgate chop shop would actually pay for it (garage.js chopValue) -- it used to be a hash of the car's x
+            const chop = chopValue(KENNEY_CARS[c.style] ?? 'q-normal1', (typeof window !== 'undefined' && (window._reputation?.score ?? 0) <= -80));
             b.el.style.borderColor = '#00e5ff';
             b.label.style.borderColor = '#00e5ff';
             b.label.style.color = '#00e5ff';

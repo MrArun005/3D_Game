@@ -35,10 +35,21 @@ import { mulberry32 } from '../core/rng.js';
 export const GROUND_H = 4.2;   // shopfront storey
 export const FLOOR_H = 3.1;    // every storey above
 
-// facade palettes: [wall, band], Tokyo's tile and render greys and creams with the odd brown or teal
+/* Facade palettes: [wall, band]. Neutral. These carried eight hues held very
+   dark -- violet-black, cyan-black and so on -- and Arun's call was that the
+   colour on a building is wrong: "no colour to it". A Shibuya facade IS
+   near-black concrete and tile; every colour on that street comes from the
+   neon, the kanban and what the glass reflects, and those are all still here.
+   Value varies 0x17..0x23 so the buildings read apart from one another. */
+/* Tile and plaster in the reference still's own hues -- teal, salmon, cream,
+   grey -- because near-black facades made the street a fridge with stickers.
+   But VALUE is not hue: the first pass at this palette ran ~1.5 stops hot and
+   our upper facades measured mean luminance 0.355/0.515 against the still's
+   0.197/0.211. Same hues, darkened, so the wall is a surface the neon lights
+   rather than a surface that competes with it. */
 const WALLS = [
-  [0xd9d4c7, 0xbcb6a8], [0xb8b2a6, 0x9b958a], [0x8c8f93, 0x6f7276], [0x6b4f3a, 0x52392a],
-  [0x4b6a6e, 0x3a5457], [0xe8e2d3, 0xcfc8b8], [0x9d7b6a, 0x7d5f50], [0x7a8794, 0x5f6b77],
+  [0x24423f, 0x19302e], [0x7d6560, 0x5c4a46], [0x86807a, 0x6b665f], [0x42474a, 0x2e3236],
+  [0x2f3a34, 0x1f2622], [0x56534f, 0x3f3d3a], [0x1e2023, 0x141518], [0x726257, 0x554741],
 ];
 const MAGENTA = [1.0, 0.25, 0.75], CYAN = [0.2, 0.9, 1.0];
 // weighted by repetition: the cover art is six parts magenta/cyan to four of everything else
@@ -96,43 +107,61 @@ function onFace(f, s, out) {
  *   h        the planner's height; snapped to whole storeys
  * boards: [{ x, y, z, yaw, w, h }] in the local frame for the sign atlas.
  */
+/* Lamp intensities are HALVED from the first pass (2026-09-14): 150-220 against
+   the pool's own default of 60 meant a wall 3 m from a kanban was floodlit, and
+   the building beside the camera read at mean luminance 0.445 where the
+   reference still is 0.211 -- a green wall lit green, not a dark wall wearing a
+   green sign. The sign should be the bright thing; the wall it hangs on should
+   be what the sign is bright AGAINST. */
 export function buildTokyoBuilding(seed, hw, hd, h) {
   const rnd = mulberry32((seed * 2654435761) >>> 0);
   const pick = (a) => a[Math.floor(rnd() * a.length)];
-  // back streets are 6-14 storeys; a tower block's tall footprints become the district's few landmark slabs (up to 24)
-  /* Height follows footprint the way a real block does: a slab wider than
-     ~30 m on either side is a low-rise (max 7 storeys) or it reads as a wall
-     of windows across the street; landmarks (up to 24) are the narrow tall
-     footprints. */
   const wide = Math.max(hw, hd) > 15;
-  const cap = wide ? 7 : h > 50 ? 24 : 14;
+  const cap = wide ? 13 : h > 50 ? 26 : 20;
   const floors = Math.max(2, Math.min(cap, Math.round((h - GROUND_H) / FLOOR_H) + 1));
   const H = GROUND_H + (floors - 1) * FLOOR_H;
   const floorY = (f) => (f === 0 ? 0 : GROUND_H + (f - 1) * FLOOR_H);   // bottom of storey f
   const [wall, band] = pick(WALLS);
   const residential = rnd() < 0.5;
-  const neon = rnd() < 0.7 ? pick(NEON) : null;   // the cover art is mostly neon: seven in ten buildings carry a tube colour
+  const neon = pick(NEON);   // was seven in ten; with only 30% of the avenue left non-glass, every one of them carries a tube colour ("RGB buildings only")
   const parts = [], boards = [], lamps = [];   // lamps: where the night light pool may put a real coloured light (the kanban)
   const F = faces(hw, hd);
 
-  // the mass and the storey bands
-  parts.push(at(box(2 * hw, H, 2 * hd, wall), 0, H / 2, 0));
+  // 1. RECESSED GROUND-FLOOR COLONNADE & MASS
+  const recess = 1.35;
+  const upperH = Math.max(0, H - GROUND_H);
+  if (upperH > 0) {
+    parts.push(at(box(2 * hw, upperH, 2 * hd, wall), 0, GROUND_H + upperH / 2, 0));
+  }
+  // Ground floor recessed mass (offset -recess/2 along X so sidewalk is under upper overhang)
+  parts.push(at(box(2 * hw - recess, GROUND_H, 2 * hd, wall), -recess / 2, GROUND_H / 2, 0));
+  // Colonnade soffit ceiling
+  parts.push(at(box(recess + 0.04, 0.16, 2 * hd + 0.04, band), hw - recess / 2, GROUND_H - 0.08, 0));
+  // Structural support pillars along curb line X = hw - 0.22
+  const numPillars = Math.max(2, Math.floor(2 * hd / 4.0) + 1);
+  for (let p = 0; p < numPillars; p++) {
+    const pz = -hd + 0.5 + (p / (numPillars - 1)) * (2 * hd - 1.0);
+    parts.push(at(box(0.44, GROUND_H, 0.44, band), hw - 0.22, GROUND_H / 2, pz));
+    parts.push(at(box(0.50, 0.35, 0.50, 0x14161a), hw - 0.22, 0.175, pz));
+  }
+  // Storey bands
   for (let f = 1; f < floors; f++) parts.push(at(box(2 * hw + 0.08, 0.16, 2 * hd + 0.08, band), 0, floorY(f), 0));
-  // the ground storey is a different skin: darker plinth and a fascia line
-  parts.push(at(box(2 * hw + 0.06, 0.5, 2 * hd + 0.06, band), 0, 0.25, 0));
 
-  // windows on every face above the ground storey; a fraction lit, warm or cool
+  // 2. WINDOW BAYS & REVEALS
   for (const f of F) {
-    // the street face is dense (a window every 2.4 m); backs and sides are sparser (3.4 m) -- half the triangles where nobody looks up
     const bays = Math.max(1, Math.floor((f.w - 0.8) / (f.name === 'front' ? 2.4 : 3.4)));
     const pitch = f.w / bays;
     for (let s = 1; s < floors; s++) {
+      // Horizontal window sill shelf on the street face for depth
+      if (f.name === 'front') {
+        parts.push(at(box(0.18, 0.08, f.w * 0.98, band), hw + 0.08, floorY(s) + 0.78, 0));
+      }
       for (let b = 0; b < bays; b++) {
         const along = -f.w / 2 + pitch * (b + 0.5);
-        const lit = rnd() < 0.38;   // fewer, dimmer windows than the first cut: on the cover the neon owns the night, the windows are a texture behind it
+        const lit = rnd() < 0.22;
         const em = lit ? (rnd() < 0.7 ? WARM : COOL) : null;
         const [x, z] = onFace(f, along, 0.035);
-        parts.push(at(quad(Math.min(1.4, pitch * 0.55), 1.5, 0x131a24, em, 0.55), x, floorY(s) + 1.55, z, f.yaw));
+        parts.push(at(quad(Math.min(1.4, pitch * 0.55), 1.5, 0x0c121a, em, 0.16), x, floorY(s) + 1.55, z, f.yaw));
         // balconies: residential backs and sides, one storey in two
         if (residential && f.name !== 'front' && s >= 2 && rnd() < 0.5) {
           const [bx, bz] = onFace(f, along, 0.5);
@@ -163,100 +192,272 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
     }
   }
 
-  // the street face: shopfront glass, awning, fascia board, kanban columns, neon
+  // 3. RECESSED STOREFRONT UNDER THE OVERHANG
   const front = F[0];
-  const [gx, gz] = onFace(front, 0, 0.03);
-  if (rnd() < 0.22) {
-    // shuttered: a ribbed grey roller door instead of glass -- every street has a few closed for the night
-    parts.push(at(quad(front.w - 0.6, 2.7, 0x8d9096), gx, 1.65, gz, front.yaw));
-    for (let r = 0; r < 6; r++) { const [rx, rz] = onFace(front, 0, 0.05); parts.push(at(box(0.02, 0.04, front.w - 0.7, 0x6f7378), rx, 0.5 + r * 0.42, rz)); }
+  const shopX = hw - recess + 0.04;
+  let konbiniFront = false;   // the awning below needs to know which shop this is
+  if (rnd() < 0.18) {
+    // shuttered: ribbed grey roller door tucked under colonnade
+    parts.push(at(quad(front.w - 0.6, 2.7, 0x8d9096), shopX, 1.65, 0, front.yaw));
+    for (let r = 0; r < 6; r++) { parts.push(at(box(0.02, 0.04, front.w - 0.7, 0x6f7378), shopX + 0.02, 0.5 + r * 0.42, 0)); }
   } else {
-    // konbini white or izakaya warm: the two lights every Tokyo street is made of
+    // OPEN SHOP: a room you can see into (image 11), not a glowing glass sticker.
     const konbini = rnd() < 0.35;
-    parts.push(at(quad(front.w - 0.6, 2.7, konbini ? 0x2a3038 : 0x1c2430, konbini ? [0.9, 0.95, 1.0] : WARM, konbini ? 0.75 : 0.5), gx, 1.65, gz, front.yaw));
+    konbiniFront = konbini;
+    const shop = konbini ? [1.0, 0.92, 0.72] : WARM;
+    const roomW = Math.max(2.4, front.w - 0.8);
+    const roomD = recess - 0.15;
+    parts.push(at(box(0.08, 2.55, roomW, konbini ? 0x3a3830 : 0x3a2e24, shop, 0.85), shopX - roomD, 1.4, 0));
+    parts.push(at(box(roomD, 0.05, roomW, 0x2a241c, shop, 0.22), shopX - roomD / 2, 0.04, 0));
+    parts.push(at(box(roomD, 0.08, roomW, 0x2a2618, shop, 0.55), shopX - roomD / 2, GROUND_H - 0.2, 0));
+    parts.push(at(box(0.08, 2.55, 0.08, 0x2a2a28), shopX - 0.02, 1.4, roomW / 2 - 0.04));
+    parts.push(at(box(0.08, 2.55, 0.08, 0x2a2a28), shopX - 0.02, 1.4, -roomW / 2 + 0.04));
+    parts.push(at(box(0.45, 0.95, Math.min(3.4, roomW * 0.45), 0x4a4038, shop, 0.4), shopX - 0.4, 0.5, 0));
+    if (konbini) {
+      for (const z of [-roomW * 0.28, roomW * 0.28]) {
+        parts.push(at(box(0.22, 1.6, 0.7, 0x3a4048, [0.7, 0.75, 0.85], 0.5), shopX - roomD + 0.2, 1.1, z));
+      }
+    }
+    lamps.push({
+      x: hw + 0.4, y: 1.6, z: 0,
+      colour: _c.setRGB(shop[0], shop[1], shop[2]).getHex(),
+      neon: true, intensity: 95, range: 30, glare: 1.6,
+    });
   }
-  // the door: a dark frame and a lit sliding-door panel at one end of the shopfront, so the ground floor reads as a shop you could enter
+  // Store entrance door
   {
     const ds = (rnd() < 0.5 ? -1 : 1) * (front.w / 2 - 1.3);
-    const [dx0, dz0] = onFace(front, ds, 0.06);
-    parts.push(at(box(0.06, 2.5, 1.25, 0x2a2d33), dx0, 1.25, dz0));
-    const [dx1, dz1] = onFace(front, ds, 0.09);
-    parts.push(at(quad(1.0, 2.2, 0x3c4a5a, [0.95, 0.9, 0.8], 0.35), dx1, 1.15, dz1, front.yaw));
+    parts.push(at(box(0.06, 2.5, 1.25, 0x2a2d33), shopX + 0.03, 1.25, ds));
+    parts.push(at(quad(1.0, 2.2, 0x3c4a5a, [0.95, 0.9, 0.8], 0.22), shopX + 0.06, 1.15, ds, front.yaw));
   }
-  // projecting signs: a small box out from the wall at first-floor height with a board on each face, on three in five
-  if (rnd() < 0.6) {
-    const s = -front.w / 2 + 1.2 + rnd() * Math.max(0.5, front.w - 2.4);
-    const [px, pz] = onFace(front, s, 0.75);
-    parts.push(at(box(1.3, 0.55, 0.12, 0x26292e, [0.8, 0.8, 0.8], 0.35), px, 5.1, pz, front.yaw + Math.PI / 2));   // the box, its long axis out from the wall
-    for (const side of [-1, 1]) {
-      const [bx, bz] = onFace(front, s + side * 0.075, 0.75);
-      boards.push({ x: bx, y: 5.1, z: bz, yaw: front.yaw + side * Math.PI / 2, w: 1.2, h: 0.5 });
+
+  // 4. 3D CANTILEVERED PROJECTING BLADE SIGNS
+  {
+    const rise = FLOOR_H * 2, top = Math.max(5.1, H - 3.0);
+    const n = Math.min(7, Math.max(1, Math.floor((top - 5.1) / rise) + 1));
+    const proj = 2.4; // 2.4m cantilevered projection into the street corridor
+    for (let i = 0; i < n; i++) {
+      if (i > 0 && rnd() < 0.25) continue;
+      const y = 5.1 + i * rise;
+      const end = (i % 2 ? -1 : 1) * (front.w / 2 - 1.2);
+      const sAt = end * (0.7 + rnd() * 0.3);
+      const signH = 1.4 + (i % 2 === 0 ? 0.6 : 0);
+      const signColor = neon ?? (rnd() < 0.5 ? CYAN : MAGENTA);
+      const px = hw + proj / 2, pz = sAt;
+      // Sign lightbox body projecting into the street
+      parts.push(at(box(proj, signH, 0.14, 0x181a1f), px, y, pz));
+      // Outer neon edge bar facing oncoming traffic
+      parts.push(at(box(0.08, signH + 0.08, 0.18, 0x111115, signColor, 2.4, flickerOf(rnd)), hw + proj - 0.04, y, pz));
+      // Cantilever structural steel truss arm
+      parts.push(at(box(proj + 0.1, 0.06, 0.08, 0x2b2e34), px - 0.05, y + signH / 2 + 0.04, pz));
+      // Double-sided sign boards (atlas quads)
+      const bw = proj - 0.3, bh = signH - 0.15;
+      for (const side of [-1, 1]) {
+        boards.push({ x: px, y, z: pz + side * 0.08, yaw: front.yaw + side * Math.PI / 2, w: bw, h: bh });
+      }
     }
   }
-  const awningCol = pick([0xc0392b, 0x2e86de, 0xf1c40f, 0xecf0f1, 0x27ae60]);
-  const [ax, az] = onFace(front, 0, 0.7);
-  parts.push(at(box(1.35, 0.08, front.w * 0.9, awningCol), ax, 3.25, az));
-  if (rnd() < 0.5) {   // striped: white bands across the awning, the cafe-and-noodle look
-    const stripes = Math.max(2, Math.floor(front.w * 0.9 / 0.9));
-    for (let i = 0; i < stripes; i += 2) parts.push(at(box(1.36, 0.02, 0.42, 0xf4f4f0), ax, 3.30, az - front.w * 0.45 + 0.45 + i * 0.9));
+
+  // Awning extending from colonnade
+  /* The konbini's awning is the three-stripe one the reference points at
+     (green / orange / red over white), not a flat colour: it is the single most
+     recognisable thing on a Japanese street at this scale. */
+  const awningCol = konbiniFront ? 0xecf0f1 : pick([0xc0392b, 0x2e86de, 0xf1c40f, 0xecf0f1, 0x27ae60]);
+  parts.push(at(box(1.5, 0.08, front.w * 0.88, awningCol), hw - recess + 0.75, 3.25, 0));
+  if (konbiniFront) {
+    const sw = front.w * 0.88 / 3;
+    const cols = [0x1f8a4c, 0xe8762a, 0xd5312a];
+    for (let i = 0; i < 3; i++) {
+      parts.push(at(box(1.52, 0.05, sw * 0.92, cols[i]), hw - recess + 0.75, 3.30, -front.w * 0.44 + sw * (i + 0.5)));
+    }
   }
-  // string lights over the shopfront on a third: a sagging row of small warm bulbs between the kanban columns
+  if (rnd() < 0.5) {
+    const stripes = Math.max(2, Math.floor(front.w * 0.88 / 0.9));
+    for (let i = 0; i < stripes; i += 2) parts.push(at(box(1.51, 0.02, 0.42, 0xf4f4f0), hw - recess + 0.75, 3.30, -front.w * 0.44 + 0.45 + i * 0.9));
+  }
+  // string lights under colonnade
   if (rnd() < 0.33) {
-    const n = Math.max(4, Math.floor(front.w / 0.9)), [cx0, cz0] = onFace(front, 0, 1.2);
+    const n = Math.max(4, Math.floor(front.w / 0.9));
     for (let i = 0; i < n; i++) {
       const t = i / (n - 1), s = 4 * t * (1 - t);
       const along = -front.w * 0.42 + front.w * 0.84 * t;
-      parts.push(at(box(0.09, 0.09, 0.09, 0x3a2a1a, [1.0, 0.72, 0.35], 1.3), cx0, 4.35 - 0.35 * s, cz0 + along));
+      parts.push(at(box(0.09, 0.09, 0.09, 0x3a2a1a, [1.0, 0.72, 0.35], 1.3), hw - recess + 1.1, 4.2 - 0.35 * s, along));
     }
   }
-  boards.push({ x: front.off + 0.16, y: 3.85, z: 0, yaw: front.yaw, w: front.w * 0.82, h: 0.85 });   // the fascia
-  const colH = Math.min(H - 5.5, 6 + rnd() * 8);
-  if (colH > 3.5) {
-    for (const side of [-1, 1]) {
-      if (rnd() < 0.15) continue;
+  /* BIG FACADE BILLBOARDS. The reference street is not just kanban columns --
+     it carries large multi-storey boards bolted flat to the facade, lit from a
+     frame. One per building on the taller half, spanning ~3 storeys, always on
+     the street face. A board is an instanced atlas quad and the frame is four
+     thin boxes, so this is ~50 triangles and 0 draws a building. */
+  /* Tall buildings only, and not most of them (2026-09-14). At floors >= 4 and
+     p=0.72 nearly every building wore one, and at 9.5 x 8.0 m it is 76 m2 --
+     measured, 58 m2 of the average building's 145 m2 of sign area came from
+     this ONE board, 40% of all signage from 1.1 boards. The reference still has
+     rooftop boards, but they are rare and distant; what fills its frame is
+     narrow vertical kanban. */
+  if (floors >= 7 && rnd() < 0.30) {
+    const bw = Math.min(front.w * 0.62, 7.0);            // along the face
+    const bh = Math.min(FLOOR_H * 2 - 0.4, 5.6);         // up it
+    const by = floorY(Math.max(2, Math.floor(floors * 0.45))) + bh / 2;
+    const bx = hw + 0.22;
+    parts.push(at(box(0.16, bh, bw, 0x15171b), bx, by, 0));                       // the panel body
+    const fc = neon ?? pick(NEON);
+    // a lit edge frame: two rails along the top and bottom, two posts at the ends
+    parts.push(at(box(0.1, 0.14, bw + 0.3, 0x101014, fc, 2.2, flickerOf(rnd)), bx + 0.14, by + bh / 2, 0),
+               at(box(0.1, 0.14, bw + 0.3, 0x101014, fc, 2.2, flickerOf(rnd)), bx + 0.14, by - bh / 2, 0));
+    parts.push(at(box(0.1, bh, 0.14, 0x101014, fc, 1.6), bx + 0.14, by, bw / 2),
+               at(box(0.1, bh, 0.14, 0x101014, fc, 1.6), bx + 0.14, by, -bw / 2));
+    boards.push({ x: bx + 0.1, y: by, z: 0, yaw: front.yaw, w: bw * 0.94, h: bh * 0.9 });
+    lamps.push({
+      x: hw + 1.6, y: by - bh / 2, z: 0,
+      colour: _c.setRGB(fc[0], fc[1], fc[2]).getHex(),
+      neon: true, intensity: 80, range: 26, glare: 2.0,
+    });
+  }
+
+  // Fascia board above the colonnade — the CLUB NEON strip in image 11
+  boards.push({ x: front.off + 0.16, y: 4.45, z: 0, yaw: front.yaw, w: front.w * 0.85, h: 0.95 });
+  parts.push(at(box(0.1, 0.12, front.w * 0.88, 0x111115, neon ?? MAGENTA, 2.2, flickerOf(rnd)), hw + 0.22, 4.95, 0));
+
+  // Tall facade kanban (ラーメン): a vertical board ON the wall, not a 6 cm tube.
+  {
+    const bw = 1.35 + rnd() * 0.45, bh = 4.4 + rnd() * 2.2;
+    const by = 6.2 + rnd() * 1.4;
+    const along = (rnd() < 0.5 ? -1 : 1) * Math.max(0.4, front.w / 2 - bw / 2 - 0.35);
+    const kc = neon ?? pick(NEON);
+    parts.push(at(box(0.14, bh, bw, 0x141418, kc, 1.9, flickerOf(rnd)), hw + 0.22, by, along));
+    boards.push({ x: hw + 0.32, y: by, z: along, yaw: front.yaw, w: bw * 0.88, h: bh * 0.92, vertical: true });
+    lamps.push({
+      x: hw + 1.4, y: 2.5, z: along * 0.3,
+      colour: _c.setRGB(kc[0], kc[1], kc[2]).getHex(),
+      neon: true, intensity: 105, range: 34, glare: 2.5,
+    });
+  }
+
+  // Kanban column
+  const colH = Math.max(0, H - 5.5) * (0.74 + rnd() * 0.26);
+  if (colH > 2.0) {
+    /* ONE corner, not both, and a short stack (2026-09-14). Measured against
+       the reference still: in its right-hand facade 84.6% of the area is dark
+       wall and 4.3% is sign; ours was 11.0% wall and 46.9% sign -- eleven times
+       the sign coverage. Not too bright, too MUCH: a full-height column on both
+       corners of every building was ~10 panels of it, and bloom scales with
+       emissive area, so it hazed as well as flattened. A building wears one
+       column. */
+    for (const side of (rnd() < 0.45 ? [-1, 1] : [rnd() < 0.5 ? -1 : 1])) {
+      if (rnd() < 0.35) continue;
       const cz = side * (hd - 0.55);
-      // the column glows in the building's neon (or white), a tinted backing for the tenant panels
       const cc = neon ?? [0.9, 0.9, 0.9];
-      parts.push(at(box(0.28, colH, 0.95, 0xf2f2f2, cc, 0.55, flickerOf(rnd)), hw + 0.18, 4.6 + colH / 2, cz));
-      parts.push(at(box(0.05, colH + 0.2, 0.06, 0x222222, cc, 1.9), hw + 0.33, 4.6 + colH / 2, cz + 0.5), at(box(0.05, colH + 0.2, 0.06, 0x222222, cc, 1.9), hw + 0.33, 4.6 + colH / 2, cz - 0.5));   // tube edges either side of the column
-      { const nc = pick(NEON); lamps.push({ x: hw + 1.4, y: 4.6 + colH * 0.45, z: cz, colour: _c.setRGB(nc[0], nc[1], nc[2]).getHex() }); }
-      // the column's spill on the pavement: a flat emissive patch in the same colour, so the neon reads at street level (wet or dry)
-      { const g = quad(2.4, 1.7, 0x2a2a2e, cc, 0.32); g.applyMatrix4(_m.makeRotationX(-Math.PI / 2)); parts.push(at(g, hw + 1.35, 0.03, cz)); }
-      /* A kanban is a stack of tenants. The atlas tiles are 4:1 landscape, so a
-         panel is `vertical`: the caller rolls the quad 90 degrees and the tile
-         runs UP the column (rotated lettering, as real kanban often carry).
-         2.6 m tall by 0.9 wide keeps the tile near its own aspect. */
-      const panelH = 2.6, n = Math.max(1, Math.floor((colH - 0.2) / (panelH + 0.1)));
+      parts.push(at(box(0.28, colH, 0.95, 0xf2f2f2, cc, 1.25, flickerOf(rnd)), hw + 0.18, 4.6 + colH / 2, cz));
+      parts.push(at(box(0.08, colH + 0.2, 0.1, 0x222222, cc, 2.4), hw + 0.33, 4.6 + colH / 2, cz + 0.5), at(box(0.08, colH + 0.2, 0.1, 0x222222, cc, 2.4), hw + 0.33, 4.6 + colH / 2, cz - 0.5));
+      { const nc = pick(NEON); lamps.push({ x: hw + 1.5, y: 2.4, z: cz, colour: _c.setRGB(nc[0], nc[1], nc[2]).getHex(), neon: true, intensity: 100, range: 34, glare: 2.6 }); }
+      { const g = quad(2.8, 2.0, 0x2a2a2e, cc, 0.85); g.applyMatrix4(_m.makeRotationX(-Math.PI / 2)); parts.push(at(g, hw + 1.35, 0.03, cz)); }
+      const panelH = 2.6, n = Math.min(2, Math.max(1, Math.floor((colH - 0.2) / (panelH + 0.1))));
       for (let i = 0; i < n; i++) boards.push({ x: hw + 0.335, y: 4.6 + 0.1 + panelH / 2 + i * (panelH + 0.1), z: cz, yaw: front.yaw, w: 0.9, h: panelH, vertical: true });
     }
   }
-  // a vending machine by the door: the lit white box every Tokyo street has, glowing blue-white at night
+
+  // Vending machine on the sidewalk
   {
-    const vz = -(hd - 0.9), [vx0, vz0] = onFace(front, vz, 0.55);
-    parts.push(at(box(0.85, 1.85, 1.0, 0xf4f4f6), vx0, 0.925, vz0));
-    const [px, pz] = onFace(front, vz, 0.98);
-    parts.push(at(quad(0.78, 1.25, 0x9fb7d8, [0.55, 0.75, 1.0], 0.9), px, 1.15, pz, front.yaw));
+    const vz = -(hd - 0.9);
+    parts.push(at(box(0.85, 1.85, 1.0, 0xf4f4f6), hw - recess + 0.55, 0.925, vz));
+    parts.push(at(quad(0.78, 1.25, 0x9fb7d8, [0.55, 0.75, 1.0], 0.9), hw - recess + 0.98, 1.15, vz, front.yaw));
   }
-  // izakaya: a row of red paper lanterns under the awning, glowing
+  // Izakaya red paper lanterns
   if (rnd() < 0.35) {
     const n = 3 + Math.floor(rnd() * 3), span = front.w * 0.7;
     for (let i = 0; i < n; i++) {
-      const [lx, lz] = onFace(front, -span / 2 + span * (i / Math.max(1, n - 1)), 0.55);
-      parts.push(at(paint(new THREE.CylinderGeometry(0.17, 0.17, 0.32, 8), 0xc0392b, [1.0, 0.32, 0.12], 1.1, flickerOf(rnd)), lx, 2.95, lz));
+      const lz = -span / 2 + span * (i / Math.max(1, n - 1));
+      parts.push(at(paint(new THREE.CylinderGeometry(0.17, 0.17, 0.32, 8), 0xc0392b, [1.0, 0.32, 0.12], 1.1, flickerOf(rnd)), hw - recess + 0.65, 2.95, lz));
     }
   }
-  if (neon) for (let s = 1; s < floors; s += 1 + Math.floor(rnd() * 2)) {
-    const [nx, nz] = onFace(front, 0, 0.06);
-    parts.push(at(box(0.06, 0.07, front.w * 0.96, 0x222222, neon, 1.9, flickerOf(rnd)), nx, floorY(s) + 0.2, nz));
+  /* No per-storey neon ribbons (removed 2026-09-14). A full-width emissive bar
+     at intensity 2.4 on every storey -- this loop stepped 1 or 2 floors, so
+     often EVERY floor, and the side-face copy did the same -- is what made the
+     street read as Tron rather than Shibuya, and it was most of the washout:
+     measured against the reference still, our upper facades came out at mean
+     luminance 0.355 and 0.515 against its 0.197 and 0.211, while sky (0.246 vs
+     0.200) and road (0.234 vs 0.185) were already close. A real Tokyo building
+     is a DARK mass wearing bright signs; it does not glow along its floor
+     slabs. The fascia strip above the colonnade stays -- that is the one
+     horizontal run the reference actually has. */
+  // Projecting neon blade
+  if (neon && rnd() < 0.72) {
+    const s = (rnd() < 0.5 ? -1 : 1) * Math.max(0.6, front.w / 2 - 0.8);
+    const [bx, bz] = onFace(front, s, 0.62);
+    const n = Math.min(4, Math.max(1, Math.floor((H - 6.4) / 5.2)));
+    for (let i = 0; i < n; i++) {
+      const c = i === 0 ? neon : pick(NEON);
+      parts.push(at(box(0.12, 3.8, 0.62, 0x141418, c, 2.5, flickerOf(rnd)), bx, 6.4 + i * 5.2, bz, front.yaw));
+    }
+    lamps.push({
+      x: bx + front.n[0] * 0.4, y: 2.6, z: bz + front.n[1] * 0.4,
+      colour: _c.setRGB(neon[0], neon[1], neon[2]).getHex(),
+      neon: true, intensity: 85, range: 30, glare: 2.4,
+    });
   }
 
-  // the roof: parapet, tank, antenna, stair bulkhead, and a billboard frame on a third
+  // EVERY kerb face gets a shop + tall kanban. Image 11 is shops on both
+  // sides; dressing only the "front" left a blank wall on the N-S street.
+  for (const f of [F[2], F[3]]) {
+    if (f.w < 6) continue;
+    const shop = rnd() < 0.4 ? [1.0, 0.9, 0.65] : WARM;
+    const [gx, gz] = onFace(f, 0, 0.08);
+    if (rnd() < 0.18) {
+      parts.push(at(quad(f.w - 0.7, 2.7, 0x8d9096), gx, 1.5, gz, f.yaw));
+    } else {
+      /* ON the wall, not inside the solid mass -- a quad 40 cm in is buried.
+         But BAYS, not one panel (2026-09-14). A single emissive quad the full
+         width of the face, up to 13 m of it at intensity 1.35, is a light box:
+         it was the brightest thing in frame, held our right-hand facade at mean
+         luminance 0.478 against the reference still's 0.211, and pushed blown
+         pixels to 2.24% against its 0.59%. The reference's shopfronts are
+         glazed bays between dark piers, over a dark stallriser -- bright, but
+         punctuated, and the dark returns are what make the bright parts read as
+         bright. Same lit area, a third of the glare. */
+      const bays = Math.max(1, Math.round((f.w - 0.8) / 3.2));
+      const pier = 0.36;
+      const bayW = Math.max(1.4, (f.w - 0.8 - pier * (bays - 1)) / bays);
+      for (let i = 0; i < bays; i++) {
+        const along = -(f.w - 0.8) / 2 + bayW / 2 + i * (bayW + pier);
+        const [bx2, bz2] = onFace(f, along, 0.08);
+        parts.push(at(quad(bayW, 1.95, 0x3a2a1c, shop, 0.62), bx2, 1.72, bz2, f.yaw));   // the glazing
+        parts.push(at(quad(bayW, 0.55, 0x24201c), bx2, 0.42, bz2, f.yaw));               // stallriser, dark
+      }
+      const [lx, lz] = onFace(f, 0, 1.1);
+      lamps.push({
+        x: lx, y: 1.65, z: lz,
+        colour: _c.setRGB(shop[0], shop[1], shop[2]).getHex(),
+        neon: true, intensity: 110, range: 34, glare: 2.0,
+      });
+    }
+    const [fx, fz] = onFace(f, 0, 0.2);
+    boards.push({ x: fx, y: 4.3, z: fz, yaw: f.yaw, w: Math.min(f.w * 0.9, 14), h: 1.05 });
+    const nKan = rnd() < 0.30 ? 0 : f.w > 11 ? 2 : 1;   // see the sign-coverage note on the kanban column
+    for (let i = 0; i < nKan; i++) {
+      const along = -f.w / 2 + (i + 0.55) * (f.w / nKan);
+      const [kx, kz] = onFace(f, along, 0.3);
+      const bh = 4.8 + rnd() * 2.2, bw = 1.35 + rnd() * 0.45;
+      const c = pick(NEON);
+      parts.push(at(box(0.16, bh, bw, 0x141418, c, 2.05, flickerOf(rnd)), kx, 6.1 + rnd() * 0.6, kz, f.yaw));
+      boards.push({ x: kx + f.n[0] * 0.1, y: 6.3, z: kz + f.n[1] * 0.1, yaw: f.yaw, w: bw * 0.86, h: bh * 0.9, vertical: true });
+    }
+  }
+
+  // 5. ROOFTOP CROWN, HVAC, WATER TANK & BEACON ANTENNA
   const pw = 0.22;
   parts.push(at(box(2 * hw + 0.1, 0.5, pw, band), 0, H + 0.25, hd), at(box(2 * hw + 0.1, 0.5, pw, band), 0, H + 0.25, -hd));
   parts.push(at(box(pw, 0.5, 2 * hd + 0.1, band), hw, H + 0.25, 0), at(box(pw, 0.5, 2 * hd + 0.1, band), -hw, H + 0.25, 0));
   const tx = -hw * 0.45, tz = hd * 0.4;
-  parts.push(at(cyl(0.85, 1.5, 0xbfc3c9), tx, H + 1.35, tz), at(box(1.9, 0.6, 1.9, 0x6f7276), tx, H + 0.3, tz));
-  parts.push(at(box(0.07, 3.6, 0.07, 0x3a3d42), hw * 0.55, H + 1.8, -hd * 0.5));
+  // Water cooling tank
+  parts.push(at(cyl(0.85, 1.5, 0x9fa4aa), tx, H + 1.35, tz), at(box(1.9, 0.6, 1.9, 0x484d54), tx, H + 0.3, tz));
+  // Rooftop HVAC unit
+  parts.push(at(box(2.0, 1.1, 1.3, 0x42464c), hw * 0.2, H + 0.55, hd * 0.25));
+  parts.push(at(box(1.6, 0.35, 0.05, 0x16181b), hw * 0.2, H + 0.55, hd * 0.25 + 0.67));
+  // Communications tower with pulsing red aviation warning beacon
+  parts.push(at(box(0.08, 4.8, 0.08, 0x3a3d42), hw * 0.55, H + 2.4, -hd * 0.5));
+  parts.push(at(box(0.2, 0.2, 0.2, 0xff2030, [1.0, 0.1, 0.15], 2.8, 0.85), hw * 0.55, H + 4.9, -hd * 0.5));
+  // Elevator motor room bulkhead
   parts.push(at(box(2.2, 2.4, 2.4, wall), -hw * 0.3, H + 1.2, -hd * 0.45));
   // a rooftop billboard on a third of them -- and on every landmark slab (18+ storeys), wider, with a neon frame
   const landmark = floors >= 18;
@@ -290,10 +491,19 @@ export function frontRotation(probe, toWorld, hw, hd) {
   const tests = [[1, 0, 0], [-1, 0, Math.PI], [0, 1, -Math.PI / 2], [0, -1, Math.PI / 2]];
   let best = 0, bestD = Infinity;
   for (const [nx, nz, rot] of tests) {
-    let d = 0;
-    for (const [out, w] of [[3, 3], [7, 2], [11, 1]]) {
+    /* Min of a few metres out, not a weighted sum. A weighted SUM of signed
+       distances is not a meaningful quantity -- it lets a face that is far from
+       the road at 3 m win on the strength of an arterial 11 m out -- whereas the
+       min asks the only question that matters: "how close does this face ever
+       get to tarmac".
+
+       Measured over all 219 Little Tokyo footprints, both rules pick the SAME
+       face on 219/219, so this fixes no bug on today's district file; it is
+       here so a future block layout cannot be decided by that arithmetic. */
+    let d = Infinity;
+    for (const out of [3, 5, 8]) {
       const [x, z] = toWorld(nx * (hw + out), nz * (hd + out));
-      d += probe(x, z) * w;
+      d = Math.min(d, probe(x, z));
     }
     if (d < bestD) { bestD = d; best = rot; }
   }
@@ -387,8 +597,15 @@ export function wireMaterial() { return (WIRE_MAT ??= new THREE.LineBasicMateria
 let MAT = null;
 export function tokyoMaterial() {
   if (MAT) return MAT;
-  const m = new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.84, metalness: 0.02, emissive: 0xffffff, emissiveIntensity: 1.0 });
+  const m = new THREE.MeshStandardNodeMaterial({
+    vertexColors: true,
+    roughness: 0.48,
+    metalness: 0.22,
+    emissive: 0xffffff,
+    emissiveIntensity: 1.0,
+  });
   m.name = 'tokyo_facade';
+  m.envMapIntensity = 1.15;
   /* The buzz: a part with flick > 0 drops to 45% for a beat when a fast sine
      (its own phase) crosses a threshold -- the stutter of a tube on its way
      out. Steady parts multiply by 1. */
@@ -401,5 +618,5 @@ export function tokyoMaterial() {
 
 /** 0 by day, 1 at night: the windows, neon and kanban faces come up with it. */
 export function setTokyoNight(k) {
-  if (MAT) MAT.emissiveIntensity = 0.05 + 1.3 * Math.max(0, Math.min(1, k));   // windows lit, neon (emit 1.4x) blooming, not the whole facade
+  if (MAT) MAT.emissiveIntensity = 0.05 + 1.45 * Math.max(0, Math.min(1, k));   // windows stay a texture (emit 0.16); neon at 2.4x blooms
 }

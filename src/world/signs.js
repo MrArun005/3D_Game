@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { texture, uv, attribute, vec2, materialReference } from 'three/tsl';
+import { texture, uv, attribute, vec2, vec3, materialReference, float, mix, step, smoothstep, sin, fract, time, uniform } from 'three/tsl';
 import { cv, toTex } from './textures.js';
 import { mulberry32 } from '../core/rng.js';
 
@@ -44,6 +44,9 @@ const TRADE = [
   'SUSHI BAR · 鮨', 'CAPSULE HOTEL', 'YAKITORI · 鳥', 'MATCHA CAFE', 'NEO TOKYO MOTORS',
 ];
 const TOKYO_SIGNS = [
+  '東京 NIGHTS · RACING',
+  '首都高 · SHUTOKO C1',
+  'ネオン 24H · CYBER',
   'ラーメン 一番 · RAMEN',
   '居酒屋 🏮 赤ちょうちん',
   'カラオケ 館 · KARAOKE',
@@ -58,24 +61,21 @@ const TOKYO_SIGNS = [
   '新宿 歌舞伎町 · KABUKICHO',
   '渋谷 センター街 · SHIBUYA',
   '六本木 · ROPPONGI NIGHT',
-  'ドン・キホーテ · DISCOUNT',
+  'APEX RACING · 峠 TOUGE',
   'セガ ゲームセンター · ARCADE',
   '大衆酒場 · SAKE & BEER',
-  'とんかつ · TONKATSU',
+  '警視庁 · POLICE PATROL',
   '牛丼 · BEEF BOWL 24H',
-  'アニメイト · ANIME & MANGA',
+  'MIDNIGHT TUNERS · 湾岸',
   '銀座 クラブ · GINZA CLUB',
   '東京タワー · TOKYO VIEW',
-  '原宿 ファッション · HARAJUKU',
+  '高速 SPEED · HIGHWAY',
   '築地海鮮 · TSUKIJI FISH',
   '珈琲 喫茶 · KISSATEN',
   'インターネットカフェ · NET CAFE',
   'カクテルバー · BAR TOKYO',
   '立ち飲み · STANDING BAR',
-  'おでん · ODEN NOREN',
-  '夜市 · NIGHT MARKET',
   '電脳街 · CYBER DISTRICT',
-  '浅草 雷門 · ASAKUSA',
 ];
 // [board, text, accent]
 const PALETTE = [
@@ -87,14 +87,14 @@ const PALETTE = [
   ['#0a0614', '#bd00ff', '#39ffb0'],
 ];
 const TOKYO_PALETTES = [
-  ['#06070e', '#ff007f', '#00f0ff'],
-  ['#080512', '#00f0ff', '#ff007f'],
-  ['#120406', '#ff2200', '#ffd23f'],
-  ['#040e08', '#39ff14', '#ffea00'],
-  ['#060614', '#ffd23f', '#00f0ff'],
-  ['#0e0516', '#bd00ff', '#39ffb0'],
-  ['#180608', '#ff3344', '#ffbb00'],
-  ['#050d12', '#00e5ff', '#ff007f'],
+  ['#06070e', '#ff007f', '#00f0ff'], // Hot Magenta / Tokyo Cyan on Obsidian
+  ['#080512', '#00f0ff', '#ff007f'], // Tokyo Cyan / Hot Magenta
+  ['#120406', '#ff2200', '#ffd23f'], // Tokyo Crimson / Amber Gold
+  ['#040e08', '#39ff14', '#ffea00'], // Electric Lime / Solar Yellow
+  ['#060614', '#ffd23f', '#00f0ff'], // Golden Amber / Electric Cyan
+  ['#0e0516', '#bd00ff', '#39ffb0'], // Cyber Violet / Neo Mint
+  ['#180608', '#ff3344', '#ffaa00'], // Cherry Red / Tangerine
+  ['#050d12', '#00e5ff', '#ff007f'], // Sky Cyan / Pink Glow
 ];
 const FONTS = [
   '700 {s}px "Hiragino Kaku Gothic Pro", "Noto Sans JP", -apple-system, sans-serif',
@@ -149,14 +149,84 @@ export function texSignAtlas() {
 }
 
 /**
- * Window quads (Phase 2): a dark glass face with a per-instance emissive tint
- * in `aTint`. About 40% are unlit (tint 0). Stands 8cm proud of the wall on
- * the storeys above the shopfront so the facade stops reading as a print.
+ * Window quads (Phase 2, states in Phase 5): a dark glass face with a
+ * per-instance emissive tint in `aTint` (dressing.js rolls ~42% of them dark
+ * from a hash of the module position). Phase 5 turns the remaining lit-warm /
+ * lit-cool roll into real STATES, entirely inside the material -- no extra
+ * attribute, no extra draw:
+ *
+ *   dark | dim warm | bright warm | curtained (dim, desaturated) |
+ *   blinds (warm through horizontal slats) | TV-blue (cool, flickering)
+ *
+ * The seed is the tint itself. `lv` in dressing.js is a seeded 0.45..1 hash of
+ * the window's own position, so one chaotic `sin` of it is a per-window random
+ * that is stable across reloads and costs nothing to carry.
+ *
+ * Distribution over ALL window quads (0.42 dark from dressing x these bands):
+ *   dark 51.9% | dim warm 19.1% | bright warm 8.1% | curtained 5.8% |
+ *   blinds 5.8% | TV-blue 9.3%      -- most dark, a few bright.
+ *
+ * The TV flicker copies tokyo.js's per-vertex buzz: two detuned sines on a
+ * per-window phase, so no two sets cut at the same moment.
  */
+const WIN_BANDS = { dark: 0.17, dim: 0.50, bright: 0.64, curtain: 0.74, blinds: 0.84 };   // upper edge of each band in the hash
+
+/** The states a window hash lands in, for the tests and for reporting the distribution. */
+export function windowState(h) {
+  if (h < WIN_BANDS.dark) return 'dark';
+  if (h < WIN_BANDS.dim) return 'dim';
+  if (h < WIN_BANDS.bright) return 'bright';
+  if (h < WIN_BANDS.curtain) return 'curtain';
+  if (h < WIN_BANDS.blinds) return 'blinds';
+  return 'tv';
+}
+
+let WIN = null;
+const uWinNight = uniform(1);   // 1 = night: without the main.js hook the windows behave exactly as they did
+
+/**
+ * 0 by day, 1 at night -- the INTERIOR ramp, and it runs ahead of the fascia
+ * signs (setSignNight): a shop's lights are on before its sign is lit, and
+ * living-room windows come up at dusk. Each window has its own threshold in
+ * the first 55% of the ramp, so a street lights up window by window instead of
+ * as one dimmer.
+ *
+ * It also owns `emissiveIntensity`: nothing else drives this material (clock.js
+ * staggers the facade/sign/lamp materials but never the window quads, so they
+ * sat at whatever main.js set at boot -- 0 forever on a daylight boot).
+ */
+export function setWindowNight(k) {
+  uWinNight.value = Math.max(0, Math.min(1, k));
+  if (WIN) WIN.emissiveIntensity = 1.25;
+}
+
 export function buildWindowMaterial() {
-  const m = new THREE.MeshStandardNodeMaterial({ color: 0x1a2028, emissive: 0xffffff, emissiveIntensity: 0.9, roughness: 0.25, metalness: 0.1 });
+  const m = new THREE.MeshStandardNodeMaterial({ color: 0x1a2028, emissive: 0xffffff, emissiveIntensity: 1.25, roughness: 0.25, metalness: 0.1 });
   m.name = 'window_quad';
-  m.emissiveNode = attribute('aTint', 'vec3').mul(materialReference('emissiveIntensity', 'float', m));
+
+  const tint = attribute('aTint', 'vec3');
+  const lit = step(float(0.001), tint.x.add(tint.y).add(tint.z));            // dressing already rolled the dark ones
+  const h = fract(sin(tint.x.mul(97.31).add(tint.z.mul(41.7)).add(0.37)).mul(43758.5453));
+  const h2 = fract(h.mul(613.7));                                            // second roll: switch-on threshold and flicker phase
+  const band = (a, b) => step(float(a), h).mul(step(h, float(b)));
+
+  const warm = vec3(1.0, 0.80, 0.52);
+  const cream = vec3(0.95, 0.90, 0.80);                                      // curtain: the light through cloth loses its colour
+  const tv = vec3(0.42, 0.64, 1.0);
+  const slat = mix(float(0.12), float(1.0), step(float(0.55), fract(uv().y.mul(6.0))));   // blinds: six slats up the pane
+  const ph = h2.mul(6.283);
+  const flick = float(0.55).add(sin(time.mul(7.1).add(ph)).mul(0.30)).add(sin(time.mul(19.3).add(ph.mul(2.3))).mul(0.15));
+
+  const state = warm.mul(0.30).mul(band(WIN_BANDS.dark, WIN_BANDS.dim))
+    .add(warm.mul(1.0).mul(band(WIN_BANDS.dim, WIN_BANDS.bright)))
+    .add(cream.mul(0.22).mul(band(WIN_BANDS.bright, WIN_BANDS.curtain)))
+    .add(warm.mul(0.55).mul(slat).mul(band(WIN_BANDS.curtain, WIN_BANDS.blinds)))
+    .add(tv.mul(0.62).mul(flick).mul(band(WIN_BANDS.blinds, 1.001)));
+
+  // per-window switch-on: its own threshold in the first 55% of the interior ramp
+  const on = smoothstep(h2.mul(0.55), h2.mul(0.55).add(0.18), uWinNight);
+  m.emissiveNode = state.mul(lit).mul(on).mul(materialReference('emissiveIntensity', 'float', m));
+  WIN = m;
   return m;
 }
 
@@ -164,6 +234,12 @@ export function buildWindowMaterial() {
 export function signGeometry() {
   return new THREE.PlaneGeometry(1, 1);
 }
+
+const uSignOn = uniform(1);
+/** 0 by day, 1 at night: the fascia ramp, deliberately BEHIND setWindowNight's
+ *  interiors. clock.js still owns `mat.sign.emissiveIntensity`; this is the
+ *  per-shop stagger on top of it, so at full night nothing changes. */
+export function setSignNight(k) { uSignOn.value = Math.max(0, Math.min(1, k)); }
 
 /**
  * The material. colorNode and emissiveNode both sample the atlas through the
@@ -179,10 +255,30 @@ export function buildSignMaterial(atlas) {
     roughness: 0.55, metalness: 0.0,
   });
   m.name = 'sign_emissive';
-  const cell = uv().mul(vec2(1 / SIGN_COLS, 1 / SIGN_ROWS)).add(attribute('aTile', 'vec2'));
+  const tile = attribute('aTile', 'vec2');
+  const cell = uv().mul(vec2(1 / SIGN_COLS, 1 / SIGN_ROWS)).add(tile);
   const s = texture(atlas, cell);
   m.colorNode = s.mul(materialReference('color', 'color', m));
+
+  /* Phase 5 -- the sign is NOT the shop. The interior (setWindowNight) is up
+     at dusk; the fascia ignites later, shop by shop, and a few never do:
+     the shutter is down and the board is dead while the interior behind it
+     still glows. Tokyo's kanban (atlas rows 8-15, so aTile.y < 0.5) are
+     exempt -- a dark kanban street is not Little Tokyo.
+     ponytail: the roll is per ATLAS CELL, the only per-instance value the
+     quad carries, so "shut" picks ~4 of the 32 shop brands rather than 12%
+     of individual shops. Per-shop needs an `aShop` float from dressing.js
+     (hook reported); the shop's own sign stays put across reloads either way. */
+  const isTokyo = step(tile.y, 0.49);
+  const hs = fract(sin(tile.x.mul(127.1).add(tile.y.mul(311.7)).add(0.19)).mul(43758.5453));
+  const open = float(1).sub(step(hs, float(0.12)).mul(float(1).sub(isTokyo)));
+  const buzz = mix(float(1), float(0.42).add(float(0.58).mul(step(float(0.3), sin(time.mul(21).add(hs.mul(37)))))),
+    step(float(0.93), hs));                       // one brand's tube is on its way out
+  const on = smoothstep(hs.mul(0.35).add(0.18), hs.mul(0.35).add(0.42), uSignOn).mul(open).mul(buzz);
+
   m.emissiveNode = s.mul(materialReference('emissive', 'color', m))
-    .mul(materialReference('emissiveIntensity', 'float', m));
+    .mul(materialReference('emissiveIntensity', 'float', m))
+    .mul(on);
   return m;
 }
+

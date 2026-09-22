@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { shouldFire } from '../src/game/policeAi.js';
 import { StoryManager } from '../src/game/storyMissions.js';
-import { Garage, REPAIR } from '../src/game/garage.js';
+import { Garage, repairCost } from '../src/game/garage.js';
+import { DEFAULT_BODY } from '../src/world/vendorCars.js';
 
 /* Regression tests for the gameplay fixes of 2026-09-09 (docs/REVIEW-2026-09-09-GTA.md,
    section 3 and the quick wins). Each one pins the behaviour the fix bought. */
@@ -55,7 +56,7 @@ test('Garage: corrupt hb.garage falls back to the default car; payAndSpray share
     const hull = { material: { color: { setHex() {} } } };
     let repaired = 0;
     const garage = new Garage(jobs, {}, { userData: { hull } }, { value: 0.5, repair() { repaired++; } }, { flash: (m) => flashed.push(m) });
-    assert.deepEqual(garage.ownedCars, ['q-sports'], 'unparseable save: the default car, no throw');
+    assert.ok(garage.ownedCars.includes(DEFAULT_BODY), 'unparseable save: the default cars, no throw');
 
     let heat = 4; let cleared = 0;
     garage.heat = () => heat;
@@ -66,7 +67,7 @@ test('Garage: corrupt hb.garage falls back to the default car; payAndSpray share
 
     heat = 2;
     assert.equal(garage.payAndSpray(), true);
-    assert.equal(jobs.cash, 1000 - REPAIR, 'one price: the garage repair price');
+    assert.equal(jobs.cash, 1000 - repairCost(0.5, true), 'one price: the garage counter\'s damage-based price');
     assert.equal(cleared, 1, 'routed through the same onRepair gate main wires');
     assert.equal(repaired, 1);
     assert.equal(heat, 0);

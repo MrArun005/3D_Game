@@ -2,12 +2,15 @@ import * as THREE from 'three';
 import { additive } from './core/additive.js';
 import './style.css';
 
-import { createRenderer, createScene, createLights, DAY_SUN } from './core/renderer.js';
+import { autoResolution, createRenderer, createScene, createLights, DAY_SUN, renderScale } from './core/renderer.js';
+import { detectGpuInfo, resolveQualityMode } from './core/gpu.js';
 import { createSky } from './core/sky.js';
 import { createGrade } from './core/grade.js';
-import { setAnisotropy, toTex } from './world/textures.js';
+import { resolveQuality, describeQuality, nextLower, limitTraffic, limitFarTraffic, DENSITY_STEPS, QUALITY_NAMES, STORAGE_KEY as QUALITY_KEY } from './core/quality.js';
+import { setAnisotropy, wetTarmacLook } from './world/textures.js';
 import { createAssets } from './world/assets.js';
-import { loadVendorCars, loadHeroSkin, KENNEY_CARS } from './world/vendorCars.js';
+import { loadVendorCars, loadHeroSkin, KENNEY_CARS, DEFAULT_BODY } from './world/vendorCars.js';
+import { loadTreeModels } from './world/treeModels.js';
 import { LightPool } from './game/lighting.js';
 import { Jobs, onPavementAtSpeed } from './game/jobs.js';
 import { Garage } from './game/garage.js';
@@ -27,6 +30,9 @@ import { BillboardSystem } from './world/billboards.js';
 import { StreetLife } from './world/streetLife.js';
 import { Airspace } from './world/airspace.js';
 import { Catalogue, dressCarMaterials } from './world/catalogue.js';
+import { isTouchDevice } from './core/device.js';
+import { createTouch } from './game/touch.js';
+import { mergeDrive } from './game/input.js';
 import { City, releaseCell } from './world/city.js';
 import { DistrictWorld } from './world/districtWorld.js';
 import { loadDistrict } from './world/district.js';
@@ -34,23 +40,20 @@ import { buildSurrounds } from './world/surrounds.js';
 import { buildWater } from './world/water.js';
 import { buildPlaces } from './world/places.js';
 import { buildBeach } from './world/beach.js';
+import { buildRiverside } from './world/riverside.js';
 import { useDistrict } from './world/metrics.js';
 import { buildCar } from './vehicle/model.js';
 import { createCarState, resetCar, stepVehicle } from './vehicle/dynamics.js';
-import { lerpPose, copyPose } from './vehicle/interp.js';
-import { isTouchDevice, isMobile } from './core/device.js';
-import { createTouch } from './game/touch.js';
-import { createGovernor } from './core/governor.js';
-import { mergeDrive } from './game/input.js';
 import { Vehicle, CarVehicle } from './game/vehicle.js';
 import { HelicopterVehicle } from './game/flight.js';
 import { TankVehicle } from './game/tank.js';
 import { DispatchService } from './game/dispatch.js';
 import { groundHeightAt } from './world/metrics.js';
-import { CG_X, WHEEL_R } from './vehicle/config.js';
+import { CG_X, WHEEL_R, getVehicleProfile } from './vehicle/config.js';
 import { ChaseCamera } from './game/camera.js';
 import { createInput, padConnected, rumble } from './game/input.js';
 import { Traffic, policeMaterials } from './game/traffic.js';
+import { decalMaterial as wearDecalMaterial, decalGeometry as wearDecalGeometry } from './world/decals.js';
 import { Crowd } from './game/crowd.js';
 import { Helicopter } from './game/helicopter.js';
 import { OnFoot, makeSolver } from './game/onfoot.js';
@@ -58,10 +61,14 @@ import { CHARACTERS, NAMED_CHARACTERS } from './game/character.js';
 import { Navigation } from './game/navigation.js';
 import { GameClock } from './game/clock.js';
 import { Mission } from './game/mission.js';
+import { HALSTEAD_MILE, DEFAULT_HOUR, startYaw, missionPoints, drivingLine } from './game/scenicRoute.js';
+import { buildRaceTrack, registerRaceTrackPhysics, isRacewayArea } from './world/raceTrack.js';
+import { RaceCircuit } from './game/raceCircuit.js';
 import { Multiplayer, roomFromUrl, createRoom } from './game/multiplayer.js';
 import { Weapon } from './game/weapon.js';
 import { ARSENAL, WEAPON_KINDS, buildWeaponMesh, weaponMaterial } from './game/weapons.js';
 import { officerMaterial } from './world/officer.js';
+import { officerPool } from './world/officerSkinned.js';
 import { Modes } from './game/modes.js';
 import { Grenades, BLAST_R, KILL_R, HURT_R, blastFalloff } from './game/grenade.js';
 import { Crosshair, DecalPool, ADS, ADS_BLEND_S, spreadToPixels, spreadFor, recoilFor, firstBuildingHit, swayFor, swayPhaseStep, reloadPose, movementSpread, aimAssist } from './game/shooting.js';
@@ -69,6 +76,10 @@ import { Tracers } from './game/tracers.js';
 import { Puffs } from './world/puffs.js';
 import { tokyoMaterial, setTokyoNight } from './world/tokyo.js';
 import { setGlareNight } from './world/glare.js';
+import { setWindowNight, setSignNight } from './world/signs.js';
+import { FarTraffic } from './world/farTraffic.js';
+import { HeadlightStreaks, setStreakNight } from './world/streaks.js';
+let streaks = null;   // anamorphic headlight streak pool, built on the first frame that needs it
 import { glow } from './core/additive.js';
 import { absorb } from './game/policeAi.js';
 import { SkidMarks } from './world/skidmarks.js';
@@ -83,19 +94,32 @@ import { Photo } from './game/photo.js';
 import { buildRoute, Autopilot, useGraphForRoutes } from './game/autopilot.js';
 import { Cinematic } from './game/cinematic.js';
 import { Recorder } from './game/recorder.js';
+import { VideoMode } from './game/video.js';
 import { FeatureTour } from './game/featureTour.js';
 import { createAudio } from './game/audio.js';
 import { createWeather, rainSpell } from './world/weather.js';
 import { buildHuman } from './world/human.js';
 import { Debris } from './world/breakables.js';
 
-/* ONE rig. The scene, sky, water, far city and lights are always built in
-   their daylight form and game/clock.js runs the day into the night: sun,
-   hemisphere, fog, dome tint, emissive stagger, exposure, grade, the lamp
-   light pool and the fleet's headlamps all follow clock.nightFactor. `?night`
-   and `?dusk` only pick the start hour (19.5 / 18.4); `?time=H` picks any. */
-const START_NIGHT = new URLSearchParams(location.search).has('night');
-const START_DUSK = new URLSearchParams(location.search).has('dusk');
+/* Day first. Night is still fully built -- ?night in the URL brings it back --
+   but daylight is the honest view: nothing hides behind a lamp glow. */
+const DAY = !new URLSearchParams(location.search).has('night');
+/* ?mode=race -- the raceway as its OWN run. Only the chunks under the circuit
+   are built, no far-city LOD, no civilian traffic, no crowd, no landmarks, no
+   beach or riverside dressing, and the race stages itself on the grid at
+   boot. The city is still the same District (roads, collision, elevation),
+   there is just nothing in it that is not the track. See DistrictWorld's
+   `only` option for the mechanism. */
+const RACE_MODE = new URLSearchParams(location.search).get('mode') === 'race';
+/* Frame-phase marks are ?perf ONLY (2026-09-22). frameBody() called
+   performance.mark() eight times a frame and nothing in src/ ever read them;
+   the User Timing buffer for marks is unbounded, so they piled up forever.
+   Measured in node: 1.9 us/frame of CPU and 144,000 entries / +11.8 MB of heap
+   after five minutes at 60 fps. Now: 0 us and 0 entries unless ?perf is set,
+   and under ?perf the buffer is cleared at each frame start so it holds one
+   frame at most. */
+const PERF_MARKS = new URLSearchParams(location.search).has('perf');
+const mark = PERF_MARKS ? (name) => performance.mark(name) : () => {};
 
 const canvas = document.getElementById('gl');
 /* The boot overlay is static HTML in index.html so it paints before this
@@ -105,77 +129,136 @@ let boot = document.getElementById('boot');
 const bootMsg = document.getElementById('bootmsg');
 const bootProgress = document.getElementById('bootprogress');
 const bootPercent = document.getElementById('bootpercent');
-// whatever happens, the loading screen is gone inside 12 s
-setTimeout(() => { if (boot) { console.warn('boot: 12 s cap hit, dropping the loading screen'); boot.remove(); boot = null; } }, 12000);
+/* The stuck-boot guard. It used to be a flat 12 s from module parse, which is
+   not what it is for: measured on this machine a healthy boot clears at ~16.5 s
+   with the catalogue pre-warm and ~17.1 s without, so the flat cap fired on
+   EVERY boot and tore the loading screen away while the city was still
+   building. The point is to catch a boot that has STOPPED, so the timer resets
+   on every reported phase and only fires after 12 s of no progress at all. */
+let bootStall = null;
+const armBootStall = () => {
+  clearTimeout(bootStall);
+  bootStall = setTimeout(() => {
+    if (boot) { console.warn('boot: no progress for 12 s, dropping the loading screen'); boot.remove(); boot = null; }
+  }, 12000);
+};
+armBootStall();
+let bootPhaseName = '';        // the lag logger names the phase a boot-time spike fell in
+let catalogueRef = null;       // set once the catalogue resolves; the lag logger reads pendingLoads
 const setBootProgress = (pct, m) => {
+  bootPhaseName = m;
   if (bootMsg) bootMsg.textContent = m;
   if (bootProgress) bootProgress.style.width = `${pct}%`;
   if (bootPercent) bootPercent.textContent = `${pct}%`;
+  armBootStall();
 };
 setBootProgress(10, 'Waking the GPU…');
 const renderer = createRenderer(canvas);
 setBootProgress(25, 'Starting the renderer…');
-/* Start the 0.8 MB district fetch + parse now: it needs no GPU, and it used
-   to wait behind renderer.init() and the vendor car loads (2026-09-22). */
-const districtReady = loadDistrict();
-districtReady.catch(() => {});   // handled where it is awaited; this only stops an early 'unhandled rejection' before that
 await renderer.init();
+
+setBootProgress(35, 'Analyzing GPU architecture…');
+const gpuInfo = await detectGpuInfo(renderer);
+const qualityChoice = resolveQualityMode(gpuInfo);
+const isLite = qualityChoice.isLite;
+const TOUCH = isTouchDevice();   // core/device.js; ?mobile / ?desktop override
+if (TOUCH) document.body.classList.add('touch');
+window.__gpuInfo = gpuInfo;
+window.__isLite = isLite;
+/* Quality preset (core/quality.js): ?quality= > localStorage hb.quality > auto
+   (medium on the LITE tier, high otherwise). Every knob below reads Q; the
+   tier (isLite) still decides the FULL cascades and the light-pool count. */
+const quality = resolveQuality({ isLite });
+const Q = quality.preset;
+window.__quality = quality;
+const crowdWanted = new URLSearchParams(location.search).has('crowd') && !RACE_MODE;
+console.info(describeQuality(quality.name, `${quality.source}, tier ${isLite ? 'LITE' : 'FULL'}: ${qualityChoice.reason}, gpu ${gpuInfo.gpuDesc || 'unknown'}`, Q, { traffic: RACE_MODE ? 0 : Q.traffic, crowd: crowdWanted ? Q.crowd : 0 }));
+
+// Apply initial render scale for the preset's pixel budget
+renderer.setPixelRatio(renderScale(innerWidth, innerHeight, isLite, Q.pixelBudget));
+renderer.setSize(innerWidth, innerHeight, false);
+
 setBootProgress(45, 'Building the scene & lights…');
 setAnisotropy(renderer.capabilities?.getMaxAnisotropy?.() ?? 16);
 
-const scene = createScene(true);
+const scene = createScene(DAY);
 window.scene = scene;
+/* far 14000, not 8000. The sky dome is a radius-9000 sphere recentred on the
+   car every frame (sky.js:74, main.js dome.position.set), so EVERY vertex of it
+   sits ~9000 m from the camera: any far plane under ~9010 clips the entire dome
+   and the sky renders black at noon. Measured 2026-09-16 at Little Tokyo 12:00,
+   same viewpoint: far 8000 top-quarter mean RGB (43,51,56) -- black -- against
+   (53,65,69) with 14000. Depth precision is bought at the NEAR plane, not here. */
 const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.5, 14000);
-const { sun, hemi } = createLights(scene);
-const { dome, stars } = createSky(scene, renderer, true);
+const { sun, hemi } = createLights(scene, DAY, { lite: isLite, shadows: Q.shadows });   // boot-time: castShadow never changes after the first frame (WebGPU pipeline trap)
+const { dome, stars, sunSprite, sunRaySprite } = createSky(scene, renderer, DAY);
 
 setBootProgress(60, 'Initializing TSL post-processing pipeline…');
-/* Mobile tier: a phone gets the lite build (no GTAO, half the crowd, 4 lights,
-   8 near pedestrians) -- every knob that exists is a draw or a fill cost, and
-   nothing about a phone GPU has been measured; this is the first knob, not
-   the last. ?desktop / ?mobile override detection (core/device.js). */
-const TOUCH = isTouchDevice();
-const MOBILE = isMobile();
-/* hb.lite is written by the frame-rate governor when a machine stays slow
-   even at half resolution; ?full clears it. */
-let savedLite = false;
-try { if (new URLSearchParams(location.search).has('full')) localStorage.removeItem('hb.lite'); savedLite = localStorage.getItem('hb.lite') === '1'; } catch { /* private mode */ }
-const isLite = MOBILE || savedLite || (typeof location !== 'undefined' && new URLSearchParams(location.search).has('lite'));
-if (TOUCH) document.body.classList.add('touch');
 const grade = createGrade(renderer, scene, camera, {
-  ao: !isLite && !new URLSearchParams(location.search).has('noao'),
-  bloom: !new URLSearchParams(location.search).has('nobloom'),
-  aa: !new URLSearchParams(location.search).has('noaa'),
+  ssr: new URLSearchParams(location.search).has('ssr'),
+  ao: new URLSearchParams(location.search).has('ao'),
+  // bloom (~12 passes) and SMAA (3) are pipeline topology: the preset decides them at boot, the flags still force them off
+  bloom: Q.bloom && !new URLSearchParams(location.search).has('nobloom'),
+  aa: Q.aa && !new URLSearchParams(location.search).has('noaa'),
+  blur: (new URLSearchParams(location.search).has('blur') || (!new URLSearchParams(location.search).has('noblur') && Q.blur)),   // high-speed radial blur: 7-tap full-screen pass; high preset only (was !isLite)
   post: !new URLSearchParams(location.search).has('nopost'),
+});
+/* The runtime ladder (renderer.js autoResolution). Density first: a hidden
+   car is a draw that never happens and the submit is 74-95% of frame CPU;
+   then the pixel ratio as before. traffic/farTraffic/hud are const-declared
+   further down; the callbacks only run from the frame loop, after all of it. */
+const resolution = autoResolution(renderer, grade, isLite, {
+  pixelBudget: Q.pixelBudget,
+  densitySteps: DENSITY_STEPS.length - 1,
+  onDensity: (step) => {
+    const f = DENSITY_STEPS[step] ?? DENSITY_STEPS.at(-1);
+    if (!RACE_MODE) { traffic._n0 ??= traffic.cars.length; limitTraffic(traffic, Math.round(traffic._n0 * f)); }
+    if (farTraffic) limitFarTraffic(farTraffic, (farTraffic._n0 ?? farTraffic.n) * f);
+    if (step === 1) hud.flash('TRAFFIC THINNED TO HOLD FRAME RATE');
+  },
+  onSustained: () => {
+    const lower = nextLower(quality.name);
+    if (!lower) return;
+    try { localStorage.setItem(QUALITY_KEY, lower); } catch { /* private mode */ }
+    hud.flash(`QUALITY -> ${lower.toUpperCase()} ON NEXT START`);
+    console.info(`[drs] sustained >22 ms at MIN_SCALE with density spent: ${QUALITY_KEY}=${lower} for the next boot`);
+  },
 });
 
 const assets = createAssets();
 setBootProgress(75, 'Loading car fleet…');
 await loadVendorCars(assets).catch((e) => console.warn('vendor cars:', e.message));
+// trees are on every street, so this is AWAITED: a late swap would leave half the city procedural
+await loadTreeModels(assets).catch((e) => console.warn('tree models:', e.message));
 setBootProgress(90, 'Reading the city plan…');
 grade.resize(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio());
 /* Bloom needs no day/night switch: it reads the emissive MRT channel, and
    daylightAssets() below dims facade emissive to 0.04 — under the bloom
    threshold — so at noon only signal lenses and brake lights carry a halo
-   while at night the clock's stagger lifts windows and lamps back up and they
-   bleed as designed. Exposure (1.0 -> 1.15) is the clock's too. */
-daylightAssets(assets);
-grade.vignette.uniforms.uStrength.value = 0.26;   // noon is not a film noir
-grade.grain.uniforms.uAmount.value = 0.012;
+   while at night the baked-emissive windows and lamps bleed as designed. */
+if (DAY) {
+  daylightAssets(assets);
+  grade.vignette.uniforms.uStrength.value = 0.26;   // noon is not a film noir
+  grade.grain.uniforms.uAmount.value = 0.012;
+} else {
+  /* Night ran genuinely too dark away from lit facades — silhouettes on a
+     horizon glow. A nudged exposure lifts the mid-tones without touching the
+     look of the emissive windows (they are already past the bloom knee). */
+  renderer.toneMappingExposure = 1.15;
+}
 /* `world` is whatever is currently building geometry. It starts as the old
    procedural grid so the game runs immediately, and is swapped for Halstead
    Bay the moment the district file arrives. Both answer update(x,z). */
 /* Every facade bakes its lit windows into an emissive map. At night that IS
    the lighting; at noon a glowing window is the single loudest tell that a
-   scene is a night scene with the sun turned up, so it goes away. This is the
-   BOOT palette: every emissive it touches (facades, base, pool, lampGlow,
-   sign, windowQuad, beacon) is re-driven per frame by clock.js's stagger. */
+   scene is a night scene with the sun turned up, so it goes away. */
 function daylightAssets(A) {
   for (const k of Object.keys(A.facades)) {
     for (const m of A.facades[k]) { m.emissiveIntensity = 0.04; m.envMapIntensity = 0.85; }
   }
   for (const m of A.base.materials) m.emissiveIntensity = 0.05;
   A.mat.pool.opacity = 0;                 // sodium pools on sunlit tarmac: no
+  if (A.mat.lampCone) A.mat.lampCone.opacity = 0; // additive haze cone under lamps: no in daylight
   A.mat.lampGlow.emissiveIntensity = 0.15;
   A.mat.sign.emissiveIntensity = 0.06;
   A.mat.windowQuad.emissiveIntensity = 0.0;   // daylight: glass, not lamps
@@ -189,15 +272,14 @@ function daylightAssets(A) {
   A.mat.walk.color.setHex(0xb9b7ad);
   A.mat.leaf.color.setHex(0x4e6b3a);
   A.mat.bark.color.setHex(0x5b4a3a);
-  // the asphalt was painted for sodium light; at noon it reads as tar
-  A.mat.tarmac.color.setHex(0xb4b8bd);
-  /* Dry asphalt at noon is matte. At 0.42 roughness with envMapIntensity 0.8
-     the carriageway mirrored the sky, which is what flattened it: the sheen
-     washed straight over the albedo AND the new normal map. Wet tarmac under
-     sodium is the NIGHT look and keeps its gloss. */
-  A.mat.tarmac.roughness = 0.82;
+  // the asphalt was painted for sodium light; at noon it reads as tar.
+  // 0xb4b8bd was a silver sheet — a modest lift keeps grain without going concrete.
+  A.mat.tarmac.color.setHex(0x8e9298);
   A.mat.tarmac.metalness = 0.0;
-  A.mat.tarmac.envMapIntensity = 0.25;
+  const dry = wetTarmacLook(0);
+  A.mat.tarmac.roughness = dry.roughness;
+  A.mat.tarmac.envMapIntensity = dry.envMapIntensity;
+  A.mat.tarmac.normalScale.setScalar(dry.normalScale);
 }
 
 let world = new City(scene, assets);
@@ -207,14 +289,21 @@ const debris = new Debris(scene);
 /* ?debug: expose the live car state for the browser-automation harness —
    closed-loop test drivers need to read position and yaw. Dev-only surface,
    not a save-game: nothing in the game reads it back. */
-const DEBUG = new URLSearchParams(location.search).has('debug');
-if (DEBUG) {
+if (new URLSearchParams(location.search).has('debug')) {
   window.__car = () => car;
+  window.__camera = camera;
+  // the chase rig and the car shell: functions, so this block can run before either is constructed
+  window.__chase = () => chase;
+  window.__hero = () => hero;
   // shooting-layer state the harness cannot otherwise see or set (pointer lock is refused headless)
   window.__dbg = () => ({ started, aiming, ads, crouch, burst, heat: weapon.heat, ready: weapon.ready, kind: weapon.kind, ammo: weapon.ammo, health });
   window.__aim = (v) => { aiming = !!v; };
+  window.__traffic = () => traffic;   // ?debug: squad roles and movement straight off the officers. A FUNCTION, not the value: this block runs long before `const traffic` and touching it here is a TDZ crash at boot
   window.__police = () => traffic.police.filter((c) => c.live).map((c) => ({ deployed: !!c.deployed, state: c.state, gun: c.gunKind, hp: c.hp, down: +c.down.toFixed(1), pose: c.pose, mode: c.mode, hunt: !!c.hunt, chase: !!c.chase, spd: +(c.speed || 0).toFixed(1), cruise: +(c.cruise || 0).toFixed(1), stale: +(c.stale || 0).toFixed(1), lost: +(c.lost || 0).toFixed(1), x: Math.round(c.x), z: Math.round(c.z), d: Math.round(Math.hypot(c.x - (onFoot.active ? onFoot.x : car.x), c.z - (onFoot.active ? onFoot.z : car.z))) }));
   window.__wanted = (n) => { traffic.wanted = n; };
+  window.__hurt = (h) => { health = Math.max(0, health - (+h || 1)); hud.setHealth(health); if (health <= 0) onDeath(); };   // the death flow, on demand
+  window.__hud = () => hud; window.__dying = () => ({ dying, wastedAnim, drowning, holdFire: traffic.holdFire });
+  window.__audio = () => audio;   // ?debug: fire any sound by hand, and check the bank is wired
   window.__time = (h) => { clock.hour = ((+h) % 24 + 24) % 24; };          // the recording harness sets the hour
   window.__cmd = (line) => (commands ? commands.execute(line) : false);   // and runs chat commands ('/time 22', '/tp ...')
   window.__rain = (v) => { rainForce = v; };   // true/false forces the weather on/off; null returns it to the spells
@@ -226,7 +315,9 @@ let beach = null, water = null, crowd = null, heli = null, districtRef = null, d
 let districtFailed = false;
 let spawnSnap = false;        // the frame loop snaps the chase camera on its next update (chase is declared later; see the top-level awaits)   // lets the boot gate drop on the legacy grid if the district never lands
 let lightPool = null;
+let farTraffic = null;   // distant headlight sprites on the far road graph (world/farTraffic.js)
 let jobs = null, garage = null, story = null, phone = null, dispatch = null, reputation = null, intelScanner = null;
+let circuit = null, racewayTrackGroup = null;
 let activeVehicle = null;
 let chat = null, chatter = null, commands = null;
 let vehicleVFX = null, puddles = null;
@@ -239,6 +330,7 @@ let photo = null;
 let radio = null;                           // generative car radio (game/radio.js), built once audio exists
 const person = buildHuman();
 scene.add(person.root);
+const DEBUG_KEYS = new URLSearchParams(location.search).has('debug');
 let muted = false;
 try { muted = localStorage.getItem('hb.muted') === '1'; } catch { /* private mode */ }
 let firing = false;
@@ -300,8 +392,8 @@ function paintName() {
 
 function damageVehicle(v, amount, isPolice) {
   if (!v || v.vhp === 0) return;
+  v.stoppedBy = 'player';   // the vigilante bounty pays only for a fugitive YOU stopped (every player hit, ram and blast comes through here)
   v.vhp = Math.max(0, (v.vhp ?? 8) - amount);
-  v.stoppedBy = 'player';   // every player-inflicted engine hit (bullet, ram, blast) comes through here; the vigilante payout asks for it
   if (v.vhp === 0) {
     v.cruise = 0; v.baseCruise = 0; v.fleeT = 0; hud.flash(isPolice ? 'CRUISER DISABLED' : 'ENGINE OUT'); audio.thud?.(8);
     if (!isPolice) crowd?.eject(v.x, v.z, v.yaw);
@@ -336,6 +428,7 @@ function onShot(gap, landed = null, damage = 26, from = null, kind = 'pistol') {
     onFoot.camPitch = Math.min(0.9, onFoot.camPitch + 0.035 * Math.min(2, damage / 26));
     onFoot.camYaw += (Math.random() - 0.5) * 0.05;
   }
+  if (wastedAnim !== 0 || dying > 0) return;   // already dying: the clip plays out, nothing lands on the body
   if (onFoot.active) {
     // on foot there is no bodywork to absorb it -- unless you bought some
     const a = absorb(armour, hit * 0.16); armour = Math.max(0, armour - a.toArmour);
@@ -348,11 +441,7 @@ function onShot(gap, landed = null, damage = 26, from = null, kind = 'pistol') {
   car.impact = Math.max(car.impact || 0, 1.6 + hit * 2.2);
   car.yawRate += (Math.random() - 0.5) * hit * 0.9;
   damageModel.hit(2 + hit * 5);
-  // from three stars they shoot for the tyres: one landed round in eight takes one out, and it stays out until the garage
-  if (traffic.wanted >= 3 && Math.random() < 0.125) {
-    const ws = (hero.userData.wheels || []).filter((w) => !w.shot);
-    if (ws.length) { ws[Math.floor(Math.random() * ws.length)].shot = 1; hud.flash('TYRE SHOT OUT'); audio.thud?.(10); }
-  }
+  // Car hull absorbs bullet impacts without crippling tyre blowouts, preserving thrilling high-speed police chase dynamics
 }
 
 /**
@@ -363,6 +452,64 @@ function onShot(gap, landed = null, damage = 26, from = null, kind = 'pistol') {
  * of the map. Everywhere that resets the car has to say where, and the
  * drowning recovery was the only place that did.
  */
+/**
+ * Put the car on the Halstead Mile's start line and run the route.
+ *
+ * Shift+R, or `/mile` in the chat. The route is data in game/scenicRoute.js;
+ * this only places the car and hands the waypoints to Mission, which already
+ * owns the rings, the beam, the countdown and the arrival tests.
+ *
+ * The clock is set to 16:20 unless it is already inside golden hour, because
+ * the whole ORDER of the route exists to put the sun down the lift bridge deck
+ * on leg 4 -- see the header of scenicRoute.js. Starting it at midnight is
+ * allowed, it just throws away the reason the waypoints are in that order.
+ */
+const RIVALS = +(new URLSearchParams(location.search).get('rivals') ?? 5);
+
+function startHalsteadMile() {
+  if (!districtRef) { hud.flash('THE HALSTEAD MILE · CITY STILL LOADING'); return; }
+  const start = HALSTEAD_MILE[0];
+  resetCar(car);
+  car.x = start.x;
+  car.z = start.z;
+  car.y = (districtRef.elevationAt?.(start.x, start.z) ?? 0) + 0.62;
+  car.yaw = startYaw();
+  if (clock.hour < 16.0 || clock.hour > 18.0) clock.hour = DEFAULT_HOUR;
+  const pts = missionPoints();
+  mission?.route(pts, 'THE HALSTEAD MILE · 5.7 km');
+  navigation?.setWaypoint?.(pts[0].x, pts[0].y);
+  if (navigation) navigation.lastTarget = null;
+  /* A FIELD, not a time trial. The rivals are ordinary fleet cars driven by
+     the same steering that makes a cruiser chase you, following the route
+     expanded through the road graph -- see traffic.startRace. */
+  const line = drivingLine(navigation);
+  const n = traffic.startRace?.(line, RIVALS, car.yaw) ?? 0;
+  hud.flash(n ? `THE HALSTEAD MILE · ${n} RIVALS · GOLDEN HOUR` : 'THE HALSTEAD MILE · 8 MARKS · GOLDEN HOUR');
+}
+
+function startCircuitRace() {
+  if (!districtRef) { hud.flash('HALSTEAD RACEWAY · CITY STILL LOADING'); return; }
+  if (onFoot?.active) useVehicle();
+  if (!raceCircuit) {
+    hud.flash('HALSTEAD RACEWAY · CIRCUIT STILL PREPARING');
+    return;
+  }
+  resetCar(car);
+  car.x = 3560;
+  car.z = 2457;
+  car.yaw = 0;
+  car.y = (districtRef.elevationAt?.(3560, 2457) ?? 1.2) + 0.62;
+  car.vx = 0;
+  car.vz = 0;
+  car.speed = 0;
+  car.fwdSpeed = 0;
+  world?.update?.(car.x, car.z);
+  spawnSnap = true;
+  raceCircuit.startCircuitRace(car);
+}
+window._startCircuitRace = () => startCircuitRace();
+window.startTrackRace = () => startCircuitRace();
+
 function respawnCar(nearX = car.x, nearZ = car.z, kinds = null) {
   const nodes = districtRef?.graph?.nodes;
   resetCar(car);
@@ -414,24 +561,33 @@ function respawnCar(nearX = car.x, nearZ = car.z, kinds = null) {
  * a fireball takes you to a hospital.
  */
 function onDeath() {
+  if (story?.active && wastedAnim !== 1) { story.abandon?.(); hud.flash('MISSION FAILED'); }   // a heist does not continue from the hospital
   /* On foot, the body falls first and the fade follows: the Death clip runs,
      input is dead, then the respawn. In a car it is the old instant fade. */
+  if (wastedAnim === 1) return;        // the clip is still playing; the timer will call us back
   if (onFoot.active && wastedAnim === 0 && onFoot.character?.ready) {
     const ms = onFoot.character.die();
-    if (ms > 0) { wastedAnim = 1; controlsLockedUntil = performance.now() + ms + 300; setTimeout(() => { wastedAnim = 2; onDeath(); }, ms + 300); return; }
+    if (ms > 0) {
+      wastedAnim = 1; controlsLockedUntil = performance.now() + ms + 300;
+      traffic.holdFire = true;         // the officers lower their guns while you fall (the hit handler ignores the rest)
+      wastedTimer = setTimeout(() => { wastedTimer = 0; hud.blackout(() => { wastedAnim = 2; onDeath(); }); }, ms + 300);
+      return;
+    }
   }
-  if (wastedAnim === 1) return;        // the clip is still playing; the timer will call us back
   wastedAnim = 0;                      // 2 -> 0: the animation ran, now the real WASTED path
+  traffic.holdFire = false;
   bustFlash = 2.8;
   /* The hospital bills you: GTA's rule, and the reason a death costs something
      when the ammo comes back with you. Never more than you have. */
   if (garage && garage.cash > 0) { const fee = Math.min(garage.cash, 500); garage.addCash(-fee, 'HOSPITAL'); hud.flash(`HOSPITAL FEE · -$${fee}`); }
   jobs?.fail('WASTED · JOB LOST');
-  if (story?.active) { story.abandon(); hud.flash('MISSION FAILED'); }   // a story mission does not survive the hospital
   hud.setDead(true);
   traffic.standDown();
   if (mission && mission.active) mission.stop('WASTED');
   health = 1; hud.setHealth(1);
+  /* Armour is what you were wearing when you went down: gone. Weapons and
+     ammo come back with you (GTA V's hospital, not III's). */
+  if (armour > 0) { armour = 0; saveArsenal(); }
   // Wake up outside the nearest hospital
   const hospitals = (districtRef?.places || []).filter((p) => p.type === 'hosp');
   const at = hospitals.reduce((best, p) => {
@@ -439,12 +595,22 @@ function onDeath() {
     return d < best.d ? { d, p } : best;
   }, { d: Infinity, p: null }).p;
   respawnCar(at ? at.x : CITY_CENTRE.x, at ? at.y + 12 : CITY_CENTRE.z);
-  if (onFoot.active) onFoot.enter();
+  /* You wake up ON FOOT at the hospital doors, the car parked at the kerb
+     beside you with whatever body it had (a stolen one stays stolen -- the
+     chop shop is still the only way to turn it into cash). Getting back in
+     is the same F as always. No hospital on the map: the old in-car respawn. */
+  if (at) {
+    exitCarOnFoot();
+    car.throttle = 0; car.brake = 1; car.hand = 1;
+  } else if (onFoot.active) onFoot.enter();
   hero.visible = true;
+  drowning = 0;
   chase.shake = 0;
 }
 
 function onBust() {
+  if (wastedAnim !== 0 || dying > 0) return;   // you are dying, not surrendering: the WASTED path owns this respawn
+  if (story?.active) { story.abandon?.(); hud.flash('MISSION FAILED'); }
   /* The station takes your guns (GTA's classic): reserves to zero, grenades
      gone, armour off; you walk out with the pistol and one magazine. Cash
      stays -- the fine is the confiscation. */
@@ -453,7 +619,6 @@ function onBust() {
   grenades.count = 0; armour = 0; refreshHeldGun(); saveArsenal();
   hud.flash('BUSTED · WEAPONS CONFISCATED');
   jobs?.fail('BUSTED · JOB LOST');
-  if (story?.active) { story.abandon(); hud.flash('MISSION FAILED'); }   // nor the station
   bustFlash = 2.6;
   traffic.standDown();
   if (heli) heli.update(car, traffic, 0);
@@ -492,6 +657,7 @@ const grenades = new Grenades(scene, weapon.light);   // shares the muzzle-flash
 let held = 'gun', punchCool = 0;
 let wasReloading = false;
 let lastArsKey = '';
+let wastedTimer = 0;  // the clip's respawn timer, so a bust or a second death cannot double it
 let wastedAnim = 0;   // 0 idle, 1 Death clip playing, 2 clip done -> run the WASTED path once   // slot 0: bare hands. E swings at whoever is in front of you
 grenades.onBlast = (bx, by, bz) => {
   for (let i = 0; i < 10; i++) { const a = Math.random() * Math.PI * 2, rr = Math.random() * 1.6; puffs.puff(bx + Math.cos(a) * rr, by + 0.5 + Math.random(), bz + Math.sin(a) * rr, { r: 0.14, g: 0.13, b: 0.12, life: 2.4 + Math.random() * 1.5, vy: 1.4 + Math.random(), vx: Math.cos(a) * 1.2, vz: Math.sin(a) * 1.2 }); }
@@ -530,6 +696,7 @@ grenades.onBlast = (bx, by, bz) => {
   weapon.bloodAt?.(bx, by + 0.3, bz, 0, 0);   // reuse the pool for a dark puff of debris
 };
 let modes = null;   // range / hold-out, built once the HUD and traffic exist
+let raceCircuit = null; // Halstead International Raceway manager
 let aiming = false, ads = 0, burst = 0, sinceShot = 9, swayPhase = 0, crouch = false;
 let lastFiredAt = -1e9;   // officers advance when you have been quiet for a while
 let lastHurtAt = -1e9;    // health regenerates to half once this is six seconds old
@@ -732,7 +899,8 @@ function pullTrigger() {
   // firing at all is a crime; hitting something is a worse one
   if (hit?.kind !== 'target' && modes?.active !== 'range') traffic.reportCrime(hit ? (hit.kind === 'person' ? 'person' : (hit.kind === 'police' || hit.kind === 'officer') ? 'police' : 'traffic') : 'traffic',
                       hit ? 9 : 1);
-  if (hit && hit.kind === 'officer') { const dmg = weapon.spec.damage * (hit.head ? 3 : 1); if (hit.head) hud.flash('HEADSHOT'); const downed = (hit.ref.mesh || hit.ref.roof) ? traffic.hitAny?.(hit.ref, dmg) : roadblock?.hitPost?.(hit.ref, dmg); if (downed) { modes?.onOfficerDown(); story?.onOfficerDown?.(hit.x, hit.z); hud.flash(modes?.active === 'holdout' ? 'OFFICER DOWN · +50' : 'OFFICER DOWN'); } crosshair.hit(hit.ref.down > 0); }
+  // one path per officer hit: hitAny returns false on a non-downing hit, and the old `hitAny || hitPost` then took the same hp again through hitPost
+  if (hit && hit.kind === 'officer') { const dmg = weapon.spec.damage * (hit.head ? 3 : 1); if (hit.head) hud.flash('HEADSHOT'); const downed = (hit.ref.mesh || hit.ref.roof) ? traffic.hitAny?.(hit.ref, dmg) : roadblock?.hitPost?.(hit.ref, dmg); if (downed) { modes?.onOfficerDown(); story?.onOfficerDown?.(); hud.flash(modes?.active === 'holdout' ? 'OFFICER DOWN · +50' : 'OFFICER DOWN'); } crosshair.hit(hit.ref.down > 0); }
   if (hit && hit.kind === 'person') { hit.ref.down = 0.001; bloodDecals.stamp(hit.ref.x, groundHeightAt(hit.ref.x, hit.ref.z) + 0.01, hit.ref.z, 0, 1, 0, 0.8 + Math.random() * 0.5); }
   if (hit && (hit.kind === 'car' || hit.kind === 'police')) {   // vehicles only: boards, marksmen and posts have no .mesh
     hit.ref.speed *= 0.55;
@@ -744,6 +912,48 @@ function pullTrigger() {
   }
 }
 const _obsBuffer = [];
+/* Distance-to-BAY test for the surf bed. The first cut called
+   districtRef.nearShore(), which does not exist on District -- it would have
+   returned undefined, gone falsy, and left the beach silent with nothing to
+   show for it. Walks the bay polyline, same shape as nearRiver below. */
+let _bayPts = null;
+function nearBay(x, z, r = 150) {
+  if (!_bayPts) {
+    _bayPts = districtRef?.data?.water?.bay ?? [];
+    if (!_bayPts.length) return false;
+  }
+  const r2 = r * r;
+  for (let i = 1; i < _bayPts.length; i++) {
+    const [ax, az] = _bayPts[i - 1], [bx, bz] = _bayPts[i];
+    const dx = bx - ax, dz = bz - az, L = dx * dx + dz * dz;
+    let t = L ? ((x - ax) * dx + (z - az) * dz) / L : 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const ox = x - (ax + t * dx), oz = z - (az + t * dz);
+    if (ox * ox + oz * oz < r2) return true;
+  }
+  return false;
+}
+
+/* Distance-to-river test for the ambience bed. Cheap: the polyline is 99 points
+   and this runs once a frame, so it walks it rather than building a grid. */
+let _riverPts = null;
+function nearRiver(x, z, r = 130) {
+  if (!_riverPts) {
+    _riverPts = districtRef?.data?.water?.river?.points ?? [];
+    if (!_riverPts.length) return false;
+  }
+  const r2 = r * r;
+  for (let i = 1; i < _riverPts.length; i++) {
+    const [ax, az] = _riverPts[i - 1], [bx, bz] = _riverPts[i];
+    const dx = bx - ax, dz = bz - az, L = dx * dx + dz * dz;
+    let t = L ? ((x - ax) * dx + (z - az) * dz) / L : 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const ox = x - (ax + t * dx), oz = z - (az + t * dz);
+    if (ox * ox + oz * oz < r2) return true;
+  }
+  return false;
+}
+
 function getObstacles(x, z) {
   _obsBuffer.length = 0;
   if (world.nearbyParked) world.nearbyParked(x, z, _obsBuffer);
@@ -754,6 +964,16 @@ const walkSolid = makeSolver(
   (x, z) => (world.nearbyBuildings ? world.nearbyBuildings(x, z) : null),
   getObstacles,
 );
+
+/** Supply OnFoot's safe-exit chooser with the live collision world. */
+function exitCarOnFoot(vehicle = car) {
+  return onFoot.exit(
+    vehicle,
+    (x, z) => Math.max(world.district?.elevationAt?.(x, z) ?? 0, groundHeightAt(x, z)),
+    walkSolid,
+    (x, z) => !world.district?.inWater?.(x, z),
+  );
+}
 
 /**
  * Get out, or get in.
@@ -920,8 +1140,12 @@ function driverDoor(hold = 0.9) {
   const d = hero.userData.doors?.doorFR;
   if (!d) return;
   d.target = d.open;
+  audio.doorOpen?.();
   clearTimeout(d.timer);
-  d.timer = setTimeout(() => { d.target = 0; }, hold * 1000);
+  d.timer = setTimeout(() => {
+    d.target = 0;
+    audio.doorShut?.();
+  }, hold * 1000);
 }
 
 function useVehicle() {
@@ -1047,7 +1271,10 @@ function useVehicle() {
       }
     }
     driverDoor(1.4);                       // step out; it swings shut behind you
-    onFoot.exit(car, (x, z) => Math.max(world.district?.elevationAt?.(x, z) ?? 0, groundHeightAt(x, z)));
+    if (!exitCarOnFoot()) {
+      hud.flash('NO SAFE PLACE TO EXIT');
+      return;
+    }
     hero.visible = true;
     car.throttle = 0; car.brake = 1; car.hand = 1;
   }
@@ -1060,32 +1287,104 @@ const city = world;                       // legacy alias, same object
 const catalogueReady = new Catalogue().load(renderer)
   .then((c) => {
     console.info(`catalogue: ${c.assets.size} assets, ${c.materials.size} materials`);
-    window._catalogue = c;   // F3 reads emitWorstMs
+    window._catalogue = c;   // F3 'emit slice' reads emitWorstMs
     return c;
   })
   .catch((e) => { console.warn('catalogue unavailable:', e.message); return null; });
 
-Promise.all([districtReady, catalogueReady, new URLSearchParams(location.search).has('nokit') ? null : loadKitBuildings(assets).catch((e) => console.warn('kit buildings:', e.message))]).then(([district, catalogue]) => {
+Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search).has('nokit') ? null : loadKitBuildings(assets).catch((e) => console.warn('kit buildings:', e.message))]).then(async ([district, catalogue]) => {
+  registerRaceTrackPhysics(district);
   useDistrict(district);                  // roadDepth() now answers from the file
   traffic.useGraph(district);
   useGraphForRoutes(district);             // and the fleet drives the real streets
   hud.useDistrict(district);              // minimap draws real streets, not a lattice
   navigation = new Navigation(district);
   hud.useNavigation(navigation);
-  // the boot grid is scenery until the district lands; free its buffers, not just its scene nodes
+  /* PRE-WARM THE CATALOGUE (2026-09-14).
+     Every asset is fetched and parsed HERE, behind the boot screen, instead of
+     on the frame a chunk first asks for it. The whole library is small -- 141
+     assets / 337 GLB files including LODs, 12.99 MB on disk -- and fetchAsset
+     already caches per record and de-dupes concurrent callers, so this is a
+     cache fill and nothing downstream changes.
+
+     A BOUNDED POOL, not Promise.all over 337 urls. The fetch is cheap; the
+     PARSE is not, and it is main-thread: firing all of them at once lands 337
+     GLTFLoader parses back to back, which blocks the very frame loop that
+     paints the progress bar, so the screen freezes and then jumps. A small
+     pool leaves gaps for rAF and keeps the bar moving.
+
+     Deliberately BEFORE `new DistrictWorld`, so the initial 5x5 ring builds
+     from a warm cache instead of racing the network. The streaming ring itself
+     is untouched -- this removes pop-in, not the 2 ms slicing that holds 60 fps.
+
+     `?nowarm` skips it and restores the old lazy behaviour. */
+  catalogueRef = catalogue;
+  if (catalogue && !new URLSearchParams(location.search).has('nowarm')) {
+    const allNames = [...catalogue.assets.keys()];
+    const isSpawnEssential = (k) => /hero|tokyo|pencil|sakura|ginkgo|lamp|signal|barrier|sign|bench|bin|tree|corvette/i.test(k);
+    const tier1Names = allNames.filter(isSpawnEssential);
+    const tier2Names = allNames.filter(k => !isSpawnEssential(k));
+
+    const t0 = performance.now();
+    let done = 0, next = 0;
+    const POOL = 16;   // fetch overlaps; the parse is main-thread and serialises anyway
+    const worker = async () => {
+      while (next < tier1Names.length) {
+        const i = next++;
+        try { await catalogue.fetchAsset(tier1Names[i]); } catch { /* fetchAsset already warns and caches an empty */ }
+        done++;
+        if (done % 4 === 0 || done === tier1Names.length) {
+          setBootProgress(45 + Math.round((done / tier1Names.length) * 22), `Loading essentials… ${done}/${tier1Names.length}`);
+          await new Promise((r) => requestAnimationFrame(r));   // let the bar actually paint
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: POOL }, worker));
+    console.info(`catalogue tier 1 fast-warm: ${tier1Names.length} assets in ${Math.round(performance.now() - t0)} ms`);
+
+    // Tier 2 background streaming disabled: on-demand chunk loading via InstanceBatch.emit
+    // loads props as needed without saturating the main thread with 105+ GLB parses during gameplay.
+    window._startBackgroundAssetStream = null;
+
+    /* And the textures. Do not block boot indefinitely on textures: give them up to 1.5s max */
+    if (catalogue.texturesReady) {
+      setBootProgress(68, 'Preparing graphics…');
+      await Promise.race([catalogue.texturesReady, new Promise((r) => setTimeout(r, 1500))]);
+    }
+  }
+
+  setBootProgress(70, 'Building the streets…');
+  /* `lite` in DistrictWorld means exactly "radius 1 + propRadius 1" (districtWorld.js:189-192, its only
+     three reads) and it overrides `radius`, so the preset's streamRadius drives it: 1 -> the 3x3 ring LITE
+     runs today, 2 -> the 5x5 FULL ring. Boot-time: the ring is built once and streamed, never re-sized. */
+  world = new DistrictWorld(scene, assets, district, { day: DAY, catalogue, lite: Q.streamRadius < 2, radius: Q.streamRadius, only: RACE_MODE ? isRacewayArea : null });
+  /* Retire the legacy 130 m grid HERE, at the swap, and not a page earlier.
+     It used to be cleared before the catalogue pre-warm, whose awaits let the
+     frame loop keep ticking world.update() on the City for a few seconds --
+     and it rebuilt all 25 cells around the origin, which nothing removed
+     again: 683 direct draws / 409k tris / 331k shadow-caster tris a frame in
+     BOTH modes, 2.7 km from the car (census 2026-09-22). */
   for (const g of city.cells.values()) { scene.remove(g); releaseCell(g); }
   city.cells.clear();
-  setBootProgress(70, 'Building the streets…');
-  world = new DistrictWorld(scene, assets, district, { day: true, catalogue });
   window._world = world;
   world.camera = camera;                  // chunk-level frustum culling for the render bundles
-  /* Always: the pool's intensities follow clock.nightFactor (zero by day).
-     Cost by day is the 11 zero-intensity lights in the forward light loop --
-     the price of one shader variant and no recompile hitch at dusk. */
+  /* Before the LightPool: it decides at construction whether to allocate hero
+     lights at all (lighting.js reads world.heroLightsByChunk), and Landmarks is
+     what fills that map; it also puts world.extraSolids in place before the
+     first chunk builds its box list. */
+  landmarks = RACE_MODE ? null : new Landmarks(scene, district, world);   // Phase 6 skyline + gun shop, supermarket, street set (world/landmarks.js); none on the race run
+  /* Always, not `if (!DAY)`. The pool was built only for a ?night boot, so a
+     normal session -- which boots at 16.85 and runs a full day in 24 real
+     minutes -- reached midnight with no pool: 2 lights alive, parked at the
+     origin, against 2,077 registered lamp heads. A PointLight cannot be added
+     to a live WebGPU scene without recompiling every pipeline (~2 s stall), so
+     the slots have to exist from boot; clock.js fades them with nightFactor,
+     the same curve that already staggers lamps, signs and windows. */
   {
     const n = +(new URLSearchParams(location.search).get('lights') ?? (isLite ? 4 : 6));
-    lightPool = new LightPool(scene, world, { count: n });   // .night is set by clock.update before the pool's first update
+    lightPool = new LightPool(scene, world, { count: n });
   }
+  farTraffic = RACE_MODE ? null : new FarTraffic(scene, district, { count: Q.farTraffic });   // preset: 60 / 120 / 220 (was isLite ? 120 : 220); buffers sized here, the ladder only lowers .n   // GTA's distant headlights: phantom cars on the far road graph, one draw, count 0 by day
   debris.catalogue = catalogue;
   world.onBreakables = (k, tracked, solids, pools) => debris.registerChunk(k, tracked, solids, pools);
   world.onBreakablesGone = (k) => debris.dropChunk(k);
@@ -1102,23 +1401,42 @@ Promise.all([districtReady, catalogueReady, new URLSearchParams(location.search)
     console.info(`car materials dressed: ${n}`);
   }
   world.onChunkBuilt = (ms) => stats.reportChunkBuild(ms);
-  world.onChunkDone = (ms, worstStep) => stats.reportChunkTotal(ms, worstStep);
-  water = buildWater(scene, district, true);
-  buildSurrounds(scene, district.bounds, true);
-  buildPlaces(scene, district, true);
-  beach = buildBeach(scene, district, true);
-  crowd = new Crowd(scene, district, isLite ? 160 : 320);
-  crowd.onNear = () => chatter?.civilian?.('near');   // a pedestrian you nearly hit shouts (chatter throttles to one per 6 s); set HERE, after the crowd exists
-  people = new People(scene, +(new URLSearchParams(location.search).get('people') ?? (isLite ? 8 : 16)));
-  heli = new Helicopter(scene, true);
-  heli.district = district;
-  heli.nearbyBuildings = (x, z) => (world.nearbyBuildings ? world.nearbyBuildings(x, z) : []);
-  heli.onArrive = () => hud.flash('AIR SUPPORT INBOUND');
+  world.onChunkDone = (ms) => stats.reportChunkTotal(ms);
+  water = buildWater(scene, district, DAY);
+  buildSurrounds(scene, district.bounds, DAY);
+  if (!RACE_MODE) buildPlaces(scene, district, DAY);
+  const params = new URLSearchParams(location.search);
+  /* The beach is ON (2026-09-14). It was behind `?beach`, so Halstead Sands --
+     promenade, palm row, 120 m pier, lifeguard towers, a crowd -- existed in the
+     build and in the photo presets but not in anybody's session; the `beach`
+     preset framed empty water. Measured cost is +17 draws (docs/CLAUDE.md), which
+     against a ~2,000 draw frame is noise. `?nobeach` turns it off.
+     The CATALOGUE is passed now too: buildBeach has taken one as its fourth
+     argument all along and never received it, so it could not place a single
+     authored asset -- which is why the eight Riviera props had nowhere to go. */
+  if (!params.has('nobeach') && !RACE_MODE) beach = buildBeach(scene, district, DAY, catalogue);
+  /* The river's two banks: wall, coping, plane trees, lamps, benches. Until
+     now water.js cut the river out of the ground plate and nothing put an edge
+     on it, so THE EMBANKMENT -- 1,281 m of arterial following the river, and
+     the spine of the scenic route -- ran through open field beside a blue
+     strip. `?noriver` turns it off. */
+  if (!params.has('noriver') && !RACE_MODE) buildRiverside(scene, district, DAY, catalogue);
+  if (params.has('crowd') && !RACE_MODE) {
+    crowd = new Crowd(scene, district, Q.crowd);   // preset: 80 / 160 / 320 (was isLite ? 160 : 320); the fleet is sized at construction, so boot-time
+    crowd.onNear = () => chatter?.civilian?.('near');
+    people = new People(scene, +(params.get('people') ?? (isLite ? 8 : 16)));
+  }
+  heli = RACE_MODE ? null : new Helicopter(scene, DAY);
+  if (heli) {
+    heli.district = district;
+    heli.nearbyBuildings = (x, z) => (world.nearbyBuildings ? world.nearbyBuildings(x, z) : []);
+    heli.onArrive = () => hud.flash('AIR SUPPORT INBOUND');
+  }
   mission = new Mission(scene, district);
   mission.useHud(hud);
   mission.useAudio(audio);
   jobs = new Jobs(mission, traffic, hud, district, audio, navigation);
-  garage = new Garage(jobs, assets, hero, damageModel, hud);
+  garage = new Garage(jobs, assets, hero, damageModel, hud, car);
   garage.heat = () => traffic.wanted;
   garage.onRepair = () => {   // Pay 'n' Spray: a respray below three stars loses the police; at three or more they know the driver, not the car
     if (traffic.wanted > 0 && traffic.wanted < 3) { traffic.standDown(); chatter?.radio?.('Suspect vehicle lost. Cancel the description.'); return true; }
@@ -1126,25 +1444,25 @@ Promise.all([districtReady, catalogueReady, new URLSearchParams(location.search)
   };
   traffic.hud = hud;
   roadblock = new Roadblock(scene, assets, district, world, traffic, hero);
-  metro = new Metro(scene, district, assets);   // two elevated lines and their trains (world/metro.js)
-  landmarks = new Landmarks(scene, district);   // gun shop, supermarket, street set on their lots (world/landmarks.js)
+  if (params.has('metro')) metro = new Metro(scene, district, assets);
   garage.restore();
   story = new StoryManager(mission, traffic, hud, garage, audio, navigation);
   dispatch = new DispatchService(scene, world, garage, traffic, debris, hud, audio, navigation);
   window._dispatch = dispatch;
-  if (new URLSearchParams(location.search).has('debug')) window.addCash = (amount = 50000) => {
+  if (params.has('debug')) window.addCash = (amount = 50000) => {
     garage.addCash(amount, 'TEST FUNDS');
   };
-  reputation = new ReputationSystem(garage, audio, hud, scene);
+  if (params.has('rpg')) {
+    reputation = new ReputationSystem(garage, audio, hud, scene);
+    intelScanner = new IntelScanner(audio, hud);
+  }
   window._reputation = reputation;
-  intelScanner = new IntelScanner(audio, hud);
   window._intel = intelScanner;
   phone = new Phone(story, garage, hero, traffic, dispatch, car, reputation, intelScanner, navigation);
   vehicleVFX = new VehicleVFX(scene, hero);
   window.vehicleVFX = vehicleVFX;
-  puddles = new PuddleSystem(scene, district);
+  if (params.has('puddles')) puddles = new PuddleSystem(scene, district);
 
-  const params = new URLSearchParams(location.search);
   if (!params.has('nobillboards')) billboards = new BillboardSystem(scene, district, CITY_CENTRE);
   if (!params.has('nostreetlife')) streetLife = new StreetLife(scene, district);
   if (!params.has('noairspace')) airspace = new Airspace(scene);
@@ -1152,10 +1470,8 @@ Promise.all([districtReady, catalogueReady, new URLSearchParams(location.search)
      rather than on join, because the room can be joined before the district
      has loaded and there would be no mission to hang it on. */
   mission.addListener('finish', (t) => { if (net) net.race({ k: 'stop', t }); });
-  /* The brief's 'simple timed route': the seeded checkpoint course used to be
-     reachable only inside a multiplayer room (G is the jobs key alone). The
-     phone's SERVICES tab offers it solo; best time persists in hb.best. */
-  window._mission = mission;   // the phone's run card reads .active
+  /* The seeded checkpoint course, solo from the phone (CHECKPOINT RUN card). */
+  window._mission = mission;
   window.__startRun = () => {
     if (mission.active) { mission.stop('RUN ABANDONED'); return false; }
     if (jobs?.job) jobs.toggle(car);   // one route marker at a time
@@ -1166,11 +1482,24 @@ Promise.all([districtReady, catalogueReady, new URLSearchParams(location.search)
   traffic.onBust = onBust;
   window.district = district;
   districtRef = district;
+
+  const racewayGroup = buildRaceTrack(scene, district);
+  raceCircuit = new RaceCircuit(scene, hud, traffic, audio, garage);
+  raceCircuit.setTrackGroup(racewayGroup);
+  hud.useCircuit(raceCircuit);
+  window.raceCircuit = raceCircuit;
+  // Race run: the car goes straight to the grid and the Tokyo spawn below is
+  // skipped -- it used to run AFTER this and drag the car back to (2354, 1408)
+  // at the far side of the map, where nothing in the raceway-only ring is built.
+  if (RACE_MODE) {
+    startCircuitRace();
+    chase.snap(car);
+  } else {
   // Put the car in Little Tokyo on the northbound lane of Tokyo Street (Road 168)
   // Perfectly aligned with the road heading north directly under the illuminated Grand Torii Arch
-  const spawnX = 2351.5;
-  const spawnZ = 1356.0;
-  const spawnYaw = -Math.PI / 2 - 0.03;
+  const spawnX = 2354.0;
+  const spawnZ = 1408.0;
+  const spawnYaw = -Math.PI / 2;
   resetCar(car);
   car.x = spawnX;
   car.z = spawnZ;
@@ -1185,6 +1514,7 @@ Promise.all([districtReady, catalogueReady, new URLSearchParams(location.search)
   }
   spawnSnap = true;
   chase.snap(car);
+  }
   {
     // Place person safely on the pedestrian sidewalk
     person.place(spawnX - 7.5, spawnZ, spawnYaw + Math.PI / 2);
@@ -1192,7 +1522,7 @@ Promise.all([districtReady, catalogueReady, new URLSearchParams(location.search)
   // now the car is on its spawn node, lay the film route from where it stands
   ROUTE = buildRoute(null, car.x, car.z);
   console.info(`Halstead Bay loaded — spawn at Little Tokyo (${car.x}, ${car.z})`);
-  setTimeout(() => { if (window.hud?.flash) window.hud.flash('🏮 LITTLE TOKYO · 新宿通り'); }, 600);
+  /* spawn is the city. No toast. */
 }).catch((e) => { districtFailed = true; console.warn('district not loaded, staying on the grid:', e.message); });
 
 // ---- the car ----
@@ -1200,14 +1530,25 @@ const car = createCarState();
 car.type = 'car';
 /* Headlights are active by default from spawn (crisp modern LED low beam).
    H toggles High-Beam Rally Projectors. */
-car.headlights = true;
+car.headlights = !DAY;
 car.headlightMode = 'low';
-const hero = buildCar(assets.carMats, 0xb3161c);   // the hero is the red sports car of the brief; garage resprays still override
+car.lightsUser = false;
+const hero = buildCar(assets.carMats, 0x5b636d);
 scene.add(hero);
 // the damage model marks the real bodywork, so it needs the real meshes
-// the hero's visible body is the kit's sports sedan over the lofted physics hull
-await loadHeroSkin(assets, hero).catch((e) => console.warn('hero skin:', e.message));
+// the hero's visible body is the high-poly Corvette C8 ZR1 PBR model
+/* The deep blue Camaro is the default car (2026-09-15). Identified by its
+   material rather than by eye: of the eight shipped Sketchfab bodies, only
+   camaro-350 has a saturated BODY material -- `CarPaint` at #001b8a, a deep
+   navy. Every other car's most-saturated material is lights, glass or brake
+   calipers (corvette-c6r #ff0000 is `glass_lights`, porsche-gt3r #ff0000 is
+   `EXT_CALIPER`), so none of them is actually a blue car.
+   A saved choice still wins: if you have ever picked a body in the garage,
+   localStorage 'hb.body' holds it and this default never applies. */
+const initialBody = localStorage.getItem('hb.body') || DEFAULT_BODY;
+await loadHeroSkin(assets, hero, initialBody).catch((e) => console.warn('hero skin:', e.message));
 damageModel.attach(hero);
+car.profile = getVehicleProfile(initialBody);
 const carVehicle = new CarVehicle(car, stepVehicle, hero);
 activeVehicle = carVehicle;
 window._activeVehicle = activeVehicle;
@@ -1248,8 +1589,8 @@ const headlightDecalTex = (() => {
   ctx.ellipse(256, 270, 85, 140, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  const tex = toTex(canvas, true);   // colour map: sRGB, anisotropy from the renderer
-  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;   // a decal, not a tile
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 })();
 
@@ -1265,8 +1606,7 @@ const lensGlowTex = (() => {
   grad.addColorStop(1, 'rgba(120, 180, 255, 0)');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 128, 128);
-  const tex = toTex(canvas, true);   // a colour map (it was defaulting to NoColorSpace: the glow read linear-dim)
-  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  const tex = new THREE.CanvasTexture(canvas);
   return tex;
 })();
 
@@ -1284,18 +1624,15 @@ for (const s of [-1, 1]) {
   hero.add(spot, spot.target);
   headlightBeams.push(spot);
 
-  /* Front projector lens glare sprite. glow(), not additive(): additive() only
-     guards PointsMaterial (a no-op here), and glow routes the sprite into the
-     emissive target so the lens BLOOMS like the other flashes (never the
-     zero-normal mrt on a quad -- it draws black, CLAUDE.md glare notes). */
-  const spriteMat = glow(new THREE.SpriteMaterial({
+  // Front projector lens glare sprite
+  const spriteMat = additive(new THREE.SpriteMaterial({
     map: lensGlowTex,
     color: 0xffffff,
     transparent: true,
     opacity: 0.95,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
-  }), 0.8);
+  }));
   const sprite = new THREE.Sprite(spriteMat);
   sprite.scale.set(0.9, 0.9, 1);
   sprite.position.set(NOSE_X - 0.05, 0.74, s * 0.55);
@@ -1328,26 +1665,32 @@ beamPool.position.set(NOSE_X + 17, 0.05, 0);
 beamPool.renderOrder = 2;
 hero.add(beamPool);
 
-const traffic = new Traffic(scene, assets, START_NIGHT ? 40 : 36, 0);   // Phase 5: denser with ?night; the clock lights the headlamps (traffic.setNight)
+// ?cars=N overrides the fleet size (0 for a clear road: recording a lap, or a harness run that must not get T-boned)
+/* NaN when ?cars= is absent. It used to default to (DAY ? 36 : 40) here, which made the
+   Number.isFinite(CARS) fallback on the next line dead code -- the preset count could
+   never be reached. ?cars=N still overrides everything. */
+const CARS = +(new URLSearchParams(location.search).get('cars') ?? NaN);
+const traffic = new Traffic(scene, assets, RACE_MODE ? 0 : (Number.isFinite(CARS) ? CARS : (DAY ? Q.traffic : (Q.trafficNight ?? Q.traffic))), !DAY);   // race mode: rivals only, no civilians; preset 14 / 26 / 36 (40 at night on high, the old DAY ? 36 : 40)
+officerPool(scene);   // start the rig fetch at boot: acquire() returns null while it is in flight, and the first squad of a session would otherwise be the old boxes   // Phase 5: denser, and lit at night
 const chase = new ChaseCamera(camera);
 const weather = createWeather(scene, { hemi, dome: () => dome, onStrike: (delay) => audio.thunder?.(delay) });   // always built: rain comes in night spells (rainSpell) on the day cycle, and all night with ?night
 const hud = new Hud();
 let navigation = null;
-const clock = new GameClock({ startHour: +(new URLSearchParams(location.search).get('time') ?? (START_NIGHT ? 19.5 : START_DUSK ? 18.4 : 12.0)) });
-traffic.setNight(clock.nightFactor);
+const clock = new GameClock({ startHour: +(new URLSearchParams(location.search).get('time') ?? (DAY ? 16.85 : 19.5)) });
 hud.useClock(clock);
 const stats = new Stats();
 window.stats = stats;
 window.renderer = renderer;
 window.scene = scene;
 photo = new Photo(camera, stats);
+  photo.useClock?.(clock);   // a district preset sets the hour that flatters it (photo.js PRESETS)
 window.photo = photo;
 
 const audio = createAudio();
-if (muted) audio.mute(true);   // restored from hb.muted: the flag applies when the context boots
+if (muted) audio.mute(true);   // restored from hb.muted
 radio = new Radio(audio, hud);
-window.hud = hud;   // phone.js cards flash through window.hud and set GPS routes through __setWaypoint
-window.__setWaypoint = (x, z, label) => { navigation?.setWaypoint(x, z); if (label) hud.flash(`GPS · ${label}`); };
+window.hud = hud;   // phone.js cards flash through window.hud and route GPS through __setWaypoint
+window.__setWaypoint = (x, z, label) => { navigation?.setWaypoint?.(x, z); if (label) hud.flash(`GPS · ${label}`); };
 
 chat = new Chat();
 hud.useChat(chat);
@@ -1373,7 +1716,7 @@ window.__buyWeapon = (kind, price) => {
   hud.flash(`${ARSENAL[kind].name} · ${weapon.ammo} / ${weapon.reserveNow}`);
   return true;
 };
-window.__warp = (x, z, yaw = 0) => {
+const warpTo = (x, z, yaw = 0) => {
   resetCar(car);
   car.x = x;
   car.z = z;
@@ -1387,10 +1730,30 @@ window.__warp = (x, z, yaw = 0) => {
   chase.snap(car);
   spawnSnap = true;
 };
+window.__warp = warpTo;
+const video = new VideoMode({ car, chase, hero, hud, clock, warpTo });
+chase.hero = hero;   // the cockpit rig reads the worn body's driver's-eye from hero.userData.cockpit
 
 commands = new CommandEngine({
   car,
   traffic,
+  renderer,
+  stats,
+  get world() { return world; },
+  get isLite() { return isLite; },
+  gpuInfo,
+  quality,
+  setQuality: (mode) => {
+    // low | medium | high are presets; lite | full are the GPU-tier override gpu.js reads from the same key
+    try {
+      if (mode === 'default' || mode === 'auto') {
+        localStorage.removeItem(QUALITY_KEY);
+      } else {
+        localStorage.setItem(QUALITY_KEY, mode);
+      }
+    } catch (_) {}
+    location.reload();
+  },
   get garage() { return garage; },
   clock,
   damageModel,
@@ -1411,6 +1774,8 @@ commands = new CommandEngine({
     clock.hour = h;
     hud.flash(`TIME · ${clock.formattedTime}`);
   },
+  mile: () => startHalsteadMile(),
+  startTrackRace: () => startCircuitRace(),
   teleport: (x, z, yaw = 0) => {
     car.x = x;
     car.z = z;
@@ -1435,17 +1800,38 @@ chat.onSend((line) => {
   if (net) net.sendChat(line);
 });
 let started = false;
+/* Title-card quality toggle (index.html #hud .quality). Cycles Auto -> Low ->
+   Medium -> High and persists to hb.quality; every knob is boot-time (the
+   renderer, lights, post stack and ring are already built by the time the card
+   is clickable), so a change that differs from what booted reloads on ENTER
+   and the card says so. stopPropagation: the overlay click IS the start button. */
+const qualityLine = document.querySelector('#hud .quality');
+let qualityChosen = (() => { try { const s = localStorage.getItem(QUALITY_KEY); return QUALITY_NAMES.includes(s) ? s : 'auto'; } catch { return 'auto'; } })();
+// ?quality= in the URL outranks the toggle (dev flag), so picking AUTO under it is not pending: it would reload forever
+const qualityPending = () => (qualityChosen === 'auto' ? quality.source === 'saved' : qualityChosen !== quality.name);
+const drawQualityLine = () => {
+  if (!qualityLine) return;
+  qualityLine.querySelector('b').textContent = qualityChosen.toUpperCase() + (qualityChosen === 'auto' ? ` (${quality.name})` : '');
+  qualityLine.querySelector('small').textContent = qualityPending() ? 'applies on ENTER (reloads)' : 'click to change';
+};
+qualityLine?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  qualityChosen = QUALITY_NAMES[(QUALITY_NAMES.indexOf(qualityChosen) + 1) % QUALITY_NAMES.length];
+  try { if (qualityChosen === 'auto') localStorage.removeItem(QUALITY_KEY); else localStorage.setItem(QUALITY_KEY, qualityChosen); } catch { /* private mode */ }
+  drawQualityLine();
+});
+drawQualityLine();
+
 const start = () => {
+  if (!started && qualityPending()) { location.reload(); return; }
   if (!started) { started = true; hud.dismiss(); }
   audio.resume();
 };
 hud.overlay.addEventListener('click', start);
-// the ALL CONTROLS expander on the title card must not count as the first click
-for (const ev of ['click', 'pointerdown']) hud.overlay.querySelector('details')?.addEventListener(ev, (e) => e.stopPropagation());
-hud.overlay.addEventListener('pointerdown', start);   // a tap fires click late or not at all when the finger moves
+if (TOUCH) hud.overlay.addEventListener('pointerdown', start);   // a tap fires click late or not at all when the finger moves
 canvas.addEventListener('click', start);
 if (boot) boot.addEventListener('click', start);
-addEventListener('keydown', start, { once: true });   // registered before createInput, so it runs first; the input handler also calls start() and the radio waits for ctx.resume()
+addEventListener('keydown', start, { once: true });
 
 // ---- cinematic capture ----
 let ROUTE = buildRoute([
@@ -1522,7 +1908,7 @@ const featureTour = new FeatureTour({
       }, (x, z) => Math.max(world.district?.elevationAt?.(x, z) ?? 0, groundHeightAt(x, z)));
       if (hero) hero.visible = true;
     } else if (!onFoot.active) {
-      onFoot.exit(car, (x, z) => Math.max(world.district?.elevationAt?.(x, z) ?? 0, groundHeightAt(x, z)));
+      exitCarOnFoot();
       if (hero) hero.visible = true;
       car.throttle = 0; car.brake = 1; car.hand = 1;
     }
@@ -1607,33 +1993,53 @@ applyPerk(NAMED_CHARACTERS[0]);
 
 const onInputAction = (action) => {
   idleT = 0;
-  start();   // any first key boots the audio before its action runs
   // C: cycle the chase camera; on foot it is the crouch toggle. (The handler was lost in a headlight edit; the key still sent 'camera'.)
-  if (action === 'camera') { if (onFoot.active) { crouch = !crouch; onFoot.crouch = crouch; hud.flash(crouch ? 'CROUCH' : 'STAND'); } else chase.cycle(); }
+  if (action === 'camera') {
+    if (onFoot.active) { crouch = !crouch; onFoot.crouch = crouch; hud.flash(crouch ? 'CROUCH' : 'STAND'); }
+    else {
+      chase.cycle();
+      /* The cockpit rig puts the eye where the modelled driver's head is, so he
+         has to go -- otherwise you are looking at the inside of your own skull.
+         `visible = false` drops him from the shadow pass too, which is fine:
+         from inside the cabin nobody can see the driver-shaped shadow he was
+         casting on his own floor. */
+      const d = hero?.userData?.driver;
+      if (d) d.visible = !chase.interior;
+      if (chase.interior) hud.flash('COCKPIT');
+    }
+  }
   if (action === 'lights') {
-    if (!car.headlights || car.headlightMode === 'low') {
-      car.headlights = true;
-      car.headlightMode = 'high';
-      hud.flash('HEADLIGHTS · HIGH BEAM 🔆');
-    } else {
+    car.lightsUser = true;
+    if (!car.headlights) {
       car.headlights = true;
       car.headlightMode = 'low';
-      hud.flash('HEADLIGHTS · LOW BEAM 💡');
+      hud.flash('HEADLIGHTS · ON');
+    } else if (car.headlightMode === 'low') {
+      car.headlightMode = 'high';
+      hud.flash('HEADLIGHTS · HIGH');
+    } else {
+      car.headlights = false;
+      car.headlightMode = 'low';
+      hud.flash('HEADLIGHTS · OFF');
     }
   }
   if (action === 'photo') photo.toggle();
-  if (action === 'tour' && DEBUG) {   // O and T are dev tools: ?debug only
+  // \ : cinematic HUD -- speed and objective only (style.css body.cinematic)
+  if (action === 'cinematic' && started) hud.flash(hud.setCinematic() ? 'CINEMATIC HUD' : 'HUD RESTORED');
+  if (action === 'tour' && DEBUG_KEYS) {   // O and T are dev tools: ?debug only
     if (featureTour.active) featureTour.stop();
     else window.startFeatureTour();
   }
   if (action === 'phone') phone?.toggle();
-  if (action === 'intel' && !photo.on) intelScanner?.toggle();   // Z is photo mode's 'up'
+  if (action === 'intel') intelScanner?.toggle();
   if (action === 'garage') garage?.browse();
   if (action === 'buy') garage?.act();
   if (action === 'map') hud.toggleMap();
   if (action === 'radio') radio?.cycle();
   if (action === 'reset') respawnCar();
-  if (action === 'time' && DEBUG) { clock.hour = (clock.hour + 3) % 24; hud.flash(`TIME · ${clock.formattedTime}`); }
+  if (action === 'mile') startHalsteadMile();
+  if (action === 'track') startCircuitRace();
+  if (action === 'time' && DEBUG_KEYS) { clock.hour = (clock.hour + 3) % 24; hud.flash(`TIME · ${clock.formattedTime}`); }
   if (action === 'horn' && !onFoot.active) {
     // your horn: heard, and answered -- pedestrians ahead break for the kerb, the car in front picks up for three seconds
     audio.horn?.(0, 0);
@@ -1669,7 +2075,8 @@ const onInputAction = (action) => {
   if (action === 'use') useVehicle();
   if (action === 'room') joinRoom(roomFromUrl());
   if (action === 'fire') pullTrigger();
-  if (action === 'run' && mission) {
+  if (action === 'run' && isRacewayArea(car.x, car.z)) { startCircuitRace(); return; }
+  if (action === 'run' && mission && !photo.on) {   // photo mode uses G to cycle grade filters (photo.js); the run toggle stays out of it
     if (!started) { started = true; hud.dismiss(); }
     if (net) {                                   // a room races; alone you work
       if (mission.active) mission.stop('RUN ABANDONED');
@@ -1684,26 +2091,24 @@ const onInputAction = (action) => {
     chat?.close();
   }
   if (action === 'film') { if (film) stopFilm(); else { started = true; hud.dismiss(); startFilm(); } }
+  // V: cinematic angles for recording while Arun drives. Not on foot, not from the helicopter/tank (they own customRig).
+  if (action === 'video') { if (!onFoot.active && (!activeVehicle || activeVehicle === carVehicle)) video.cycle(); }
 };
 const input = createInput(onInputAction, { chatAllowed: () => !photo.on });
-input.dispatch = onInputAction;
-
-/* Touch controls (game/touch.js): the phone's keyboard and mouse. Built only
-   on a touch screen; read each frame and merged over keyboard+pad exactly the
-   way the pad merges over the keyboard. Look deltas go straight to the same
-   look() the pointer-lock mousemove feeds. */
-const touch = TOUCH ? createTouch((action) => input.dispatch(action), {
+/* Touch controls (game/touch.js): read each frame and merged over keyboard+pad
+   the way the pad merges over the keyboard; look drags feed the same look()
+   the pointer-lock mouse does. */
+const touch = TOUCH ? createTouch(onInputAction, {
   onLook: (dx, dy) => { idleT = 0; if (photo.on) photo.look(dx, dy); else if (onFoot.active) onFoot.look(dx, dy); else chase.look(dx, dy); },
   onFire: (down) => { firing = down; },
   onAim: (on) => { aiming = on; },
   onInput: () => { idleT = 0; start(); },
 }) : null;
-window.__touch = touch;
 
 /* Mouse look. Pointer lock so the view keeps turning past the screen edge;
    click to grab, Escape to let go, and the rig recentres when you drive on. */
 canvas.addEventListener('click', () => {
-  if (TOUCH) return;   // touch looks by dragging the right half of the screen (game/touch.js); a phone has no pointer to lock
+  if (TOUCH) return;   // touch looks by dragging (game/touch.js); a phone has no pointer to lock
   if (document.pointerLockElement !== canvas) canvas.requestPointerLock();
 });
 addEventListener('mousedown', (e) => {
@@ -1729,17 +2134,15 @@ addEventListener('mousemove', (e) => {
   else chase.look(e.movementX, e.movementY);
 });
 
-const basePR = Math.min(window.devicePixelRatio || 1, 1.0);   // renderer.js runs at 1.0; never render above it
-const governor = new URLSearchParams(location.search).has('fixedres') ? null : createGovernor({ min: 0.5 });
-const onResize = () => {
+addEventListener('orientationchange', () => setTimeout(() => dispatchEvent(new Event('resize')), 60));   // iOS reports the old size on the event itself
+window.visualViewport?.addEventListener('resize', () => dispatchEvent(new Event('resize')));
+addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
+  renderer.setPixelRatio(renderScale(innerWidth, innerHeight, isLite, Q.pixelBudget));
   renderer.setSize(innerWidth, innerHeight, false);
   grade.resize(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio());
-};
-addEventListener('resize', onResize);
-addEventListener('orientationchange', () => setTimeout(onResize, 60));   // iOS reports the old size on the event itself
-window.visualViewport?.addEventListener('resize', onResize);   // the URL bar sliding away changes the viewport without a window resize
+});
 
 // the physics step asks for solid things near the car each tick
 /* Pedestrians are deliberately NOT in here. Making a person a solid obstacle
@@ -1749,7 +2152,14 @@ car.obstacles = getObstacles;
 car.buildings = (x, z) => (world.nearbyBuildings ? world.nearbyBuildings(x, z) : null);
 
 resetCar(car);
-city.update(car.x, car.z);
+/* No top-level city.update() here any more (2026-09-22). It built the retired
+   130 m legacy grid -- 25 cells at the ORIGIN, 683 direct draws, 409k tris,
+   331k of them shadow casters, frustumCulled=false -- and because this module
+   has top-level awaits above, it ran AFTER the district loader had already
+   cleared those cells (main.js ~1262), so nothing ever removed them again.
+   Measured live: 49% of free roam's direct draws and 73% of race mode's, for
+   a grid 2.7 km from the car. The frame loop's world.update() streams the
+   legacy grid on its own if the district ever fails to load. */
 traffic.cars.forEach((t) => traffic.spawn(t, car, true));
 
 // THREE.Clock is deprecated in 0.185 and this needs two lines, not a class
@@ -1757,49 +2167,19 @@ let lastTime = performance.now();
 let worldTime = 0;      // shared by the signals and the cars that obey them
 const STEP = 1 / 120;
 let physicsAccumulator = 0;
-/* Render interpolation (vehicle/interp.js). `posePrev` is the car BEFORE the
-   last physics step, `poseView` the pose the frame draws; `viewCar` is a
-   prototype-chained view of `car` whose own x/y/z/yaw/heave/roll/pitch are
-   the interpolated ones, so the chase camera can read speed/steer/impact/
-   yawRate/customRig straight through to the real car. Read-only: nothing
-   that writes car state (physics, collision, traffic AI) ever sees it. */
-const posePrev = {}, poseView = {};
-let poseHas = false;
-const viewCar = Object.create(car);
 let frames = 0, elapsed = 0;
-
-/* A persistent corner badge while the frame loop is failing. hud.flash() lasts
-   3.2 s; a throw before world.update() freezes streaming while the last good
-   state keeps rendering, and after those 3.2 s there was no sign anything was
-   wrong. Plain DOM so it survives whatever broke the HUD. */
-const frameErrors = new Map();   // message -> count, so a per-frame throw is logged once, not 60 times a second
-let frameBadge = null;
-function showFrameBadge(msg) {
-  if (!frameBadge) {
-    frameBadge = document.createElement('div');
-    frameBadge.id = 'framebadge';
-    frameBadge.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99;padding:4px 8px;font:11px/1.3 monospace;color:#fff;background:rgba(160,20,20,.85);border-radius:3px;max-width:60vw;pointer-events:none;white-space:pre-wrap';
-    document.body.appendChild(frameBadge);
-  }
-  const distinct = frameErrors.size, total = [...frameErrors.values()].reduce((a, b) => a + b, 0);
-  frameBadge.textContent = `FRAME ERROR (${total}x, ${distinct} distinct) -- game continues\n${msg.slice(0, 100)}\nsee console`;
-}
 
 function frame() {
   requestAnimationFrame(frame);
   try { frameBody(); } catch (e) {
-    const msg = String(e && e.message || e);
-    const seen = frameErrors.get(msg) || 0;
-    frameErrors.set(msg, seen + 1);
-    if (!seen) console.error('frame error (game continues):', e);   // each distinct message once; the badge carries the count
     if (!frame.failed) {
       frame.failed = true;
+      console.error('frame error (game continues):', e);
       // a stuck loading screen used to be the only symptom: say what broke, then let the game in
-      if (bootMsg) bootMsg.textContent = 'frame error: ' + msg.slice(0, 120);
+      if (bootMsg) bootMsg.textContent = 'frame error: ' + String(e && e.message || e).slice(0, 120);
       setTimeout(() => { if (boot) { boot.remove(); boot = null; } }, 2500);
-      try { hud?.flash?.('FRAME ERROR · ' + msg.slice(0, 60)); } catch { /* the HUD may be what broke */ }
+      try { hud?.flash?.('FRAME ERROR · ' + String(e && e.message || e).slice(0, 60)); } catch { /* the HUD may be what broke */ }
     }
-    try { showFrameBadge(msg); } catch { /* no DOM, no badge */ }
     /* The render sits at the END of frameBody, so a throw anywhere before it
        used to mean no render at all: a black screen every frame while the
        counters kept counting. Draw the last good state anyway; the game is
@@ -1809,9 +2189,11 @@ function frame() {
 }
 
 function frameBody() {
-  performance.mark('frame-start');
+  if (PERF_MARKS) performance.clearMarks();
+  mark('frame-start');
   const now = performance.now();
-  let dt = Math.min((now - lastTime) / 1000, 0.05);
+  const rawDt = (now - lastTime) / 1000;
+  let dt = Math.min(rawDt, 0.05);
   lastTime = now;
   if (wastedAnim === 1) dt *= 0.35;   // wasted: the fall plays at a third speed, GTA's beat
 
@@ -1824,7 +2206,7 @@ function frameBody() {
   c = input.read();
   if (touch) {
     const t = touch.read();
-    if (t.active) c = mergeDrive(c, t);   // a finger down wins over keys, like a live pad does
+    if (t.active) c = mergeDrive(c, t);   // a finger down wins over keys, like a live pad
     touch.setMode(onFoot.active ? 'foot' : 'drive');
     touch.setWeapon(held !== 'fists');
   }
@@ -1835,7 +2217,7 @@ function frameBody() {
   idleCam = false;   // the car and on-foot branches set it; anything else (heli, tank, film) is never idle-cam
   if (document.pointerLockElement !== canvas) idleT = Math.min(idleT, 0);   // no pointer lock means you are not playing: never orbit, never look 'locked'
   if (garage) {
-    garage.setNos(c.nos && activeVehicle?.type !== 'helicopter');   // Shift is the helicopter's descend (flight.js); no NOS in the air
+    garage.setNos(c.nos);
     garage.update(dt, car);
   }
   if (vehicleVFX) vehicleVFX.update(dt, car, garage);
@@ -1881,7 +2263,26 @@ function frameBody() {
   car.throttle += (throttleIn - car.throttle) * Math.min(1, dt * lag);
   car.brake += (brakeIn - car.brake) * Math.min(1, dt * (c.analogue ? 20 : 15));
   car.hand += ((started ? c.handbrake : 0) - car.hand) * Math.min(1, dt * 18);
-  car.steerTarget = c.steer;
+  /* Keyboard steering is BINARY: input.js hands over steerTarget = +-1 the
+     instant a key goes down (input.js:181), so nothing about a key press is
+     progressive on its own -- the dynamics' first-order lag was the whole
+     ramp. When that lag was sped up 2.3x, one tap became full lock. Measured
+     at 66 km/h, steer angle after a held key (rad):
+
+              @0.1s  @0.2s  @0.5s
+       before  0.140  0.219  0.326
+       shipped 0.301  0.393  0.450   <- "goes to the left extreme or right"
+       now     0.057  0.142  0.319
+
+     A stick is already progressive, so an analogue pad passes straight
+     through; only the digital path is ramped, faster when parking than at
+     100 km/h, and 2.2x as fast coming back to centre as going out. */
+  if (c.analogue) car.steerTarget = c.steer;
+  else {
+    const rate = 7.0 - 3.6 * Math.min(1, Math.hypot(car.vx, car.vz) / 38);
+    const back = c.steer === 0 || Math.sign(c.steer) !== Math.sign(car.steerTarget);
+    car.steerTarget += (c.steer - car.steerTarget) * Math.min(1, dt * rate * (back ? 2.2 : 1));
+  }
   }
   }
 
@@ -1894,43 +2295,61 @@ function frameBody() {
      it, or the car eats a dead stop on the frame it breaks through. */
   debris.update(car, dt, traffic.cars, traffic.police);
 
-  // fixed-step physics keeps the tyre model stable
-  performance.mark('physics-start');
+  // fixed-step physics keeps the tyre model stable; clamp accumulator to prevent death spirals on dt spikes
+  mark('physics-start');
   const tPhys0 = performance.now();
-  /* dt is already capped at 0.05 above, so the old `if (dt > 0.05)` clamp
-     never ran: a 50 ms stall queued 6 steps, the guard ran 4, and the two
-     left over were run as EXTRA steps over the next frames -- a visible
-     fast-forward after every hitch. Drop what the guard could not run
-     instead; the sim loses 16 ms of time on a stall, which nobody sees. */
+  if (rawDt > 0.05) physicsAccumulator = 0;   // Spike or tab-out: clear backlog to prevent death spiral
   physicsAccumulator += dt;
   let guard = 0;
   if (!activeVehicle || activeVehicle === carVehicle) {
-    while (physicsAccumulator >= STEP && guard++ < 4) {
-      copyPose(posePrev, car); poseHas = true;   // the pose before this step: the frame draws between it and the result
+    /* guard 8, not 4. Four steps of 1/120 is 33.3 ms of simulated time, so at
+       any frame slower than 30 fps the simulation could not keep up with the
+       clock: it fell behind by the difference every frame and the car crawled
+       in slow motion while the world did not -- "frame by frame rather than
+       racing". Eight covers down to 15 fps. The guard is there to stop a
+       death spiral, and stepVehicle costs 1.8 us (measured, 120k steps), so
+       eight of them is 14 us a frame -- the spiral it was guarding against
+       does not exist. */
+    while (physicsAccumulator >= STEP && guard++ < 8) {
       stepVehicle(car, STEP);
       physicsAccumulator -= STEP;
     }
-    /* Drop what the guard could not run so the interpolation alpha below stays
-       in 0..1: a slow frame costs slow motion, never a teleport or a catch-up. */
-    if (physicsAccumulator >= STEP) physicsAccumulator = STEP * 0.999;
+    car.odo = (car.odo || 0) + Math.abs(car.fwdSpeed ?? car.speed ?? 0) * dt;   // trip odometer (metres) for the HUD
   } else {
     physicsAccumulator = 0;
   }
-  // the draw pose: prev -> cur at the accumulator's fraction of a step (0..1)
-  lerpPose(poseHas ? posePrev : car, car, physicsAccumulator / STEP, poseView);
-  viewCar.x = poseView.x; viewCar.y = poseView.y; viewCar.z = poseView.z; viewCar.yaw = poseView.yaw;
-  viewCar.heave = poseView.heave; viewCar.roll = poseView.roll; viewCar.pitch = poseView.pitch;
-  car.odo = (car.odo || 0) + Math.abs(car.fwdSpeed ?? car.speed ?? 0) * dt;   // trip odometer for the HUD (metres)
   const physMs = performance.now() - tPhys0;
-  performance.mark('physics-end');
+  mark('physics-end');
+
+  // Sub-step physics visual interpolation (ensures rock-solid 60Hz/120Hz consistency and eliminates judder)
+  const alpha = Math.min(1, Math.max(0, physicsAccumulator / STEP));
+  const prevX = car.prevX ?? car.x;
+  const prevZ = car.prevZ ?? car.z;
+  const prevYaw = car.prevYaw ?? car.yaw;
+  const renderX = prevX + (car.x - prevX) * alpha;
+  const renderZ = prevZ + (car.z - prevZ) * alpha;
+  let dYaw = (car.yaw - prevYaw) % (Math.PI * 2);
+  if (dYaw > Math.PI) dYaw -= Math.PI * 2;
+  if (dYaw < -Math.PI) dYaw += Math.PI * 2;
+  const renderYaw = prevYaw + dYaw * alpha;
+  const renderRoll = (car.prevRoll ?? car.roll) + (car.roll - (car.prevRoll ?? car.roll)) * alpha;
+  const renderPitch = (car.prevPitch ?? car.pitch) + (car.pitch - (car.prevPitch ?? car.pitch)) * alpha;
+  const renderHeave = (car.prevHeave ?? car.heave) + (car.heave - (car.prevHeave ?? car.heave)) * alpha;
+
+  car.renderX = renderX;
+  car.renderZ = renderZ;
+  car.renderYaw = renderYaw;
+  car.renderRoll = renderRoll;
+  car.renderPitch = renderPitch;
+  car.renderHeave = renderHeave;
 
   // ---- pose ----
   // group carries x/y/z and yaw; the body carries the sprung motion; the wheels ride the road
   if (!activeVehicle || activeVehicle === carVehicle) {
     hero.visible = !onFoot.active;
-    const gy = (world.district?.elevationAt?.(poseView.x, poseView.z) ?? groundHeightAt(poseView.x, poseView.z));
-    hero.position.set(poseView.x, gy, poseView.z);   // the interpolated pose, not the raw step (see viewCar)
-    hero.rotation.set(0, poseView.yaw, 0);
+    const gy = (world.district?.elevationAt?.(renderX, renderZ) ?? groundHeightAt(renderX, renderZ));
+    hero.position.set(renderX, gy, renderZ);
+    hero.rotation.set(0, renderYaw, 0);
   } else {
     hero.visible = false;
   }
@@ -1940,13 +2359,11 @@ function frameBody() {
      height, so the sag has to land on the sprung mass too. */
   let sag = 0;
   for (const w of hero.userData.wheels) sag += (w.flat || 0);
-  body.position.y = poseView.heave - (sag / 4) * WHEEL_R * 0.3;
+  body.position.y = renderHeave - (sag / 4) * WHEEL_R * 0.3;
   // local x is forward and local z is lateral, so roll goes on x and pitch on z
-  body.rotation.set(poseView.roll, 0, poseView.pitch);
+  body.rotation.set(renderRoll, 0, renderPitch);
   // doors ease toward their target; a slam is a fast ease, not a snap
-  // (the list is cached: Object.values allocated an array every frame)
-  if (hero.userData.doorList?.src !== hero.userData.doors) { hero.userData.doorList = Object.values(hero.userData.doors || {}); hero.userData.doorList.src = hero.userData.doors; }
-  for (const d of hero.userData.doorList) {
+  for (const d of Object.values(hero.userData.doors || {})) {
     d.pivot.rotation.y += (d.target - d.pivot.rotation.y) * Math.min(1, dt * d.speed);
   }
   /* Steering ratio ~2.6: a real car turns the wheel about 2.5 times more
@@ -1967,6 +2384,11 @@ function frameBody() {
     0.5 + car.brake * 3.0 + (car.hand > 0.3 ? 1.2 : 0);
   // gear 0 is reverse (the HUD prints it as R)
   if (hero.userData.reverseMat) hero.userData.reverseMat.emissiveIntensity = car.gear === 0 ? 2.4 : 0;
+  if (!car.lightsUser) {
+    const night = clock.hour >= 18.2 || clock.hour < 6.4;
+    car.headlights = night;
+    if (night && car.headlightMode !== 'high') car.headlightMode = 'low';
+  }
   const isHighBeam = car.headlights && car.headlightMode === 'high';
   const headMat = hero.userData.headMat;
   if (headMat) {
@@ -2015,6 +2437,20 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   if (heli && !flying) { heli.update(quarry, traffic, dt); traffic.eyesOn = heli.eyesOn; }
   const playerTarget = onFoot.active ? quarry : currentVehicle;
   if (mission) mission.update(playerTarget, dt);
+  /* Your place in the field, while a race is on. It goes in the mission
+     drawer rather than the district line at the top, which is already saying
+     where you are. Ordinal not raw distance: see traffic.raceStandings. */
+  if (traffic.racePath) {
+    const st = traffic.racePlace?.(car);
+    if (st) {
+      const ord = ['', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'][st.place] ?? `${st.place}th`;
+      hud.setJob(`THE HALSTEAD MILE · ${ord} of ${st.of}`);
+      if (mission && !mission.active) { traffic.endRace(); hud.setJob(''); }
+    }
+  }
+  if (raceCircuit) {
+    raceCircuit.update(dt, car);
+  }
   if (jobs) jobs.update(playerTarget, dt);
   if (story) story.update(playerTarget, dt);
   if (crowd && !onFoot.active && onPavementAtSpeed(car)) crowd.panic(car.x, car.z, 14);
@@ -2038,13 +2474,12 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
       vigilante.t -= dt;
       const v = vigilante.f, near = Math.hypot(v.x - px, v.z - pz) < 16;
       const stopped = v.vhp === 0 || (near && (v.speed || 0) < 1 && v.fleeT > 0);
-      // stoppedBy: your round or your bumper stopped it (damageVehicle), not a traffic jam or the patrol pulling alongside
       if (stopped && near && v.stoppedBy === 'player') { garage?.addCash(400, 'VIGILANTE'); audio.cash?.(); hud.flash('SUSPECT STOPPED · +$400'); vigilante = null; hud.setJob?.(null); }
       else if (vigilante.t <= 0 || !v.live || v.fleeT <= 0 || traffic.wanted >= 1) { vigilante = null; hud.setJob?.(null); }
     }
   }
   // distant gunfire: somewhere across the city, every 35-110 s at night, faint and dull -- the city has other trouble
-  if (clock.hour >= 21 || clock.hour < 5) {
+  if (!DAY || (clock.hour >= 21 || clock.hour < 5)) {
     farShotT -= dt;
     if (farShotT <= 0) { farShotT = 35 + Math.random() * 75; const n = 1 + Math.floor(Math.random() * 3); for (let i = 0; i < n; i++) setTimeout(() => audio.gunshot(0.10 + Math.random() * 0.06, Math.random() < 0.5 ? 'pistol' : 'smg'), i * (120 + Math.random() * 160)); }
   }
@@ -2077,7 +2512,15 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
      ?dusk) -- those are for looking at something in particular. */
   if (!clockRestored) {
     clockRestored = true;
-    try { const q = new URLSearchParams(location.search); const h = localStorage.getItem('hb.clock'); if (h !== null && !q.has('night') && !q.has('dusk') && !q.has('hour')) clock.hour = ((+h) % 24 + 24) % 24; } catch { /* private mode */ }
+    try {
+      const q = new URLSearchParams(location.search);
+      const h = localStorage.getItem('hb.clock');
+      if (h !== null && !q.has('night') && !q.has('dusk') && !q.has('hour') && !q.has('time')) {
+        const val = ((+h) % 24 + 24) % 24;
+        // Upgrade previous flat noon hours (10.5 - 15.5) to golden hour (16.85)
+        clock.hour = (val >= 10.5 && val <= 15.5) ? 16.85 : val;
+      }
+    } catch { /* private mode */ }
   }
   /* Hospitals heal: stand within 6 m of one on foot and health climbs at 15%/s. Free, like GTA's. */
   healTick += dt;
@@ -2168,11 +2611,10 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
         chase.lookPitch -= chase.lookPitch * d;
         if (Math.abs(chase.lookYaw) < 0.01 && Math.abs(chase.lookPitch) < 0.01) chase.recentre();
       }
-      chase.setLookBack(!!c?.lookBack && !flying);   // Q is the helicopter's strafe (flight.js), not look-back
+      chase.setLookBack(!!c?.lookBack);
       if ((targetVehicle.impact || 0) > 6.0) rumble(Math.min(1.0, targetVehicle.impact / 18.0), 120);
       if (spawnSnap) { spawnSnap = false; chase.snap(targetVehicle); }
-      // the chase camera follows the DRAWN pose: the hero and the camera alias the same step fraction, or the car swims in frame
-      targetVehicle.camera ? targetVehicle.camera(chase, dt) : chase.update(targetVehicle === car ? viewCar : targetVehicle, dt);
+      targetVehicle.camera ? targetVehicle.camera(chase, dt) : chase.update(targetVehicle, dt);
       /* Parked and idle for twenty seconds: the camera drifts into a slow orbit
          of the car, GTA's idle cinematic. Any input ends it and the chase
          camera picks up from wherever the orbit left it. */
@@ -2187,10 +2629,10 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   // the HUD fades out with an idle orbit (car or foot) and back in with the first input: one injected rule, a body class
   if (idleCam !== idleCamShown) {
     idleCamShown = idleCam;
-    if (!document.getElementById('idlecam-style')) { const st = document.createElement('style'); st.id = 'idlecam-style'; const ids = ['#hud', '#cluster', '#minimap', '#dials', '#readout', '#wanted', '#crosshair', '#stats', '#gameplay-prompt-bar', '#mission', '#gta-chat', '#ammo', '#arsenal', '#health', '#flight-banner']; st.textContent = `${ids.join(',')}{transition:opacity .6s}${ids.map((i) => '.idlecam ' + i).join(',')}{opacity:0 !important}`; document.head.appendChild(st); }
+    if (!document.getElementById('idlecam-style')) { const st = document.createElement('style'); st.id = 'idlecam-style'; st.textContent = '#hud,#cluster,#minimap,#dials,#readout,#wanted,#crosshair,#stats,#gameplay-prompt-bar{transition:opacity .6s}.idlecam #hud,.idlecam #cluster,.idlecam #minimap,.idlecam #dials,.idlecam #readout,.idlecam #wanted,.idlecam #crosshair,.idlecam #stats,.idlecam #gameplay-prompt-bar{opacity:0 !important}'; document.head.appendChild(st); }
     document.body.classList.toggle('idlecam', idleCam);
   }
-  clock.update(dt, { sun, hemi, scene, grade, renderer, lightPool, traffic, assets, player: currentVehicle, dome, stars });
+  clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: currentVehicle, dome, stars, sunSprite, sunRaySprite });
   // the rain audio follows the weather's breathing, and rain is grip: the physics reads car.wet
   // crossing into a district: the area name, GTA-style, and dispatch tracks you if you are wanted
   distT -= dt;
@@ -2203,7 +2645,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     if (traffic.wanted >= 3 && wantedWas < 3) radio?.news?.(`Police are pursuing an armed suspect${here ? ' through ' + here.charAt(0) + here.slice(1).toLowerCase() : ' across the city'}. Residents are asked to stay indoors.`);
     wantedWas = traffic.wanted;
     if (here && here !== lastDistrict) {
-      if (lastDistrict !== null) { hud.area(here); if (traffic.wanted >= 1) chatter?.radio?.(`Suspect heading into ${here.charAt(0) + here.slice(1).toLowerCase()}. Units in the area respond.`); }
+      if (lastDistrict !== null) { hud.flash(here); if (traffic.wanted >= 1) chatter?.radio?.(`Suspect heading into ${here.charAt(0) + here.slice(1).toLowerCase()}. Units in the area respond.`); }
       lastDistrict = here;
     }
   }
@@ -2231,54 +2673,64 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     }
   }
   // Little Tokyo's windows, neon and kanban come up with the night (tokyo.js emissive attribute)
-  setTokyoNight(clock.nightFactor); setGlareNight(clock.nightFactor);
+  { const hr = clock.hour; const nk = hr >= 20.5 || hr < 5.2 ? 1 : hr >= 18 ? (hr - 18) / 2.5 : hr < 7.2 ? (7.2 - hr) / 2 : 0; setTokyoNight(nk); setGlareNight(nk); setStreakNight(nk); setWindowNight(nk); setSignNight(nk); farTraffic?.update(dt, currentVehicle.x, currentVehicle.z, (world.radius + 0.5) * 256, nk); }
   if (weather) {
     // rain only at night (the clock's thresholds), in spells on the normal cycle, all night with ?night
-    const nightNow = clock.nightFactor >= 1;
-    weather.setEnabled(rainForce ?? (nightNow && (START_NIGHT || rainSpell(now / 1000))));
-    weather.update(camera, currentVehicle, dt); car.wet = weather.amount ?? 1; traffic.wet = car.wet; if (crowd) crowd.rain = car.wet;
+    const nightNow = clock.hour >= 20.5 || clock.hour < 5.2;
+    weather.setEnabled(rainForce ?? (nightNow && (!DAY || rainSpell(now / 1000))));
+    weather.update(camera, currentVehicle, dt); car.wet = weather.amount ?? 1; traffic.wet = car.wet; if (crowd) crowd.rain = car.wet; grade.setWet?.(car.wet);   // ?ssr: wet-street reflections follow the rain
     if (Math.abs((weather.amount ?? 1) - (rainHeard ?? -1)) > 0.05) { rainHeard = weather.amount; audio.setRain(rainHeard); }
-    // the road LOOKS wet: tarmac roughness drops and its reflection rises with the rain (uniforms only, no recompile; bundles carry uniform changes)
-    const tm = assets?.mat?.tarmac; if (tm) { tm.roughness = 0.48 - 0.34 * car.wet; tm.envMapIntensity = 1.1 + 2.6 * car.wet; tm.normalScale.setScalar(0.8 - 0.55 * car.wet); }   // water fills the asphalt's relief: at full wet the bump map fades, so the road mirrors instead of reading as wet cobbles   // the night environment is dark now, so a wet road needs more of it to mirror the neon
-    if (scene.fog) scene.fog.density *= 1 + 0.5 * car.wet;   // rain thickens the air (1.9x washed the night out); multiplies the clock's per-frame value, so it never accumulates
+    // the road LOOKS wet: uniforms only, no recompile. Dry must stay the day
+    // contract (matte, bump 0.28) — writing a half-wet gloss at wet=0 is what
+    // turned the asphalt grain into cobbles at noon.
+    const tm = assets?.mat?.tarmac;
+    if (tm) {
+      const nk = (clock.hour >= 20.5 || clock.hour < 5.2) ? 1 : clock.hour >= 18 ? (clock.hour - 18) / 2.5 : clock.hour < 7.2 ? (7.2 - clock.hour) / 2 : 0;
+      /* Little Tokyo's street is wet after dark whether or not it is raining --
+         the reference still is a wet canyon, and the neon only reaches the road
+         as a reflection. Asked of the district, not of a hand-typed rectangle:
+         `lastDistrict` is already polled twice a second a few lines above, so
+         this costs nothing. Photo mode flies the CAMERA out of the car, so it
+         asks for the camera's own district instead. */
+      const tokyoHere = photo?.on
+        ? districtRef?.districtAt?.(camera.position.x, camera.position.z) === 'LITTLE TOKYO'
+        : lastDistrict === 'LITTLE TOKYO';
+      const look = wetTarmacLook(Math.max(car.wet, nk > 0.65 && tokyoHere ? 0.7 : 0), nk);
+      tm.roughness = look.roughness;
+      tm.envMapIntensity = look.envMapIntensity;
+      tm.normalScale.setScalar(look.normalScale);
+    }
     if (stars && car.wet > 0.05) stars.visible = false;   // no stars through cloud (the clock re-decides every frame)
   }
-  lightPool?.update(dt, currentVehicle.x, currentVehicle.z, traffic);
+  lightPool?.update(dt, photo?.on ? camera.position.x : currentVehicle.x, photo?.on ? camera.position.z : currentVehicle.z, traffic);
+  (streaks ??= new HeadlightStreaks(scene)).update(camera, traffic, car);   // GTA anamorphic streaks on oncoming headlights (world/streaks.js)
   reputation?.update(dt, playerTarget.x, playerTarget.z, traffic, car, damageModel);
   intelScanner?.update(dt, camera, playerTarget, traffic, reputation?.safehouses);
-  grade.setDrops((weather?.amount ?? 0) * (chase.mode >= 2 ? 1.2 : 0.68));   // lens rain follows the real rain, not the boot flag
+  grade.setDrops(DAY ? 0 : chase.mode >= 2 ? 1.2 : 0.68);
   const speedRatio = Math.min(1, (Math.abs(car.fwdSpeed || 0) / 42)) * (car.nosActive ? 1.35 : 0.85);
   grade.setSpeed?.(speedRatio);
   const streamX = photo?.on ? camera.position.x : currentVehicle.x;
   const streamZ = photo?.on ? camera.position.z : currentVehicle.z;
   const streamVx = photo?.on ? 0 : (currentVehicle.vx || 0);
   const streamVz = photo?.on ? 0 : (currentVehicle.vz || 0);
-  performance.mark('stream-start');
+  mark('stream-start');
   world.update(streamX, streamZ, streamVx, streamVz);
-  performance.mark('stream-end');
+  mark('stream-end');
+  resolution(dt);
   /* One render: the pipeline owns the frame (scene MRT pass, GTAO, bloom,
      tone map, grade — core/grade.js). renderer.info accumulates across a
      frame's internal passes and resets once per rAF by the renderer's own
      animation pump, so sampling after the pipeline reads the whole frame —
      scene + shadow passes + ~15 fullscreen post quads. */
-  performance.mark('render-start');
+  mark('render-start');
   const tRender0 = performance.now();
   hurtPulse = Math.max(0, hurtPulse - dt * 2.2);
   if (onFoot.active) audio.heartbeat?.(health, dt);   // under 25% you hear your own heart, quickening toward the end
   grade.setHurt?.(Math.max(hurtPulse, onFoot.active && health < 0.4 ? (0.4 - health) * 1.6 : 0));   // a hit flashes it; under 40% it stays
   grade.render(renderer, now / 1000);
-  // dynamic resolution: the render scales itself down when frames run long (core/governor.js); ?fixedres turns it off
-  if (governor) {
-    const g = governor.step(dt * 1000);
-    if (g.changed) { renderer.setPixelRatio(basePR * g.scale); onResize(); }
-    if (g.giveUp && !isLite) {
-      try { localStorage.setItem('hb.lite', '1'); } catch { /* private mode */ }
-      hud.flash('PERFORMANCE MODE SAVED · RELOAD FOR SMOOTHER PLAY (?full UNDOES)');
-    }
-  }
   const renderMs = performance.now() - tRender0;
-  performance.mark('render-end');
-  performance.mark('frame-end');
+  mark('render-end');
+  mark('frame-end');
   // the first real frame is on screen: drop the boot overlay
   /* The loading screen comes down only once the first ring of chunks is
      built AND every pipeline is compiled -- including the hidden collision
@@ -2326,6 +2778,12 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     compileMats.add(grenades.ball.material); compileMats.add(grenades.mat);
     for (const m of policeMaterials()) compileMats.add(m);
     compileMats.add(tokyoMaterial());
+    /* Road wear (world/decals.js) is warmed by hand below, not through
+       compileMats: its colorNode reads aTile/aFade and getAttributes SKIPS an
+       attribute the geometry lacks, so warming it on the test box compiles a
+       variant the chunk mesh never uses. Calling it here also paints the
+       1024^2 atlas at boot instead of inside the first chunk build. */
+    wearDecalMaterial();
     /* The pipeline is keyed on the material AND the object kind: a
        PointsMaterial warmed on a Mesh compiles the wrong program, and an
        InstancedMesh's vertex stage differs from a Mesh's. Warm each on what
@@ -2339,6 +2797,14 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
       else if (instanced.has(mat)) { const im = new THREE.InstancedMesh(testBox, mat, 1); im.setMatrixAt(0, new THREE.Matrix4().makeTranslation(0, -50, 0)); dummyGroup.add(im); }
       else dummyGroup.add(new THREE.Mesh(testBox, mat));
     }
+    {
+      const dg = wearDecalGeometry();
+      dg.setAttribute('aTile', new THREE.InstancedBufferAttribute(new Float32Array(2), 2));
+      dg.setAttribute('aFade', new THREE.InstancedBufferAttribute(new Float32Array(1), 1));
+      const dwm = new THREE.InstancedMesh(dg, wearDecalMaterial(), 1);
+      dwm.setMatrixAt(0, new THREE.Matrix4().makeTranslation(0, -50, 0));
+      dummyGroup.add(dwm);
+    }
     scene.add(dummyGroup);
 
     const hidden = [];
@@ -2350,6 +2816,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
       scene.remove(dummyGroup);
       testBox.dispose();
       if (boot) { boot.remove(); boot = null; }
+      if (window._startBackgroundAssetStream) window._startBackgroundAssetStream();
     };
     Promise.race([renderer.compileAsync(scene, camera), new Promise((r) => setTimeout(r, 1500))])
       .catch((e) => console.warn('warm-up:', e.message)).then(drop);
@@ -2359,7 +2826,11 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
      load and is never reset, so the banner's old "907 DRAWS" was a lifetime
      pass counter that happened to look plausible. `drawCalls` is the real
      per-frame number and matches the F3 overlay. */
-  stats.update(dt, world, renderer, { physics: physMs, render: renderMs });
+  stats.update(dt, world, renderer, { physics: physMs, render: renderMs }, {
+    pendingLoads: catalogueRef?.pendingLoads ?? 0,
+    texturesLoading: !!catalogueRef?.texturesLoading,
+    bootPhase: boot ? bootPhaseName : null,
+  });
   // counted + replayed-from-bundles: renderer.info alone under-reports by ~75% since the chunks became render bundles
   const draws = renderer.info.render.drawCalls + (stats.snapshot.bundledDraws || 0);
   const tris = renderer.info.render.triangles + (stats.snapshot.bundledTris || 0);
@@ -2379,13 +2850,29 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
         : null;
   navigation?.update(currentVehicle, missionTarget);
 
-  hud.update(currentVehicle, traffic, mission, net, heli, dt);
+  hud.update(currentVehicle, traffic, mission, net, heli);
   if (bustFlash > 0) {
     bustFlash -= dt;
     hud.setBusted(bustFlash);
     if (bustFlash <= 0) hud.setDead(false);
   }
   audio.update(currentVehicle);
+  /* Where you are, as a mix. The beach, the promenade, the riverside and the
+     harbour were all built this week and every one of them is silent; this is
+     the bed under them. Cross-faded inside sfx.place(), never switched, or the
+     bed pops as you cross a boundary. `elevated` uses the deck height the
+     physics already knows, so a bridge gets its own wind without a new test. */
+  {
+    const vx = currentVehicle.x, vz = currentVehicle.z;
+    const deck = districtRef?.elevationAt?.(vx, vz) ?? 0;
+    audio.place?.(lastDistrict, {
+      onBeach: !!beach && nearBay(vx, vz),
+      onWater: (districtRef?.data?.water?.river && nearRiver(vx, vz)) || false,
+      elevated: deck > 3.5,
+      crowd: crowd ? 0.6 : 0,
+      dt,
+    });
+  }
   /* The nearest live cruiser's siren: louder as it closes, panned to its
      side, gone when the stars are. traffic._nearest is this frame's distance. */
   if (audio.siren) {
@@ -2395,31 +2882,46 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     if (sd < 260) { const look = onFoot.active ? onFoot.camYaw : car.yaw; const b = Math.atan2(-(sz - car.z), sx - car.x) - look; audio.siren(-Math.sin(b), Math.min(1, sd / 260)); }
     else audio.siren(0, 1);
   }
+  audio.setRain(DAY ? 0 : 1);
   /* Halstead Bay is a harbour city and the car's ground plane is y=0
      everywhere, so without this you simply drive out to sea. Sink, then put
      the car back on the nearest quay -- the map already tags 79 of them. */
-  if (districtRef && !drowning && districtRef.inWater(car.x, car.z)) drowning = 0.001;
+  if (districtRef && !drowning && !onFoot.active && !dying && districtRef.inWater(car.x, car.z)) drowning = 0.001;
   if (drowning) {
     drowning += dt;
     car.throttle = 0; car.brake = 0;
     car.vx *= Math.exp(-dt * 2.2); car.vz *= Math.exp(-dt * 2.2);
     hero.position.y = -Math.min(3.4, drowning * 1.7);
-    if (drowning > 2.4) {
-      respawnCar(car.x, car.z, ['quay', 'cross']);
+    if (drowning > 2.4 && !dying) {
+      /* The sea is a death like any other (2026-09-11): the same blackout,
+         hospital fee, lost job and kept stars as a fireball. It used to hand
+         the car back on the nearest quay and forgive a star, which made the
+         harbour the safest place in the city to be wanted in. */
       hero.position.y = 0;
-      drowning = 0;
-      traffic.wanted = Math.max(0, traffic.wanted - 1);   // the sea settles some debts
+      dying = 0.01;        // next frame the dying block runs hud.blackout(onDeath)
     }
   }
 
   if (car.hitTag) {
+    /* Impact BANDS, not one thud scaled (2026-09-15). A glancing scrape and a
+       head-on are different events, not the same one played louder: the scrape
+       is long and bright, the heavy hit is short and low. audio.thud still
+       covers the middle; these are its ends. Thresholds match the ones damage
+       already uses -- 4.5 is "hurt the other car", 9 is "hurt it badly". */
+    {
+      const f = car.hitForce || 0;
+      if (f > 9) audio.crunch?.(1);
+      else if (f > 4.5) audio.crunch?.(0.45);
+      else if (f > 1.2) audio.scrape?.(Math.min(1, f / 4.5));
+      if (f > 9) audio.glass?.();
+    }
     traffic.reportCrime(car.hitTag, car.hitForce || 0);
     damageModel.hit(car.hitForce || 0, car.hitAt);
     // ramming a car or a cruiser hurts ITS engine too: a hard hit is one or two of its eight points (PIT them back)
     if (car.hitRef && (car.hitForce || 0) > 4.5) damageVehicle(car.hitRef, (car.hitForce || 0) > 9 ? 2 : 1, car.hitTag === 'police');
     car.hitTag = null; car.hitForce = 0; car.hitRef = null;
   }
-  if (car.impact > 2.4) damageModel.hit(car.impact, car.hitAt);
+  if (car.hitAt && car.impact > 2.4) damageModel.hit(car.impact, car.hitAt);   // once per contact event: collision.js sets hitAt only on a new-max hit this frame and it is cleared below -- un-gated, a 54 km/h wall wrote the car off over ~14 frames and every police round was charged twice
   if (car.impact > 3.2 && car.hitAt && !onFoot.active) {
     // the crash you see: sparks off the contact point and a burst of dust, scaled by the hit
     const k = Math.min(1, (car.impact - 3) / 12), hx = car.hitAt.x, hz = car.hitAt.z, gy = groundHeightAt(hx, hz);

@@ -133,8 +133,11 @@ export function createInput(onAction, { chatAllowed = () => true } = {}) {
     if (e.repeat) return;
     if (e.code === 'KeyC') onAction('camera');
     if (e.code === 'KeyH') onAction('lights');
-    if (e.code === 'KeyR') onAction('reset');
-    if (e.code === 'KeyV') onAction('film');
+    /* Shift+R starts the scenic route; plain R stays RESPAWN. R is how you get
+       unstuck, so it does not get taken away -- pressing it by reflex after a
+       crash must never launch a 5.7 km drive. */
+    if (e.code === 'KeyR') onAction(e.shiftKey ? 'mile' : 'reset');
+    if (e.code === 'KeyV') onAction(e.shiftKey ? 'film' : 'video');   // V: video angles while YOU drive; Shift+V: the autopilot film
     if (e.code === 'KeyM') onAction('phone'); // iFruit GTA phone
     if (e.code === 'KeyU') onAction('mute');
     if (e.code === 'KeyB') onAction('garage'); // browse bodies
@@ -148,7 +151,7 @@ export function createInput(onAction, { chatAllowed = () => true } = {}) {
     if (e.code === 'KeyK') onAction('avatar'); // cycle which character you are
     if (e.code === 'KeyP') onAction('photo');  // photo mode: free camera + the plan's acceptance presets
     if (e.code === 'KeyO') onAction('tour');   // automated feature tour and demo video recording
-    if (e.code === 'KeyT') onAction('time');   // advance day-night clock by 3 hours
+    if (e.code === 'KeyT') onAction(e.shiftKey ? 'track' : 'time');   // Shift+T: Halstead Raceway; T: advance clock 3 hours
     if (e.code === 'KeyI') onAction('horn');   // the horn: pedestrians ahead scatter, the car in front gets a move on
     // weapons: 1-4 select, X reloads. Digits are the only keys left that a
     // driving game has not already spent, and they are what shooters use.
@@ -160,6 +163,7 @@ export function createInput(onAction, { chatAllowed = () => true } = {}) {
     if (e.code === 'Digit6') onAction('weapon6');   // the sniper rifle (fifth gun; 5 stays grenades)
     if (e.code === 'Digit0' || e.code === 'Backquote') onAction('weapon0');   // fists
     if (e.code === 'KeyX') onAction('reload');
+    if (e.code === 'Backslash') onAction('cinematic');   // clean frame: speed + objective only
     if (e.code === 'KeyZ') onAction('intel');   // Astra tactical AI scanner toggle
   });
   addEventListener('keyup', (e) => {
