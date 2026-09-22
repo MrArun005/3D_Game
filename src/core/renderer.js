@@ -57,8 +57,10 @@ export const RENDER_BUDGET_PX_LITE = 1152 * 680;   // ~0.78 MP (Lite mode, 37% f
      ?native   1:1 in CSS pixels (the old flag, kept).
    Pair either with ?nodrs, or the adaptive scaler drags you straight back
    down the moment the frame goes over 19.5 ms -- which at 4K it will. */
-export function renderScale(w, h, lite = false) {
-  if (typeof location === 'undefined') return Math.min(1, Math.sqrt((lite ? RENDER_BUDGET_PX_LITE : RENDER_BUDGET_PX) / Math.max(1, w * h)));
+export function renderScale(w, h, lite = false, budgetPx = null) {
+  // budgetPx: the quality preset's pixel cap (core/quality.js); absent, the old LITE/FULL pair
+  const budget = budgetPx ?? (lite ? RENDER_BUDGET_PX_LITE : RENDER_BUDGET_PX);
+  if (typeof location === 'undefined') return Math.min(1, Math.sqrt(budget / Math.max(1, w * h)));
   const q = new URLSearchParams(location.search);
   if (q.has('4k')) {
     // True 4K UHD rendering (3840x2160 internal buffer)
@@ -67,7 +69,6 @@ export function renderScale(w, h, lite = false) {
   const res = parseFloat(q.get('res'));
   if (Number.isFinite(res) && res > 0) return Math.min(res, (globalThis.devicePixelRatio || 1) * 2);
   if (q.has('native')) return 1;
-  const budget = lite ? RENDER_BUDGET_PX_LITE : RENDER_BUDGET_PX;
   return Math.min(1, Math.sqrt(budget / Math.max(1, w * h)));
 }
 
@@ -153,7 +154,7 @@ function patchNestedRenderInBundle(renderer) {
  * steps the drawing buffer scale down (floor at 0.50). When frame times stay
  * below 14.2 ms for over 2.5 seconds, it gradually recovers back to baseScale.
  */
-export function autoResolution(renderer, grade = null, lite = false) {
+export function autoResolution(renderer, grade = null, lite = false, opts = {}) {
   if (typeof location !== 'undefined') {
     const q = new URLSearchParams(location.search);
     if (q.has('native') || q.has('nodrs') || q.has('4k')) {
@@ -161,12 +162,24 @@ export function autoResolution(renderer, grade = null, lite = false) {
     }
   }
 
-  const baseScale = renderScale(window.innerWidth, window.innerHeight, lite);
+  const baseScale = renderScale(window.innerWidth, window.innerHeight, lite, opts.pixelBudget ?? null);
   let currentScale = baseScale;
   let frameCount = 0;
   let sumMs = 0;
   let lastAdjustTime = 0;
   const MIN_SCALE = 0.50;
+  /* The quality ladder (2026-09-22, core/quality.js). Density before pixels:
+     `onDensity(step)` hides traffic (a draw that never happens, no
+     reallocation) and is stepped up to `densitySteps` BEFORE the scale moves;
+     it recovers one step at a time after 20 s of frames under the up
+     threshold. `onSustained()` fires ONCE after 30 s of >22 ms windows with
+     every runtime lever spent (density maxed, scale at MIN_SCALE): the caller
+     persists the next-lower preset for the next boot. Shadows and post passes
+     are never touched here -- they are pipeline topology (CLAUDE.md). Without
+     the callbacks this is the 2026-09-13 scaler, unchanged. */
+  const onDensity = opts.onDensity ?? null, onSustained = opts.onSustained ?? null;
+  const densitySteps = onDensity ? (opts.densitySteps ?? 2) : 0;
+  let densityStep = 0, stableSince = 0, slowMs = 0, sustainedFired = false;
   /* THE SCALER MUST SETTLE. Down at >19.5 ms and up at <14.2 ms looks like
      hysteresis, but a 6% down-step removes ~12% of the pixels, which drops the
      frame time under the up threshold, which steps back up, which puts it over
@@ -197,8 +210,21 @@ export function autoResolution(renderer, grade = null, lite = false) {
       // two consecutive windows agree, or nothing moves
       badRun = avgMs > 19.5 ? badRun + 1 : 0;
       goodRun = avgMs < 13.0 ? goodRun + 1 : 0;
+      if (avgMs >= 13.0) stableSince = now; else if (!stableSince) stableSince = now;
 
-      if (badRun >= 2 && currentScale > MIN_SCALE) {
+      // sustained slowness with every runtime lever spent: hand the next boot a lower preset, once
+      if (onSustained && !sustainedFired && densityStep >= densitySteps && currentScale <= MIN_SCALE + 1e-6) {
+        slowMs = avgMs > 22 ? slowMs + 1000 : 0;   // one window ~ one second
+        if (slowMs >= 30000) { sustainedFired = true; onSustained(avgMs); }
+      }
+
+      if (badRun >= 2 && densityStep < densitySteps) {
+        badRun = 0;
+        densityStep++;
+        lastAdjustTime = now;
+        onDensity(densityStep);
+        console.info(`[drs] density step ${densityStep} (avg frame: ${avgMs.toFixed(1)} ms)`);
+      } else if (badRun >= 2 && currentScale > MIN_SCALE) {
         badRun = 0;
         if (lastDir === 1) reversals++;
         lastDir = -1;
@@ -220,6 +246,13 @@ export function autoResolution(renderer, grade = null, lite = false) {
         renderer.setSize(window.innerWidth, window.innerHeight, false);
         grade?.resize?.(window.innerWidth * currentScale, window.innerHeight * currentScale);
         console.info(`[drs] upscale -> ratio: ${currentScale.toFixed(2)} (avg frame: ${avgMs.toFixed(1)} ms)`);
+      } else if (densityStep > 0 && currentScale >= baseScale && stableSince && now - stableSince >= 20000) {
+        // pixels back first, then density, one step per 20 s of stable frames
+        densityStep--;
+        stableSince = now;
+        lastAdjustTime = now;
+        onDensity(densityStep);
+        console.info(`[drs] density restored to step ${densityStep} (avg frame: ${avgMs.toFixed(1)} ms)`);
       }
       if (reversals >= 3) {
         locked = true;
@@ -234,7 +267,7 @@ export function autoResolution(renderer, grade = null, lite = false) {
  * hemisphere for the ambient, and no warm fill -- daylight bounce is neutral
  * and adding a coloured fill is what makes a "day" scene look like a lit set.
  */
-function createDayLights(scene, lite = false) {
+function createDayLights(scene, lite = false, shadows = 'full') {
   /* Less fill, more sun. At 1.05 the hemisphere lit every face the same and
      the 2.6 sun never produced light-and-shade -- a facade turned away from
      the sun was the same tone as one facing it, which is most of why day read
@@ -251,26 +284,38 @@ function createDayLights(scene, lite = false) {
      reducing shadow pass fill-rate by 83.3% for integrated graphics. */
   const sun = new THREE.DirectionalLight(DUSK ? 0xffa25a : 0xffeac6, DUSK ? 2.8 : 3.4);
   sun.position.copy(DAY_SUN);
-  sun.castShadow = true;
-  const mapSize = lite ? 1024 : 2048;
+  /* Shadow TIER (core/quality.js, boot-time only: castShadow may not change
+     after the first frame under WebGPU). Census 2026-09-22 on the M2 Air:
+     shadows are 48% of the frame's triangles (3.27M -> 1.71M with ?noshadow)
+     and ~300 draws. 'off' removes the whole pass; 'near' is ONE cascade at
+     1024 to 160 m -- the near ring, where a shadow under the car and the lamps
+     is what sells the light; 'full' is the tier's own 2x1024/320 or 3x2048/520. */
+  const near = shadows === 'near';
+  sun.castShadow = shadows !== 'off';
+  const mapSize = lite || near ? 1024 : 2048;
   sun.shadow.mapSize.set(mapSize, mapSize);
   sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = lite ? 600 : 900;
+  sun.shadow.camera.far = near ? 300 : lite ? 600 : 900;
   sun.shadow.bias = -0.0003;      // CSM multiplies bias by (cascade + 1)
   sun.shadow.normalBias = 0.03;
 
-  const csmCascades = lite ? 2 : 3;
-  const csmFar = lite ? 320 : 520;
-  const csm = new GatedCSM(sun, { cascades: csmCascades, maxFar: csmFar, mode: 'custom', lightMargin: lite ? 200 : 300 });
-  csm.customSplitsCallback = (n, near, far, target) => {
-    if (lite) {
-      target.push(0.18, 1);
-    } else {
-      target.push(0.1, 0.3, 1);
-    }
-  };
-  csm.fade = true;
-  sun.shadow.shadowNode = csm;
+  const csmCascades = near ? 1 : lite ? 2 : 3;
+  const csmFar = near ? 160 : lite ? 320 : 520;
+  let csm = null;
+  if (sun.castShadow) {   // 'off': no caster, so no cascade node to fit either
+    csm = new GatedCSM(sun, { cascades: csmCascades, maxFar: csmFar, mode: 'custom', lightMargin: lite || near ? 200 : 300 });
+    csm.customSplitsCallback = (n, _near, _far, target) => {
+      if (csmCascades === 1) {
+        target.push(1);
+      } else if (lite) {
+        target.push(0.18, 1);
+      } else {
+        target.push(0.1, 0.3, 1);
+      }
+    };
+    csm.fade = true;
+    sun.shadow.shadowNode = csm;
+  }
   scene.add(sun, sun.target);
 
   const fill = new THREE.DirectionalLight(0xd8e6f5, 0.22);
@@ -294,8 +339,11 @@ export function createScene(day = false) {
  * city: the street lighting is painted into the facade emissive maps and faked
  * with additive pools, which is why this scene can afford hundreds of buildings.
  */
-export function createLights(scene, day = false, lite = false) {
-  if (day) return createDayLights(scene, lite);
+export function createLights(scene, day = false, liteOrOpts = false) {
+  // third argument: the old `lite` boolean, or { lite, shadows: 'off' | 'near' | 'full' } from core/quality.js
+  const opts = typeof liteOrOpts === 'object' && liteOrOpts !== null ? liteOrOpts : { lite: !!liteOrOpts };
+  const lite = !!opts.lite, shadows = opts.shadows ?? 'full';
+  if (day) return createDayLights(scene, lite, shadows);
   // the ground half is warm on purpose: sodium bouncing off wet tarmac is what
   // separates a lit street from a scene that merely has lamps in it
   const hemi = new THREE.HemisphereLight(0x55699c, 0x33241a, 0.98);
@@ -303,11 +351,11 @@ export function createLights(scene, day = false, lite = false) {
 
   const sun = new THREE.DirectionalLight(0xffab5e, 0.72);
   sun.position.set(-260, 42, 150);
-  sun.castShadow = true;
-  const mapSize = lite ? 1024 : 2048;
+  sun.castShadow = shadows !== 'off';                 // boot-time tier, see createDayLights
+  const mapSize = lite || shadows === 'near' ? 1024 : 2048;
   sun.shadow.mapSize.set(mapSize, mapSize);
   sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = lite ? 160 : 220;
+  sun.shadow.camera.far = lite || shadows === 'near' ? 160 : 220;
   sun.shadow.camera.left = -40;
   sun.shadow.camera.right = 40;
   sun.shadow.camera.top = 40;

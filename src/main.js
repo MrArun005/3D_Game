@@ -6,6 +6,7 @@ import { autoResolution, createRenderer, createScene, createLights, DAY_SUN, ren
 import { detectGpuInfo, resolveQualityMode } from './core/gpu.js';
 import { createSky } from './core/sky.js';
 import { createGrade } from './core/grade.js';
+import { resolveQuality, describeQuality, nextLower, limitTraffic, limitFarTraffic, DENSITY_STEPS, QUALITY_NAMES, STORAGE_KEY as QUALITY_KEY } from './core/quality.js';
 import { setAnisotropy, wetTarmacLook } from './world/textures.js';
 import { createAssets } from './world/assets.js';
 import { loadVendorCars, loadHeroSkin, KENNEY_CARS, DEFAULT_BODY } from './world/vendorCars.js';
@@ -159,10 +160,17 @@ const qualityChoice = resolveQualityMode(gpuInfo);
 const isLite = qualityChoice.isLite;
 window.__gpuInfo = gpuInfo;
 window.__isLite = isLite;
-console.info(`quality: ${isLite ? 'LITE' : 'FULL'} (${qualityChoice.reason}, gpu: ${gpuInfo.gpuDesc || 'unknown'}, render scale ${renderScale(innerWidth, innerHeight, isLite).toFixed(2)})`);
+/* Quality preset (core/quality.js): ?quality= > localStorage hb.quality > auto
+   (medium on the LITE tier, high otherwise). Every knob below reads Q; the
+   tier (isLite) still decides the FULL cascades and the light-pool count. */
+const quality = resolveQuality({ isLite });
+const Q = quality.preset;
+window.__quality = quality;
+const crowdWanted = new URLSearchParams(location.search).has('crowd') && !RACE_MODE;
+console.info(describeQuality(quality.name, `${quality.source}, tier ${isLite ? 'LITE' : 'FULL'}: ${qualityChoice.reason}, gpu ${gpuInfo.gpuDesc || 'unknown'}`, Q, { traffic: RACE_MODE ? 0 : Q.traffic, crowd: crowdWanted ? Q.crowd : 0 }));
 
-// Apply initial render scale for the detected architecture
-renderer.setPixelRatio(renderScale(innerWidth, innerHeight, isLite));
+// Apply initial render scale for the preset's pixel budget
+renderer.setPixelRatio(renderScale(innerWidth, innerHeight, isLite, Q.pixelBudget));
 renderer.setSize(innerWidth, innerHeight, false);
 
 setBootProgress(45, 'Building the scene & lights…');
@@ -177,19 +185,40 @@ window.scene = scene;
    same viewpoint: far 8000 top-quarter mean RGB (43,51,56) -- black -- against
    (53,65,69) with 14000. Depth precision is bought at the NEAR plane, not here. */
 const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.5, 14000);
-const { sun, hemi } = createLights(scene, DAY, isLite);
+const { sun, hemi } = createLights(scene, DAY, { lite: isLite, shadows: Q.shadows });   // boot-time: castShadow never changes after the first frame (WebGPU pipeline trap)
 const { dome, stars, sunSprite, sunRaySprite } = createSky(scene, renderer, DAY);
 
 setBootProgress(60, 'Initializing TSL post-processing pipeline…');
 const grade = createGrade(renderer, scene, camera, {
   ssr: new URLSearchParams(location.search).has('ssr'),
   ao: new URLSearchParams(location.search).has('ao'),
-  bloom: !new URLSearchParams(location.search).has('nobloom'),
-  aa: !new URLSearchParams(location.search).has('noaa'),
-  blur: (new URLSearchParams(location.search).has('blur') || (!new URLSearchParams(location.search).has('noblur') && !isLite)),   // high-speed radial blur: 7-tap full-screen pass; auto-disabled in lite mode for 60fps floor
+  // bloom (~12 passes) and SMAA (3) are pipeline topology: the preset decides them at boot, the flags still force them off
+  bloom: Q.bloom && !new URLSearchParams(location.search).has('nobloom'),
+  aa: Q.aa && !new URLSearchParams(location.search).has('noaa'),
+  blur: (new URLSearchParams(location.search).has('blur') || (!new URLSearchParams(location.search).has('noblur') && Q.blur)),   // high-speed radial blur: 7-tap full-screen pass; high preset only (was !isLite)
   post: !new URLSearchParams(location.search).has('nopost'),
 });
-const resolution = autoResolution(renderer, grade, isLite);
+/* The runtime ladder (renderer.js autoResolution). Density first: a hidden
+   car is a draw that never happens and the submit is 74-95% of frame CPU;
+   then the pixel ratio as before. traffic/farTraffic/hud are const-declared
+   further down; the callbacks only run from the frame loop, after all of it. */
+const resolution = autoResolution(renderer, grade, isLite, {
+  pixelBudget: Q.pixelBudget,
+  densitySteps: DENSITY_STEPS.length - 1,
+  onDensity: (step) => {
+    const f = DENSITY_STEPS[step] ?? DENSITY_STEPS.at(-1);
+    if (!RACE_MODE) { traffic._n0 ??= traffic.cars.length; limitTraffic(traffic, Math.round(traffic._n0 * f)); }
+    if (farTraffic) limitFarTraffic(farTraffic, (farTraffic._n0 ?? farTraffic.n) * f);
+    if (step === 1) hud.flash('TRAFFIC THINNED TO HOLD FRAME RATE');
+  },
+  onSustained: () => {
+    const lower = nextLower(quality.name);
+    if (!lower) return;
+    try { localStorage.setItem(QUALITY_KEY, lower); } catch { /* private mode */ }
+    hud.flash(`QUALITY -> ${lower.toUpperCase()} ON NEXT START`);
+    console.info(`[drs] sustained >22 ms at MIN_SCALE with density spent: ${QUALITY_KEY}=${lower} for the next boot`);
+  },
+});
 
 const assets = createAssets();
 setBootProgress(75, 'Loading car fleet…');
@@ -1313,7 +1342,10 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   }
 
   setBootProgress(70, 'Building the streets…');
-  world = new DistrictWorld(scene, assets, district, { day: DAY, catalogue, lite: isLite, only: RACE_MODE ? isRacewayArea : null });
+  /* `lite` in DistrictWorld means exactly "radius 1 + propRadius 1" (districtWorld.js:189-192, its only
+     three reads) and it overrides `radius`, so the preset's streamRadius drives it: 1 -> the 3x3 ring LITE
+     runs today, 2 -> the 5x5 FULL ring. Boot-time: the ring is built once and streamed, never re-sized. */
+  world = new DistrictWorld(scene, assets, district, { day: DAY, catalogue, lite: Q.streamRadius < 2, radius: Q.streamRadius, only: RACE_MODE ? isRacewayArea : null });
   /* Retire the legacy 130 m grid HERE, at the swap, and not a page earlier.
      It used to be cleared before the catalogue pre-warm, whose awaits let the
      frame loop keep ticking world.update() on the City for a few seconds --
@@ -1340,7 +1372,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
     const n = +(new URLSearchParams(location.search).get('lights') ?? (isLite ? 4 : 6));
     lightPool = new LightPool(scene, world, { count: n });
   }
-  farTraffic = RACE_MODE ? null : new FarTraffic(scene, district, { count: isLite ? 120 : 220 });   // GTA's distant headlights: phantom cars on the far road graph, one draw, count 0 by day
+  farTraffic = RACE_MODE ? null : new FarTraffic(scene, district, { count: Q.farTraffic });   // preset: 60 / 120 / 220 (was isLite ? 120 : 220); buffers sized here, the ladder only lowers .n   // GTA's distant headlights: phantom cars on the far road graph, one draw, count 0 by day
   debris.catalogue = catalogue;
   world.onBreakables = (k, tracked, solids, pools) => debris.registerChunk(k, tracked, solids, pools);
   world.onBreakablesGone = (k) => debris.dropChunk(k);
@@ -1378,7 +1410,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
      strip. `?noriver` turns it off. */
   if (!params.has('noriver') && !RACE_MODE) buildRiverside(scene, district, DAY, catalogue);
   if (params.has('crowd') && !RACE_MODE) {
-    crowd = new Crowd(scene, district, isLite ? 160 : 320);
+    crowd = new Crowd(scene, district, Q.crowd);   // preset: 80 / 160 / 320 (was isLite ? 160 : 320); the fleet is sized at construction, so boot-time
     crowd.onNear = () => chatter?.civilian?.('near');
     people = new People(scene, +(params.get('people') ?? (isLite ? 8 : 16)));
   }
@@ -1614,8 +1646,11 @@ beamPool.renderOrder = 2;
 hero.add(beamPool);
 
 // ?cars=N overrides the fleet size (0 for a clear road: recording a lap, or a harness run that must not get T-boned)
-const CARS = +(new URLSearchParams(location.search).get('cars') ?? (DAY ? 36 : 40));
-const traffic = new Traffic(scene, assets, RACE_MODE ? 0 : (Number.isFinite(CARS) ? CARS : (DAY ? 36 : 40)), !DAY);   // race mode: rivals only, no civilians
+/* NaN when ?cars= is absent. It used to default to (DAY ? 36 : 40) here, which made the
+   Number.isFinite(CARS) fallback on the next line dead code -- the preset count could
+   never be reached. ?cars=N still overrides everything. */
+const CARS = +(new URLSearchParams(location.search).get('cars') ?? NaN);
+const traffic = new Traffic(scene, assets, RACE_MODE ? 0 : (Number.isFinite(CARS) ? CARS : (DAY ? Q.traffic : (Q.trafficNight ?? Q.traffic))), !DAY);   // race mode: rivals only, no civilians; preset 14 / 26 / 36 (40 at night on high, the old DAY ? 36 : 40)
 officerPool(scene);   // start the rig fetch at boot: acquire() returns null while it is in flight, and the first squad of a session would otherwise be the old boxes   // Phase 5: denser, and lit at night
 const chase = new ChaseCamera(camera);
 const weather = createWeather(scene, { hemi, dome: () => dome, onStrike: (delay) => audio.thunder?.(delay) });   // always built: rain comes in night spells (rainSpell) on the day cycle, and all night with ?night
@@ -1684,12 +1719,14 @@ commands = new CommandEngine({
   get world() { return world; },
   get isLite() { return isLite; },
   gpuInfo,
+  quality,
   setQuality: (mode) => {
+    // low | medium | high are presets; lite | full are the GPU-tier override gpu.js reads from the same key
     try {
       if (mode === 'default' || mode === 'auto') {
-        localStorage.removeItem('hb.quality');
+        localStorage.removeItem(QUALITY_KEY);
       } else {
-        localStorage.setItem('hb.quality', mode);
+        localStorage.setItem(QUALITY_KEY, mode);
       }
     } catch (_) {}
     location.reload();
@@ -1740,7 +1777,30 @@ chat.onSend((line) => {
   if (net) net.sendChat(line);
 });
 let started = false;
+/* Title-card quality toggle (index.html #hud .quality). Cycles Auto -> Low ->
+   Medium -> High and persists to hb.quality; every knob is boot-time (the
+   renderer, lights, post stack and ring are already built by the time the card
+   is clickable), so a change that differs from what booted reloads on ENTER
+   and the card says so. stopPropagation: the overlay click IS the start button. */
+const qualityLine = document.querySelector('#hud .quality');
+let qualityChosen = (() => { try { const s = localStorage.getItem(QUALITY_KEY); return QUALITY_NAMES.includes(s) ? s : 'auto'; } catch { return 'auto'; } })();
+// ?quality= in the URL outranks the toggle (dev flag), so picking AUTO under it is not pending: it would reload forever
+const qualityPending = () => (qualityChosen === 'auto' ? quality.source === 'saved' : qualityChosen !== quality.name);
+const drawQualityLine = () => {
+  if (!qualityLine) return;
+  qualityLine.querySelector('b').textContent = qualityChosen.toUpperCase() + (qualityChosen === 'auto' ? ` (${quality.name})` : '');
+  qualityLine.querySelector('small').textContent = qualityPending() ? 'applies on ENTER (reloads)' : 'click to change';
+};
+qualityLine?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  qualityChosen = QUALITY_NAMES[(QUALITY_NAMES.indexOf(qualityChosen) + 1) % QUALITY_NAMES.length];
+  try { if (qualityChosen === 'auto') localStorage.removeItem(QUALITY_KEY); else localStorage.setItem(QUALITY_KEY, qualityChosen); } catch { /* private mode */ }
+  drawQualityLine();
+});
+drawQualityLine();
+
 const start = () => {
+  if (!started && qualityPending()) { location.reload(); return; }
   if (!started) { started = true; hud.dismiss(); }
   audio.resume();
 };
@@ -2039,7 +2099,7 @@ addEventListener('mousemove', (e) => {
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setPixelRatio(renderScale(innerWidth, innerHeight, isLite));
+  renderer.setPixelRatio(renderScale(innerWidth, innerHeight, isLite, Q.pixelBudget));
   renderer.setSize(innerWidth, innerHeight, false);
   grade.resize(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio());
 });

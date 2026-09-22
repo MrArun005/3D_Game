@@ -51,7 +51,7 @@ export class CommandEngine {
         chat.post('SYSTEM', '· /weather <clear|rain> — Set road precipitation');
         chat.post('SYSTEM', '· /car <gt3|c6r|f40|zr1|patrol> — Spawn vehicle');
         chat.post('SYSTEM', '· /grade <preset|list|cycle> — Cinematic color grade');
-        chat.post('SYSTEM', '· /quality <lite|full|status> — Switch quality profile');
+        chat.post('SYSTEM', '· /quality <low|medium|high|auto> — Quality preset (reloads); lite|full force the GPU tier');
         chat.post('SYSTEM', '· /perf — Live frame time & GPU performance stats');
         chat.post('SYSTEM', '· /cash <amount> — (Gated behind ?debug)');
         break;
@@ -240,7 +240,8 @@ export class CommandEngine {
 
       case 'quality': {
         const mode = (args[0] || '').toLowerCase();
-        if (mode === 'lite' || mode === 'full') {
+        // low|medium|high: core/quality.js presets; lite|full: the GPU tier override gpu.js reads from the same key. Both are boot-time, so both reload.
+        if (mode === 'low' || mode === 'medium' || mode === 'high' || mode === 'lite' || mode === 'full') {
           chat.post('SYSTEM', `Setting quality to ${mode.toUpperCase()}... (reloading engine)`);
           this.ctx.setQuality?.(mode);
         } else if (mode === 'auto' || mode === 'default' || mode === 'reset') {
@@ -249,8 +250,9 @@ export class CommandEngine {
         } else {
           const current = this.ctx.isLite ? 'LITE' : 'FULL';
           const gpu = this.ctx.gpuInfo?.gpuDesc || 'unknown';
-          chat.post('SYSTEM', `Current quality: ${current} (GPU: ${gpu})`);
-          chat.post('SYSTEM', 'Usage: /quality lite | /quality full | /quality auto');
+          const q = this.ctx.quality;
+          chat.post('SYSTEM', `Current quality: ${current} tier${q ? `, preset ${q.name.toUpperCase()} (${q.source})` : ''} (GPU: ${gpu})`);
+          chat.post('SYSTEM', 'Usage: /quality low | medium | high | auto  (lite | full force the tier)');
         }
         break;
       }
@@ -272,7 +274,7 @@ export class CommandEngine {
         const mTris = (((stats.snapshot.tris || 0) + (stats.snapshot.bundledTris || 0)) / 1e6).toFixed(2);
         const liveChunks = this.ctx.world?.chunks?.size ?? '-';
         const pxRatio = renderer?.getPixelRatio ? renderer.getPixelRatio().toFixed(2) : '-';
-        const quality = this.ctx.isLite ? 'LITE' : 'FULL';
+        const quality = (this.ctx.isLite ? 'LITE' : 'FULL') + (this.ctx.quality ? `/${this.ctx.quality.name.toUpperCase()}` : '');
 
         chat.post('SYSTEM', `[PERF] Mode: ${quality} | Frame Med: ${median}ms | 95th: ${p95}ms | Worst: ${worst}ms`);
         chat.post('SYSTEM', `[PERF] Draws: ${draws} | Tris: ${mTris}M | Chunks: ${liveChunks} | DPR: ${pxRatio}`);

@@ -10,6 +10,11 @@
 body.photo #minimap, body.photo #cluster, body.photo #readout, body.photo #dials, body.photo #stats,
 body.photo #mission, body.photo #place, body.photo #gta-chat, body.photo #phone-btn,
 body.photo #gameplay-prompt-bar, body.photo #wanted { display: none !important; }
+/* title-card quality toggle (style.css is another agent's file today) */
+#hud .quality{margin:14px auto 0;font-size:11px;letter-spacing:.24em;color:#78859a;cursor:pointer;user-select:none}
+#hud .quality b{color:#e6c489;font-weight:600}
+#hud .quality small{display:block;margin-top:4px;font-size:10px;letter-spacing:.14em;color:#5f6c80}
+#hud .quality:hover b{color:#f0d6a4}
   </style>
 </head>
 <body>
@@ -58,6 +63,8 @@ body.photo #gameplay-prompt-bar, body.photo #wanted { display: none !important; 
         <button type="button" class="mode" data-mode="holdout"><b>Hold-out</b><span>Pick your ground and the city comes to you. 180 seconds.</span></button>
       </div>
       <div class="go">ENTER THE CITY</div>
+      <!-- core/quality.js presets; main.js cycles Auto -> Low -> Medium -> High on click and reloads on ENTER when the choice differs from what booted -->
+      <div class="quality" role="button" tabindex="0" title="Quality preset: Low / Medium / High / Auto">QUALITY · <b>AUTO</b> <small>click to change</small></div>
       <div class="keys">
         <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive &nbsp; <kbd>Space</kbd> handbrake &nbsp; <kbd>Shift</kbd> hold gear &nbsp; <kbd>F</kbd> get out / get in &nbsp; <kbd>C</kbd> camera &nbsp; <kbd>H</kbd> lights<br />
         <kbd>G</kbd> take a job &nbsp; <kbd>M</kbd> phone (heists, range, hold-out, garage, heli, tank) &nbsp; <kbd>Tab</kbd> map &nbsp; <kbd>P</kbd> photo mode &nbsp; <kbd>L</kbd> radio<br />
