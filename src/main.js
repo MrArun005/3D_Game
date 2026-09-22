@@ -107,6 +107,15 @@ const DAY = !new URLSearchParams(location.search).has('night');
    there is just nothing in it that is not the track. See DistrictWorld's
    `only` option for the mechanism. */
 const RACE_MODE = new URLSearchParams(location.search).get('mode') === 'race';
+/* Frame-phase marks are ?perf ONLY (2026-09-22). frameBody() called
+   performance.mark() eight times a frame and nothing in src/ ever read them;
+   the User Timing buffer for marks is unbounded, so they piled up forever.
+   Measured in node: 1.9 us/frame of CPU and 144,000 entries / +11.8 MB of heap
+   after five minutes at 60 fps. Now: 0 us and 0 entries unless ?perf is set,
+   and under ?perf the buffer is cleared at each frame start so it holds one
+   frame at most. */
+const PERF_MARKS = new URLSearchParams(location.search).has('perf');
+const mark = PERF_MARKS ? (name) => performance.mark(name) : () => {};
 
 const canvas = document.getElementById('gl');
 /* The boot overlay is static HTML in index.html so it paints before this
@@ -2067,7 +2076,8 @@ function frame() {
 }
 
 function frameBody() {
-  performance.mark('frame-start');
+  if (PERF_MARKS) performance.clearMarks();
+  mark('frame-start');
   const now = performance.now();
   const rawDt = (now - lastTime) / 1000;
   let dt = Math.min(rawDt, 0.05);
@@ -2167,7 +2177,7 @@ function frameBody() {
   debris.update(car, dt, traffic.cars, traffic.police);
 
   // fixed-step physics keeps the tyre model stable; clamp accumulator to prevent death spirals on dt spikes
-  performance.mark('physics-start');
+  mark('physics-start');
   const tPhys0 = performance.now();
   if (rawDt > 0.05) physicsAccumulator = 0;   // Spike or tab-out: clear backlog to prevent death spiral
   physicsAccumulator += dt;
@@ -2189,7 +2199,7 @@ function frameBody() {
     physicsAccumulator = 0;
   }
   const physMs = performance.now() - tPhys0;
-  performance.mark('physics-end');
+  mark('physics-end');
 
   // Sub-step physics visual interpolation (ensures rock-solid 60Hz/120Hz consistency and eliminates judder)
   const alpha = Math.min(1, Math.max(0, physicsAccumulator / STEP));
@@ -2583,24 +2593,24 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   const streamZ = photo?.on ? camera.position.z : currentVehicle.z;
   const streamVx = photo?.on ? 0 : (currentVehicle.vx || 0);
   const streamVz = photo?.on ? 0 : (currentVehicle.vz || 0);
-  performance.mark('stream-start');
+  mark('stream-start');
   world.update(streamX, streamZ, streamVx, streamVz);
-  performance.mark('stream-end');
+  mark('stream-end');
   resolution(dt);
   /* One render: the pipeline owns the frame (scene MRT pass, GTAO, bloom,
      tone map, grade — core/grade.js). renderer.info accumulates across a
      frame's internal passes and resets once per rAF by the renderer's own
      animation pump, so sampling after the pipeline reads the whole frame —
      scene + shadow passes + ~15 fullscreen post quads. */
-  performance.mark('render-start');
+  mark('render-start');
   const tRender0 = performance.now();
   hurtPulse = Math.max(0, hurtPulse - dt * 2.2);
   if (onFoot.active) audio.heartbeat?.(health, dt);   // under 25% you hear your own heart, quickening toward the end
   grade.setHurt?.(Math.max(hurtPulse, onFoot.active && health < 0.4 ? (0.4 - health) * 1.6 : 0));   // a hit flashes it; under 40% it stays
   grade.render(renderer, now / 1000);
   const renderMs = performance.now() - tRender0;
-  performance.mark('render-end');
-  performance.mark('frame-end');
+  mark('render-end');
+  mark('frame-end');
   // the first real frame is on screen: drop the boot overlay
   /* The loading screen comes down only once the first ring of chunks is
      built AND every pipeline is compiled -- including the hidden collision

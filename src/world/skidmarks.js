@@ -15,7 +15,7 @@ import { attribute, vec3, float } from 'three/tsl';
  * why a mark is a continuous ribbon rather than a line of dashes.
  */
 
-const MAX = 900;                   // quads in the ring, per wheel pair
+export const MAX = 900;            // quads in the ring, per wheel pair
 const MIN_STEP = 0.35;             // metres between samples
 const WIDTH = 0.24;
 
@@ -81,27 +81,42 @@ export class SkidMarks {
     const moved = Math.hypot(pts[0][0] - this.last[0][0], pts[0][1] - this.last[0][1]);
     if (moved < MIN_STEP) return;
 
-    for (let s = 0; s < 2; s++) this.#quad(this.last[s], pts[s], strength, groundY);
+    const P = this.geo.attributes.position, A = this.geo.attributes.aAlpha;
+    for (let s = 0; s < 2; s++) layQuad(P, A, this.head++ % MAX, this.last[s], pts[s], strength, groundY);
     this.last = pts;
-    this.geo.attributes.position.needsUpdate = true;
-    this.geo.attributes.aAlpha.needsUpdate = true;
+    /* Upload cost per laying frame: the whole ring was 64,800 + 21,600 =
+       86,400 B (needsUpdate alone re-sends the full array). With the two
+       quads' own ranges it is 2 x (72 + 24) = 192 B -- 450x less. The
+       version bump is still what makes the backend look at the ranges, and
+       the backend clears them after the write (WebGPUAttributeUtils and the
+       WebGL fallback both do). If the mesh has not been drawn for a while
+       the ranges pile up; past 64 a full upload is cheaper than 64 writes. */
+    if (P.updateRanges.length > 64) { P.clearUpdateRanges(); A.clearUpdateRanges(); }
+    P.needsUpdate = true;
+    A.needsUpdate = true;
   }
+}
 
-  #quad(a, b, strength, y) {
-    const dx = b[0] - a[0], dz = b[1] - a[1];
-    const L = Math.hypot(dx, dz) || 1;
-    const nx = (-dz / L) * (WIDTH / 2), nz = (dx / L) * (WIDTH / 2);
-    const i = (this.head % MAX) * 18;
-    const p = this.pos;
-    const yy = y + 0.012;
-    p[i]      = a[0] + nx; p[i + 1]  = yy; p[i + 2]  = a[1] + nz;
-    p[i + 3]  = b[0] + nx; p[i + 4]  = yy; p[i + 5]  = b[1] + nz;
-    p[i + 6]  = b[0] - nx; p[i + 7]  = yy; p[i + 8]  = b[1] - nz;
-    p[i + 9]  = a[0] + nx; p[i + 10] = yy; p[i + 11] = a[1] + nz;
-    p[i + 12] = b[0] - nx; p[i + 13] = yy; p[i + 14] = b[1] - nz;
-    p[i + 15] = a[0] - nx; p[i + 16] = yy; p[i + 17] = a[1] - nz;
-    const j = (this.head % MAX) * 6;
-    for (let k = 0; k < 6; k++) this.alpha[j + k] = strength;
-    this.head++;
-  }
+/**
+ * Write one quad into ring slot `slot` of the position (18 floats) and alpha
+ * (6 floats) attributes and mark exactly those floats for upload. Pure over
+ * its arguments so the test can drive it with plain BufferAttributes.
+ */
+export function layQuad(posAttr, alphaAttr, slot, a, b, strength, y) {
+  const dx = b[0] - a[0], dz = b[1] - a[1];
+  const L = Math.hypot(dx, dz) || 1;
+  const nx = (-dz / L) * (WIDTH / 2), nz = (dx / L) * (WIDTH / 2);
+  const i = slot * 18;
+  const p = posAttr.array;
+  const yy = y + 0.012;
+  p[i]      = a[0] + nx; p[i + 1]  = yy; p[i + 2]  = a[1] + nz;
+  p[i + 3]  = b[0] + nx; p[i + 4]  = yy; p[i + 5]  = b[1] + nz;
+  p[i + 6]  = b[0] - nx; p[i + 7]  = yy; p[i + 8]  = b[1] - nz;
+  p[i + 9]  = a[0] + nx; p[i + 10] = yy; p[i + 11] = a[1] + nz;
+  p[i + 12] = b[0] - nx; p[i + 13] = yy; p[i + 14] = b[1] - nz;
+  p[i + 15] = a[0] - nx; p[i + 16] = yy; p[i + 17] = a[1] - nz;
+  const j = slot * 6, al = alphaAttr.array;
+  for (let k = 0; k < 6; k++) al[j + k] = strength;
+  posAttr.addUpdateRange(i, 18);       // each write is its own range: slot MAX-1 and slot 0 are not contiguous
+  alphaAttr.addUpdateRange(j, 6);
 }

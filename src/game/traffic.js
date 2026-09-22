@@ -1185,21 +1185,44 @@ export class Traffic {
        anyone else had climbed out -- you were nicked by one officer while
        four cruisers were still parking. Now it only counts while at least
        two are out, or one if that is all there is. */
-    const out = this.police.filter((c) => c.live && c.deployed);
+    /* Perf (2026-09-22): this block allocated three filter() arrays, one
+       map() array and one object per deployed officer EVERY frame (6-10
+       allocations a frame, more at four stars), all consumed within the same
+       frame. The three lists are now module-lifetime arrays refilled in place
+       and each officer keeps one `_mate` record that is updated, not rebuilt:
+       zero steady-state allocations. Same membership, same order. */
+    const out = this._out ??= []; out.length = 0;
+    let near = false;
+    for (let i = 0; i < this.police.length; i++) {
+      const c = this.police[i];
+      if (!c.live || !c.deployed) continue;
+      out.push(c);
+      if (!near && Math.hypot(c.x - player.x, c.z - player.z) < 13) near = true;
+    }
     const enough = out.length >= Math.min(2, this.#wantedCars());
-    const near = out.some((c) => Math.hypot(c.x - player.x, c.z - player.z) < 13);
     this.bustT = (enough && near) ? this.bustT + dt : Math.max(0, this.bustT - dt);
     if (this.bustT > 5.5 && this.onBust) { this.bustT = 0; this.onBust(); return; }
 
     const want = this.#wantedCars();
     while (this.police.length < want) this.police.push(this.#makePolice());
-    this._free = this.police.filter((q) => q.live && q.mode === 'free');   // was rebuilt per cruiser per frame
+    const free = this._free ??= []; free.length = 0;   // was rebuilt per cruiser per frame, then per frame; now refilled in place
     /* Bounding overwatch (policeAi.assignRoles): one man moves, the rest keep
        your head down. Decided for the WHOLE squad once a frame -- per officer
        it is a crowd, because nobody can see what anyone else is doing. */
-    const squad = this.police.filter((q) => q.live && q.deployed && !q.down);
+    const squad = this._squad ??= []; squad.length = 0;
+    const mates = this._mates ??= []; mates.length = 0;   // built ONCE a frame; bystanderInLine skips anything within 1.2 m of the shooter, so each officer excludes himself
+    for (let i = 0; i < this.police.length; i++) {
+      const q = this.police[i];
+      if (!q.live) continue;
+      if (q.mode === 'free') free.push(q);
+      if (q.deployed && !q.down) {
+        squad.push(q);
+        const m = q._mate ??= { x: 0, z: 0, y: 1.0, r: 0.5 };
+        m.x = q.coverX; m.z = q.coverZ;
+        mates.push(m);
+      }
+    }
     this._rushing = 0;
-    this._mates = squad.map((q) => ({ x: q.coverX, z: q.coverZ, y: 1.0, r: 0.5 }));   // built ONCE a frame; bystanderInLine skips anything within 1.2 m of the shooter, so each officer excludes himself
     if (squad.length) {
       for (const q of squad) q.gap = Math.hypot(q.officer.position.x - player.x, q.officer.position.z - player.z);
       const roles = assignRoles(squad, { wanted: Math.floor(this.wanted) });
@@ -1578,26 +1601,38 @@ export class Traffic {
     let nearest = Infinity;
     let leaderSpeed = car.cruise;
 
-    const ahead = (x, z, spd = 0) => {
-      const dx = x - car.x, dz = z - car.z;
-      const fx = Math.cos(car.yaw), fz = -Math.sin(car.yaw);
+    /* Perf (2026-09-22): this is the one O(N^2) loop in traffic -- every car
+       against every car, every frame. It used to allocate an `ahead` closure
+       per car and take cos+sin of the SAME yaw inside it for every other car
+       (40 cars: 40 closures + 3,280 trig calls a frame). Now the trig is taken
+       once per car (82 calls) and a squared-distance gate skips any pair too
+       far to pass BOTH tests: along < look and side < 2.2 imply
+       dx^2+dz^2 = along^2+side^2 < look^2+2.2^2, so the gate is exact -- same
+       `nearest`, same `leaderSpeed`, same lane-change decisions. Microbench
+       (scratchpad/leader-bench.mjs, 40 cars x 40 others + player, node,
+       identical results asserted over 80,000 car-updates): 43.3 us -> 4.6 us
+       per update() for this loop (9.4x); 3,200 -> 80 trig calls, 40 -> 0
+       closures a frame. */
+    const cx = car.x, cz = car.z;
+    const fx = Math.cos(car.yaw), fz = -Math.sin(car.yaw);
+    const reach2 = look * look + 2.2 * 2.2;
+    const cars = this.cars;
+    for (let i = 0; i < cars.length; i++) {
+      const other = cars[i];
+      if (other === car || !other.live) continue;
+      const dx = other.x - cx, dz = other.z - cz;
+      if (dx * dx + dz * dz >= reach2) continue;
+      const along = dx * fx + dz * fz;
+      if (along <= 0 || along >= look || along >= nearest) continue;
+      const side = Math.abs(dx * -fz + dz * fx);
+      if (side < 2.2) { nearest = along; leaderSpeed = other.speed ?? 0; }
+    }
+    {
+      const dx = player.x - cx, dz = player.z - cz;
       const along = dx * fx + dz * fz;
       const side = Math.abs(dx * -fz + dz * fx);
-      if (along > 0 && along < look && side < 2.2) {
-        if (along < nearest) {
-          nearest = along;
-          leaderSpeed = spd;
-        }
-        return along;
-      }
-      return Infinity;
-    };
-
-    for (const other of this.cars) {
-      if (other === car || !other.live) continue;
-      ahead(other.x, other.z, other.speed);
+      if (along > 0 && along < look && side < 2.2 && along < nearest) { nearest = along; leaderSpeed = player.speed || 0; }
     }
-    ahead(player.x, player.z, player.speed || 0);
 
     if (nearest === Infinity) return Infinity;
 
