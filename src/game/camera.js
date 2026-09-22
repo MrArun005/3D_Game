@@ -263,7 +263,9 @@ export class ChaseCamera {
        by speed: at a standstill the car cannot move, so neither should the
        view. */
     const lookTarget = Math.max(-1.6, Math.min(1.6, (car.yawRate || 0) * (car.speed || 0) * 0.28)) * speedK;
-    this.look = (this.look ?? 0) + (lookTarget - (this.look ?? 0)) * Math.min(1, dt * 6);
+    // update() is also called without dt (the boot snap); a single NaN here poisoned this.look for the whole session
+    const lookK = Number.isFinite(dt) ? Math.min(1, dt * 6) : 1;
+    this.look = Number.isFinite(this.look) ? this.look + (lookTarget - this.look) * lookK : lookTarget;
     const look = this.look;
     /* Look FURTHER ahead the faster you go. At a standstill you are looking at
        your own car; at speed you need the corner. Same principle every racing
