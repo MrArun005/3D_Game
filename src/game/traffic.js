@@ -79,6 +79,20 @@ function lanePoint(i, j, d, lane) {
  * no per-frame search of the world, and it keeps working when the cell it is
  * driving through streams out behind it.
  */
+/**
+ * Is a world point in the camera's view cone and near enough to be noticed?
+ * Spawning and despawning use it so cars appear and vanish where the player is
+ * not looking (GTA's rule). `cam` is { x, z, fx, fz } with (fx, fz) the
+ * normalised flat forward; no camera means "never in view". Pure, tested.
+ */
+export function inView(x, z, cam, range = 180, cosHalf = 0.5) {
+  if (!cam) return false;
+  const dx = x - cam.x, dz = z - cam.z, d = Math.hypot(dx, dz);
+  if (d > range) return false;
+  if (d < 12) return true;                      // right beside the lens: always seen
+  return (dx * cam.fx + dz * cam.fz) / d > cosHalf;
+}
+
 export class Traffic {
   constructor(scene, assets, count = 18, night = 0) {
     /* clock.nightFactor, 0..1: setNight() drives the fleet's headlamp glow. The
@@ -649,15 +663,28 @@ export class Traffic {
     return best;
   }
 
+  /** The camera as { x, z, fx, fz } (flat, normalised), or null before the world has one. */
+  #cam() {
+    const c = this.world?.camera;
+    if (!c) return null;
+    const m = c.matrixWorld.elements;            // -Z of the camera, flattened
+    const fx = -m[8], fz = -m[10], l = Math.hypot(fx, fz) || 1;
+    return { x: c.position.x, z: c.position.z, fx: fx / l, fz: fz / l };
+  }
+
   /** Drop a car onto a random edge in a ring around the player. */
   #spawnGraph(car, player) {
     if (!this.E || !this.E.length) return;   // no road graph yet (the district attaches after the first frames): try again next frame
     let pick = -1;
+    /* Out of sight first (2026-09-22): the ring used to accept any edge 55-260 m
+       away, so a car could materialise in the middle of the view. Forty tries
+       insist on an edge the camera is not looking at; then anything in range. */
+    const cam = this.#cam();
     for (let tries = 0; tries < 60 && pick < 0; tries++) {
       const id = Math.floor(this.rand() * this.E.length);
       const p = this.E[id].points[0];
       const d = Math.hypot(p[0] - player.x, p[1] - player.z);
-      if (d > 55 && d < 260) pick = id;
+      if (d > 55 && d < 260 && (tries >= 40 || !inView(p[0], p[1], cam, 240))) pick = id;
     }
     if (pick < 0) return;                       // nothing in range this frame
 
@@ -1306,7 +1333,15 @@ export class Traffic {
     }
     for (let i = 0; i < this.police.length; i++) {
       const c = this.police[i];
-      if (i >= want) { c.live = false; c.mesh.visible = false; continue; }
+      if (i >= want) {
+        /* The stars dropped and this car is surplus. Vanishing in view was the
+           pop GTA never shows: a cruiser still in its car, in view and close,
+           goes off duty and drives on; it is removed once it is out of sight
+           or far away (or at once if its officers are out on foot). */
+        if (c.live && !c.deployed && Math.hypot(player.x - c.x, player.z - c.z) < 150 && inView(c.x, c.z, this.#cam())) {
+          if (!c.leaving) { c.leaving = true; c.cruise = c.baseCruise ?? (CLASS_SPEED[this.E?.[c.edge]?.class] ?? 11); }
+        } else { c.live = false; c.mesh.visible = false; c.leaving = false; continue; }
+      } else if (c.leaving) c.leaving = false;   // needed again before it got away
       if (!c.live) { this.#spawnGraph(c, player); c.best = Infinity; c.stale = 0; continue; }
 
       const dx = player.x - c.x, dz = player.z - c.z;
@@ -1316,7 +1351,7 @@ export class Traffic {
          (#pickExit routes toward the player only for a hunter), officers in
          the car, and it re-spawns nearby once you have left it behind. It is
          what makes crimeWitnessed bite -- a cruiser 80 m away saw that. */
-      c.hunt = this.wanted >= 1;
+      c.hunt = this.wanted >= 1 && !c.leaving;   // a leaving car is off duty
       if (c.hunt !== c._wasHunt && c.vhp !== 0) { c._wasHunt = c.hunt; c.cruise = c.hunt ? (c.pursuitCruise ?? c.cruise) : (c.baseCruise ?? (CLASS_SPEED[this.E?.[c.edge]?.class] ?? 11)); }   // the stars flipped mid-life: patrol pace <-> pursuit pace
       if (c.hunt && c.chase) { const f = c.chase; if (f.baseCruise) { f.cruise = f.baseCruise; f.fleeT = 0; } c.chase = null; }   // you outrank the fugitive
       if (!c.hunt) {
