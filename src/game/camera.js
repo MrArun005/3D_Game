@@ -251,10 +251,20 @@ export class ChaseCamera {
     // rain on the lens, for main.js -> grade.setDrops (see lensDrops above)
     this.drops = lensDrops({ wet: car.wet || 0, mode: this.mode, roof: car.roof !== false });
 
-    /* Look-ahead has to be earned by speed. A fixed 2.4m of swing at a
-       standstill turns the whole screen when the car itself cannot move,
-       which reads as the camera steering instead of the car. */
-    const look = (car.steer || 0) * speedK * 6.0;
+    /* Look-ahead follows what the car DOES, not what the hands do. It used to
+       be car.steer * speedK * 6.0 -- the aim point shoved up to 3.6 m sideways
+       by the steering-wheel angle, the instant a key went down and before the
+       car had turned at all: 'the whole screen moves left/right rather than
+       the car turning'. That was tolerable only while the old physics turned
+       the car as fast as the wheel; with tyres doing the work (13da2de) the
+       view led the car by a whole corner. Path curvature (yaw rate x speed)
+       is the thing a racing camera actually anticipates; 0.28 of it, capped
+       at 1.6 m, eased at 6/s so a tap does not twitch the frame. Still earned
+       by speed: at a standstill the car cannot move, so neither should the
+       view. */
+    const lookTarget = Math.max(-1.6, Math.min(1.6, (car.yawRate || 0) * (car.speed || 0) * 0.28)) * speedK;
+    this.look = (this.look ?? 0) + (lookTarget - (this.look ?? 0)) * Math.min(1, dt * 6);
+    const look = this.look;
     /* Look FURTHER ahead the faster you go. At a standstill you are looking at
        your own car; at speed you need the corner. Same principle every racing
        camera uses, and the reason GTA players complain they cannot see through
