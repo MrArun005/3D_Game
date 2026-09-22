@@ -102,6 +102,14 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
 
 ## Current state
 
+- **Balanced preset (2026-09-22)**: Auto now picks `balanced` on an
+  integrated GPU (was medium): near shadows + bloom kept, SMAA off, 0.55 MP,
+  traffic 18 / crowd 110 / far 80, 3x3 ring. The owner's M2 Air ran Medium
+  "very sad" -- fanless, it throttles warm. The next-boot step-down
+  (`autoResolution` onSustained -> `nextLower`) fires after 12 s of >22 ms
+  frames with every runtime lever spent (was 30 s); the ladder is
+  high > medium > balanced > low. GTAO is opt-in (`?ao`) on main already.
+
 - **After the 2026-09-22 merge of the review branch into main**: main's
   systems were kept wherever both sides built one (clock profiles, DRS,
   dynamics frame fix, interior mapping, relief). Ported on top: wall scrape

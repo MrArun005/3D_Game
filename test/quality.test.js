@@ -7,28 +7,28 @@ import { renderScale, autoResolution, createLights } from '../src/core/renderer.
 const mem = (init = {}) => { const m = new Map(Object.entries(init)); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) }; };
 
 test('every preset carries every field, and the ladder is ordered', () => {
-  for (const name of ['low', 'medium', 'high']) {
+  for (const name of ['low', 'balanced', 'medium', 'high']) {
     for (const f of FIELDS) assert.ok(f in PRESETS[name], `${name}.${f} missing`);
     assert.ok(['off', 'near', 'full'].includes(PRESETS[name].shadows), `${name}.shadows`);
   }
   assert.ok(PRESETS.low.pixelBudget < PRESETS.medium.pixelBudget && PRESETS.medium.pixelBudget < PRESETS.high.pixelBudget);
   assert.ok(PRESETS.low.traffic < PRESETS.medium.traffic && PRESETS.medium.traffic < PRESETS.high.traffic);
-  assert.equal(nextLower('high'), 'medium'); assert.equal(nextLower('medium'), 'low'); assert.equal(nextLower('low'), null);
+  assert.equal(nextLower('high'), 'medium'); assert.equal(nextLower('medium'), 'balanced'); assert.equal(nextLower('balanced'), 'low'); assert.equal(nextLower('low'), null);
   assert.equal(DENSITY_STEPS[0], 1);
   for (let i = 1; i < DENSITY_STEPS.length; i++) assert.ok(DENSITY_STEPS[i] < DENSITY_STEPS[i - 1]);
 });
 
-test('resolution order: ?quality > localStorage hb.quality > auto (medium on LITE, high otherwise)', () => {
+test('resolution order: ?quality > localStorage hb.quality > auto (balanced on LITE, high otherwise)', () => {
   assert.equal(resolveQuality({ isLite: true, search: '?quality=high', storage: mem({ 'hb.quality': 'low' }) }).name, 'high');
   assert.equal(resolveQuality({ isLite: false, search: '', storage: mem({ 'hb.quality': 'low' }) }).name, 'low');
   const auto = resolveQuality({ isLite: true, search: '', storage: mem() });
-  assert.equal(auto.name, 'medium'); assert.match(auto.source, /auto, integrated/);
+  assert.equal(auto.name, 'balanced'); assert.match(auto.source, /auto, integrated/);
   assert.equal(resolveQuality({ isLite: false, search: '', storage: mem() }).name, 'high');
-  assert.equal(resolveQuality({ isLite: true, search: '?quality=auto', storage: mem({ 'hb.quality': 'high' }) }).name, 'medium');   // ?quality=auto beats a saved preset
+  assert.equal(resolveQuality({ isLite: true, search: '?quality=auto', storage: mem({ 'hb.quality': 'high' }) }).name, 'balanced');   // ?quality=auto beats a saved preset
   // gpu.js's 'lite' | 'full' live in the same key: not preset names, so they fall through to auto
-  assert.equal(resolveQuality({ isLite: true, search: '', storage: mem({ 'hb.quality': 'lite' }) }).name, 'medium');
+  assert.equal(resolveQuality({ isLite: true, search: '', storage: mem({ 'hb.quality': 'lite' }) }).name, 'balanced');
   assert.equal(resolveQuality({ isLite: false, search: '?quality=bogus', storage: mem() }).name, 'high');
-  assert.equal(resolveQuality({ isLite: true, search: '', storage: { getItem() { throw new Error('private'); } } }).name, 'medium');
+  assert.equal(resolveQuality({ isLite: true, search: '', storage: { getItem() { throw new Error('private'); } } }).name, 'balanced');
 });
 
 test('the boot line reads as specified', () => {
@@ -78,7 +78,7 @@ test('autoResolution steps density before pixels, restores after 20 s stable, fi
     assert.deepEqual(densityCalls, [1, 2]); assert.equal(ratio, 1);
     windows(2, 0.030);
     assert.ok(ratio < base, 'resolution steps only once density is spent');
-    // grind to MIN_SCALE and hold >22 ms: the sustained hook fires exactly once after 30 s
+    // grind to MIN_SCALE and hold >22 ms: the sustained hook fires exactly once (after 12 s since 2026-09-22)
     windows(60, 0.030);
     assert.ok(Math.abs(ratio - 0.5) < 1e-6);
     windows(40, 0.030);

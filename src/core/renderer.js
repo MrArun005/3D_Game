@@ -215,7 +215,7 @@ export function autoResolution(renderer, grade = null, lite = false, opts = {}) 
       // sustained slowness with every runtime lever spent: hand the next boot a lower preset, once
       if (onSustained && !sustainedFired && densityStep >= densitySteps && currentScale <= MIN_SCALE + 1e-6) {
         slowMs = avgMs > 22 ? slowMs + 1000 : 0;   // one window ~ one second
-        if (slowMs >= 30000) { sustainedFired = true; onSustained(avgMs); }
+        if (slowMs >= 12000) { sustainedFired = true; onSustained(avgMs); }   // 12 s, was 30: on a throttling fanless laptop 30 s of slideshow is most of a first impression
       }
 
       if (badRun >= 2 && densityStep < densitySteps) {

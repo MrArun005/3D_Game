@@ -16,7 +16,7 @@
  * RUNTIME-SAFE knobs: pixel ratio, traffic live count, farTraffic count.
  */
 
-export const QUALITY_NAMES = ['auto', 'low', 'medium', 'high'];   // the title-card cycle order
+export const QUALITY_NAMES = ['auto', 'low', 'balanced', 'medium', 'high'];   // the title-card cycle order
 export const STORAGE_KEY = 'hb.quality';                          // shared with core/gpu.js ('lite' | 'full' live there too)
 
 export const PRESETS = {
@@ -30,6 +30,24 @@ export const PRESETS = {
     traffic: 14,
     crowd: 80,
     farTraffic: 60,
+  },
+  /* Balanced (2026-09-22): Auto's pick on an integrated GPU. Medium was sized
+     on the M2 Air and the owner still called it "very sad" there -- a fanless
+     machine throttles its GPU after a few minutes, so a preset measured cold
+     runs slow warm. Keeps what makes the city read (near shadows under the car
+     and lamps, the night bloom), drops SMAA, renders 0.55 MP (-30% pixels vs
+     medium), and runs lighter traffic and crowds (the submit is 74-95% of
+     frame CPU). Explicit Medium / High are unchanged. */
+  balanced: {
+    shadows: 'near',
+    bloom: true,
+    aa: false,
+    blur: false,
+    pixelBudget: 960 * 573,
+    streamRadius: 1,
+    traffic: 18,
+    crowd: 110,
+    farTraffic: 80,
   },
   medium: {
     shadows: 'near',          // 1 cascade, 1024 map, 160 m: the near ring only (cascade 0 is 0-52 m today; 160 m keeps street shadows under the car and lamps)
@@ -64,7 +82,7 @@ export const FIELDS = Object.keys(PRESETS.low);   // the required set; high's tr
 
 /** The preset one step down, or null at the bottom. */
 export function nextLower(name) {
-  return name === 'high' ? 'medium' : name === 'medium' ? 'low' : null;
+  return name === 'high' ? 'medium' : name === 'medium' ? 'balanced' : name === 'balanced' ? 'low' : null;
 }
 
 /**
@@ -87,7 +105,7 @@ export function resolveQuality({ isLite = false, search = null, storage = null }
       if (PRESETS[saved]) { name = saved; source = 'saved'; }
     } catch { /* private mode */ }
   }
-  if (!name || name === 'auto') { name = isLite ? 'medium' : 'high'; source = `auto, ${isLite ? 'integrated' : 'discrete'} GPU`; }
+  if (!name || name === 'auto') { name = isLite ? 'balanced' : 'high'; source = `auto, ${isLite ? 'integrated' : 'discrete'} GPU`; }
   return { name, source, preset: PRESETS[name] };
 }
 
