@@ -52,6 +52,7 @@ import { groundHeightAt } from './world/metrics.js';
 import { CG_X, WHEEL_R, getVehicleProfile } from './vehicle/config.js';
 import { ChaseCamera } from './game/camera.js';
 import { createInput, padConnected, rumble } from './game/input.js';
+import { createPadNav } from './ui/padnav.js';
 import { Traffic, policeMaterials } from './game/traffic.js';
 import { decalMaterial as wearDecalMaterial, decalGeometry as wearDecalGeometry } from './world/decals.js';
 import { Crowd } from './game/crowd.js';
@@ -761,7 +762,6 @@ function placeHeldGun() {
   }
   heldGun.rotation.set(sw.roll, yaw, -rl.tilt);
   heldGun.visible = held === 'gun';   // the one place that decides it
-  heldGun.visible = true;
 }
 refreshHeldGun();                   // the pistol you start the game holding
 const skids = new SkidMarks(scene);
@@ -1823,9 +1823,27 @@ qualityLine?.addEventListener('click', (e) => {
 });
 drawQualityLine();
 
+/* Title-card mode cards (index.html .mode). A card only selects -- it stops
+   its click, which would otherwise reach the overlay and start free roam --
+   and ENTER, or any other click or key, starts; the chosen mode fires half a
+   second in, once the HUD is up. Every mode already existed; none was findable. */
+let menuMode = 'free';
+const modeCards = document.querySelectorAll('#hud .mode');
+for (const b of modeCards) b.addEventListener('click', (e) => {
+  e.stopPropagation();
+  menuMode = b.dataset.mode;
+  for (const o of modeCards) o.classList.toggle('active', o === b);
+});
+const MENU_MODES = {
+  jobs: () => jobs?.toggle(car),
+  story: () => phone?.toggle(true),   // the phone opens on HEISTS
+  range: () => { if (!onFoot.active) useVehicle(); if (onFoot.active) modes.startRange(onFoot.x, onFoot.z, onFoot.camYaw); },
+  holdout: () => modes.startHoldout(),
+};
+
 const start = () => {
   if (!started && qualityPending()) { location.reload(); return; }
-  if (!started) { started = true; hud.dismiss(); }
+  if (!started) { started = true; hud.dismiss(); if (MENU_MODES[menuMode]) setTimeout(MENU_MODES[menuMode], 500); }
   audio.resume();
 };
 hud.overlay.addEventListener('click', start);
@@ -2061,6 +2079,12 @@ const onInputAction = (action) => {
     const kind = WEAPON_KINDS[idx === 5 ? 4 : idx];   // 1-4 the first four guns, 6 the sniper (5 is grenades)
     if (kind && weapon.switchTo(kind)) { refreshHeldGun(); audio.click?.(); hud.flash(`${ARSENAL[kind].name} · ${weapon.ammo}/${ARSENAL[kind].mag}`); }
   }
+  if (action === 'nextgun' || action === 'prevgun') {
+    // pad D-pad: step through the slots the digit keys pick, in the HUD's order
+    const slots = ['weapon0', 'weapon1', 'weapon2', 'weapon3', 'weapon4', 'weapon6', 'weapon5'];
+    const at = held === 'fists' ? 0 : held === 'grenade' ? 6 : 1 + WEAPON_KINDS.indexOf(weapon.kind);
+    onInputAction(slots[(at + (action === 'nextgun' ? 1 : 6)) % 7]);
+  }
   if (action === 'reload' && weapon.reload()) { hud.flash('RELOADING…'); audio.reload?.(weapon.spec.reload); }
   if (action === 'avatar' && onFoot.character) {
     window._charIdx = ((window._charIdx || 0) + 1) % NAMED_CHARACTERS.length;
@@ -2105,6 +2129,20 @@ const touch = TOUCH ? createTouch(onInputAction, {
   onAim: (on) => { aiming = on; },
   onInput: () => { idleT = 0; start(); },
 }) : null;
+
+/* The pad on the clickables (ui/padnav.js), topmost layer first. The map's
+   clicks are positions, so it gets a crosshair; the touchpad that opened it
+   closes it. The phone is not modal: you can still drive with it up. */
+const padNav = createPadNav(() =>
+  !hud.overlay.classList.contains('gone') ? { root: hud.overlay, modal: true }
+  : hud.mapOpen ? { root: hud.mapEl, modal: true, cursor: true, toggle: 17, back: () => hud.toggleMap() }
+  : phone?.open ? { root: phone.el, back: () => phone.toggle(false) }
+  : null);
+// a pad shows itself on its first button press: swap the title card's key legend for its own
+addEventListener('gamepadconnected', () => {
+  document.querySelector('#hud .keys:not(.pad)')?.setAttribute('hidden', '');
+  document.querySelector('#hud .keys.pad')?.removeAttribute('hidden');
+});
 
 /* Mouse look. Pointer lock so the view keeps turning past the screen edge;
    click to grab, Escape to let go, and the rig recentres when you drive on. */
@@ -2204,17 +2242,22 @@ function frameBody() {
     film.pilot.update(car, dt);
     car.holdGear = false;
   } else {
-  c = input.read();
+  c = input.read(onFoot.active, padNav.update(dt));
   if (touch) {
     const t = touch.read();
     if (t.active) c = mergeDrive(c, t);   // a finger down wins over keys, like a live pad
     touch.setMode(onFoot.active ? 'foot' : 'drive');
     touch.setWeapon(held !== 'fists');
   }
+  if (c.lookX || c.lookY) {   // right stick: the mouse-look path at a rate, slower with sights up
+    idleT = 0;
+    const k = dt * (ads > 0.5 ? 0.45 : 1), dx = c.lookX * k, dy = c.lookY * k;
+    if (photo.on) photo.look(dx, dy); else if (onFoot.active) onFoot.look(dx, dy); else chase.look(dx, dy);
+  }
   if (featureTour?.active) {
     featureTour.applyInput(c, dt);
   }
-  if (c && (c.throttle || c.brake || c.steer || c.handbrake || c.lookBack || c.hold)) idleT = 0; else idleT += dt;
+  if (c && (c.throttle || c.brake || c.steer || c.handbrake || c.lookBack || c.hold || c.fire || c.aim)) idleT = 0; else idleT += dt;
   idleCam = false;   // the car and on-foot branches set it; anything else (heli, tank, film) is never idle-cam
   if (document.pointerLockElement !== canvas) idleT = Math.min(idleT, 0);   // no pointer lock means you are not playing: never orbit, never look 'locked'
   if (garage) {
@@ -2231,7 +2274,7 @@ function frameBody() {
     activeVehicle.update(c, dt, { keys: input.keys });
     car.throttle = 0; car.brake = 1; car.steerTarget = 0; car.vx = 0; car.vz = 0;
   } else if (activeVehicle && activeVehicle.type === 'tank') {
-    activeVehicle.update(c, dt, { firing, chase });
+    activeVehicle.update(c, dt, { firing: firing || c.fire, chase });
     car.throttle = 0; car.brake = 1; car.steerTarget = 0; car.vx = 0; car.vz = 0;
   } else if (onFoot.active) {
     onFoot.update(c, dt, camera, walkSolid, (x, z) => Math.max(world.district?.elevationAt?.(x, z) ?? 0, groundHeightAt(x, z)));
@@ -2539,7 +2582,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   // walk over a downed officer's weapon and it is yours, magazine full
   if (onFoot.active) { const k = traffic.pickupAt?.(onFoot.x, onFoot.z); if (k === 'grenade') { grenades.count++; hud.flash(`PICKED UP GRENADE · ${grenades.count}`); } else if (k === 'armour') { armour = Math.min(1, armour + 0.5); hud.flash(`BODY ARMOUR · ${Math.round(armour * 100)}%`); } else if (k) { held = 'gun'; weapon.addMag(k); weapon.switchTo(k); refreshHeldGun(); hud.flash(`PICKED UP ${ARSENAL[k].name} · +${ARSENAL[k].mag}`); } }
   if (modes?.active && !jobs?.job) hud.setJob?.(modes.line());
-  const adsTarget = aiming && onFoot.active ? 1 : 0;
+  const adsTarget = (aiming || c?.aim) && onFoot.active ? 1 : 0;   // right mouse, or L2
   ads += (adsTarget - ads) * Math.min(1, dt / ADS_BLEND_S);
   if (Math.abs(ads - adsTarget) < 0.01) ads = adsTarget;
   sinceShot += dt; if (sinceShot > 0.4) burst = 0;
@@ -2563,7 +2606,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   else if (arsKey !== lastArsKey && hud.arsEl) { hud.arsEl.innerHTML = ''; hud._arsKey = ''; }
   lastArsKey = arsKey;
   skids.update(car, car.wheelGround ? car.wheelGround[2] : 0);
-  if (firing) pullTrigger();
+  if (firing || c?.fire) pullTrigger();   // left mouse, or R2 on foot / R1 in the car
   if (crowd) crowd.signalTime = worldTime;   // pedestrians wait for the same lights the cars obey
   if (crowd) crowd.update(car, dt, (speed, p) => {
     traffic.reportCrime('person', speed);

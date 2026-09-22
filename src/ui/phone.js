@@ -82,7 +82,7 @@ export class Phone {
     // Bottom Close prompt
     const footer = document.createElement('div');
     footer.style.cssText = 'padding: 8px; text-align: center; font-size: 11px; color: #777; background: rgba(0,0,0,0.4);';
-    footer.textContent = 'PRESS M TO CLOSE PHONE';
+    footer.textContent = 'PRESS M TO CLOSE PHONE · PAD: ✕ SELECT · ○ CLOSE';
     el.appendChild(footer);
 
     document.body.appendChild(el);

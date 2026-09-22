@@ -15,6 +15,8 @@ body.photo #gameplay-prompt-bar, body.photo #wanted, body.photo #ammo, body.phot
 #hud .quality b{color:#e6c489;font-weight:600}
 #hud .quality small{display:block;margin-top:4px;font-size:10px;letter-spacing:.14em;color:#5f6c80}
 #hud .quality:hover b{color:#f0d6a4}
+/* the pad's focus ring on a clickable (src/ui/padnav.js) */
+.padfocus{outline:2px solid #39ffb0 !important;outline-offset:3px}
   </style>
 </head>
 <body>
@@ -64,7 +66,7 @@ body.photo #gameplay-prompt-bar, body.photo #wanted, body.photo #ammo, body.phot
         <button type="button" class="mode" data-mode="range"><b>Shooting range</b><span>Six boards, sixty seconds. Learn the recoil before it matters.</span></button>
         <button type="button" class="mode" data-mode="holdout"><b>Hold-out</b><span>Pick your ground and the city comes to you. 180 seconds.</span></button>
       </div>
-      <div class="go">ENTER THE CITY</div>
+      <div class="go" data-pad-default>ENTER THE CITY</div>
       <!-- core/quality.js presets; main.js cycles Auto -> Low -> Medium -> High on click and reloads on ENTER when the choice differs from what booted -->
       <div class="quality" role="button" tabindex="0" title="Quality preset: Low / Medium / High / Auto">QUALITY · <b>AUTO</b> <small>click to change</small></div>
       <div class="keys">
@@ -76,6 +78,12 @@ body.photo #gameplay-prompt-bar, body.photo #wanted, body.photo #ammo, body.phot
         Drag the left strip to steer &nbsp;·&nbsp; GAS / BRAKE pedals on the right &nbsp;·&nbsp; HANDBRAKE, CAM, HORN, LIGHTS, EXIT up top<br />
         On foot: left thumb stick to walk, drag the right half to look, RUN / JUMP / USE / FIRE / AIM on the right<br />
         PHONE and MAP buttons replace M and Tab &nbsp;·&nbsp; landscape only
+      </div>
+      <!-- shown instead of the keys once a pad presses a button (main.js gamepadconnected); the layout is input.js's header table -->
+      <div class="keys pad" hidden>
+        <kbd>R2</kbd> <kbd>L2</kbd> throttle / brake &nbsp; <kbd>L</kbd> steer &nbsp; <kbd>R</kbd> look &nbsp; <kbd>✕</kbd> handbrake &nbsp; <kbd>L1</kbd> hold gear + NOS &nbsp; <kbd>R1</kbd> fire &nbsp; <kbd>△</kbd> get out / in &nbsp; <kbd>○</kbd> camera &nbsp; <kbd>□</kbd> lights<br />
+        <kbd>OPTIONS</kbd> take a job &nbsp; <kbd>↑</kbd> phone &nbsp; <kbd>TOUCHPAD</kbd> map &nbsp; <kbd>←</kbd> <kbd>→</kbd> radio &nbsp; <kbd>L3</kbd> horn &nbsp; <kbd>R3</kbd> look back &nbsp; <kbd>CREATE</kbd> respawn<br />
+        On foot: <kbd>L2</kbd> aim &nbsp; <kbd>R2</kbd> fire &nbsp; <kbd>✕</kbd> sprint &nbsp; <kbd>□</kbd> jump &nbsp; <kbd>○</kbd> reload &nbsp; <kbd>←</kbd> <kbd>→</kbd> weapon &nbsp; <kbd>L3</kbd> crouch &nbsp; Menus: <kbd>D-pad</kbd> move &nbsp; <kbd>✕</kbd> select &nbsp; <kbd>○</kbd> back
       </div>
     </div>
   </div>

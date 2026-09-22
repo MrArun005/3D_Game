@@ -643,6 +643,23 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   look-lab that measured all of this pins live values with defineProperty,
   because the clock rewrites fog density and both light intensities every
   frame; a plain assignment is overwritten before the shot.
+- **PS5 controller + clickables (2026-09-22)**: the layout is the table in
+  `game/input.js`'s header (DualSense through the browser's standard mapping,
+  GTA V's PS5 verbs; the car and on foot differ: R2/L2 drive in the car and
+  fire/aim on foot, where the left stick walks, Cross sprints, Square jumps).
+  Presses come from `PAD_CAR` / `PAD_FOOT` (index -> action);
+  `test/actions.test.js` checks those actions have handlers too. The right
+  stick feeds the mouse-look path at px/s (`LOOK_X/Y`), standard mapping only
+  (a raw layout can rest a trigger on axis 3). `ui/padnav.js` puts the pad on
+  the clickables: main.js's layer list is title card > big map > phone; the
+  D-pad (or the left stick on a modal layer) moves a `.padfocus` ring to the
+  nearest clickable in that direction, Cross clicks, Circle backs out, and the
+  map gets a crosshair plus a synthetic click. While a menu has the pad,
+  `input.read(foot, ui)` drops its face buttons (on a modal layer the sticks
+  too). The title card's mode cards are wired now (`menuMode` /
+  `MENU_MODES`): the note above described them, but the code never landed.
+  Only the node tests have checked any of this; it hasn't been tried with a
+  real pad.
 
 ## Known bugs — do not "discover" these again, just fix them when in the area
 

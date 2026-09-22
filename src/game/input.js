@@ -1,7 +1,42 @@
-/** Keyboard + standard-layout gamepad. Stick and triggers stay analogue. */
+/** Keyboard + standard-layout gamepad. Stick and triggers stay analogue.
+ *
+ * The pad is laid out for a DualSense read through the browser's standard
+ * mapping (Chrome, Edge, Safari; an Xbox pad lands on the same positions:
+ * A = Cross, B = Circle, X = Square, Y = Triangle). GTA V's PS5 layout
+ * wherever this game has the verb:
+ *
+ *              in the car                   on foot
+ *   L stick    steer                        walk / run, analogue
+ *   R stick    look                         look
+ *   R2 / L2    throttle / brake-reverse     fire / aim
+ *   Cross      handbrake                    sprint (hold)
+ *   Square     headlights                   jump
+ *   Triangle   get out                      get in
+ *   Circle     camera                       reload
+ *   L1 / R1    hold gear + NOS / fire       -
+ *   L3 / R3    horn / look back             crouch / -
+ *   D-pad      up phone, left-right radio   up phone, left-right weapon
+ *   touchpad   map                          map
+ *   Options    take / abandon a job         take / abandon a job
+ *   Create     respawn                      respawn
+ *
+ * While a menu has the pad (ui/padnav.js) its face buttons and D-pad belong
+ * to the menu; on a modal one (title card, map) the sticks and triggers too.
+ */
 
 const STICK_DZ = 0.12;
 const TRIG_DZ = 0.04;
+/* Right stick at full throw, in mouse pixels per second: ~3.0 rad/s of yaw
+   and ~1.7 rad/s of pitch at look()'s 0.0032 / 0.0026 rad per pixel.
+   ponytail: fixed rates; a sensitivity setting when someone asks for one. */
+const LOOK_X = 950;
+const LOOK_Y = 650;
+
+/* Button index -> the action its press raises. Held buttons (the triggers,
+   Cross, L1, R1, R3, Square on foot) are read by padControls instead. */
+export const PAD_CAR = { 1: 'camera', 2: 'lights', 3: 'use', 8: 'reset', 9: 'run', 10: 'horn', 12: 'phone', 14: 'radio', 15: 'radio', 17: 'map' };
+export const PAD_FOOT = { 1: 'reload', 3: 'use', 8: 'reset', 9: 'run', 10: 'camera', 12: 'phone', 14: 'prevgun', 15: 'nextgun', 17: 'map' };
+const PAD_BUTTONS = 18;   // 0-15 standard, 16 PS, 17 touchpad click
 
 export function deadzone(v, dz = STICK_DZ) {
   if (!Number.isFinite(v)) return 0;
@@ -28,6 +63,10 @@ export function mergeDrive(kb, pad) {
     nos: !!(kb.nos || pad.nos),
     lookBack: !!(kb.lookBack || pad.lookBack),
     analogue: !!(padLive && (pad.throttle > 0.02 || pad.brake > 0.02 || Math.abs(pad.steer) > 0.02)),
+    fire: !!(kb.fire || pad.fire),        // the pad's; the mouse buttons are main.js's. Either side:
+    aim: !!(kb.aim || pad.aim),           // touch merges as mergeDrive(c, t) over the pad's result
+    lookX: (kb.lookX || 0) + (pad.lookX || 0),   // right stick, mouse pixels per second
+    lookY: (kb.lookY || 0) + (pad.lookY || 0),
   };
 }
 
@@ -52,37 +91,55 @@ function trigger(button, ...axes) {
   return v;
 }
 
-function readPad() {
-  const empty = { throttle: 0, brake: 0, steer: 0, handbrake: 0, hold: false, downs: {} };
-  if (typeof navigator === 'undefined' || !navigator.getGamepads) return empty;
-  const pads = navigator.getGamepads();
-  let throttle = 0, brake = 0, steer = 0, handbrake = 0, hold = false, lookBack = false;
-  const downs = { camera: false, lights: false, reset: false, film: false,
-                  use: false, fire: false, run: false };
-  for (const p of pads) {
-    if (!p) continue;
-    // two pads must not sum: the larger deflection wins (a resting second pad adds nothing either way)
-    const s = axisToSteer(p.axes[0] ?? 0);
-    if (Math.abs(s) > Math.abs(steer)) steer = s;
-    const rt = trigger(p.buttons[7], p.axes[5], p.axes[7]);
-    const lt = trigger(p.buttons[6], p.axes[4], p.axes[6]);
-    throttle = Math.max(throttle, rt);
-    brake = Math.max(brake, lt);
-    handbrake = Math.max(handbrake, buttonValue(p.buttons[0]));
-    hold = hold || pressed(p.buttons[4]);
-    lookBack = lookBack || pressed(p.buttons[11]) || pressed(p.buttons[10]); // stick clicks
-    if (pressed(p.buttons[3])) downs.camera = true;   // Y
-    if (pressed(p.buttons[2])) downs.lights = true;   // X
-    if (pressed(p.buttons[8])) downs.reset = true;    // View / Back
-    if (pressed(p.buttons[1])) downs.use = true;      // B  -- in and out of cars
-    if (pressed(p.buttons[5])) downs.fire = true;     // RB -- fire
-    if (pressed(p.buttons[9])) downs.run = true;      // Start -- checkpoint run
-  }
-  return {
-    throttle, brake,
-    steer: Math.max(-1, Math.min(1, steer)),
-    handbrake, hold, lookBack, downs,
+/** One pad's held controls. `p` is a Gamepad, or anything with axes and buttons. */
+export function padControls(p, foot) {
+  const b = p.buttons, ax = p.axes;
+  /* squared: fine aim near the centre. Standard mapping only -- a raw layout
+     can rest a trigger at -1 on axis 2 or 3, which would pitch the view forever. */
+  const look = (v) => { const s = p.mapping === 'standard' ? deadzone(v ?? 0) : 0; return s * Math.abs(s); };
+  const r2 = trigger(b[7], ax[5], ax[7]);
+  const l2 = trigger(b[6], ax[4], ax[6]);
+  const out = {
+    throttle: r2, brake: l2, steer: axisToSteer(ax[0] ?? 0),
+    handbrake: buttonValue(b[0]), hold: pressed(b[4]), nos: pressed(b[4]),
+    lookBack: pressed(b[11]), fire: pressed(b[5]), aim: false,
+    lookX: look(ax[2]) * LOOK_X, lookY: look(ax[3]) * LOOK_Y,
   };
+  if (foot) {
+    /* onfoot.js reads the drive fields: throttle - brake is forward, steer
+       strafes, handbrake jumps, hold sprints. The stick feeds them here so
+       the triggers are free to shoot. Stick up is axis -1. */
+    const ly = deadzone(ax[1] ?? 0);
+    out.throttle = Math.max(0, -ly);
+    out.brake = Math.max(0, ly);
+    out.handbrake = pressed(b[2]) ? 1 : 0;
+    out.hold = pressed(b[0]);
+    out.nos = out.lookBack = false;
+    out.fire = r2 > 0.3;
+    out.aim = l2 > 0.3;
+  }
+  return out;
+}
+
+function readPad(foot) {
+  const acc = { throttle: 0, brake: 0, steer: 0, handbrake: 0, hold: false, nos: false,
+                lookBack: false, fire: false, aim: false, lookX: 0, lookY: 0, buttons: [] };
+  if (typeof navigator === 'undefined' || !navigator.getGamepads) return acc;
+  for (const p of navigator.getGamepads()) {
+    if (!p) continue;
+    const s = padControls(p, foot);
+    // two pads must not sum: the larger deflection wins (a resting second pad adds nothing either way)
+    if (Math.abs(s.steer) > Math.abs(acc.steer)) acc.steer = s.steer;
+    if (Math.abs(s.lookX) > Math.abs(acc.lookX)) acc.lookX = s.lookX;
+    if (Math.abs(s.lookY) > Math.abs(acc.lookY)) acc.lookY = s.lookY;
+    acc.throttle = Math.max(acc.throttle, s.throttle);
+    acc.brake = Math.max(acc.brake, s.brake);
+    acc.handbrake = Math.max(acc.handbrake, s.handbrake);
+    acc.hold ||= s.hold; acc.nos ||= s.nos; acc.lookBack ||= s.lookBack;
+    acc.fire ||= s.fire; acc.aim ||= s.aim;
+    for (let i = 0; i < PAD_BUTTONS; i++) if (pressed(p.buttons[i])) acc.buttons[i] = true;
+  }
+  return acc;
 }
 
 export function rumble(mag, ms = 90) {
@@ -108,9 +165,7 @@ export function padConnected() {
 export function createInput(onAction, { chatAllowed = () => true } = {}) {
   const keys = Object.create(null);
   const blocked = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'];
-  // must list every action the pad can raise, or its edge is never detected
-  const prevDown = { camera: false, lights: false, reset: false, film: false,
-                     use: false, fire: false, run: false, avatar: false };
+  const prevDown = [];   // pad buttons last frame, by index
 
   addEventListener('keydown', (e) => {
     const active = document.activeElement;
@@ -176,7 +231,8 @@ export function createInput(onAction, { chatAllowed = () => true } = {}) {
 
   return {
     keys,
-    read() {
+    /** `foot`: on-foot layout. `ui`: the menu that has the pad this frame (padnav.update). */
+    read(foot = false, ui = null) {
       const kb = {
         throttle: keys.KeyW || keys.ArrowUp ? 1 : 0,
         brake: keys.KeyS || keys.ArrowDown ? 1 : 0,
@@ -186,10 +242,17 @@ export function createInput(onAction, { chatAllowed = () => true } = {}) {
         nos: !!(keys.ShiftLeft || keys.ShiftRight),
         lookBack: !!keys.KeyQ,
       };
-      const pad = readPad();
-      for (const name of Object.keys(prevDown)) {
-        if (pad.downs[name] && !prevDown[name]) onAction(name);
-        prevDown[name] = pad.downs[name];
+      const pad = readPad(foot);
+      const table = foot ? PAD_FOOT : PAD_CAR;
+      for (let i = 0; i < PAD_BUTTONS; i++) {
+        const down = !!pad.buttons[i];
+        if (down && !prevDown[i] && !ui && table[i]) onAction(table[i]);
+        prevDown[i] = down;   // tracked under a menu too, so closing it with a held button raises nothing
+      }
+      if (ui) {
+        pad.handbrake = 0;
+        pad.hold = pad.nos = pad.lookBack = pad.fire = pad.aim = false;
+        if (ui.modal) pad.throttle = pad.brake = pad.steer = pad.lookX = pad.lookY = 0;
       }
       return mergeDrive(kb, pad);
     },
