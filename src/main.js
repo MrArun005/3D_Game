@@ -901,7 +901,7 @@ function pullTrigger() {
                       hit ? 9 : 1);
   // one path per officer hit: hitAny returns false on a non-downing hit, and the old `hitAny || hitPost` then took the same hp again through hitPost
   if (hit && hit.kind === 'officer') { const dmg = weapon.spec.damage * (hit.head ? 3 : 1); if (hit.head) hud.flash('HEADSHOT'); const downed = (hit.ref.mesh || hit.ref.roof) ? traffic.hitAny?.(hit.ref, dmg) : roadblock?.hitPost?.(hit.ref, dmg); if (downed) { modes?.onOfficerDown(); story?.onOfficerDown?.(); hud.flash(modes?.active === 'holdout' ? 'OFFICER DOWN · +50' : 'OFFICER DOWN'); } crosshair.hit(hit.ref.down > 0); }
-  if (hit && hit.kind === 'person') { hit.ref.down = 0.001; bloodDecals.stamp(hit.ref.x, groundHeightAt(hit.ref.x, hit.ref.z) + 0.01, hit.ref.z, 0, 1, 0, 0.8 + Math.random() * 0.5); }
+  if (hit && hit.kind === 'person') { hit.ref.down = 0.001; hit.ref.dead = true;   /* a shot pedestrian stays down (crowd.js clears the body later) */ bloodDecals.stamp(hit.ref.x, groundHeightAt(hit.ref.x, hit.ref.z) + 0.01, hit.ref.z, 0, 1, 0, 0.8 + Math.random() * 0.5); }
   if (hit && (hit.kind === 'car' || hit.kind === 'police')) {   // vehicles only: boards, marksmen and posts have no .mesh
     hit.ref.speed *= 0.55;
     hit.ref.mesh?.material?.color?.offsetHSL(0, -0.05, -0.04);

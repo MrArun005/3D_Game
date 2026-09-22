@@ -92,7 +92,7 @@ export class Crowd {
          and more of its people stand -- shop windows, phones, queues. */
       const inTokyo = this.tokyo && this.district.districtAt?.(x, z) === 'LITTLE TOKYO';
       if (this.tokyo && !inTokyo && this.rand() < 0.6) continue;
-      p.live = true; p.x = x; p.z = z; p.down = 0;
+      p.live = true; p.x = x; p.z = z; p.down = 0; p.dead = false;
       p.hx = x; p.hz = z;          // leash anchor: the verified pavement spot
       // walk along the kerb, in the direction the pavement runs
       p.yaw = Math.atan2(-uz, ux) + (this.rand() < 0.5 ? 0 : Math.PI);
@@ -116,7 +116,7 @@ export class Crowd {
   /** Turf a driver out onto the road and let them run for it. */
   eject(x, z, yaw) {
     const p = this.people.find((q) => !q.live) || this.people[0];
-    p.live = true; p.down = 0;
+    p.live = true; p.down = 0; p.dead = false;
     p.x = x + Math.cos(yaw + Math.PI / 2) * 1.9;
     p.z = z - Math.sin(yaw + Math.PI / 2) * 1.9;
     p.hx = p.x; p.hz = p.z;
@@ -144,6 +144,7 @@ export class Crowd {
          0.36m circle barely registers against the hull probes anyway. */
       if (!p.down && gap < 1.7 && car.speed > 2.2) {
         p.down = 0.001;
+        p.dead = car.speed > 12.5;   // ~45 km/h and up is fatal (2026-09-22): nobody used to die, everyone stood up after 4.8 s
         const push = Math.max(3.0, car.speed * 0.48);
         p.vx = Math.cos(car.yaw) * push;
         p.vz = -Math.sin(car.yaw) * push;
@@ -157,7 +158,9 @@ export class Crowd {
           p.vx = (p.vx || 0) * Math.pow(0.18, dt);
           p.vz = (p.vz || 0) * Math.pow(0.18, dt);
         }
-        if (p.down > 4.8) {
+        if (p.dead) {
+          if (p.down > 45) { p.live = false; p.dead = false; p.down = 0; }   // cleared a while later (also on DESPAWN, as for anyone)
+        } else if (p.down > 4.8) {
           // Recover: stand back up and panic run away
           p.down = 0;
           p.panic = 5.0;
