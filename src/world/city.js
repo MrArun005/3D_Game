@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import {
   attribute, texture, uv, materialReference, instanceIndex,
-  floor, fract, sin, dot, step, mix, vec2, vec3, float, positionWorld, smoothstep } from 'three/tsl';
+  floor, fract, sin, dot, step, mix, vec2, vec3, float, positionWorld, smoothstep,
+  normalWorld, cameraPosition, normalize, cross, dFdx, dFdy, sign, abs, max, min, select } from 'three/tsl';
 import { mulberry32 } from '../core/rng.js';
 import { M4 } from '../core/geometry.js';
 import {
@@ -97,28 +98,78 @@ export function makeTileable(material) {
        with the instance index gives each building its own pattern. Everything
        is a pure function of (cell, instance): no new attribute, no per-frame
        work, and deterministic on every reload. */
-    const cell = floor(scaled).add(vec2(float(instanceIndex).mul(0.731), float(instanceIndex).mul(0.417)));
-    const h = fract(sin(dot(cell, vec2(127.1, 311.7))).mul(43758.5453));
-    const h2 = fract(sin(dot(cell, vec2(269.5, 183.3))).mul(43758.5453));
-    const lit = step(0.45, h);                                   // ~55% of windows on
-    const warm = vec3(1.0, 0.86, 0.62), cool = vec3(0.80, 0.90, 1.0);
-    const tint = mix(warm, cool, step(0.55, h2));
-    const level = lit.mul(mix(0.55, 1.0, h2));                   // lit ones vary too
-    
-    // Parallax room interior: ceiling lamp hotspot + floor furniture silhouettes
-    const cellUv = fract(scaled);
-    const roomFrame = smoothstep(0.06, 0.16, cellUv.x).mul(smoothstep(0.94, 0.84, cellUv.x))
-      .mul(smoothstep(0.06, 0.16, cellUv.y)).mul(smoothstep(0.94, 0.84, cellUv.y));
-    // ceiling lamp glow hotspot
-    const ceilingLamp = smoothstep(0.48, 0.08, cellUv.sub(vec2(0.5, 0.72)).length()).mul(0.35);
-    // floor sill & furniture silhouette
-    const floorSill = smoothstep(0.12, 0.26, cellUv.y);
-    const roomInterior = roomFrame.mul(floorSill).add(ceilingLamp);
+    const R = material.userData?.rooms;
+    if (!R) {
+      // no room grid (base bands): the old per-tile hash, flat
+      const cell = floor(scaled).add(vec2(float(instanceIndex).mul(0.731), float(instanceIndex).mul(0.417)));
+      const h = fract(sin(dot(cell, vec2(127.1, 311.7))).mul(43758.5453));
+      const h2 = fract(sin(dot(cell, vec2(269.5, 183.3))).mul(43758.5453));
+      const tint = mix(vec3(1.0, 0.86, 0.62), vec3(0.80, 0.90, 1.0), step(0.55, h2));
+      material.emissiveNode = texture(material.emissiveMap, scaled)
+        .mul(materialReference('emissive', 'color', material))
+        .mul(materialReference('emissiveIntensity', 'float', material))
+        .mul(tint).mul(step(0.45, h).mul(mix(0.55, 1.0, h2)));
+    } else {
+      /* INTERIOR MAPPING (2026-09-22). Every window cell gets a real 3D room
+         behind the glass: the view ray is traced into a box (two side walls,
+         floor, ceiling, back wall) in the cell's own tangent frame, so rooms
+         shift with parallax as you drive past and read as depth, not paint.
+         One room per window bay per storey; no extra geometry, no texture
+         fetch, one draw call as before -- a handful of ALU per lit fragment.
 
-    material.emissiveNode = texture(material.emissiveMap, scaled)
-      .mul(materialReference('emissive', 'color', material))
-      .mul(materialReference('emissiveIntensity', 'float', material))
-      .mul(tint).mul(level).mul(roomInterior);
+         Tangent frame: facades are vertical box faces, so B is world up and T
+         is up x N. Whether the tile's U runs along +T or -T depends on the
+         face, so its sign comes from screen derivatives of U against T. */
+      const cols = float(R.cols), floors = float(R.floors);
+      const g = scaled.mul(vec2(cols, floors));                 // window-cell space
+      const f = fract(g);
+      const cellId = floor(g).add(vec2(float(instanceIndex).mul(0.731), float(instanceIndex).mul(0.417)));
+      const hash = (k1, k2) => fract(sin(dot(cellId, vec2(k1, k2))).mul(43758.5453));
+      const h = hash(127.1, 311.7), h2 = hash(269.5, 183.3), h3 = hash(419.2, 371.9), h4 = hash(97.3, 157.1);
+
+      const N = normalize(normalWorld);
+      const up = vec3(0, 1, 0);
+      const T = normalize(cross(up, N).add(vec3(1e-5, 0, 0)));
+      const sT = sign(dFdx(g.x).mul(dot(dFdx(positionWorld), T)).add(dFdy(g.x).mul(dot(dFdy(positionWorld), T)))).add(1e-6);
+      const sB = sign(dFdx(g.y).mul(dFdx(positionWorld).y).add(dFdy(g.y).mul(dFdy(positionWorld).y))).add(1e-6);
+      const V = normalize(positionWorld.sub(cameraPosition));  // camera -> wall
+
+      const cw = float(R.cw), ch = float(R.ch), D = float(R.depth).mul(mix(0.75, 1.25, h4));
+      const rx = dot(V, T).mul(sign(sT)), ry = V.y.mul(sign(sB)), rz = min(dot(V, N), -1e-3);
+      const ox = f.x.mul(cw), oy = f.y.mul(ch);
+      const safe = (v) => sign(v).add(1e-6).mul(max(abs(v), 1e-4));
+      const tx = select(rx.greaterThan(0), cw, float(0)).sub(ox).div(safe(rx));
+      const ty = select(ry.greaterThan(0), ch, float(0)).sub(oy).div(safe(ry));
+      const tz = D.negate().div(rz);
+      const t = min(min(tx, ty), tz);
+      const hx = ox.add(rx.mul(t)).div(cw), hy = oy.add(ry.mul(t)).div(ch), hz = t.mul(rz).negate().div(D);   // 0..1 in the room
+
+      // surfaces: back wall lit by the room lamp, sides a little darker, floor darkest, ceiling brightest near its lamp
+      const backWall = mix(0.62, 0.9, h3).mul(float(1).sub(smoothstep(0.34, 0.0, hy).mul(0.55).mul(step(0.35, h4))));   // furniture band on the back wall
+      const sideWall = float(0.42).add(hz.mul(0.18));
+      const floorS = float(0.22).add(float(1).sub(hz).mul(0.08));
+      const lampD = vec2(hx.sub(0.5), hz.sub(0.55)).length();
+      const ceilS = float(0.55).add(smoothstep(0.35, 0.0, lampD).mul(1.1));
+      const onBack = tz.lessThanEqual(min(tx, ty));
+      const onY = ty.lessThan(tx);
+      const room = select(onBack, backWall, select(onY, select(ry.greaterThan(0), ceilS, floorS), sideWall))
+        .mul(float(1).sub(hz.mul(0.35)));                      // deeper is dimmer
+
+      // blinds on ~30% of rooms: slats across the upper glass, lit from behind
+      const blinds = step(0.7, h2).mul(step(0.55, f.y));
+      const slats = float(0.55).add(step(0.5, fract(f.y.mul(26))).mul(0.25));
+      const shade = mix(room, slats, blinds);
+
+      const lit = step(0.45, h);                                // ~55% of rooms occupied
+      const warm = vec3(1.0, 0.84, 0.6), cool = vec3(0.78, 0.9, 1.0), tv = vec3(0.55, 0.7, 1.0);
+      const tint = mix(mix(warm, cool, step(0.55, h2)), tv, step(0.93, h3));   // a few TV-blue rooms
+      const level = lit.mul(mix(0.6, 1.0, h2)).add(float(1).sub(lit).mul(0.035));   // dark rooms still show a hint of depth
+
+      material.emissiveNode = texture(material.emissiveMap, scaled)
+        .mul(materialReference('emissive', 'color', material))
+        .mul(materialReference('emissiveIntensity', 'float', material))
+        .mul(tint).mul(level).mul(shade.mul(1.35));
+    }
   }
   return material;
 }

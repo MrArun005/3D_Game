@@ -147,6 +147,14 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
     writes `hb.lite` (next load = lite tier) with a toast. `?fixedres` off,
     `?full` clears hb.lite. GTAO now half resolution, 8 samples (was full res,
     16) -- the most expensive pass in the frame.
+  - **Interior mapping (2026-09-22, `city.js:makeTileable`)**: every facade
+    window cell is a ray-traced room (side walls, floor, ceiling lamp, back
+    wall with a furniture band, 30% blinds, a few TV-blue rooms, per-room
+    depth), grid from `material.userData.rooms` set in
+    `facades.js:buildFacadeMaterials` (ROOM_COLS per style). Tangent sign from
+    screen derivatives. Emissive only, so it shows at night; no draws, no
+    fetches. Unverified in a browser -- if rooms slide the WRONG way as you
+    pass, the sT/sB sign terms are the knob.
   - **Brief pass (2026-09-11, `docs/BRIEF-2026-09-11.md`)**: the game is
     the first screen (light gradient card at the bottom, ALL CONTROLS in a
     `<details>`), the hero is red (0xb3161c), the chase camera banks into

@@ -267,11 +267,22 @@ function facadeMaterial(t, glass) {
   });
 }
 
+/* window bays per facade tile, matching each paint* function's column count */
+const ROOM_COLS = { [TOWER]: 8, [MID]: 6, [LOFT]: 4, [PODIUM]: 4, [DECK]: 7 };
+
 export function buildFacadeMaterials() {
   const out = {};
   const glass = new Set([TOWER, MID, PODIUM]);
   for (const kind of [...new Set(KINDS)]) {
-    out[kind] = [0, 1, 2].map((v) => facadeMaterial(paintFacade(kind, v), glass.has(kind)));
+    out[kind] = [0, 1, 2].map((v) => {
+      const m = facadeMaterial(paintFacade(kind, v), glass.has(kind));
+      /* The room grid behind the glass (city.js:makeTileable interior mapping):
+         window columns per tile as painted above, one room per storey, rooms
+         as wide as a bay and ~4.5 m deep. copy() carries userData across. */
+      const spec = ARCH[kind];
+      m.userData.rooms = { cols: ROOM_COLS[kind] ?? 6, floors: spec.floors, cw: spec.wide / (ROOM_COLS[kind] ?? 6), ch: spec.storey, depth: 4.5 };
+      return m;
+    });
   }
   return out;
 }
