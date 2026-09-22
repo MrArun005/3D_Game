@@ -136,6 +136,11 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   - **Smoothness**: `vehicle/interp.js` interpolates the 1/120 step for the
     hero and chase camera (alpha = accumulator/STEP; leftover beyond the
     4-step guard is dropped); `#streetFurniture`/`#signals` are generators.
+  - **Smoothness 2 (2026-09-22)**: `InstanceBatch.emit` yields every 48
+    placements / 2 ms inside a material's merge (F3 'emit slice' =
+    `catalogue.emitWorstMs`); vite splits `three`, `three-addons`, `net` from
+    game code (index 572 kB, was 1.86 MB in one chunk); the district fetch
+    starts before `renderer.init()`.
   - **Brief pass (2026-09-11, `docs/BRIEF-2026-09-11.md`)**: the game is
     the first screen (light gradient card at the bottom, ALL CONTROLS in a
     `<details>`), the hero is red (0xb3161c), the chase camera banks into

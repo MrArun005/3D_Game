@@ -35,5 +35,22 @@ export default defineConfig({
     holdUntilCrawlEnd: true,
   },
   server: { port: 5173, open: false, warmup: { clientFiles: ['./src/main.js'] } },
-  build: { target: 'es2022', outDir: 'dist', sourcemap: true },
+  /* Split vendor code from game code (2026-09-22). One 1.86 MB chunk meant any
+     one-line game change re-downloaded three.js too; a separate `three` chunk
+     stays cached across deploys, and the browser parses the chunks in
+     parallel. `three` is ~1.3 MB on its own, so the warning limit is set to
+     what it honestly is rather than silenced. */
+  build: {
+    target: 'es2022', outDir: 'dist', sourcemap: true,
+    chunkSizeWarningLimit: 1400,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/three/examples')) return 'three-addons';
+          if (id.includes('node_modules/three')) return 'three';
+          if (id.includes('node_modules/trystero')) return 'net';
+        },
+      },
+    },
+  },
 });

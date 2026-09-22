@@ -205,6 +205,7 @@ export class Stats {
     out += row('live chunks', live, BUDGET.chunks);
     out += row('chunk build', this.worstChunkMs, BUDGET.chunkBuildMs, ' ms', (v) => v.toFixed(1));
     out += row('chunk step', this.worstStepMs, BUDGET.chunkBuildMs, ' ms', (v) => v.toFixed(1));   // longest un-yielded generator step
+    out += row('emit slice', window._catalogue?.emitWorstMs || 0, BUDGET.chunkBuildMs, ' ms', (v) => v.toFixed(1));   // longest catalogue merge slice (catalogue.js)
     out += `  geometries  ${String(this.snapshot.geometries).padStart(7)}\n`;
     out += `  textures    ${String(this.snapshot.textures).padStart(7)}\n`;
     out += `  programs    ${String(this.snapshot.programs).padStart(7)}\n`;

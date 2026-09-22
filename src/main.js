@@ -114,6 +114,10 @@ const setBootProgress = (pct, m) => {
 setBootProgress(10, 'Waking the GPU…');
 const renderer = createRenderer(canvas);
 setBootProgress(25, 'Starting the renderer…');
+/* Start the 0.8 MB district fetch + parse now: it needs no GPU, and it used
+   to wait behind renderer.init() and the vendor car loads (2026-09-22). */
+const districtReady = loadDistrict();
+districtReady.catch(() => {});   // handled where it is awaited; this only stops an early 'unhandled rejection' before that
 await renderer.init();
 setBootProgress(45, 'Building the scene & lights…');
 setAnisotropy(renderer.capabilities?.getMaxAnisotropy?.() ?? 16);
@@ -1051,11 +1055,12 @@ const city = world;                       // legacy alias, same object
 const catalogueReady = new Catalogue().load(renderer)
   .then((c) => {
     console.info(`catalogue: ${c.assets.size} assets, ${c.materials.size} materials`);
+    window._catalogue = c;   // F3 reads emitWorstMs
     return c;
   })
   .catch((e) => { console.warn('catalogue unavailable:', e.message); return null; });
 
-Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search).has('nokit') ? null : loadKitBuildings(assets).catch((e) => console.warn('kit buildings:', e.message))]).then(([district, catalogue]) => {
+Promise.all([districtReady, catalogueReady, new URLSearchParams(location.search).has('nokit') ? null : loadKitBuildings(assets).catch((e) => console.warn('kit buildings:', e.message))]).then(([district, catalogue]) => {
   useDistrict(district);                  // roadDepth() now answers from the file
   traffic.useGraph(district);
   useGraphForRoutes(district);             // and the fleet drives the real streets

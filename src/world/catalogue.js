@@ -484,7 +484,20 @@ export class InstanceBatch {
       const geos = [];
       const pending = [];               // break-tracking: ranges awaiting the mesh
       let offset = 0;
+      /* Sliced: downtown one material can carry hundreds of placements, and
+         cloning + transforming all of them in one macrotask was a hitch the
+         2 ms build budget never saw. Yield every SLICE items (and after a
+         few ms), check the group is still alive, carry on. */
+      const SLICE = 48;
+      let tSlice = performance.now(), n = 0;
       for (const it of items) {
+        if (++n % SLICE === 0 || performance.now() - tSlice > 2) {
+          const ms = performance.now() - tSlice;
+          if (ms > (this.cat.emitWorstMs || 0)) this.cat.emitWorstMs = ms;
+          await nextTask();
+          if (dead()) { for (const g of geos) g.dispose(); return null; }
+          tSlice = performance.now();
+        }
         /* Non-indexed throughout: mergeGeometries refuses a mix of indexed and
            non-indexed inputs, and the kit is authored both ways. These are
            84-160 triangle props, so the duplication is cheap next to the
@@ -510,7 +523,10 @@ export class InstanceBatch {
         geos.push(g);
       }
       if (!geos.length) continue;
+      const tMerge = performance.now();
       const merged = mergeGeometries(geos, false);
+      const mergeMs = performance.now() - tMerge + (performance.now() - tSlice);
+      if (mergeMs > (this.cat.emitWorstMs || 0)) this.cat.emitWorstMs = mergeMs;   // F3 'emit slice'
       for (const g of geos) g.dispose();
       if (!merged) continue;
       if (dead()) { merged.dispose(); return null; }   // a merge is synchronous, but check again before it joins the group
