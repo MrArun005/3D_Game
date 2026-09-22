@@ -1075,8 +1075,34 @@ export class Traffic {
     const policeActive = lit.length > 0;
     const nearLit = (x, z, r) => { for (let i = 0; i < lit.length; i++) { const q = lit[i]; if (Math.hypot(q.x - x, q.z - z) < r) return true; } return false; };
 
-    for (const car of this.cars) {
+    /* Far tier (2026-09-22). A civilian more than 220 m out (despawn is 320)
+       is a few pixels on the horizon: it steps every 4th frame with dt*4,
+       staggered by index so a quarter of the far cars step each frame. Every
+       integration in this loop uses `step`, so speed and distance per second
+       are unchanged and the stop-line clamp below is a hard constraint at any
+       step; the accel lag (limit - speed) * 2.2 * step stays under 1 up to
+       step = 0.45 s, so a 4x step never overshoots the limit. Whatever matters
+       stays per frame: cars within 220 m, a fugitive being chased (fleeT > 0),
+       hunt / chase / ramming. `farEvery` is the bench's off switch (1).
+       Bench, scratchpad/rec/traffic-bench.mjs (node, 40 cars, 29 near / 11
+       far, 600 frames at 1/60): farEvery=1 reproduces the old positions bit
+       for bit; farEvery=4 costs 0.030 -> 0.025 ms per update, and with the
+       route dice fixed 25 of 40 cars sit within 5 cm of the per-frame run
+       after 10 s (speeds equal) -- the rest differ by a light or lane
+       decision sampled a frame apart, the worst two straddling the 220 m
+       line itself. */
+    const farEvery = this.farEvery ?? 4;
+    const frame = this._frame = ((this._frame ?? 0) + 1) | 0;
+    const cars = this.cars;
+    for (let i = 0; i < cars.length; i++) {
+      const car = cars[i];
       if (!car.live) { this.spawn(car, player, false); continue; }
+      let step = dt;
+      const pdx = car.x - player.x, pdz = car.z - player.z;
+      if (pdx * pdx + pdz * pdz > 220 * 220 && !car.hunt && !car.chase && !(car.ramming > 0) && !(car.fleeT > 0)) {
+        if ((i + frame) % farEvery !== 0) continue;
+        step = dt * farEvery;
+      }
 
       // keep at least a junction of path in front of us
       let guard = 0;
@@ -1101,7 +1127,13 @@ export class Traffic {
           // amber only stops you if you could still pull up for it
           const mustStop = state === 'red'
             || (state === 'amber' && gap > car.speed * 1.1);
-          if (mustStop && gap > -0.05) {      // never drag a committed car back
+          /* -0.05: never drag a committed car back. A far-tier car (step = 4 dt)
+             checks the line a quarter as often, so it can already be
+             speed * (step - dt) past it when it looks -- and then bolt through a
+             red the per-frame car stopped for (bench: one car 61.7 m ahead
+             after 10 s). Widen the window by exactly that overshoot: zero for a
+             per-frame car, up to ~1.1 m at 17 m/s for a far one. */
+          if (mustStop && gap > -0.05 - car.speed * (step - dt)) {
             hold = gate.s;
             limit = Math.min(limit, Math.sqrt(Math.max(0, gap) * 2 * 4.5));
           }
@@ -1116,7 +1148,7 @@ export class Traffic {
          with a cooldown so a jam is a scatter of horns, not a chord. The player
          parked across a lane gets the same treatment -- that is the point. */
       if (!car.hunt && lead < 1.0 && car.speed < 0.6) {
-        car.stuckT = (car.stuckT ?? 0) + dt;
+        car.stuckT = (car.stuckT ?? 0) + step;
         if (car.stuckT > 2.5 + this.rand() * 2) { car.stuckT = -2 - this.rand() * 4; this.honk?.(car.x, car.z); }
       } else if ((car.stuckT ?? 0) > 0) car.stuckT = 0;
       /* Sirens: civilians within 70 m of a pursuit slow to a crawl and drift
@@ -1127,10 +1159,10 @@ export class Traffic {
       }
 
       const accel = limit > car.speed ? 4.5 : 9.0;
-      car.speed += Math.max(-accel, Math.min(accel, limit - car.speed)) * dt * 2.2;
+      car.speed += Math.max(-accel, Math.min(accel, limit - car.speed)) * step * 2.2;
       car.stopped = car.speed < 0.4;
       if (car.laneCooldown > 0) {
-        car.laneCooldown -= dt;
+        car.laneCooldown -= step;
         if (car.laneCooldown <= 0) {
           car.changingLane = false;
           if (car.lane !== 0 && !car.hunt) {
@@ -1140,18 +1172,19 @@ export class Traffic {
         }
       }
       if (car.panic > 0) {
-        car.panic -= dt;
+        car.panic -= step;
         const flash = Math.sin(t * 18) > 0;
         car.brakeMat.emissiveIntensity = flash ? 3.2 : 0.2;
       } else {
         car.brakeMat.emissiveIntensity = limit < car.speed - 0.3 || car.stopped ? 2.4 : 0.35;
       }
 
-      car.s += car.speed * dt;
+      car.s += car.speed * step;
       if (hold !== null && car.s > hold) { car.s = hold; car.speed = 0; }
       this.#place(car);
 
-      if (Math.hypot(car.x - player.x, car.z - player.z) > 320) {
+      const ddx = car.x - player.x, ddz = car.z - player.z;
+      if (ddx * ddx + ddz * ddz > 320 * 320) {   // same 320 m despawn, squared: no hypot per car
         car.live = false;
         car.mesh.visible = false;
       }

@@ -92,10 +92,17 @@ export function resolveBoxes(car, boxes) {
          Only boxes that declare a `baseY` are skipped: a building's footprint
          has no base to be above, and must keep blocking at every height. */
       if (b.baseY !== undefined && (car.y ?? 0) + 1.7 < b.baseY) continue;
-      const ca = Math.cos(b.angle), sa = Math.sin(b.angle);
+      /* Broad phase first, trig after (2026-09-22). hw+hd >= hypot(hw, hd), so
+         this L1 reject keeps every box the old circle kept and the exact
+         probe-in-box test below still decides -- same contacts, same pushes.
+         What it saves is cos+sin+sqrt on every box the hull cannot reach: the
+         list is nearbyBuildings' 60 m window (~100-300 boxes a substep, x120
+         substeps a second). Bench, scratchpad/rec/collision-bench.mjs, N=300,
+         identical state hash over 60,000 steps: 18.2 -> 4.9 us per resolve. */
       const hw = b.hw + PAD, hd = b.hd + PAD;
-      const rough = Math.hypot(hw, hd) + 3.2;
+      const rough = hw + hd + 3.2;
       if (Math.abs(b.x - car.x) > rough || Math.abs(b.z - car.z) > rough) continue;
+      const ca = Math.cos(b.angle), sa = Math.sin(b.angle);
 
       for (const [ppx, ppz] of HULL_PROBES) {
         const px = car.x + fx * ppx + rx * ppz;
