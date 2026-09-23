@@ -178,6 +178,19 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
     `src/` at a few ms a frame: the rest is three's per-object render work
     for ~1,000+ draws -- the GPU/draw-count levers (presets, DRS) are where
     the M2 Air's frame goes, not game logic.
+  - **Recording a video in a GPU-less container** (`tools/record-virtual.mjs`,
+    recipe, 2026-09-23): an init script virtualises `performance.now`,
+    `requestAnimationFrame` and timers, so the game advances exactly 1/FPS
+    per step however long SwiftShader takes to draw it; every step is a
+    page screenshot piped into x264 (a full ffmpeg comes from `pip install
+    imageio-ffmpeg`; Playwright's bundled one only writes VP8 WebM).
+    Measured: ~30 s a frame at 1280x720 on `high` (SwiftShader already
+    uses all 4 cores, so parallel instances do not help), the first frame
+    after a warp several minutes (the streamer's time budget never trips on
+    a frozen clock, so a whole ring builds in one frame -- no pop-in on
+    video). Record on `balanced` at 24 fps. The feature tour (`window.
+    startFeatureTour()`, 63 s) is the content; hide `MediaRecorder` so its
+    own canvas recorder stays off.
   - **Asset viewer**: `npm run dev`, then `/viewer.html?asset=people|tank|
     heli|heli-civil|officers` (`&layout=faces`, `&lod1`, `&turret=`, orbit
     `yaw/pitch/dist/h/tx/tz`, `&t=` freezes time, `&webgl`). Dev only (not in
