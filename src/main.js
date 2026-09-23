@@ -48,6 +48,7 @@ import { Vehicle, CarVehicle } from './game/vehicle.js';
 import { HelicopterVehicle } from './game/flight.js';
 import { TankVehicle } from './game/tank.js';
 import { buildTankModel } from './world/tankModel.js';
+import { pickDifficulty, DIFFICULTY_KEY } from './game/difficulty.js';
 import { buildHeliModel } from './world/heliModel.js';
 import { DispatchService } from './game/dispatch.js';
 import { groundHeightAt } from './world/metrics.js';
@@ -175,6 +176,10 @@ window.__isLite = isLite;
 const quality = resolveQuality({ isLite });
 const Q = quality.preset;
 window.__quality = quality;
+/* Easy by default (2026-09-23, game/difficulty.js): the owner asked for "easy
+   game play, no complications". ?hard is the full game. */
+const DIFF = pickDifficulty(location.search, (() => { try { return localStorage.getItem(DIFFICULTY_KEY); } catch { return null; } })());
+console.info(`difficulty: ${DIFF.name.toUpperCase()} (stars x${DIFF.crimeScale}, max ${DIFF.maxWanted} from crimes, decay x${DIFF.decayScale}, hurt x${DIFF.hurtScale}, crashes x${DIFF.crashScale})`);
 const crowdWanted = !new URLSearchParams(location.search).has('nocrowd') && !RACE_MODE;   // on by default again (2026-09-23): two GPU-posed draws now, see world/figure.js
 console.info(describeQuality(quality.name, `${quality.source}, tier ${isLite ? 'LITE' : 'FULL'}: ${qualityChoice.reason}, gpu ${gpuInfo.gpuDesc || 'unknown'}`, Q, { traffic: RACE_MODE ? 0 : Q.traffic, crowd: crowdWanted ? Q.crowd : 0 }));
 
@@ -435,7 +440,7 @@ function onShot(gap, landed = null, damage = 26, from = null, kind = 'pistol') {
   if (wastedAnim !== 0 || dying > 0) return;   // already dying: the clip plays out, nothing lands on the body
   if (onFoot.active) {
     // on foot there is no bodywork to absorb it -- unless you bought some
-    const a = absorb(armour, hit * 0.16); armour = Math.max(0, armour - a.toArmour);
+    const a = absorb(armour, hit * 0.16 * DIFF.hurtScale); armour = Math.max(0, armour - a.toArmour);   // easy: a third
     health = Math.max(0, health - a.toHealth);
     hud.setHealth(health);
     grade.setDrops(0.9);
@@ -444,7 +449,7 @@ function onShot(gap, landed = null, damage = 26, from = null, kind = 'pistol') {
   }
   car.impact = Math.max(car.impact || 0, 1.6 + hit * 2.2);
   car.yawRate += (Math.random() - 0.5) * hit * 0.9;
-  damageModel.hit(2 + hit * 5);
+  damageModel.hit(2 + hit * 5, null, DIFF.hurtScale);
   // Car hull absorbs bullet impacts without crippling tyre blowouts, preserving thrilling high-speed police chase dynamics
 }
 
@@ -1687,6 +1692,7 @@ hero.add(beamPool);
    never be reached. ?cars=N still overrides everything. */
 const CARS = +(new URLSearchParams(location.search).get('cars') ?? NaN);
 const traffic = new Traffic(scene, assets, RACE_MODE ? 0 : (Number.isFinite(CARS) ? CARS : (DAY ? Q.traffic : (Q.trafficNight ?? Q.traffic))), !DAY);   // race mode: rivals only, no civilians; preset 14 / 26 / 36 (40 at night on high, the old DAY ? 36 : 40)
+traffic.difficulty = DIFF;
 officerPool(scene);   // start the rig fetch at boot: acquire() returns null while it is in flight, and the first squad of a session would otherwise be the old boxes   // Phase 5: denser, and lit at night
 const chase = new ChaseCamera(camera);
 chase.buildings = (x, z) => (world?.nearbyBuildings ? world.nearbyBuildings(x, z) : null);   // the lens pulls in rather than sit inside a facade
@@ -2529,7 +2535,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     const chaser = traffic.police.find((c) => c.live && c.chase);
     const f = chaser?.chase ?? null;
     const px = onFoot.active ? onFoot.x : car.x, pz = onFoot.active ? onFoot.z : car.z;
-    if (f && !vigilante && !f.vigOffered && f.fleeT > 0 && traffic.wanted < 1 && Math.hypot(f.x - px, f.z - pz) < 150) { f.vigOffered = true; vigilante = { f, t: 30 }; hud.flash('VIGILANTE · STOP THE FLEEING CAR · $400'); hud.setJob?.('VIGILANTE · stop the fleeing car'); }
+    if (DIFF.vigilante && f && !vigilante && !f.vigOffered && f.fleeT > 0 && traffic.wanted < 1 && Math.hypot(f.x - px, f.z - pz) < 150) { f.vigOffered = true; vigilante = { f, t: 30 }; hud.flash('VIGILANTE · STOP THE FLEEING CAR · $400'); hud.setJob?.('VIGILANTE · stop the fleeing car'); }
     if (vigilante) {
       vigilante.t -= dt;
       const v = vigilante.f, near = Math.hypot(v.x - px, v.z - pz) < 16;
@@ -3008,12 +3014,12 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
       if (f > 9) audio.glass?.();
     }
     traffic.reportCrime(car.hitTag, car.hitForce || 0);
-    damageModel.hit(car.hitForce || 0, car.hitAt);
+    damageModel.hit(car.hitForce || 0, car.hitAt, DIFF.crashScale);
     // ramming a car or a cruiser hurts ITS engine too: a hard hit is one or two of its eight points (PIT them back)
     if (car.hitRef && (car.hitForce || 0) > 4.5) damageVehicle(car.hitRef, (car.hitForce || 0) > 9 ? 2 : 1, car.hitTag === 'police');
     car.hitTag = null; car.hitForce = 0; car.hitRef = null;
   }
-  if (car.hitAt && car.impact > 2.4) damageModel.hit(car.impact, car.hitAt);   // once per contact event: collision.js sets hitAt only on a new-max hit this frame and it is cleared below -- un-gated, a 54 km/h wall wrote the car off over ~14 frames and every police round was charged twice
+  if (car.hitAt && car.impact > 2.4) damageModel.hit(car.impact, car.hitAt, DIFF.crashScale);   // once per contact event: collision.js sets hitAt only on a new-max hit this frame and it is cleared below -- un-gated, a 54 km/h wall wrote the car off over ~14 frames and every police round was charged twice
   if (car.impact > 3.2 && car.hitAt && !onFoot.active) {
     // the crash you see: sparks off the contact point and a burst of dust, scaled by the hit
     const k = Math.min(1, (car.impact - 3) / 12), hx = car.hitAt.x, hz = car.hitAt.z, gy = groundHeightAt(hx, hz);

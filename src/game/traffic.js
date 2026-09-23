@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { addHeat, DIFFICULTY } from './difficulty.js';
 import { CELL, LANE, ROAD_HALF } from '../world/metrics.js';
 import { signalState, STOP_LINE } from '../world/signals.js';
 import { mulberry32 } from '../core/rng.js';
@@ -139,7 +140,7 @@ export class Traffic {
     // multiplier has to be gentle or a single hit at speed maxes the meter
     const gain = worth * Math.min(1.4, 0.5 + force * 0.05);
     if (this.wanted === 0) { this.seenX = px; this.seenZ = pz; this.coldFor = 0; }   // the report says where: that is where they head
-    this.wanted = Math.min(5, this.wanted + gain);
+    this.wanted = addHeat(this.wanted, gain, this.difficulty ?? DIFFICULTY.hard);   // easy (the default in main): 40% of it, never past two stars from crimes alone
     this.cool = 0;
     if (typeof window !== 'undefined' && window._reputation) {
       window._reputation.adjust(-Math.round(gain * 10), 'CRIME REPORTED');
@@ -1114,6 +1115,7 @@ export class Traffic {
       let rate = evasionDecay({ hot: this.hot, eyesOn: this.eyesOn, coldFor: this.coldFor, nearest: this._nearest ?? Infinity, wanted: this.wanted, cool: this.cool });
       // Civic Priority (reputation >= 750): heat drops half again as fast. Listed as a perk since the phone shipped; consumed here since 2026-09-08.
       if (rate > 0 && typeof window !== 'undefined' && (window._reputation?.score ?? 0) >= 750) rate *= 1.5;
+      rate *= (this.difficulty ?? DIFFICULTY.hard).decayScale;   // easy: they give up two and a half times faster
       if (rate > 0) {
         const before = this.wanted;
         this.wanted = Math.max(0, this.wanted - dt * rate);

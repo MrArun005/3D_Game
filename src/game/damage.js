@@ -213,13 +213,13 @@ export class Damage {
    * car off. A crash should cost you paint and power; it takes a sustained
    * beating to set one on fire.
    */
-  hit(force, at = null) {
+  hit(force, at = null, scale = 1) {
     if (force <= 1.8) return;                    // kerbs and taps do nothing
     /* Guardian Armor (reputation.js perks, score >= 300): a quarter less damage
        taken. The perk was listed on the phone for weeks and consumed nowhere. */
     const armour = (typeof window !== 'undefined' && (window._reputation?.score ?? 0) >= 300) ? 0.75 : 1;
     const bite = Math.min(0.3, (force - 1.8) * 0.02)   /* per contact EVENT now (main gates hit() on car.hitAt): a 10 m/s wall bites 0.16, 15 m/s 0.26 -- before, un-gated, it bit 0.11 every frame of the envelope */ * armour;
-    this.value = Math.min(1, this.value + bite);
+    this.value = Math.min(1, this.value + bite * scale);   // scale: game/difficulty.js (easy halves crashes, a third for bullets)
     // a scrape along a wall reports every frame; one dent per 0.12 s is what the eye sees anyway
     if (at && this.t - (this.lastDent ?? -1) > 0.12) { this.lastDent = this.t; this.#dent(force, at); }
   }
