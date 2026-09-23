@@ -6,25 +6,28 @@
 //   draw('place', t)  runs on the spot, 512 x 512
 //   draw('around', t) runs across a 1024 x 384 strip, turns, runs back
 const c = document.getElementById('c'), g = c.getContext('2d');
-const ORANGE = '#d97757', TOP = '#e38c6e', EYE = '#15171a';
+const ORANGE = '#cc7f61', TOP = '#dd9a80', EYE = '#111111';
+// Proportions after the reference: a near-square body (9 x 8 cells), a nub on
+// each side, two tall eyes set wide, four long thin legs in two pairs.
+// Grid is 11 x 11 cells: nubs in columns 0 and 10, body 1..9, legs below row 8.
+const GW = 11;
 function sprite(ox, oy, cell, t, dir) {
   const px = (x, y, w, h, col) => {
-    const X = dir > 0 ? x : 16 - x - w;
+    const X = dir > 0 ? x : GW - x - w;
     g.fillStyle = col; g.fillRect(Math.round(ox + X * cell), Math.round(oy + y * cell), Math.ceil(w * cell), Math.ceil(h * cell));
   };
   const frame = Math.floor(t * 12) % 4;              // 4-step scurry
-  const bob = [0, -0.5, 0, -0.5][frame];
-  px(2, bob, 12, 8, ORANGE); px(2, bob, 12, 1, TOP);
-  px(0, 3 + bob, 2, 2, ORANGE); px(14, 3 + bob, 2, 2, ORANGE);
-  // Legs: pairs A and B swing; a lifted leg is shorter and leans forward.
-  const legs = [[3, 0], [5, 1], [10, 0], [12, 1]];
-  for (const [lx, pair] of legs) {
-    const up = (frame < 2) === (pair === 0);
-    px(lx + (up ? 0.5 : 0), 8 + bob, 1, up ? 2 : 3, ORANGE);
+  const bob = [0, -0.35, 0, -0.35][frame];
+  px(1, bob, 9, 8, ORANGE); px(1, bob, 9, 0.35, TOP);
+  px(0, 3 + bob, 1, 2.4, ORANGE); px(10, 3 + bob, 1, 2.4, ORANGE);
+  // Legs: outer pair flush with the body edges, inner pair one cell in. A and B alternate.
+  for (const [lx, pair] of [[1, 0], [3, 1], [7, 0], [9, 1]]) {
+    const up = frame < 2 ? pair === 0 : pair === 1;
+    px(lx + (up ? 0.3 : 0), 8 + bob, 0.95, up ? 2.2 : 2.8, ORANGE);
   }
   const blink = (t % 2.4) > 2.28;
-  px(9.5 + 0.5, 3 + bob + (blink ? 1 : 0), 1, blink ? 0.4 : 2, EYE);
-  px(4.5 + 0.5, 3 + bob + (blink ? 1 : 0), 1, blink ? 0.4 : 2, EYE);
+  const eh = blink ? 0.35 : 1.4, ey = 3.1 + bob + (blink ? 0.6 : 0);
+  px(1.9, ey, 1.1, eh, EYE); px(8.0, ey, 1.1, eh, EYE);
 }
 function dust(x, y, t, dir) {
   for (let i = 0; i < 3; i++) {
@@ -38,18 +41,18 @@ function dust(x, y, t, dir) {
 window.draw = (mode, t) => {
   g.clearRect(0, 0, c.width, c.height);
   if (mode === 'place') {
-    const cell = 26;
-    dust(512 / 2 - 8 * cell + 20, 400, t, 1);
-    sprite(256 - 8 * cell, 400 - 11 * cell, cell, t, 1);
+    const cell = 36;
+    dust(256 - 5.5 * cell + 10, 430, t, 1);
+    sprite(256 - 5.5 * cell, 430 - 10.8 * cell, cell, t, 1);
   } else {
     // Out and back in one loop (t 0..1), easing into each turn.
-    const cell = 14, w = 16 * cell, span = c.width - w - 40;
+    const cell = 20, w = GW * cell, span = c.width - w - 40;
     const phase = t < 0.5 ? t * 2 : (1 - t) * 2;
     const e = phase < 0.5 ? 2 * phase * phase : 1 - 2 * (1 - phase) ** 2;
     const dir = t < 0.5 ? 1 : -1;
     const x = 20 + span * e;
     dust(x + (dir > 0 ? 30 : w - 30), 340, t * 3, dir);
-    sprite(x, 340 - 11 * cell, cell, t * 3, dir);
+    sprite(x, 340 - 10.8 * cell, cell, t * 3, dir);
   }
 };
 window.ready = true;

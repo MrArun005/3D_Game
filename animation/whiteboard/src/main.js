@@ -49,8 +49,8 @@ function writeText(it, p) {
   }
 }
 
-// ---- the critter: a 16 x 11 pixel sprite ----------------------------------------------
-const CELL = 9, ORANGE = '#d97757', ORANGE_D = '#b95f42';
+// ---- the critter: 11 x 11 cells, a near-square body with side nubs and long legs ----
+const CELL = 12, GW = 11, ORANGE = '#cc7f61', TOP = '#dd9a80';
 function critter(t) {
   const { x, walking, dir } = critterX(t);
   let hop = 0;
@@ -59,23 +59,26 @@ function critter(t) {
   if (talking) hop = Math.max(hop, Math.abs(Math.sin(t * 14)) * 5);
   const pointing = POINTS.some((q) => t >= q.t0 && t < q.t1);
   const blink = (t % 3.1) < 0.13;
-  const baseY = H - 58 - 11 * CELL - hop + (walking ? Math.abs(Math.sin(t * 16)) * -3 : 0);
-  const px = (cx, cy, w = 1, h = 1, col = ORANGE) => { g.fillStyle = col; g.fillRect(Math.round(x + cx * CELL * dir - (dir < 0 ? w * CELL : 0) + (dir < 0 ? 16 * CELL : 0)), Math.round(baseY + cy * CELL), w * CELL, h * CELL); };
+  const frame = walking ? Math.floor(t * 12) % 4 : -1;
+  const bob = walking ? [0, -0.35, 0, -0.35][frame] : 0;
+  const baseY = H - 58 - 10.8 * CELL - hop;
+  const px = (cx, cy, w = 1, h = 1, col = ORANGE) => {
+    const X = dir > 0 ? cx : GW - cx - w;
+    g.fillStyle = col; g.fillRect(Math.round(x + X * CELL), Math.round(baseY + (cy + bob) * CELL), Math.ceil(w * CELL), Math.ceil(h * CELL));
+  };
   // Shadow on the tray.
   g.fillStyle = `rgba(0,0,0,${0.18 - hop / 400})`;
-  g.beginPath(); g.ellipse(x + 8 * CELL, H - 56, 70 - hop * 0.6, 7, 0, 0, 7); g.fill();
-  // Body and a slightly darker top edge.
-  px(2, 0, 12, 8); px(2, 0, 12, 1, '#e38c6e');
-  // Arms: the front one lifts when pointing.
-  px(0, 3, 2, 2);
-  if (pointing) { px(14, 1, 3, 2); px(16, 0, 1, 1); } else px(14, 3, 2, 2);
-  // Legs: pairs alternate when walking.
-  const step = walking ? (Math.floor(t * 8) % 2) : -1;
-  [[3, 0], [5, 1], [10, 0], [12, 1]].forEach(([lx, pair]) => px(lx, 8, 1, step === pair ? 2 : 3, ORANGE));
-  // Eyes.
-  const eh = blink ? 0.34 : 2;
-  const look = pointing ? 1 : 0;
-  px(5 + look, 3 + (blink ? 1 : 0), 1, eh, '#15171a'); px(10 + look, 3 + (blink ? 1 : 0), 1, eh, '#15171a');
+  g.beginPath(); g.ellipse(x + 5.5 * CELL, H - 56, 66 - hop * 0.6, 7, 0, 0, 7); g.fill();
+  px(1, 0, 9, 8); px(1, 0, 9, 0.35, TOP);
+  // Nubs: the front one lifts and reaches out when pointing.
+  px(0, 3, 1, 2.4);
+  if (pointing) { px(10, 1.6, 1.8, 1.2); } else px(10, 3, 1, 2.4);
+  for (const [lx, pair] of [[1, 0], [3, 1], [7, 0], [9, 1]]) {
+    const up = frame >= 0 && (frame < 2 ? pair === 0 : pair === 1);
+    px(lx + (up ? 0.3 : 0), 8, 0.95, up ? 2.2 : 2.8);
+  }
+  const eh = blink ? 0.35 : 1.4, ey = 3.1 + (blink ? 0.6 : 0), look = pointing ? 0.3 : 0;
+  px(1.9 + look, ey, 1.1, eh, '#111111'); px(8.0 + look, ey, 1.1, eh, '#111111');
   return { x, top: baseY };
 }
 
@@ -94,12 +97,12 @@ function bubble(b, t, who) {
   const lines = wrap(b.text, 430);
   const shown = Math.ceil((t - b.t0) * TYPE_RATE);
   const w = Math.max(...lines.map((l) => g.measureText(l).width)) + 44, h = lines.length * 38 + 30;
-  const x = clamp(who.x + 90, 30, W - w - 30), y = who.top - h - 34;
+  const x = clamp(who.x + 80, 30, W - w - 30), y = who.top - h - 34;
   g.save(); g.globalAlpha = o;
   g.fillStyle = '#ffffff'; g.strokeStyle = '#23262b'; g.lineWidth = 4;
   g.beginPath(); g.roundRect(x, y, w, h, 18); g.fill(); g.stroke();
   // Tail towards the critter.
-  const tx = clamp(who.x + 90, x + 20, x + w - 40);
+  const tx = clamp(who.x + 80, x + 20, x + w - 40);
   g.beginPath(); g.moveTo(tx, y + h - 2); g.lineTo(tx - 14, y + h + 26); g.lineTo(tx + 20, y + h - 2); g.fillStyle = '#fff'; g.fill();
   g.beginPath(); g.moveTo(tx, y + h); g.lineTo(tx - 14, y + h + 26); g.lineTo(tx + 20, y + h); g.stroke();
   g.fillStyle = '#23262b';
