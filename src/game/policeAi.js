@@ -435,12 +435,13 @@ export function shouldFire(stars, quietFor, from = 2) {
  * lights on and foot down for 8 s, two calls in five an NPC pursuit.) Once it
  * has been quiet for 30 s, a call comes at 1/25 s: 58 an hour at 60 Hz for
  * this roll alone, 52.8 once the 25 s NPC pursuits hold it off (a Monte Carlo
- * of traffic.js's constants). `rand` is called exactly when the old inline roll called it, whether
- * or not calls are `allowed`, so switching them off (difficulty.js
- * patrolCalls) leaves the traffic RNG stream, and so the rest of the city,
- * where it was. Pure given `rand`; tested.
+ * of traffic.js's constants). With calls not `allowed` (difficulty.js
+ * patrolCalls) it draws nothing: the traffic RNG stream then differs from a
+ * calls-on run anyway (a call's own 0.4 roll, target pick and respondT reset
+ * never happen), so drawing the roll regardless bought nothing (review
+ * 2026-09-23). Same seed and same difficulty is still the same city.
+ * Pure given `rand`; tested.
  */
 export function patrolCallDue(respondT, dt, rand, allowed = true) {
-  const roll = respondT < -30 && rand() < dt / 25;
-  return roll && allowed;
+  return allowed && respondT < -30 && rand() < dt / 25;
 }

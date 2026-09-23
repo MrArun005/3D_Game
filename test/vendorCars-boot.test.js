@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
-import { loadVendorCars, loadHeroSkin, bootBodyIds, bootStyles, BODIES, KENNEY_CARS, DEFAULT_BODY } from '../src/world/vendorCars.js';
+import { loadVendorCars, loadHeroSkin, bootBodyIds, bootStyles, bodyNeedsDownload, BODIES, KENNEY_CARS, DEFAULT_BODY } from '../src/world/vendorCars.js';
 
 const urls = [], seen = new Set();   // this test's requests; every request in the file (the fetch caches keep a failed promise, so a body asks once)
 const fail = (url, onError) => { urls.push(url); seen.add(url); onError?.(new Error('offline (test)')); };
@@ -78,6 +78,44 @@ test('a garage fit keeps the old body on while the new one loads (here it never 
   } finally { delete globalThis.localStorage; }
 });
 
+test('bodyNeedsDownload: only a Sketchfab body nobody has asked for yet', () => {
+  assert.equal(bodyNeedsDownload(KENNEY_CARS.sedan), false, 'the CC0 fleet is in memory after the boot');
+  assert.equal(bodyNeedsDownload(DEFAULT_BODY), false, 'the hero skin test above already fetched it');
+  assert.equal(bodyNeedsDownload('s-monza'), false, 'fetched (and failed) once: asking again is instant');
+  assert.equal(bodyNeedsDownload('s-f40-comp'), true);
+  assert.equal(bodyNeedsDownload('no-such-body'), false);
+});
+
+test('the garage flashes: DELIVERING only for a real download, nothing from a superseded fit, nothing on the race grid', async () => {
+  /* Review 2026-09-23: DELIVERING flashed on every s- fit (a cached refit and
+     the race grid's equipRaceCar too), and a second N press mid-download made
+     the first fit flash GARAGE CLOSED. */
+  globalThis.localStorage = { getItem: () => null, setItem: () => {} };
+  try {
+    const { Garage } = await import('../src/game/garage.js');
+    const make = () => {
+      const root = new THREE.Group(), shell = new THREE.Group(), hull = new THREE.Mesh(new THREE.BoxGeometry(4.4, 1.3, 1.9));
+      shell.add(hull); root.add(shell);
+      const flashes = [];
+      const garage = new Garage({ cash: 0, persist() {} }, stubAssets(), { userData: { hull } }, null, { flash: (m) => flashes.push(m) });
+      return { garage, flashes };
+    };
+    // two fits in flight: the first is superseded and stays silent, the second reports its own failure once
+    const a = make();
+    await quietly(() => Promise.all([a.garage.wear('s-f40-comp'), a.garage.wear('s-corvette-c6r')]));
+    assert.deepEqual(a.flashes, ['GARAGE · DELIVERING…', 'GARAGE · DELIVERING…', 'GARAGE CLOSED']);
+    // a refit of a body already fetched is not a delivery
+    const b = make();
+    await quietly(() => b.garage.wear('s-f40-comp'));
+    assert.deepEqual(b.flashes, ['GARAGE CLOSED']);
+    // the race grid: no garage lines at all (raceCircuit says RACEDAY)
+    const c = make();
+    assert.ok(bodyNeedsDownload('s-porsche-gt3r'));
+    await quietly(() => c.garage.equipRaceCar('s-porsche-gt3r'));
+    assert.deepEqual(c.flashes, []);
+  } finally { delete globalThis.localStorage; }
+});
+
 test('?precache restores the old instant-garage boot', async () => {
   urls.length = 0;
   const before = new Set(seen);
@@ -86,6 +124,6 @@ test('?precache restores the old instant-garage boot', async () => {
   const bodies = Object.keys(BODIES).filter((id) => id.startsWith('s-')).map((id) => `/models/vendor/sketchfab/${fileOf(id)}.glb`);
   // the bodies the tests above already asked for sit in the fetch cache; every other one is requested now
   const fresh = bodies.filter((u) => !before.has(u));
-  assert.ok(fresh.length >= 6, `most bodies were never asked for until the flag (${fresh.length})`);
+  assert.ok(fresh.length >= 3, `the tests above asked for five of the eight; the rest wait for the flag (${fresh.length})`);
   for (const u of fresh) assert.ok(urls.includes(u), `${u} pre-cached`);
 });

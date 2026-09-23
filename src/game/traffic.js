@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { addHeat, DIFFICULTY } from './difficulty.js';
+import { addHeat, DIFFICULTY, fireFromFor } from './difficulty.js';
 import { CELL, LANE, ROAD_HALF } from '../world/metrics.js';
 import { signalState, STOP_LINE } from '../world/signals.js';
 import { mulberry32 } from '../core/rng.js';
@@ -126,7 +126,10 @@ export class Traffic {
   racePath = null;
   playerLeg = 0;
 
-  reportCrime(tag, force) {
+  /* `crash`: this report is a COLLISION (main.js's car.hitTag path), not one of
+     the other crimes that borrow the 'traffic' tag for its 0.55 worth -- a
+     gunshot, a grenade, a punched car, a carjack, a stolen parked car. */
+  reportCrime(tag, force, { crash = false } = {}) {
     const worth = tag === 'police' ? 1.3
                 : tag === 'person' ? 1.5
                 : tag === 'traffic' ? 0.55
@@ -138,8 +141,11 @@ export class Traffic {
     /* Just drive (difficulty.js pedsReportCrashes): a bump into a civilian car
        is reported only when a cruiser saw it. Downtown there is nearly always
        a pedestrian within 45 m, so ordinary lane-change contact made four
-       crashes a star. People run over and cruisers hit still count. */
-    const peds = (tag === 'traffic' && this.difficulty?.pedsReportCrashes === false) ? [] : (this.crowd?.people ?? []);
+       crashes a star. People run over and cruisers hit still count, and so
+       does every non-crash 'traffic' crime: keyed on the tag alone, a gunshot,
+       grenade, carjack or car theft in front of a pavement full of people was
+       worth 0 stars on easy (it was 40% of hard's before; review 2026-09-23). */
+    const peds = (crash && tag === 'traffic' && this.difficulty?.pedsReportCrashes === false) ? [] : (this.crowd?.people ?? []);
     if (!crimeWitnessed(tag, px, pz, peds, this.police, this.wanted, reach)) return;   // nobody saw it (policeAi.crimeWitnessed)
     // one pedestrian is about two stars, not five: `force` is m/s, so the
     // multiplier has to be gentle or a single hit at speed maxes the meter
@@ -1612,7 +1618,7 @@ export class Traffic {
           || bystanderInLine(c.coverX, gunY, c.coverZ, player.x, ty, player.z, this._mates || []);
         const f = fireControl(c, {
           dt, canSee, blocked: !!inLine || !!this.holdFire,
-          stars: Math.floor(this.wanted), quietFor: c.quietFor, fireFrom: this.difficulty?.fireFrom ?? 2,   // easy: 3 -- two stars from crashes means an arrest, not a firefight
+          stars: Math.floor(this.wanted), quietFor: c.quietFor, fireFrom: fireFromFor(this.difficulty, this.modes?.active),   // easy: 3 -- two stars from crashes means an arrest, not a firefight; hold-out keeps 2 (main.js sets traffic.modes)
           suppressing: c.role === 'suppress' && this._rushing > 0,
         });
         c.fireT = f.fireT; c.burstLeft = f.burstLeft; c.ammo = f.ammo; c.settleLeft = f.settleLeft; c.reloadLeft = f.reloadLeft;

@@ -107,6 +107,7 @@ body.touch #kph{font-size:30px}
 body.touch #gear{margin-top:4px;font-size:11px}
 body.touch #stats{top:calc(8px + var(--sa-t))}
 body.touch #hud .keys{display:none}
+body.touch #hud details{display:none}   /* ALL CONTROLS wraps .keys.all, hidden above: on touch it opened onto nothing */
 body.touch #hud .touchkeys{display:block;margin-top:22px;font-size:13px;letter-spacing:.14em;color:#78859a;line-height:2}
 #hud .touchkeys{display:none}
 body.touch #hud .go .mouse{display:none}

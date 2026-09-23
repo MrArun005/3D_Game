@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pickDifficulty, addHeat, DIFFICULTY, withCity, CITY_LIFE } from '../src/game/difficulty.js';
+import { pickDifficulty, addHeat, DIFFICULTY, withCity, CITY_LIFE, fireFromFor } from '../src/game/difficulty.js';
 
 test('easy is the default; ?hard, ?easy and the stored choice pick the other', () => {
   assert.equal(pickDifficulty('').name, 'easy');
@@ -68,4 +68,19 @@ test('?city is easy plus the city life; with ?hard or a stored hard it is just h
   assert.equal(pickDifficulty('?city&hard').name, 'hard');
   assert.equal(pickDifficulty('?city', 'hard').name, 'hard');
   assert.equal(pickDifficulty('', 'easy').patrolCalls, false);
+});
+
+test('fireFromFor: hold-out fires from two stars on any difficulty; everything else reads fireFrom', async () => {
+  /* Review 2026-09-23: the hold-out starts at two stars and reaches three only
+     after 80 s (modes.js holdoutWanted), so with easy's fireFrom 3 its first
+     wave came to cuff you and held fire -- not "a firefight on demand". */
+  const { holdoutWanted } = await import('../src/game/modes.js');
+  assert.equal(Math.floor(holdoutWanted(79)), 2, 'the first 80 s are at two stars');
+  assert.equal(fireFromFor(DIFFICULTY.easy, 'holdout'), 2);
+  assert.equal(fireFromFor(withCity(DIFFICULTY.easy), 'holdout'), 2, 'the Hold-out title card upgrades easy with withCity');
+  assert.equal(fireFromFor(DIFFICULTY.hard, 'holdout'), 2);
+  assert.equal(fireFromFor(DIFFICULTY.easy, null), 3, 'just driving: two stars from crashes is an arrest');
+  assert.equal(fireFromFor(DIFFICULTY.easy, 'range'), 3);
+  assert.equal(fireFromFor(DIFFICULTY.hard, null), 2);
+  assert.equal(fireFromFor(undefined, undefined), 2, 'no difficulty (the tests\' own Traffic): the full game');
 });
