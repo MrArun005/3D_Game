@@ -220,9 +220,14 @@ export function resolveObstacles(car, obstacles) {
           }
           car.vx += nx * into * 1.05;    // a parked car gives a little, a wall none
           car.vz += nz * into * 1.05;
-          // glancing blows should slew you, not stop you dead
+          /* glancing blows should slew you, not stop you dead. The push acts
+             along n at the hull circle, so its yaw (about +y, the sign of
+             car.yawRate) is (arm x n)_y = armZ*nx - armX*nz. This read the
+             negative (2026-09-23): clipping a parked car with the front-right
+             corner turned the nose INTO it (yawRate -0.24 at 10 m/s), so a
+             glance wrapped the car round the obstacle instead of deflecting. */
           const armX = sx - car.x, armZ = sz - car.z;
-          car.yawRate += (armX * nz - armZ * nx) * into * 0.05;
+          car.yawRate += (armZ * nx - armX * nz) * into * 0.05;
           // contact friction bleeds the RELATIVE velocity: riding alongside a moving car must not drag us to a halt
           car.vx = ovx + (car.vx - ovx) * 0.9; car.vz = ovz + (car.vz - ovz) * 0.9;
         }

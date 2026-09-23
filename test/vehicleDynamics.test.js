@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { V, VEHICLE_PROFILES, getVehicleProfile } from '../src/vehicle/config.js';
 import { createCarState, stepVehicle, engineTorque } from '../src/vehicle/dynamics.js';
 import { RaceCircuit } from '../src/game/raceCircuit.js';
+import { useDistrict } from '../src/world/metrics.js';
 
 test('vehicleDynamics: steering responsiveness and return-to-center', () => {
   const car = createCarState();
@@ -146,4 +147,25 @@ test('vehicleDynamics: stepVehicle records prevX, prevZ, prevYaw for sub-step vi
   assert.equal(car.prevYaw, startYaw, 'prevYaw must capture state before rotation');
   assert.ok(car.x !== car.prevX, 'car.x must advance from prevX');
   assert.ok(car.z !== car.prevZ, 'car.z must advance from prevZ');
+});
+
+test('vehicleDynamics: a kerb under the RIGHT wheels lifts the right side (the body frame is not mirrored)', () => {
+  /* roll > 0 lifts the car's left (main.js body.rotation.x, dynamics' lft
+     axis). Before the 2026-09-23 frame fix the corner offsets were read along
+     the right axis, so wheels on a kerb to the right lifted the LEFT side
+     (+0.088) and grip was sampled at the mirrored corners. The car faces +x
+     at yaw 0, so its right is +z. */
+  const parkWith = (roadDepth) => {
+    useDistrict({ roadDepth, elevationAt: () => 0, blockTypeAt: () => null });
+    const car = createCarState(); car.x = 0; car.z = 0; car.yaw = 0;
+    for (let i = 0; i < 360; i++) stepVehicle(car, 1 / 120);
+    return car;
+  };
+  try {
+    const right = parkWith((x, z) => z - 0.5);    // pavement from 0.5 m right of centre: the right wheels (0.79 m) are on it
+    assert.ok(right.roll < -0.04, `right wheels on the kerb: roll ${right.roll.toFixed(3)}, want the right side up (< 0)`);
+    assert.ok(right.wheelGround[1] > right.wheelGround[0] && right.wheelGround[3] > right.wheelGround[2], 'FR/RR stand on the kerb, FL/RL on the road');
+    const left = parkWith((x, z) => -z - 0.5);
+    assert.ok(left.roll > 0.04, `left wheels on the kerb: roll ${left.roll.toFixed(3)}, want the left side up (> 0)`);
+  } finally { useDistrict(null); }
 });

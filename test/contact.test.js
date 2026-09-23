@@ -99,3 +99,23 @@ test('being hit is not a crime: a cruiser closing on us from behind sets impact 
   assert.equal(car2.hitTag, 'police');
   assert.ok(car2.hitForce > 4.5 && car2.hitForce < 5.5, `hitForce is the closing speed, ${car2.hitForce}`);
 });
+
+test('a glancing hit slews the nose AWAY from what it clipped, not into it', () => {
+  /* the car faces +x (its right is +z); a parked car sits ahead-right and our
+     front circle clips it at 10 m/s with 3 m/s of drift toward it. The push is
+     to the left, and its yaw must turn the nose left too (+yawRate, the
+     car's own sign): (arm x n)_y. The old expression was its negative and
+     wrapped the car round the obstacle (yawRate -0.24, 2026-09-23). */
+  const car = { x: 0, z: 0, yaw: 0, vx: 10, vz: 3, yawRate: 0, impact: 0 };
+  resolveObstacles(car, [{ x: 3.2, z: 1.4, yaw: 0, offsets: [-1.6, 0, 1.6], radius: 0.95, reach: 2.6, tag: 'parked' }]);
+  assert.ok(car.vz < 0.5, `pushed away to the left, vz ${car.vz}`);
+  assert.ok(car.yawRate > 0.1, `nose turns left, away from it: yawRate ${car.yawRate}`);
+  // mirrored: clipped on the front-LEFT, the nose turns right
+  const car2 = { x: 0, z: 0, yaw: 0, vx: 10, vz: -3, yawRate: 0, impact: 0 };
+  resolveObstacles(car2, [{ x: 3.2, z: -1.4, yaw: 0, offsets: [-1.6, 0, 1.6], radius: 0.95, reach: 2.6, tag: 'parked' }]);
+  assert.ok(car2.yawRate < -0.1, `nose turns right, away from it: yawRate ${car2.yawRate}`);
+  // and a shove on the REAR-right swings the tail away (nose right): a PIT spins you the way a PIT does
+  const car3 = { x: 0, z: 0, yaw: 0, vx: 0, vz: 3, yawRate: 0, impact: 0 };
+  resolveObstacles(car3, [{ x: -3.2, z: 1.8, yaw: 0, offsets: [-1.6, 0, 1.6], radius: 0.95, reach: 2.6, tag: 'parked' }]);
+  assert.ok(car3.yawRate < -0.05, `rear pushed left turns the nose right: yawRate ${car3.yawRate}`);
+});

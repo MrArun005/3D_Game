@@ -32,7 +32,8 @@ function graphRoute(fromX, fromZ, legs = 14) {
   }
   return out;
 }
-import { V, WHEELBASE } from '../vehicle/config.js';
+import { WHEELBASE } from '../vehicle/config.js';
+import { steerLimit } from '../vehicle/dynamics.js';
 
 const LANE_OFF = LANE * 0.5;                 // inner lane, right of the centre line
 const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
@@ -158,9 +159,14 @@ export class Autopilot {
     const Ld = Math.max(4, Math.hypot(ahead, lateral));
     const delta = Math.atan((2 * WHEELBASE * -lateral) / (Ld * Ld));
 
-    // mirror the speed-sensitive limit the physics applies, so the normalised
-    // target we hand over means the same thing it does from the keyboard
-    const limit = V.steerMax * (0.32 + 0.68 / (1 + (speed * speed) / 260));
+    /* Normalise by the SAME speed-sensitive limit the physics applies, so the
+       target we hand over means what it does from the keyboard. This kept
+       its own copy, V.steerMax * (0.32 + 0.68 / (1 + v^2/260)), which had
+       drifted from the physics (0.389 vs 0.426 rad at 60 km/h) and would
+       have been 2.7x out under the gta profile's grip-limited lock (0.144 rad
+       at 60): every command applied at a third and the film car running wide
+       on every bend (2026-09-23). */
+    const limit = steerLimit(car);
     car.steerTarget = Math.max(-1, Math.min(1, delta / limit));
 
     const wanted = Math.max(9, this.cruise * (1 - Math.abs(delta) * 2.4));

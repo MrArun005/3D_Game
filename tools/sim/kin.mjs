@@ -13,4 +13,5 @@ for (let i = 0; i < 3; i++) {
   const head = c.yaw - head0, vel = Math.atan2(-c.vz, c.vx) - vel0;
   console.log('step', i, 'heading turned', (head * 1000).toFixed(2), 'mrad   velocity turned', (vel * 1000).toFixed(2), 'mrad   ratio', (vel / head).toFixed(2), ' ay', (c.lastAy / 9.81).toFixed(2), 'r', c.yawRate.toFixed(3));
 }
-console.log('physical expectation: |ratio| < 1 (tyres pull the velocity toward the heading, never past it)');
+console.log('physical expectation: |ratio| < 1 (tyres pull the velocity toward the heading, never past it).');
+console.log('Measured 2026-09-23: 0.08 at step 2; 1.92-2.00 before the body-frame fix (dynamics.js `lft`), when the lateral velocity was written back mirrored.');

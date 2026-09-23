@@ -52,7 +52,7 @@ import { pickDifficulty, DIFFICULTY_KEY } from './game/difficulty.js';
 import { buildHeliModel } from './world/heliModel.js';
 import { DispatchService } from './game/dispatch.js';
 import { groundHeightAt } from './world/metrics.js';
-import { CG_X, WHEEL_R, getVehicleProfile } from './vehicle/config.js';
+import { CG_X, WHEEL_R, getVehicleProfile, HANDLING, HANDLING_KEY, pickHandling } from './vehicle/config.js';
 import { ChaseCamera } from './game/camera.js';
 import { createInput, padConnected, rumble } from './game/input.js';
 import { createPadNav } from './ui/padnav.js';
@@ -1570,6 +1570,14 @@ const initialBody = localStorage.getItem('hb.body') || DEFAULT_BODY;
 await loadHeroSkin(assets, hero, initialBody).catch((e) => console.warn('hero skin:', e.message));
 damageModel.attach(hero);
 car.profile = getVehicleProfile(initialBody);
+/* GTA handling by default (2026-09-23, vehicle/config.js HANDLING): a
+   grip-limited lock, traction + stability control, brakes you can steer on,
+   a handbrake that throws the tail out. ?sim (or localStorage hb.handling =
+   'sim') is the raw tyre model. Set once on the one car state: resetCar,
+   every respawn and the garage's body swaps only touch car.profile. */
+const HANDLING_MODE = pickHandling(location.search, (() => { try { return localStorage.getItem(HANDLING_KEY); } catch { return null; } })());
+car.assist = HANDLING[HANDLING_MODE];
+console.info(`handling: ${HANDLING_MODE.toUpperCase()} (${car.assist ? 'grip-limited lock, traction + stability control, handbrake kick; ?sim for the raw tyre model' : 'raw tyre model, no assists; ?gta for the arcade handling'})`);
 const carVehicle = new CarVehicle(car, stepVehicle, hero);
 activeVehicle = carVehicle;
 window._activeVehicle = activeVehicle;
