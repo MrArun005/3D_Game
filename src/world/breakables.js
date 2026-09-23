@@ -3,6 +3,16 @@ import { mrt, vec4 } from 'three/tsl';
 import { groundHeightAt } from './metrics.js';
 import { spriteCloud } from '../core/spriteCloud.js';
 
+/* Chunk cells as numbers: the streamer names chunks "ix,iz". */
+const cellKey = (ix, iz) => (ix + 4096) * 8192 + (iz + 4096);
+function cellOf(key) {
+  if (typeof key !== 'string') return null;
+  const c = key.indexOf(',');
+  if (c < 0) return null;
+  const ix = +key.slice(0, c), iz = +key.slice(c + 1);
+  return Number.isInteger(ix) && Number.isInteger(iz) ? cellKey(ix, iz) : null;
+}
+
 /**
  * Destructible street furniture.
  *
@@ -86,6 +96,10 @@ export class Debris {
     this.group.name = 'debris';
     scene.add(this.group);
     this.byChunk = new Map();           // chunk key -> breakable entries
+    /* The same lists under a NUMBER key, for the per-frame lookups: the
+       vehicle sweep built nine "ix,iz" strings per moving vehicle per frame
+       (~200 a frame with traffic). Kept in step by registerChunk/dropChunk. */
+    this.byCell = new Map();
     this.active = [];                   // tumbling / resting debris bodies
     this.effects = [];                  // water fountains, spark bursts
     this.boxes = new Map();             // asset name -> cached bounding box
@@ -133,10 +147,10 @@ export class Debris {
       }
       entries.push(entry);
     }
-    if (entries.length) this.byChunk.set(key, entries);
+    if (entries.length) { this.byChunk.set(key, entries); const n = cellOf(key); if (n !== null) this.byCell.set(n, entries); }
   }
 
-  dropChunk(key) { this.byChunk.delete(key); }
+  dropChunk(key) { this.byChunk.delete(key); const n = cellOf(key); if (n !== null) this.byCell.delete(n); }
 
   update(car, dt, extraVehicles = null, moreVehicles = null) {
     if (this.catalogue) {
@@ -161,7 +175,7 @@ export class Debris {
       const ix = Math.floor(v.x / 256), iz = Math.floor(v.z / 256);
       for (let dx = -1; dx <= 1; dx++) {
         for (let dz = -1; dz <= 1; dz++) {
-          const entries = this.byChunk.get(`${ix + dx},${iz + dz}`);
+          const entries = this.byCell.get(cellKey(ix + dx, iz + dz));
           if (!entries) continue;
           for (const en of entries) {
             if (en.broken) continue;
@@ -195,7 +209,7 @@ export class Debris {
     const ix = Math.floor(x / 256), iz = Math.floor(z / 256);
     for (let dx = -1; dx <= 1; dx++) {
       for (let dz = -1; dz <= 1; dz++) {
-        const entries = this.byChunk.get(`${ix + dx},${iz + dz}`);
+        const entries = this.byCell.get(cellKey(ix + dx, iz + dz));
         if (!entries) continue;
         for (const en of entries) {
           if (en.broken) continue;
@@ -226,7 +240,7 @@ export class Debris {
     const ix = Math.floor(car.x / 256), iz = Math.floor(car.z / 256);
     for (let dx = -1; dx <= 1; dx++) {
       for (let dz = -1; dz <= 1; dz++) {
-        const entries = this.byChunk.get(`${ix + dx},${iz + dz}`);
+        const entries = this.byCell.get(cellKey(ix + dx, iz + dz));
         if (!entries) continue;
         for (const en of entries) {
           if (en.broken) continue;
