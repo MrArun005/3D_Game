@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { BODY_TYPES, BODY_KEYS } from '../vehicle/config.js';
 import { toTex } from './textures.js';
+import { londonKitFor, londonEnabled, LONDON_SPECS } from './londonVehicles.js';
 
 /**
  * The traffic and parked fleet from Kenney's Car Kit (CC0, kenney.nl).
@@ -65,6 +66,11 @@ export const BODIES = {
   // 2026-09-13, from Arun's downloads. Long axis Z like the Chevrolets; '+z' is the family default -- flip if one drives backwards.
   's-porsche-gt3r':  { src: 's', file: 'porsche-gt3r',  front: '+z' },
   's-f40-comp':      { src: 's', file: 'f40-comp',      front: '+z', pose: 'end' },   // rigged: rest pose has the door OPEN, its one clip is 'DoorFrontLeftClose'
+  /* London's two, authored in code (world/londonVehicles.js): nothing to
+     download, built once at boot (~80 ms for both, node, first build) and
+     shared by the fleet. */
+  'l-bus': { src: 'l', file: 'bus' },
+  'l-cab': { src: 'l', file: 'cab' },
 };
 /** Traffic / parked style -> body id. */
 /**
@@ -146,14 +152,26 @@ export const KENNEY_CARS = {
   sports: 'q-sports', sports2: 'q-sports2', hatch2: 'k-hatch',   // extra traffic styles, sedan-sized specs
   // the owner's Sketchfab cars, the three lightest, as rare traffic (whole textured groups)
   chev1: 's-camaro-jewel', chev2: 's-corvette-c6r', chev3: 's-camaro-350',
+  cab: 'l-cab',   // the black cab: carjack one and you drive one (fitted over the hero hull, a near match at 4.58 m)
 };
+/* Traffic styles that are NOT a body the hero can wear. KENNEY_CARS doubles
+   as main.js's carjack map (style -> body id), and a 10.5 m double-decker
+   scaled onto the 4.6 m hero hull is a toy; stealing a bus leaves you in your
+   own body (main.js warns 'no body for style bus'). A drivable bus would be
+   its own vehicle, like the tank. */
+export const FLEET_ONLY = { bus: 'l-bus' };
 /* Spawn weights: the pooled fleet picks a style per car at start, so common
    bodies are listed several times and the heavy textured ones once. */
 /* The Sketchfab cars are OUT of ambient traffic (2026-09-11): 28k-50k
    triangles each against a 4k traffic budget, and a shadow caster apiece.
    They stay in the garage as cars you buy; the roads run on the Quaternius
    and Kenney fleet. */
-const STYLE_WEIGHT = { sedan: 4, hatch: 3, suv: 3, van: 2, wagon: 2, pickup: 2, taxi: 3, hatch2: 2, sports: 1, sports2: 1, chev1: 0, chev2: 0, chev3: 0 };   // explicit 0: the picker defaults a missing key to 1
+/* London (2026-09-23): black cabs are common (4 of 27, ~15% of the pool: 2-3
+   in an 18-car fleet, beside the yellow taxis); the bus is weight 0 in the
+   RANDOM pick because it is a quota instead -- traffic.js forces pool slot 4
+   of every 11 (londonVehicles.fleetStyle), so there are always a few and
+   never a race grid of them (rivals use the random pick). */
+const STYLE_WEIGHT = { sedan: 4, hatch: 3, suv: 3, van: 2, wagon: 2, pickup: 2, taxi: 3, hatch2: 2, sports: 1, sports2: 1, chev1: 0, chev2: 0, chev3: 0, cab: 4, bus: 0 };   // explicit 0: the picker defaults a missing key to 1
 /* Never bodywork, whatever else a car is made of -- the fallback below may
    pick a neutral as the paint, but never one of these. */
 const NON_PAINT = new Set(['windows', 'window', 'glass', 'headlights', 'taillights', 'lights', 'chrome', 'tyre', 'tire', 'rubber']);
@@ -359,6 +377,11 @@ function buildKitFromObj(group, spec, { wheels: keepWheels = true } = {}) {
 /** Any body id -> { paint, detail, detailMat, lodBody }, from either source. */
 export async function fetchKit(id, spec, assets, opts = {}) {
   const def = BODIES[id] ?? BODIES['q-sports'];
+  if (def.src === 'l') {
+    // built in code, shared per size; `london` carries what traffic needs beyond the car contract (spec, lamps, paints, LOD)
+    const kit = londonKitFor(def.file, spec, opts);
+    return { paint: kit.paint, detail: kit.detail, detailMat: kit.detailMat, lodBody: kit.lodBody, london: kit };
+  }
   if (def.src === 's') {
     // whole textured model, nose to +X, bottom at 0, scaled by LENGTH so the proportions stay real
     const gltf = await fetchGltf(def.file, SBASE);
@@ -550,7 +573,10 @@ export async function loadHeroSkin(assets, hero, file = DEFAULT_BODY) {
  * 11.9 MB of NC GLBs for three styles nothing picks. The police cruiser has
  * no weight key, so it stays.
  */
-export const bootStyles = () => Object.entries(KENNEY_CARS).filter(([k]) => (STYLE_WEIGHT[k] ?? 1) > 0);
+/* The London pair (`l-` bodies) install unless `?nolondon`; the bus is
+   weight 0 in the random pick but still installs -- it arrives by quota. */
+export const bootStyles = () => Object.entries({ ...KENNEY_CARS, ...FLEET_ONLY })
+  .filter(([k, id]) => ((STYLE_WEIGHT[k] ?? 1) > 0 || k in FLEET_ONLY) && (BODIES[id]?.src !== 'l' || londonEnabled()));
 /** Every body id the boot downloads, and nothing else (tested: no `s-` id). */
 export const bootBodyIds = () => [...new Set(bootStyles().map(([, id]) => id))];
 
@@ -570,20 +596,27 @@ export async function loadVendorCars(assets) {
      race car and /car fetch their own body when asked (loadHeroSkin keeps the
      old body on until the new one lands). `?precache` restores the old boot. */
   if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('precache')) {
-    const allBodyIds = [...new Set([...Object.values(KENNEY_CARS), ...Object.keys(BODIES)])];
+    // the London bodies are built in code: nothing to download, and a sedan-sized bus is nothing to cache
+    const allBodyIds = [...new Set([...Object.values(KENNEY_CARS), ...Object.keys(BODIES)])].filter((id) => BODIES[id]?.src !== 'l');
     await Promise.all(allBodyIds.map((id) => fetchKit(id, BODY_TYPES.sedan, assets).catch(() => null)));
   }
 
   await Promise.all(bootStyles().map(async ([key, id]) => {
     try {
-      const spec = BODY_TYPES[key] ?? BODY_TYPES[SPEC_OF[key]] ?? BODY_TYPES.sedan;
+      const spec = BODY_TYPES[key] ?? LONDON_SPECS[key] ?? BODY_TYPES[SPEC_OF[key]] ?? BODY_TYPES.sedan;
       const kit = await fetchKit(id, spec, assets);
       const old = assets.geo.stunt[key];
+      const L = kit.london;
       assets.geo.stunt[key] = kit.group
         ? { group: kit.group, heavy: true, occupant: old?.occupant ?? assets.geo.stunt.sedan.occupant, vendor: true }
         : {
           body: kit.paint, glass: kit.detail, detail: kit.detail, detailMat: kit.detailMat,
           lodBody: kit.lodBody, occupant: old?.occupant ?? assets.geo.stunt.sedan.occupant, vendor: true,
+          /* A London kit brings its own spec (BODY_TYPES has no bus), fixed
+             paints and finish, lamp geometry on its lenses, a LOD distance,
+             and no occupant: its glazing is opaque, so a driver would be a
+             draw nobody sees. traffic.js #makeCar reads each of these. */
+          ...(L ? { spec: L.spec, lamps: L.lamps, paints: L.paints, finish: L.finish, lodFar: L.lodFar, occupant: null, london: true } : {}),
         };
       installed.push(key);
     } catch (e) { console.warn(`vendor car ${key} (${id}) failed: ${e.message}; keeping the loft`); }

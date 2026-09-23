@@ -13,6 +13,7 @@ import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, target
   assignRoles, rushPlan, moveTarget, stepToward, fireControl, bystanderInLine, RUSH_COOL_S } from './policeAi.js';
 import { roofsNear } from '../world/districtWorld.js';
 import { glow } from '../core/additive.js';
+import { setLondonNight, fleetStyle } from '../world/londonVehicles.js';
 
 /* Every officer's muzzle-flash sphere shares one geometry and one material;
    a redeploy used to allocate both and never dispose them. */
@@ -81,6 +82,15 @@ function lanePoint(i, j, d, lane) {
  * driving through streams out behind it.
  */
 /**
+ * The night factor 0..1 for an hour, on main.js's own curve (the one it feeds
+ * setStreakNight / setTokyoNight with): full from 20:30 to 05:12, up over
+ * 18:00-20:30, down over 05:12-07:12. Pure, tested.
+ */
+export function nightOf(hr) {
+  return hr >= 20.5 || hr < 5.2 ? 1 : hr >= 18 ? (hr - 18) / 2.5 : hr < 7.2 ? (7.2 - hr) / 2 : 0;
+}
+
+/**
  * Is a world point in the camera's view cone and near enough to be noticed?
  * Spawning and despawning use it so cars appear and vanish where the player is
  * not looking (GTA's rule). `cam` is { x, z, fx, fz } with (fx, fz) the
@@ -102,6 +112,7 @@ export class Traffic {
     this.night = +night;
     this.lampMat = new THREE.MeshStandardMaterial({ color: 0xfff2d0, emissive: 0xfff2d0, emissiveIntensity: 2.6 * this.night });
     this.lamps = [];
+    setLondonNight(this.night);   // a night boot lights the bus blinds and TAXI signs from the first frame
     this.scene = scene;
     this.assets = assets;
     this.rand = mulberry32(4242);
@@ -117,7 +128,13 @@ export class Traffic {
     this.cool = 0;                    // seconds of clean driving
     this.bustT = 0;                   // how long they have had you surrounded
     this.police = [];
-    for (let i = 0; i < count; i++) this.cars.push(this.#makeCar());
+    /* London buses are a quota, not a weight (londonVehicles.fleetStyle: slot
+       4 of every 11 -- 2 buses in an 18-car pool); every other slot is the
+       weighted pick. A forced style skips one roll of the style dice. */
+    for (let i = 0; i < count; i++) {
+      const forced = fleetStyle(i);
+      this.cars.push(this.#makeCar(forced && this.assets.geo.stunt?.[forced] ? forced : undefined));
+    }
   }
 
   /** Report a collision. `tag` says what was hit; `force` is closing speed. */
@@ -307,11 +324,14 @@ export class Traffic {
     const rand = this.rand;
     const keys = this.assets.geo.stuntKeys ?? BODY_KEYS;    // vendor kits add taxi
     const style = force || keys[Math.floor(rand() * keys.length)];
-    const spec = BODY_TYPES[style] ?? BODY_TYPES.sedan;      // taxi/police borrow the sedan's
-    const mat = this.assets.mat.parked.clone();
-    mat.color.setHex(PAINT_COLOURS[Math.floor(rand() * PAINT_COLOURS.length)]);
     const kit = this.assets.geo.stunt[style];
-    let mesh;
+    // taxi/police borrow the sedan's; a London kit brings its own (BODY_TYPES has no bus)
+    const spec = BODY_TYPES[style] ?? kit?.spec ?? BODY_TYPES.sedan;
+    const mat = this.assets.mat.parked.clone();
+    const paints = kit?.paints ?? PAINT_COLOURS;             // buses are red and cabs black: their own short list, one roll as before
+    mat.color.setHex(paints[Math.floor(rand() * paints.length)]);
+    if (kit?.finish) { mat.metalness = kit.finish.metalness; mat.roughness = kit.finish.roughness; }
+    let mesh, london = null;
     if (kit.group) {
       // a whole textured body (the owner's Sketchfab cars): one clone, its own materials, no paint tint
       /* Inside a unit-scale group. The kit's wrap carries the scale that
@@ -329,29 +349,55 @@ export class Traffic {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       // a vendor kit's `glass` is its whole detail part (glass, tyres, trim) in the kit palette
-      mesh.add(new THREE.Mesh(kit.glass, kit.detailMat ?? this.assets.mat.carGlass));
-      const who = new THREE.Mesh(kit.occupant, this.assets.mat.parked.clone());
-      who.material.color.setHex(OCCUPANT[Math.floor(rand() * OCCUPANT.length)]);
-      who.material.metalness = 0.0;
-      who.material.roughness = 0.85;
-      mesh.add(who);
+      const detail = new THREE.Mesh(kit.glass, kit.detailMat ?? this.assets.mat.carGlass);
+      mesh.add(detail);
+      if (kit.occupant) {   // a London kit has none: its glazing is opaque, the driver would be a draw nobody sees
+        const who = new THREE.Mesh(kit.occupant, this.assets.mat.parked.clone());
+        who.material.color.setHex(OCCUPANT[Math.floor(rand() * OCCUPANT.length)]);
+        who.material.metalness = 0.0;
+        who.material.roughness = 0.85;
+        mesh.add(who);
+      }
+      if (kit.london) {
+        /* The London material reads these per OBJECT (world/londonVehicles.js):
+           which blind the bus shows, whether the cab's TAXI sign is lit, how
+           far the wheels have rolled (#londonTick writes it). The LOD shares
+           the same userData, so its blind reads the same route. Beyond lodFar
+           the paint and detail hide and the one-mesh LOD draws instead. */
+        detail.userData.route = Math.floor(rand() * 4);
+        detail.userData.hire = rand() < 0.7 ? 1 : 0;
+        detail.userData.roll = 0;
+        const lod = new THREE.Mesh(kit.lodBody, kit.detailMat);
+        lod.userData = detail.userData;
+        lod.visible = false;
+        mesh.add(lod);
+        london = { detail, lod, lodFar: kit.lodFar ?? 120, rollWrap: 2 * Math.PI * (spec.wheelR ?? 0.35), far: false };
+      }
     }
 
     mesh.visible = false;
 
     const brakeMat = this.assets.mat.tailDim.clone();
-    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.12, spec.wMax * 1.3), brakeMat);
+    /* A London kit's brake lamps are its own lens shapes (shared geometry, in
+       car space); everyone else gets the generic bar. Same brakeMat either way. */
+    const tail = new THREE.Mesh(kit?.lamps?.tail ?? new THREE.BoxGeometry(0.06, 0.12, spec.wMax * 1.3), brakeMat);
     /* The REAR is -X: the fleet drives along +X (a Kenney SUV comes at the
        camera nose-first, headlights and all). This box sat at +L/2 -- on the
        bonnet -- from the day the loft was turned round, and nobody could
        tell on a hull with no lamps of its own. */
-    tail.position.set(-(spec.L * 0.5 - 0.06), spec.bonnetY * 0.86, 0);
+    if (!kit?.lamps) tail.position.set(-(spec.L * 0.5 - 0.06), spec.bonnetY * 0.86, 0);
     mesh.add(tail);
     /* headlamps: every car reads as lit at night (Phase 5), the nearest four
        also get a real spot (lighting.js). Both lamps in ONE mesh (two boxes
        merged: 40 draws for the fleet, not 80), the shared lampMat, hidden while
-       the night factor is zero so the day pays no draw for them. */
-    {
+       the night factor is zero so the day pays no draw for them. A London
+       kit's pair is shared geometry on its own lenses (the cab's are round). */
+    if (kit?.lamps) {
+      const lamp = new THREE.Mesh(kit.lamps.head, this.lampMat);
+      lamp.visible = this.night > 0.02;
+      mesh.add(lamp);
+      this.lamps.push(lamp);
+    } else {
       const lampGeo = new THREE.BoxGeometry(0.08, 0.16, 0.3);
       const pair = new THREE.BufferGeometry();
       const a = lampGeo.clone().translate(spec.L * 0.5 - 0.04, spec.bonnetY * 0.78, -spec.wMax * 0.62);
@@ -378,11 +424,45 @@ export class Traffic {
       path: [], gates: [], s: 0, pathLen: 0,
       speed: 0, cruise: 11 + rand() * 7,
       node: [0, 0], dir: DIRS[0], lane: 0.5,
-      offsets: [-spec.L * 0.31, 0, spec.L * 0.31],
+      // three circles cover a car; a bus's spec lists five (collision.js, onfoot.js, breakables.js all walk the array)
+      offsets: spec.offsets ?? [-spec.L * 0.31, 0, spec.L * 0.31],
       radius: Math.max(0.92, spec.wMax * 1.02),
       reach: spec.L * 0.5 + 0.6,
       x: 0, z: 0, yaw: 0, stopped: false,
+      london, fixedPaint: !!kit?.paints,   // fixedPaint: Little Tokyo's taxi liveries leave a red bus red
     };
+  }
+
+  /** London LOD + wheel roll, once per stepped frame (d2: squared distance to the player). Beyond lodFar the paint and detail hide and the LOD draws: one draw, not two. */
+  #londonTick(car, d2) {
+    const L = car.london;
+    const far = L.far ? d2 > (L.lodFar - 12) * (L.lodFar - 12) : d2 > L.lodFar * L.lodFar;   // 12 m of hysteresis: no flicker at the line
+    if (far !== L.far) {
+      L.far = far;
+      car.mesh.material.visible = !far;   // the per-car paint clone: the root mesh stays visible so its children draw
+      L.detail.visible = !far;
+      L.lod.visible = far;
+    }
+    if (!far) L.detail.userData.roll = car.s % L.rollWrap;   // wrapped to one turn: the angle stays small in fp32
+  }
+
+  /**
+   * Room to appear? A car spawning into (or onto) a bus -- or a bus onto
+   * anything -- would sit inside it until one drove off: the leader check
+   * stops the one behind, but only a car whose centre is AHEAD counts as a
+   * leader. Two ordinary cars are left as before.
+   */
+  #crowded(car) {
+    for (const list of [this.cars, this.police]) {
+      for (let i = 0; i < list.length; i++) {
+        const o = list[i];
+        if (o === car || !o.live || !(car.spec.long || o.spec?.long)) continue;
+        const need = car.spec.L * 0.5 + (o.spec?.L ?? 4.6) * 0.5 + 3;
+        const dx = o.x - car.x, dz = o.z - car.z;
+        if (dx * dx + dz * dz < need * need) return true;
+      }
+    }
+    return false;
   }
 
   /* ------------------------------------------------------------------ race
@@ -519,7 +599,13 @@ export class Traffic {
 
   /** The clock's nightFactor 0..1: headlamp glow on every car; the lamps hide at 0 (no draw by day). */
   setNight(k) {
+    this._nightFed = true;   // someone drives the night: update() stops following the HUD's clock
+    this.#applyNight(k);
+  }
+
+  #applyNight(k) {
     k = Math.max(0, Math.min(1, +k || 0));
+    setLondonNight(k);   // bus blinds, saloon lights, TAXI signs: one uniform in the London material
     if (Math.abs(k - this.night) < 0.005 && (k > 0.02) === this.lamps[0]?.visible) return;
     this.night = k;
     this.lampMat.emissiveIntensity = 2.6 * k;
@@ -692,11 +778,13 @@ export class Traffic {
        away, so a car could materialise in the middle of the view. Forty tries
        insist on an edge the camera is not looking at; then anything in range. */
     const cam = this.#cam();
+    const long = !!car.spec.long;
     for (let tries = 0; tries < 60 && pick < 0; tries++) {
       const id = Math.floor(this.rand() * this.E.length);
       const p = this.E[id].points[0];
       const d = Math.hypot(p[0] - player.x, p[1] - player.z);
-      if (d > 55 && d < 260 && (tries >= 40 || !inView(p[0], p[1], cam, 240))) pick = id;
+      // a bus wants a whole edge to stand on: never a stub where it would straddle two junctions
+      if (d > 55 && d < 260 && (tries >= 40 || !inView(p[0], p[1], cam, 240)) && (!long || this.#edgeLen(this.E[id].points) > car.spec.L + 12)) pick = id;
     }
     if (pick < 0) return;                       // nothing in range this frame
 
@@ -713,11 +801,16 @@ export class Traffic {
     let guard = 0;
     while (car.pathLen < LOOKAHEAD && guard++ < 40) this.#extendGraph(car);
     car.speed = car.cruise * 0.7;
+    /* A bus starts half its length in, so its tail is clear of the junction
+       it spawned at (a car's centre starts ON the node; a bus's rear axle
+       sample needs path behind it too), and it only appears where it fits. */
+    if (long) car.s = car.spec.L * 0.5 + 1;
+    this.#place(car);
+    if (this.#crowded(car)) { car.path = []; car.gates = []; car.pathLen = 0; car.s = 0; return; }   // no room: another edge next frame
     car.live = true;
     car.mesh.visible = true;
-    this.#place(car);
-    // Little Tokyo runs on taxis: two in five civilians spawning there take the classic liveries (black, yellow-green, deep green)
-    if (!car.hunt && this.world?.district?.districtAt?.(car.x, car.z) === 'LITTLE TOKYO' && this.rand() < 0.4) car.mesh.material?.color?.setHex([0x101214, 0xd8d24c, 0x1d5a3a][Math.floor(this.rand() * 3)]);
+    // Little Tokyo runs on taxis: two in five civilians spawning there take the classic liveries (black, yellow-green, deep green) -- not a bus or a black cab, whose paint is the point
+    if (!car.hunt && !car.fixedPaint && this.world?.district?.districtAt?.(car.x, car.z) === 'LITTLE TOKYO' && this.rand() < 0.4) car.mesh.material?.color?.setHex([0x101214, 0xd8d24c, 0x1d5a3a][Math.floor(this.rand() * 3)]);
   }
 
   /** Append the next block plus the manoeuvre through the junction at its end. */
@@ -798,9 +891,35 @@ export class Traffic {
     this.#place(car);
   }
 
+  /** Point `s` metres along a car's path, into `out` [x, z]. */
+  #at(path, s, out) {
+    let k = 1;
+    while (k < path.length - 1 && path[k][2] < s) k++;
+    const a = path[k - 1], b = path[k];
+    const t = Math.max(0, Math.min(1, (s - a[2]) / Math.max(1e-4, b[2] - a[2])));
+    out[0] = a[0] + (b[0] - a[0]) * t; out[1] = a[1] + (b[1] - a[1]) * t;
+    return out;
+  }
+
   /** Position and heading at the current distance along the path. */
   #place(car) {
     const path = car.path;
+    /* A long vehicle rides its two axles: each on the path, half a wheelbase
+       either side of s, the body on the chord between them. On a straight it
+       is the same as below; through a corner the rear cuts inside the front
+       (off-tracking), where a 10.5 m body pinned tangent at its centre swung
+       its tail across the other lane. */
+    if (car.spec.long && path.length > 1) {
+      const h = car.spec.axleHalf ?? car.spec.L * 0.28;
+      const f = this.#at(path, car.s + h, this._pf ??= [0, 0]), r = this.#at(path, Math.max(0, car.s - h), this._pr ??= [0, 0]);
+      car.x = (f[0] + r[0]) * 0.5;
+      car.z = (f[1] + r[1]) * 0.5;
+      const dx = f[0] - r[0], dz = f[1] - r[1];
+      if (dx * dx + dz * dz > 1e-6) car.yaw = Math.atan2(-dz, dx);
+      car.mesh.position.set(car.x, groundHeightAt(car.x, car.z), car.z);
+      car.mesh.rotation.y = car.yaw;
+      return;
+    }
     let k = 1;
     while (k < path.length - 1 && path[k][2] < car.s) k++;
     const a = path[k - 1], b = path[k];
@@ -1063,6 +1182,14 @@ export class Traffic {
   }
 
   update(player, dt, time) {
+    /* The night path. 15f63a9 had main call setNight(clock.nightFactor) every
+       frame; the call is gone from main (lost in a merge), so a day boot ran
+       into the night with every headlamp -- and every London blind, saloon
+       light and TAXI sign -- still dark, while main's setStreakNight drew
+       streaks on the dark lamps. Until main feeds it again, follow the HUD's
+       clock on main's own curve (nightOf); one external setNight() call takes
+       over for good. Cheap: setNight returns early unless the factor moved. */
+    if (!this._nightFed) { const hr = this.hud?.clock?.hour; if (hr !== undefined) this.#applyNight(nightOf(hr)); }
     this.#driveRacers(dt);
     /* One building scan for the whole frame: every shooter is within ~65 m of
        the player, so the player's 9-chunk neighbourhood serves them all. Eleven
@@ -1193,7 +1320,11 @@ export class Traffic {
       let hold = null;
       const gate = car.gates[0];
       if (gate) {
-        const gap = gate.s - car.s;
+        /* The line is where the NOSE stops. gate.s was tuned for a sedan's
+           centre (half length 2.31 m); a bus's centre stops stopBack earlier
+           (2.94 m), or its front half sat across the crossing. */
+        const gs = gate.s - (car.spec.stopBack || 0);
+        const gap = gs - car.s;
         if (gap < 60) {
           const state = signalState(gate.node[0], gate.node[1], gate.axis, t);
           // amber only stops you if you could still pull up for it
@@ -1206,7 +1337,7 @@ export class Traffic {
              after 10 s). Widen the window by exactly that overshoot: zero for a
              per-frame car, up to ~1.1 m at 17 m/s for a far one. */
           if (mustStop && gap > -0.05 - car.speed * (step - dt)) {
-            hold = gate.s;
+            hold = gs;
             limit = Math.min(limit, Math.sqrt(Math.max(0, gap) * 2 * 4.5));
           }
         }
@@ -1256,6 +1387,7 @@ export class Traffic {
       this.#place(car);
 
       const ddx = car.x - player.x, ddz = car.z - player.z;
+      if (car.london) this.#londonTick(car, ddx * ddx + ddz * ddz);
       if (ddx * ddx + ddz * ddz > 320 * 320) {   // same 320 m despawn, squared: no hypot per car
         car.live = false;
         car.mesh.visible = false;
@@ -1715,6 +1847,7 @@ export class Traffic {
     const look = minGap + car.speed * headway + 14;
     let nearest = Infinity;
     let leaderSpeed = car.cruise;
+    let leaderExtra = 0;   // how much longer than a sedan the leader's rear half is: a bus's tail is 5.25 m behind its centre, not 2.31
 
     /* Perf (2026-09-22): this is the one O(N^2) loop in traffic -- every car
        against every car, every frame. It used to allocate an `ahead` closure
@@ -1740,13 +1873,13 @@ export class Traffic {
       const along = dx * fx + dz * fz;
       if (along <= 0 || along >= look || along >= nearest) continue;
       const side = Math.abs(dx * -fz + dz * fx);
-      if (side < 2.2) { nearest = along; leaderSpeed = other.speed ?? 0; }
+      if (side < 2.2) { nearest = along; leaderSpeed = other.speed ?? 0; leaderExtra = other.spec.long ? other.spec.L * 0.5 - 2.31 : 0; }
     }
     {
       const dx = player.x - cx, dz = player.z - cz;
       const along = dx * fx + dz * fz;
       const side = Math.abs(dx * -fz + dz * fx);
-      if (along > 0 && along < look && side < 2.2 && along < nearest) { nearest = along; leaderSpeed = player.speed || 0; }
+      if (along > 0 && along < look && side < 2.2 && along < nearest) { nearest = along; leaderSpeed = player.speed || 0; leaderExtra = 0; }
     }
 
     if (nearest === Infinity) return Infinity;
@@ -1760,7 +1893,7 @@ export class Traffic {
       car.lane = car.lane === 0 ? 1 : 0;
     }
 
-    const gap = nearest - (car.spec.L * 0.5 + minGap);
+    const gap = nearest - (car.spec.L * 0.5 + minGap + leaderExtra);
     if (gap <= 0) return 0;
     return Math.min(car.cruise, Math.sqrt(gap * 2 * 3.8));
   }
