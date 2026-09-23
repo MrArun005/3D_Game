@@ -35,6 +35,18 @@ export const KIT_DISTRICT = {
   KINGSWAY: ['commercial', 0.0], 'THE FLATS': ['commercial', 0.0], 'LITTLE TOKYO': ['commercial', 0.0],
 };
 
+/**
+ * The kits some district actually builds with (a share above 0). Every
+ * commercial share is 0.0 -- the downtown districts are box massing, art
+ * buildings and Tokyo -- so the commercial kit's 35 GLBs (3.7 MB, 35 parses
+ * and merges at boot) were loaded for nothing. Raise a share and that kit
+ * loads again with no other change. The one commercial file a landmark uses
+ * (building-skyscraper-d) is fetched by landmarks.js on its own. Pure; tested.
+ */
+export function kitsInUse(table = KIT_DISTRICT) {
+  return [...new Set(Object.values(table).filter(([, share]) => share > 0).map(([kit]) => kit))];
+}
+
 const loader = new GLTFLoader();
 const load = (url) => new Promise((res, rej) => loader.load(url, res, undefined, rej));
 
@@ -140,7 +152,9 @@ function createKitPbrMaps(sourceMap) {
 
 export async function loadKitBuildings(assets) {
   const out = {};
+  const inUse = new Set(kitsInUse());
   for (const [kit, def] of Object.entries(KITS)) {
+    if (!inUse.has(kit)) continue;   // no district places it (kitsInUse)
     const files = [...def.files, ...(def.tall || [])];
     const results = await Promise.all(files.map((f) => load(`${BASE}${kit}/${f}.glb`).then(bake).catch((e) => { console.warn('kit building', kit, f, e.message); return null; })));
     const models = results.filter(Boolean);

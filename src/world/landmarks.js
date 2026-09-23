@@ -89,11 +89,18 @@ export function assembleTenement(gltf, bays = 17, floors = 4, seed = 7) {
  * No collision yet: the hull collider only knows footprints from the file.
  */
 const BASE = '/models/vendor/sketchfab/props/';
+/* `lazy`: fetched only once you come within LOAD_R of the lot, and hidden
+   past HIDE_R (Landmarks.update, fed by main's 2 Hz district poll). The three
+   Sketchfab props are 24.75 MB between them and stand 1.0-1.9 km from the
+   Tokyo spawn; they were fetched and parsed the moment the district landed,
+   and drawn (227k triangles when the camera faced them) from any distance.
+   The Kenney pieces are a few hundred KB and part of the skyline, so they
+   keep loading at boot and never hide. `?landmarks=eager` is the old path. */
 const LANDMARKS = [
-  { file: 'gun-shop',    district: 'OLD QUARTER',  minW: 8,  name: "Schneider's Guns" },
+  { file: 'gun-shop',    district: 'OLD QUARTER',  minW: 8,  name: "Schneider's Guns", lazy: true },
   // heavy: 133k and 94k triangles (budget for a large prop is 6k) -- they do not cast into the shadow cascades
-  { file: 'supermarket', district: 'THE FLATS',    minW: 30, name: 'Flats Supermarket', heavy: true },
-  { file: 'street-set',  district: 'VELLERY ROW',  minW: 12, name: 'Vellery corner', heavy: true },
+  { file: 'supermarket', district: 'THE FLATS',    minW: 30, name: 'Flats Supermarket', heavy: true, lazy: true },
+  { file: 'street-set',  district: 'VELLERY ROW',  minW: 12, name: 'Vellery corner', heavy: true, lazy: true },
   {
     file: '/models/vendor/kenney/commercial/building-skyscraper-d.glb',
     district: 'KINGSWAY',
@@ -130,6 +137,7 @@ const LANDMARKS = [
     maxScale: 1.0,
     frontage: { assemble: { bays: 17, floors: 4 }, groundY: 0, depth: 14, colour: 0x6f5548 },
     name: 'Old Quarter tenements',
+    lazy: true,   // 10.6 MB when downloaded: by distance, like the Sketchfab props
   },
   /* Ours, authored in Blender (tools/blender/build_tokyo_neon_building.py):
      four seeded neon towers -- konbini ground floor, ribbon windows,
@@ -155,6 +163,26 @@ const LANDMARKS = [
  * `block` is reserved before #place() runs, so the vendor landmarks (the
  * tenement wants any 44 m Old Quarter lot) never land on top of one.
  */
+/* The distance rule. 900 m to fetch leaves the download and parse a few
+   seconds of driving before the lot is close; 1200 m to hide is ~7-9% fog at
+   the day density (0.0004), the knob if the pop shows. Hysteresis is the
+   300 m between them: a loaded prop is never re-fetched, only shown/hidden. */
+export const LOAD_R = 900, HIDE_R = 1200;
+/** What a lazy landmark at `dist` metres wants: start its load, and be drawn. Pure; tested. */
+export function landmarkWanted(dist, loaded, loadR = LOAD_R, hideR = HIDE_R) {
+  return { load: !loaded && dist < loadR, visible: dist < hideR };
+}
+
+/* Scanned statues the old #place() stood at (28,12), (18,15) and (-35,25):
+   the map's SW corner, 2.7 km from the spawn, one of them outside the plan's
+   0..4200 bounds. 14.32 MB requested (cowboy.glb twice) for three 40k-triangle
+   figures nobody drives past. `?statues` puts them back, cowboy fetched once. */
+const STREET_PEOPLE = [
+  { file: '/models/characters/cowboy.glb', x: 28, z: 12, yaw: 0.4, name: 'Cowboy on Sidewalk' },
+  { file: '/models/characters/navy_jacket.glb', x: 18, z: 15, yaw: -1.2, name: 'Navy Jacket Pedestrian' },
+  { file: '/models/characters/cowboy.glb', x: -35, z: 25, yaw: 1.8, name: 'Cowboy at Corner' },
+];
+
 const SKYLINE = [
   { kind: 'crane_cluster', x: 2339.3, z: 1954.5, yaw: 1.151, block: 497, district: 'HARBOUR POINT', name: 'Halstead Container Terminal', view: 'road 168 (26 m), 1023 m' },
   { kind: 'grain_silo', x: 2440.3, z: 2010.6, yaw: 2.722, block: 497, district: 'HARBOUR POINT', name: 'Harbour Point grain elevator', view: 'road 169 (26 m), 1086 m' },
@@ -179,15 +207,40 @@ const SKYLINE = [
 ];
 
 export class Landmarks {
-  constructor(scene, district, world = null) {
+  constructor(scene, district, world = null, { search = typeof location !== 'undefined' ? location.search : '' } = {}) {
     this.scene = scene; this.district = district; this.world = world; this.placed = [];
-    this.usedBlocks = new Set();     // block ids the skyline took; #place() must not offer them to a vendor model
+    this.usedBlocks = new Set();     // block ids the skyline took; #pickLots() must not offer them to a vendor model
     this.solids = [];                // world-frame collision boxes, in districtWorld's own { x, z, hw, hd, angle, height } shape
     this.keepOut = [];               // world-frame ground footprints the dressing must not scatter into
+    const q = new URLSearchParams(search);
+    this.eager = q.get('landmarks') === 'eager';   // the old boot: fetch every vendor landmark now, never hide one
+    this.loader = new GLTFLoader();
     this.#buildSkyline();
     this.#buildTokyoArch();
     this.#buildHalsteadLiftBridge();
-    this.#place();
+    /* Lots are chosen NOW, all of them, in table order -- exactly the choice
+       the old #place() made (its async callbacks picked synchronously before
+       their first await) -- so a lazy prop never lands on a lot a later one
+       took. Only the fetch waits for distance. */
+    this.picks = this.#pickLots();
+    for (const p of this.picks) if (this.eager || !p.lm.lazy) this.#load(p).catch((e) => this.#failed(p, e));
+    if (q.has('statues')) this.#streetPeople();
+  }
+
+  /**
+   * Distance loading (main.js calls it from the 2 Hz district poll with the
+   * camera's position, so photo mode's presets see what they frame). A lazy
+   * landmark starts its fetch inside LOAD_R and is drawn inside HIDE_R.
+   */
+  update(px, pz) {
+    this.lastX = px; this.lastZ = pz;
+    if (this.eager) return;
+    for (const p of this.picks) {
+      if (!p.lm.lazy) continue;
+      const w = landmarkWanted(Math.hypot(p.lot.x - px, p.lot.y - pz), p.state !== 'idle');
+      if (w.load) this.#load(p).catch((e) => this.#failed(p, e));
+      if (p.wrap) p.wrap.visible = w.visible;
+    }
   }
 
   /**
@@ -319,16 +372,43 @@ export class Landmarks {
     return false;
   }
 
-  async #place() {
-    const loader = new GLTFLoader();
-    const used = new Set();
-    await Promise.all(LANDMARKS.map(async (lm) => {
-      const lots = this.district.blocks.filter((b) => (b.type === 'lot' || b.type === 'vacant') && b.district === lm.district && !used.has(b) && !this.usedBlocks.has(b.id) && Math.min(b.w, b.h) >= lm.minW)
-        .sort((a, b) => Math.min(a.w, a.h) - Math.min(b.w, b.h));
-      const lot = lots[0] ?? this.district.blocks.filter((b) => (b.type === 'lot' || b.type === 'vacant') && !used.has(b) && !this.usedBlocks.has(b.id) && Math.min(b.w, b.h) >= lm.minW).sort((a, b) => Math.min(a.w, a.h) - Math.min(b.w, b.h))[0];
-      if (!lot) { console.warn('landmark: no lot for', lm.file); return; }
+  /**
+   * One lot per landmark: the smallest empty lot/vacant block of its own
+   * district that fits it, else (full map only) the smallest anywhere. With a
+   * compact play area (district.play, world/playArea.js) only lots INSIDE it
+   * are offered and there is no anywhere-fallback: a landmark whose district
+   * has no lot inside is skipped, not dropped into a stranger's district.
+   */
+  #pickLots() {
+    const used = new Set(), picks = [];
+    const play = this.district.play ?? null;
+    const free = (b, lm) => (b.type === 'lot' || b.type === 'vacant') && !used.has(b) && !this.usedBlocks.has(b.id)
+      && Math.min(b.w, b.h) >= lm.minW && (!play || play.contains(b.x, b.y));
+    const bySize = (a, b) => Math.min(a.w, a.h) - Math.min(b.w, b.h);
+    for (const lm of LANDMARKS) {
+      const lot = this.district.blocks.filter((b) => free(b, lm) && b.district === lm.district).sort(bySize)[0]
+        ?? (play ? null : this.district.blocks.filter((b) => free(b, lm)).sort(bySize)[0]);
+      if (!lot) {
+        if (play) console.info(`landmark skipped: ${lm.name} -- no ${lm.district} lot inside the play area`);
+        else console.warn('landmark: no lot for', lm.file);
+        continue;
+      }
       used.add(lot);
-      const path = lm.file.startsWith('/') ? lm.file : BASE + lm.file + '.glb';
+      picks.push({ lm, lot, state: 'idle', wrap: null });   // state: idle -> loading -> placed | failed
+    }
+    return picks;
+  }
+
+  #failed(pick, e) { pick.state = 'failed'; console.warn('landmark', pick.lm.file, e?.message ?? e); }   // a throw past the load (a bad frontage fit) must not become an unhandled rejection
+
+  /** Fetch, fit and place one picked landmark. Runs once per pick (state guards it). */
+  async #load(pick) {
+    if (pick.state !== 'idle') return;
+    pick.state = 'loading';
+    const { lm, lot } = pick;
+    const loader = this.loader;
+    const path = lm.file.startsWith('/') ? lm.file : BASE + lm.file + '.glb';
+    {
       /* Is the file even there? Poly Haven GLBs are CC0 downloads that
          .gitignore deliberately excludes (public/models/vendor/polyhaven/*.glb)
          and tools/polyhaven.mjs restores from a local download. On a machine
@@ -344,10 +424,11 @@ export class Landmarks {
         const type = head.headers.get('content-type') || '';
         if (!head.ok || /text\/html/i.test(type)) {
           console.info(`landmark skipped: ${lm.name} -- ${path} is not downloaded (run tools/polyhaven.mjs)`);
+          pick.state = 'failed';
           return;
         }
       } catch { /* offline or blocked HEAD: fall through and let the load decide */ }
-      let gltf; try { gltf = await new Promise((res, rej) => loader.load(path, res, undefined, rej)); } catch (e) { console.warn('landmark', lm.file, e.message); return; }
+      let gltf; try { gltf = await new Promise((res, rej) => loader.load(path, res, undefined, rej)); } catch (e) { console.warn('landmark', lm.file, e.message); pick.state = 'failed'; return; }
       let obj = gltf.scene;
       if (lm.frontage?.assemble) {
         obj = assembleTenement(gltf, lm.frontage.assemble.bays, lm.frontage.assemble.floors);
@@ -400,18 +481,25 @@ export class Landmarks {
       this.scene.add(wrap);
       this.placed.push({ ...lm, x: lot.x, z: lot.y, scale: k });
       console.info(`landmark ${lm.name} at ${lot.x | 0},${lot.y | 0} (${lm.district}) x${k.toFixed(2)}`);
-    }));
+      pick.wrap = wrap;
+      pick.state = 'placed';
+      // a lazy prop lands wherever the camera is by now: apply the hide rule at once, not at the next poll
+      if (lm.lazy && !this.eager && this.lastX !== undefined) wrap.visible = Math.hypot(lot.x - this.lastX, lot.y - this.lastZ) < HIDE_R;
+    }
+  }
 
-    // Place high-detail scanned characters as street walkers / pedestrians
-    const STREET_PEOPLE = [
-      { file: '/models/characters/cowboy.glb', x: 28, z: 12, yaw: 0.4, name: 'Cowboy on Sidewalk' },
-      { file: '/models/characters/navy_jacket.glb', x: 18, z: 15, yaw: -1.2, name: 'Navy Jacket Pedestrian' },
-      { file: '/models/characters/cowboy.glb', x: -35, z: 25, yaw: 1.8, name: 'Cowboy at Corner' },
-    ];
+  /** The scanned statues (?statues only; see STREET_PEOPLE). Each file is fetched and parsed once; a repeat is a clone sharing its geometry and materials. */
+  async #streetPeople() {
+    const cache = new Map();   // file -> Promise<gltf>
+    const worn = new Set();    // files whose own scene is already placed
     for (const sp of STREET_PEOPLE) {
       try {
-        const gltf = await new Promise((res, rej) => loader.load(sp.file, res, undefined, rej));
-        const obj = gltf.scene;
+        if (!cache.has(sp.file)) cache.set(sp.file, new Promise((res, rej) => this.loader.load(sp.file, res, undefined, rej)));
+        const gltf = await cache.get(sp.file);
+        // neither file is skinned (no `skins` in the GLB), so a plain clone keeps its binding; it shares geometry and materials
+        const obj = worn.has(sp.file) ? gltf.scene.clone() : gltf.scene;
+        worn.add(sp.file);
+        obj.scale.setScalar(1); obj.position.set(0, 0, 0); obj.rotation.set(0, 0, 0);   // measure the clone at rest, not at the first one's placement
         obj.updateMatrixWorld(true);
         const bb = new THREE.Box3().setFromObject(obj);
         const h = bb.max.y - bb.min.y || 1;

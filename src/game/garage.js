@@ -185,8 +185,16 @@ export class Garage {
   }
 
   async #fit(file) {
-    const u = this.hero.userData;
-    if (u.skin) { u.skin.parent?.remove(u.skin); u.skin = null; }
+    /* The old body stays ON while the new one loads. This removed the skin
+       before the await, which was harmless while the boot pre-cached every
+       body; now a Sketchfab body downloads on its first fit (1.7-11.7 MB,
+       vendorCars.loadVendorCars), and with the loft already hidden under the
+       old skin the car went invisible for the whole download. loadHeroSkin
+       removes the stale skin itself AFTER its await, behind the skinGen
+       counter, so a later fit still wins over an earlier one. Only the
+       Sketchfab bodies (`s-`) are a download worth a word; the CC0 traffic
+       bodies a carjack fits are already in memory. */
+    if (file.startsWith('s-')) this.hud?.flash?.('GARAGE · DELIVERING…');
     const ok = await loadHeroSkin(this.assets, this.hero, file);
     if (!ok) { this.hud.flash('GARAGE CLOSED'); return; }
     this.fitted = file;

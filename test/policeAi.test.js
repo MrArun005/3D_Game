@@ -325,3 +325,62 @@ test('the officer\'s own position is coverX/coverZ, and the settle beat is longe
   // nextState makes him sit in cover for 0.6 s before he peeks; a shorter settle never binds
   assert.ok(AI.SETTLE_S > 0.6, `the sight-picture beat has to outlast the cover dwell, got ${AI.SETTLE_S}`);
 });
+
+/* --- JUST DRIVE (2026-09-23): easy moves fire-on-sight to three stars, and can stop the patrol's calls --- */
+
+test('shouldFire takes the fire-on-sight level; the two-argument form is the old two-star rule', () => {
+  assert.equal(AI.shouldFire(2, 30, 3), false, 'easy: two stars from crashes is an arrest, not a firefight');
+  assert.equal(AI.shouldFire(2, 2, 3), true, 'but shoot at them and they answer');
+  assert.equal(AI.shouldFire(3, 30, 3), true);
+  assert.equal(AI.shouldFire(2, 30), true, 'default from = 2');
+  assert.equal(AI.shouldFire(1, 30), false);
+});
+
+test('fireControl holds fire at two stars when ctx.fireFrom is 3', () => {
+  const o = { gunKind: 'pistol', ammo: 12, state: 'peek', settleLeft: 0, fireT: -1, burstLeft: 0 };
+  const ctx = { dt: 1 / 60, canSee: true, blocked: false, stars: 2, quietFor: 30 };
+  assert.equal(AI.fireControl(o, ctx).fire, true, 'hard / no fireFrom: two stars fire on sight');
+  const held = AI.fireControl(o, { ...ctx, fireFrom: 3 });
+  assert.equal(held.fire, false);
+  assert.equal(held.hold, 'holdfire');
+  assert.equal(AI.fireControl(o, { ...ctx, fireFrom: 3, quietFor: 1 }).fire, true, 'you shot first: he answers');
+});
+
+test('patrolCallDue: ~53 calls an hour when allowed, none when not, the same RNG stream either way', () => {
+  const run = (allowed) => {
+    const rand = mulberry32(7);
+    let calls = 0, draws = 0, respondT = 0;
+    const r = () => { draws++; return rand(); };
+    const dt = 1 / 60;
+    for (let t = 0; t < 3600 * 10; t += dt) {
+      respondT -= dt;
+      if (patrolCallDue(respondT, dt, r, allowed)) { calls++; respondT = 8; }
+    }
+    return { perHour: calls / 10, draws };
+  };
+  const { patrolCallDue } = AI;
+  const on = run(true), off = run(false);
+  assert.equal(off.perHour, 0);
+  assert.ok(on.perHour > 40 && on.perHour < 65, `~53 an hour (${on.perHour})`);
+  assert.ok(off.draws > 0 && off.draws >= on.draws, 'rand is still drawn while calls are off');
+  assert.equal(patrolCallDue(-10, 1, () => 0), false, 'not until 30 s of quiet');
+  assert.equal(patrolCallDue(-31, 1, () => 0), true);
+  assert.equal(patrolCallDue(-31, 1, () => 0, false), false);
+});
+
+test('no pedestrian and no cruiser in range: a crash into traffic is nobody\'s business', () => {
+  assert.equal(AI.crimeWitnessed('traffic', 0, 0, [], [], 0), false);
+  assert.equal(AI.crimeWitnessed('traffic', 0, 0, [], [{ live: true, x: 80, z: 0 }], 0), true, 'a cruiser within 90 m still sees it');
+});
+
+test('Traffic.reportCrime on easy ignores pedestrian witnesses for crashes, not for people or cruisers', async () => {
+  const { Traffic } = await import('../src/game/traffic.js');
+  const { DIFFICULTY } = await import('../src/game/difficulty.js');
+  const stub = (difficulty) => ({ player: { x: 0, z: 0 }, crowd: { people: [{ live: true, x: 10, z: 0 }, { live: true, x: -8, z: 4 }] }, police: [], wanted: 0, cool: 3, difficulty });
+  const hit = (tag, d) => { const s = stub(d); Traffic.prototype.reportCrime.call(s, tag, 15); return s.wanted; };
+  assert.equal(hit('traffic', DIFFICULTY.easy), 0, 'a bumped car with only pedestrians about: no star');
+  assert.ok(hit('traffic', DIFFICULTY.hard) > 0, 'the full game: a pedestrian saw it');
+  assert.ok(hit('traffic', undefined) > 0, 'no difficulty set (tests, old callers): the full game');
+  assert.ok(hit('person', DIFFICULTY.easy) > 0, 'running people over still counts');
+  assert.ok(hit('police', DIFFICULTY.easy) > 0, 'hitting a cruiser still counts');
+});

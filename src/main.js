@@ -29,7 +29,7 @@ import { Landmarks } from './world/landmarks.js';
 import { BillboardSystem } from './world/billboards.js';
 import { StreetLife } from './world/streetLife.js';
 import { Airspace } from './world/airspace.js';
-import { Catalogue, dressCarMaterials } from './world/catalogue.js';
+import { Catalogue, dressCarMaterials, spawnEssential } from './world/catalogue.js';
 import { isTouchDevice } from './core/device.js';
 import { createTouch } from './game/touch.js';
 import { mergeDrive, keyboardSteer } from './game/input.js';
@@ -49,7 +49,7 @@ import { Vehicle, CarVehicle } from './game/vehicle.js';
 import { HelicopterVehicle } from './game/flight.js';
 import { TankVehicle } from './game/tank.js';
 import { buildTankModel } from './world/tankModel.js';
-import { pickDifficulty, DIFFICULTY_KEY } from './game/difficulty.js';
+import { pickDifficulty, DIFFICULTY_KEY, withCity } from './game/difficulty.js';
 import { buildHeliModel } from './world/heliModel.js';
 import { DispatchService } from './game/dispatch.js';
 import { groundHeightAt } from './world/metrics.js';
@@ -62,7 +62,7 @@ import { decalMaterial as wearDecalMaterial, decalGeometry as wearDecalGeometry 
 import { Crowd } from './game/crowd.js';
 import { Helicopter } from './game/helicopter.js';
 import { OnFoot, makeSolver } from './game/onfoot.js';
-import { CHARACTERS, NAMED_CHARACTERS } from './game/character.js';
+import { CHARACTERS, NAMED_CHARACTERS, shippedPersonas } from './game/character.js';
 import { Navigation } from './game/navigation.js';
 import { GameClock } from './game/clock.js';
 import { Mission } from './game/mission.js';
@@ -189,8 +189,11 @@ const quality = resolveQuality({ isLite });
 const Q = quality.preset;
 window.__quality = quality;
 /* Easy by default (2026-09-23, game/difficulty.js): the owner asked for "easy
-   game play, no complications". ?hard is the full game. */
-const DIFF = pickDifficulty(location.search, (() => { try { return localStorage.getItem(DIFFICULTY_KEY); } catch { return null; } })());
+   game play, no complications". ?hard is the full game. A `let`: easy is also
+   JUST DRIVE (no patrol calls, far sirens/gunfire or street voices), and any
+   title card but Just drive upgrades it with withCity (MENU_MODES); ?city does
+   the same from the address. Every reader below reads DIFF when it runs. */
+let DIFF = pickDifficulty(location.search, (() => { try { return localStorage.getItem(DIFFICULTY_KEY); } catch { return null; } })());
 console.info(`difficulty: ${DIFF.name.toUpperCase()} (stars x${DIFF.crimeScale}, max ${DIFF.maxWanted} from crimes, decay x${DIFF.decayScale}, hurt x${DIFF.hurtScale}, crashes x${DIFF.crashScale})`);
 const crowdWanted = !new URLSearchParams(location.search).has('nocrowd') && !RACE_MODE;   // on by default again (2026-09-23): two GPU-posed draws now, see world/figure.js
 console.info(describeQuality(quality.name, `${quality.source}, tier ${isLite ? 'LITE' : 'FULL'}: ${qualityChoice.reason}, gpu ${gpuInfo.gpuDesc || 'unknown'}`, Q, { traffic: RACE_MODE ? 0 : Q.traffic, crowd: crowdWanted ? Q.crowd : 0 }));
@@ -235,13 +238,13 @@ const resolution = autoResolution(renderer, grade, isLite, {
     const f = DENSITY_STEPS[step] ?? DENSITY_STEPS.at(-1);
     if (!RACE_MODE) { traffic._n0 ??= traffic.cars.length; limitTraffic(traffic, Math.round(traffic._n0 * f)); }
     if (farTraffic) limitFarTraffic(farTraffic, (farTraffic._n0 ?? farTraffic.n) * f);
-    if (step === 1) hud.flash('TRAFFIC THINNED TO HOLD FRAME RATE');
+    if (step === 1) { if (DIFF.quietHud) console.info('[drs] traffic thinned to hold frame rate'); else hud.flash('TRAFFIC THINNED TO HOLD FRAME RATE'); }   // just drive: a governor notice is not news mid-drive
   },
   onSustained: () => {
     const lower = nextLower(quality.name);
     if (!lower) return;
     try { localStorage.setItem(QUALITY_KEY, lower); } catch { /* private mode */ }
-    hud.flash(`QUALITY -> ${lower.toUpperCase()} ON NEXT START`);
+    if (!DIFF.quietHud) hud.flash(`QUALITY -> ${lower.toUpperCase()} ON NEXT START`);   // the step-down still saves; easy only keeps it off the screen (the console line below always prints)
     console.info(`[drs] sustained >22 ms at MIN_SCALE with density spent: ${QUALITY_KEY}=${lower} for the next boot`);
   },
 });
@@ -349,8 +352,11 @@ let roadblock = null, metro = null, landmarks = null;
 let billboards = null, streetLife = null, airspace = null;
 let photo = null;
 let radio = null;                           // generative car radio (game/radio.js), built once audio exists
-const person = buildHuman();
-scene.add(person.root);
+/* The static photoreal figure beside the spawn is opt-in (`?person`): six
+   JPGs (2.70 MB) for one person standing 7.5 m from the car, and the crowd
+   already fills the pavement (world/figure.js). */
+const person = new URLSearchParams(location.search).has('person') ? buildHuman() : null;
+if (person) scene.add(person.root);
 const DEBUG_KEYS = new URLSearchParams(location.search).has('debug');
 let muted = false;
 try { muted = localStorage.getItem('hb.muted') === '1'; } catch { /* private mode */ }
@@ -1348,7 +1354,11 @@ Promise.all([districtReady, catalogueReady, new URLSearchParams(location.search)
   catalogueRef = catalogue;
   if (catalogue && !new URLSearchParams(location.search).has('nowarm')) {
     const allNames = [...catalogue.assets.keys()];
-    const isSpawnEssential = (k) => /hero|tokyo|pencil|sakura|ginkgo|lamp|signal|barrier|sign|bench|bin|tree|corvette/i.test(k);
+    /* catalogue.js spawnEssential: `hero` and `corvette` are gone from the old
+       regex -- no manifest key holds 'corvette', and 'hero' matched only
+       characters/hero (hero.glb + two byte-identical LODs, 7.33 MB), which no
+       dressing table places. Character-tagged assets never warm. */
+    const isSpawnEssential = (k) => spawnEssential(k, catalogue.assets.get(k)?.def);
     const tier1Names = allNames.filter(isSpawnEssential);
     const tier2Names = allNames.filter(k => !isSpawnEssential(k));
 
@@ -1465,7 +1475,7 @@ Promise.all([districtReady, catalogueReady, new URLSearchParams(location.search)
      mesh, so it only runs when asked for with `?people=N`. */
   if (crowdWanted) {
     crowd = new Crowd(scene, district, Q.crowd);   // preset: 80 / 110 / 160 / 320; the fleet is sized at construction, so boot-time
-    crowd.onNear = () => chatter?.civilian?.('near');
+    crowd.onNear = () => { if (DIFF.pedVoices) chatter?.civilian?.('near'); };   // just drive: no spoken shouts (difficulty.js pedVoices)
     if (params.has('people')) people = new People(scene, +(params.get('people') || 16));
   }
   heli = RACE_MODE ? null : new Helicopter(scene, DAY);
@@ -1567,7 +1577,7 @@ Promise.all([districtReady, catalogueReady, new URLSearchParams(location.search)
        boot fell back to the legacy grid ('district not loaded, staying on the
        grid: spawnX is not defined', 2026-09-23). The car is the spawn in both
        branches, so read it. */
-    person.place(car.x - 7.5, car.z, car.yaw + Math.PI / 2);
+    person?.place(car.x - 7.5, car.z, car.yaw + Math.PI / 2);   // ?person only
   }
   // now the car is on its spawn node, lay the film route from where it stands
   ROUTE = buildRoute(null, car.x, car.z);
@@ -1896,6 +1906,8 @@ qualityLine?.addEventListener('click', (e) => {
   drawQualityLine();
 });
 drawQualityLine();
+// the ALL CONTROLS expander on the title card must not count as the first click (075e743 had this; the markup and it were lost in a merge)
+for (const ev of ['click', 'pointerdown']) hud.overlay.querySelector('details')?.addEventListener(ev, (e) => e.stopPropagation());
 
 /* Title-card mode cards (index.html .mode). A card only selects -- it stops
    its click, which would otherwise reach the overlay and start free roam --
@@ -1909,11 +1921,20 @@ for (const b of modeCards) b.addEventListener('click', (e) => {
   for (const o of modeCards) o.classList.toggle('active', o === b);
 });
 const MENU_MODES = {
-  jobs: () => jobs?.toggle(car),
-  story: () => phone?.toggle(true),   // the phone opens on HEISTS
-  range: () => { if (!onFoot.active) useVehicle(); if (onFoot.active) modes.startRange(onFoot.x, onFoot.z, onFoot.camYaw); },
-  holdout: () => modes.startHoldout(),
+  jobs: () => { cityLife(); jobs?.toggle(car); },
+  story: () => { cityLife(); phone?.toggle(true); },   // the phone opens on HEISTS
+  range: () => { cityLife(); if (!onFoot.active) useVehicle(); if (onFoot.active) modes.startRange(onFoot.x, onFoot.z, onFoot.camYaw); },
+  holdout: () => { cityLife(); modes.startHoldout(); },
 };
+/* Just drive is the one card that keeps the city quiet (easy = difficulty.js
+   JUST DRIVE). The others are the game proper, so they bring its background
+   back -- patrol calls, far sirens and gunfire, street voices -- without
+   touching stars, damage or the fire-on-sight level. */
+function cityLife() {
+  DIFF = withCity(DIFF);
+  traffic.difficulty = DIFF;
+  console.info(`difficulty: ${DIFF.name.toUpperCase()} (city life on)`);
+}
 
 const start = () => {
   if (!started && qualityPending()) { location.reload(); return; }
@@ -2138,7 +2159,7 @@ const onInputAction = (action) => {
     audio.horn?.(0, 0);
     const fx = Math.cos(car.yaw), fz = -Math.sin(car.yaw);
     crowd?.panic(car.x + fx * 7, car.z + fz * 7, 7);
-    if (crowd && Math.abs(car.fwdSpeed || 0) > 3 && crowd.people.some((p) => p.live && !p.down && Math.hypot(p.x - car.x - fx * 7, p.z - car.z - fz * 7) < 7)) chatter?.civilian?.('horn');   // somebody ahead answers
+    if (crowd && DIFF.pedVoices && Math.abs(car.fwdSpeed || 0) > 3 && crowd.people.some((p) => p.live && !p.down && Math.hypot(p.x - car.x - fx * 7, p.z - car.z - fz * 7) < 7)) chatter?.civilian?.('horn');   // somebody ahead answers
     for (const v of traffic.cars) {
       if (!v.live) continue;
       const dx = v.x - car.x, dz = v.z - car.z, along = dx * fx + dz * fz, side = Math.abs(-dx * fz + dz * fx);
@@ -2161,8 +2182,13 @@ const onInputAction = (action) => {
   }
   if (action === 'reload' && weapon.reload()) { hud.flash('RELOADING…'); audio.reload?.(weapon.spec.reload); }
   if (action === 'avatar' && onFoot.character) {
-    window._charIdx = ((window._charIdx || 0) + 1) % NAMED_CHARACTERS.length;
-    const persona = NAMED_CHARACTERS[window._charIdx];
+    /* The build prunes /models/avatar (vite.config.js DIST_PRUNE: unlicensed
+       dev fixtures), so in it the wardrobe personas would ask for a 404 --
+       the first K press (Valerie) left you with no body at all. The shipped
+       cast skips them; dev keeps all five. */
+    const cast = shippedPersonas(NAMED_CHARACTERS, import.meta.env.PROD);
+    window._charIdx = ((window._charIdx || 0) + 1) % cast.length;
+    const persona = cast[window._charIdx];
     onFoot.character.swap(persona.index);
     applyPerk(persona);
     hud.flash(`${persona.name} (${persona.role}) · ${persona.perk}`);
@@ -2620,12 +2646,12 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     }
   }
   // distant gunfire: somewhere across the city, every 35-110 s at night, faint and dull -- the city has other trouble
-  if (!DAY || (clock.hour >= 21 || clock.hour < 5)) {
+  if (DIFF.farGunfire && (!DAY || (clock.hour >= 21 || clock.hour < 5))) {   // just drive: off (difficulty.js farGunfire)
     farShotT -= dt;
     if (farShotT <= 0) { farShotT = 35 + Math.random() * 75; const n = 1 + Math.floor(Math.random() * 3); for (let i = 0; i < n; i++) setTimeout(() => audio.gunshot(0.10 + Math.random() * 0.06, Math.random() < 0.5 ? 'pistol' : 'smg'), i * (120 + Math.random() * 160)); }
   }
   // a siren somewhere across the city every 60-180 s, when none is actually after you
-  farSirenT -= dt; if (farSirenT <= 0) { farSirenT = 60 + Math.random() * 120; if (traffic.wanted < 1) audio.farSiren?.(Math.random() < 0.5 ? -0.8 : 0.8); }
+  farSirenT -= DIFF.farSirens ? dt : 0; if (farSirenT <= 0) { farSirenT = 60 + Math.random() * 120; if (traffic.wanted < 1) audio.farSiren?.(Math.random() < 0.5 ? -0.8 : 0.8); }   // just drive: the clock stands still (difficulty.js farSirens)
   // exhaust: a small grey wisp off the tailpipe every 0.22 s while the engine idles or crawls (it thins out with speed)
   if (!onFoot.active && hero.visible) {
     exhaustT -= dt;
@@ -2737,7 +2763,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
       const side = -Math.sin(car.yaw) * dx - Math.cos(car.yaw) * dz;   // left/right of the hero's heading
       audio.horn(Math.max(-1, Math.min(1, side / 6)), 0);
       hornCooldown = 1.5;
-      if (chatter) chatter.triggerPedReaction();
+      if (chatter && DIFF.pedVoices) chatter.triggerPedReaction();   // the horn stays; the spoken line is city life
       break;
     }
   }
@@ -2784,6 +2810,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   distT -= dt;
   if (districtRef?.districtAt && distT <= 0) {
     distT = 0.5;
+    landmarks?.update(camera.position.x, camera.position.z);   // the Sketchfab props load inside 900 m and hide past 1200 m (world/landmarks.js); the camera, so photo presets see what they frame
     const here = districtRef.districtAt(onFoot.active ? onFoot.x : car.x, onFoot.active ? onFoot.z : car.z);
     // the first star: dispatch puts out the description -- on foot or in a vehicle, and where
     if (traffic.wanted >= 1 && wantedWas < 1) chatter?.radio?.(`All units: suspect ${onFoot.active ? 'on foot' : 'in a ' + paintName() + ' vehicle'}${here ? ', ' + here.charAt(0) + here.slice(1).toLowerCase() : ''}. Respond.`);

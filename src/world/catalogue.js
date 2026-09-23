@@ -38,6 +38,43 @@ const MATERIAL_ALIAS = [
   [/^(bark|trunk)/i, 'bark'],
 ];
 
+/* The library materials the car dressing binds by name (dressCarMaterials
+   below), plus the names the catalogue itself falls back to: #materialFor's
+   last resort and the species aliases, and districtWorld's kerb face, which
+   reads 'concrete_cast' straight from the map. None of these need a
+   manifest asset to list them. test/catalogue-boot.test.js holds
+   dressCarMaterials's own list to this one. */
+const CAR_DRESS = ['car_paint', 'tyre_rubber', 'chrome_trim', 'alloy_polished', 'car_glass', 'skin', 'cloth_shirt'];
+const ALWAYS = ['concrete_cast', ...MATERIAL_ALIAS.map(([, lib]) => lib)];
+
+/**
+ * Which library materials anything will ever bind: every name a manifest
+ * asset declares, the car dressing's, and the catalogue's own fallbacks.
+ * Computed from the manifest, never hard-coded -- a re-ingest renames assets
+ * (CLAUDE.md), and a new asset that names a material brings it back
+ * automatically. Measured on the 2026-09-23 manifest: 33 library materials,
+ * 29 used; hair, cloth_trouser, shoe_leather and face_skin are named by
+ * nothing (12 PNGs, 4.86 MB, ~16 MB of VRAM with mips). Pure; tested.
+ */
+export function usedMaterials(manifest, extra = [...CAR_DRESS, ...ALWAYS]) {
+  const used = new Set(extra);
+  for (const a of Object.values(manifest?.assets ?? {})) for (const m of a.materials || []) used.add(m);
+  return used;
+}
+
+/**
+ * Is an asset worth fetching behind the boot screen (main.js tier-1 warm)?
+ * The street kit you see from the spawn: Tokyo and pencil buildings, the tree
+ * species, lamps, signals, barriers, signs, benches, bins. Anything tagged
+ * `character` is not: characters/hero (7.33 MB with its LODs) matched the old
+ * /hero/ and nothing places it. Pure; tested.
+ */
+const SPAWN_KIT = /tokyo|pencil|sakura|ginkgo|lamp|signal|barrier|sign|bench|bin|tree/i;
+export function spawnEssential(name, def = null) {
+  if ((def?.tags || []).includes('character')) return false;
+  return SPAWN_KIT.test(name);
+}
+
 /**
  * ORM is one image doing three jobs: occlusion in R, roughness in G,
  * metalness in B. three reads exactly those channels from aoMap/roughnessMap/
@@ -177,7 +214,16 @@ export class Catalogue {
       return t;
     };
 
+    /* Only the materials something binds (usedMaterials): each one costs
+       three PNG fetches and decodes whether or not a mesh ever wears it, and
+       the boot holds up to 1.5 s for texturesReady. A name nobody declared
+       and that is skipped here still resolves -- #materialFor falls through to
+       the declared list and then concrete_cast. `?allmats` builds all. */
+    const allMats = typeof location !== 'undefined' && new URLSearchParams(location.search).has('allmats');
+    const used = usedMaterials(manifest);
+    let skipped = 0;
     for (const [name, def] of Object.entries(library.materials)) {
+      if (!allMats && !used.has(name)) { skipped++; continue; }
       const m = new THREE.MeshStandardMaterial({ name });
       m.map = tex(def.albedo, true);
       if (def.normal) {
@@ -210,6 +256,7 @@ export class Catalogue {
         this.byTag.get(t).push(name);
       }
     }
+    if (skipped) console.info(`catalogue: ${skipped} library materials named by no asset, not built (?allmats builds them)`);
     this.texturesLoading = true;
     this.texturesReady = Promise.allSettled(texJobs).then(() => { this.texturesLoading = false; });
     this.ready = true;
