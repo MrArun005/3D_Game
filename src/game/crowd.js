@@ -29,6 +29,19 @@ export class Crowd {
     this.edges = district.graph.edges.filter(
       (e) => e.class !== 'freeway' && e.class !== 'ramp' && (e.length || 0) > 40,
     );
+    /* Spawning picks from the edges NEAR you (2026-09-23). It drew from all
+       of them, and the 22-150 m ring is ~0.3% of the district: most of the
+       40 tries per person per frame missed, and every non-live person
+       retried every frame -- the crowd's largest cost in the profile while it
+       filled. Each edge's bounds are measured once; the near list is rebuilt
+       after 25 m of travel. */
+    for (const e of this.edges) {
+      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+      for (const [x, z] of e.points) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (z < z0) z0 = z; if (z > z1) z1 = z; }
+      e._bb = [x0, z0, x1, z1];
+    }
+    this.nearEdges = [];
+    this._nearAt = { x: Infinity, z: Infinity };
     this.people = [];
     this.rand = mulberry(9137);
 
@@ -59,9 +72,24 @@ export class Crowd {
   }
 
   /** Put a pedestrian on the pavement of some edge in a ring around the car. */
+  /** Edges whose bounds come within the spawn ring of (x, z), rebuilt after 25 m of travel. */
+  #nearFor(x, z) {
+    if (Math.hypot(x - this._nearAt.x, z - this._nearAt.z) < 25) return this.nearEdges;
+    this._nearAt.x = x; this._nearAt.z = z;
+    const r = SPAWN_MAX + 25, list = this.nearEdges;
+    list.length = 0;
+    for (const e of this.edges) {
+      const b = e._bb;
+      if (x > b[0] - r && x < b[2] + r && z > b[1] - r && z < b[3] + r) list.push(e);
+    }
+    return list;
+  }
+
   #spawn(p, car) {
+    const near = this.#nearFor(car.x, car.z);
+    const pool = near.length ? near : this.edges;
     for (let tries = 0; tries < 40; tries++) {
-      const e = this.edges[Math.floor(this.rand() * this.edges.length)];
+      const e = pool[Math.floor(this.rand() * pool.length)];
       const pts = e.points;
       const i = Math.floor(this.rand() * (pts.length - 1));
       const ax = pts[i][0], az = pts[i][1];
@@ -132,9 +160,10 @@ export class Crowd {
        count (160 under LITE) and the module constant is 320, so LITE crashed
        every frame on people[160].live -- found 2026-09-11 the moment LITE
        became the default on integrated GPUs. */
+    let spawns = 6;   // at most six new people a frame: a teleport or a fresh fill spreads over a few frames instead of spiking one
     for (let i = 0; i < this.people.length; i++) {
       const p = this.people[i];
-      if (!p.live) { this.#spawn(p, car); if (!p.live) { this.fleet.hide(i); continue; } }
+      if (!p.live) { if (spawns-- > 0) this.#spawn(p, car); if (!p.live) { this.fleet.hide(i); continue; } }
 
       const gap = Math.hypot(p.x - car.x, p.z - car.z);
       if (gap < 2.4 && gap > 1.7 && (car.speed || 0) > 7 && !p.down && this.onNear) this.onNear(p);   // a near miss at speed: somebody shouts (main throttles the voice)

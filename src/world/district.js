@@ -10,7 +10,12 @@
 import { fetchCached } from '../core/assetCache.js';
 
 const CELL = 96;                       // spatial hash cell, metres
-const key = (ix, iz) => `${ix},${iz}`;
+/* A NUMBER, not the old `${ix},${iz}` string: nearestRoad runs for every
+   walking pedestrian, the car and the traffic every frame, and each call built
+   and hashed nine strings (54% of the crowd's steady cost, 2026-09-23). The
+   map is ~44 x 32 cells of 96 m, so the offset leaves room either side. */
+const key = (ix, iz) => (ix + 4096) * 8192 + (iz + 4096);
+export const gridKey = key;
 
 export class District {
   constructor(data) {
@@ -119,26 +124,36 @@ export class District {
     }
   }
 
-  /** Nearest road centreline, as {distance, half, class} — null if nothing near. */
-  nearestRoad(x, z) {
+  /* The nearest centreline segment to (x, z): leaves its squared distance in
+     _nd2 and the segment in _ns (null if nothing is near). Squared distances,
+     one sqrt at the end, no object per improvement -- same answer as before
+     (the first strictly nearer segment wins). */
+  #nearest(x, z) {
     const ix = Math.floor(x / CELL), iz = Math.floor(z / CELL);
-    let best = null;
+    let bestD2 = Infinity, bestS = null;
     for (let dx = -1; dx <= 1; dx++) {
       for (let dz = -1; dz <= 1; dz++) {
         const ids = this.grid.get(key(ix + dx, iz + dz));
         if (!ids) continue;
-        for (const id of ids) {
-          const s = this.segments[id];
+        for (let n = 0; n < ids.length; n++) {
+          const s = this.segments[ids[n]];
           const vx = s.bx - s.ax, vz = s.bz - s.az;
           const l = vx * vx + vz * vz;
           let t = l ? ((x - s.ax) * vx + (z - s.az) * vz) / l : 0;
           t = t < 0 ? 0 : t > 1 ? 1 : t;
-          const d = Math.hypot(x - s.ax - vx * t, z - s.az - vz * t);
-          if (!best || d < best.distance) best = { distance: d, half: s.half, cls: s.cls };
+          const ex = x - s.ax - vx * t, ez = z - s.az - vz * t, d2 = ex * ex + ez * ez;
+          if (d2 < bestD2) { bestD2 = d2; bestS = s; }
         }
       }
     }
-    return best;
+    this._nd2 = bestD2; this._ns = bestS;
+    return bestS !== null;
+  }
+
+  /** Nearest road centreline, as {distance, half, class} — null if nothing near. */
+  nearestRoad(x, z) {
+    if (!this.#nearest(x, z)) return null;
+    return { distance: Math.sqrt(this._nd2), half: this._ns.half, cls: this._ns.cls };
   }
 
   /**
@@ -147,9 +162,8 @@ export class District {
    * all keep working without knowing the world changed underneath them.
    */
   roadDepth(x, z) {
-    const near = this.nearestRoad(x, z);
-    if (!near) return 60;              // nowhere near a road: firmly off it
-    return near.distance - near.half;
+    if (!this.#nearest(x, z)) return 60;   // nowhere near a road: firmly off it
+    return Math.sqrt(this._nd2) - this._ns.half;
   }
 
   /**

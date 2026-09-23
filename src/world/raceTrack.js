@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { toTex } from './textures.js';
+import { gridKey } from './district.js';
 
 /**
  * Halstead International Raceway — Dedicated Closed-Circuit Racing Facility.
@@ -641,7 +642,7 @@ export function registerRaceTrackPhysics(district) {
       const z1 = Math.floor((Math.max(seg.az, seg.bz) + TRACK_HALF + 4) / 96);
       for (let ix = x0; ix <= x1; ix++) {
         for (let iz = z0; iz <= z1; iz++) {
-          const k = `${ix},${iz}`;
+          const k = gridKey(ix, iz);   // the district's own key: it is a number now, and a string here would be a key nothing looks up
           (district.grid.get(k) ?? district.grid.set(k, []).get(k)).push(id);
         }
       }
