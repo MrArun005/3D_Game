@@ -32,7 +32,7 @@ import { Airspace } from './world/airspace.js';
 import { Catalogue, dressCarMaterials } from './world/catalogue.js';
 import { isTouchDevice } from './core/device.js';
 import { createTouch } from './game/touch.js';
-import { mergeDrive } from './game/input.js';
+import { mergeDrive, keyboardSteer } from './game/input.js';
 import { City, releaseCell } from './world/city.js';
 import { DistrictWorld } from './world/districtWorld.js';
 import { loadDistrict } from './world/district.js';
@@ -448,7 +448,7 @@ function onShot(gap, landed = null, damage = 26, from = null, kind = 'pistol') {
     return;
   }
   car.impact = Math.max(car.impact || 0, 1.6 + hit * 2.2);
-  car.yawRate += (Math.random() - 0.5) * hit * 0.9;
+  car.yawRate += (Math.random() - 0.5) * hit * 0.9 * DIFF.hurtScale;   // +-0.45 rad/s a pistol round (a held key's worth at 80 km/h); easy scales it like the damage, to +-0.16
   damageModel.hit(2 + hit * 5, null, DIFF.hurtScale);
   // Car hull absorbs bullet impacts without crippling tyre blowouts, preserving thrilling high-speed police chase dynamics
 }
@@ -2337,26 +2337,28 @@ function frameBody() {
   car.throttle += (throttleIn - car.throttle) * Math.min(1, dt * lag);
   car.brake += (brakeIn - car.brake) * Math.min(1, dt * (c.analogue ? 20 : 15));
   car.hand += ((started ? c.handbrake : 0) - car.hand) * Math.min(1, dt * 18);
-  /* Keyboard steering is BINARY: input.js hands over steerTarget = +-1 the
-     instant a key goes down (input.js:181), so nothing about a key press is
-     progressive on its own -- the dynamics' first-order lag was the whole
-     ramp. When that lag was sped up 2.3x, one tap became full lock. Measured
-     at 66 km/h, steer angle after a held key (rad):
+  /* Keyboard steering is BINARY: input.js hands over steer = +-1 the instant
+     a key goes down, so nothing about a key press is progressive on its own.
+     (When the dynamics' lag was sped up 2.3x, one tap became full lock.)
+     input.js:keyboardSteer ramps it at a CONSTANT rate -- 6/s parked, 2.5/s
+     by 137 km/h, 8/s back to centre -- and lands on EXACTLY 0 when the key
+     comes up, which is what arms dynamics.js's 2x return (it tests
+     steerTarget === 0; the exponential ease this replaced never got there,
+     so the wheel kept turning after a tap). Default car (s-camaro-350 muscle,
+     maya's steerBoost 1.25), 60 fps over 1/120 physics:
 
-              @0.1s  @0.2s  @0.5s
-       before  0.140  0.219  0.326
-       shipped 0.301  0.393  0.450   <- "goes to the left extreme or right"
-       now     0.057  0.142  0.319
+                   road wheel @66 km/h (rad)  0.1 s tap @120 km/h,  release @120
+                     @0.1s  @0.2s  @0.5s      after 1 s             to 10% lock
+       exponential   0.087  0.182  0.349      8.0 deg / 3.27 m      0.55 s
+       constant      0.064  0.187  0.386      1.8 deg / 0.88 m      0.28 s
 
-     A stick is already progressive, so an analogue pad passes straight
-     through; only the digital path is ramped, faster when parking than at
-     100 km/h, and 2.2x as fast coming back to centre as going out. */
-  if (c.analogue) car.steerTarget = c.steer;
-  else {
-    const rate = 7.0 - 3.6 * Math.min(1, Math.hypot(car.vx, car.vz) / 38);
-    const back = c.steer === 0 || Math.sign(c.steer) !== Math.sign(car.steerTarget);
-    car.steerTarget += (c.steer - car.steerTarget) * Math.min(1, dt * rate * (back ? 2.2 : 1));
-  }
+     A 0.35 s tap at 120 is a lane change (3.8 m); a 1 s hold still turns
+     12.4 deg at 0.98 g (was 13.0). A stick or touch strip is already
+     progressive and passes straight through -- c.steerAnalogue, not
+     c.analogue: with R2 held, `analogue` let A/D through unramped as
+     instant full lock. */
+  if (c.steerAnalogue) car.steerTarget = c.steer;
+  else car.steerTarget = keyboardSteer(car.steerTarget, c.steer, Math.hypot(car.vx, car.vz), dt);
   }
   }
 
@@ -2687,13 +2689,9 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   } else {
     if (!onFoot.active) {
       const targetVehicle = currentVehicle;
-      // ease the free look back behind the car once you are driving again
-      if (chase.looking && Math.abs(targetVehicle.fwdSpeed || 0) > 6) {
-        const d = 1 - Math.pow(0.35, dt);
-        chase.lookYaw -= chase.lookYaw * d;
-        chase.lookPitch -= chase.lookPitch * d;
-        if (Math.abs(chase.lookYaw) < 0.01 && Math.abs(chase.lookPitch) < 0.01) chase.recentre();
-      }
+      /* The free look eases home inside ChaseCamera.update (1 s after the last
+         input, only while moving, never on a holdLook rig). This block ran a
+         second ease on top of it that also fought live mouse input. */
       chase.setLookBack(!!c?.lookBack);
       if ((targetVehicle.impact || 0) > 6.0) rumble(Math.min(1.0, targetVehicle.impact / 18.0), 120);
       if (spawnSnap) { spawnSnap = false; chase.snap(targetVehicle); }

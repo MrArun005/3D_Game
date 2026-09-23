@@ -71,16 +71,18 @@ test('camera shake is kicked once by an impact event, capped, and decays', () =>
   car.impact = 6;
   let peak = 0;
   for (let i = 0; i < 90; i++) { cam.update(car, dt); peak = Math.max(peak, cam.shake); car.impact *= Math.exp(-8 * dt); }
-  assert.ok(peak > 0.3 && peak < 0.5, `peak ${peak}`);   // 6 * 0.07 on the first frame, nothing after
+  assert.ok(peak > 0.12 && peak < 0.25, `peak ${peak}`);   // 6 * 0.03 on the first frame, nothing after (was 0.07: a 60 km/h wall threw the lens 0.67 m)
   assert.ok(cam.shake < 0.01, `after 1.5 s: ${cam.shake}`);
   // a standing impact value (the envelope has not decayed yet) does not keep feeding it
   car.impact = 4;
   cam.update(car, dt); const s1 = cam.shake;
   for (let i = 0; i < 10; i++) cam.update(car, dt);
   assert.ok(cam.shake < s1, 'held impact must not grow the shake');
-  // the cap
+  // the cap, which also catches main.js's direct `chase.shake = 1.4` writes on the next frame
   car.impact = 60; cam.update(car, dt);
-  assert.ok(cam.shake <= 1.6 + 1e-9, `capped ${cam.shake}`);
+  assert.ok(cam.shake <= 0.6 + 1e-9, `capped ${cam.shake}`);
+  cam.shake = 1.4; cam.update(car, dt);
+  assert.ok(cam.shake <= 0.6 + 1e-9, `a direct write is capped too: ${cam.shake}`);
 });
 
 test('being hit is not a crime: a cruiser closing on us from behind sets impact but no hitTag/hitRef', () => {

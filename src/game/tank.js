@@ -67,6 +67,7 @@ export class TankVehicle extends Vehicle {
       fov: 62,
       lag: 3.5,
       tilt: 0,
+      holdLook: 1,   // the turret aims from chase.lookYaw (update(), step 3): the free look must never ease itself home under it
     };
 
     this.#buildModel(options.flash);
