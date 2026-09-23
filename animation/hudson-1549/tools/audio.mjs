@@ -83,6 +83,27 @@ const padLevel = (v) => {
   return g * smooth(0, 3, v) * (1 - smooth(DURATION - 4, DURATION, v));
 };
 
+// ---- narration (tools/voice.py -> out/flight1549-voice.wav), if it has been made ----------
+const VO = new Float32Array(N), DUCK = new Float32Array(N).fill(1);
+{
+  const f = path.join(ROOT, 'out', 'flight1549-voice.wav');
+  if (fs.existsSync(f)) {
+    const wav = fs.readFileSync(f);
+    const sr = wav.readUInt32LE(24), bits = wav.readUInt16LE(34);
+    let off = 12; while (wav.toString('ascii', off, off + 4) !== 'data') off += 8 + wav.readUInt32LE(off + 4);
+    const n = wav.readUInt32LE(off + 4) / (bits / 8), d0 = off + 8;
+    const rd = bits === 16 ? (i) => wav.readInt16LE(d0 + i * 2) / 32768 : (i) => wav.readFloatLE(d0 + i * 4);
+    let e = 0;
+    for (let i = 0; i < N; i++) {
+      const x = i * sr / SR, j = Math.floor(x), fr = x - j;
+      VO[i] = j + 1 < n ? rd(j) * (1 - fr) + rd(j + 1) * fr : 0;
+      e = Math.max(Math.abs(VO[i]), e * 0.99996);
+      DUCK[i] = 1 - 0.5 * Math.min(1, e * 5);
+    }
+    console.log('narration mixed in');
+  }
+}
+
 // ---- render --------------------------------------------------------------------
 const nA = noiseGen(1), nB = noiseGen(2), nC = noiseGen(3), nD = noiseGen(4), nE = noiseGen(5);
 const rumbleL = new OnePole(), rumbleR = new OnePole(), roarL = new OnePole(), roarR = new OnePole();
@@ -208,8 +229,9 @@ for (let i = 0; i < N; i++) {
 
   // Master fades and a soft limiter.
   const fade = smooth(0, 1.2, v) * (1 - smooth(DURATION - 2, DURATION, v));
-  L[i] = Math.tanh(l * fade * 0.9);
-  R[i] = Math.tanh(r * fade * 0.9);
+  // The bed ducks under the narration; the voice sits clean on top.
+  L[i] = Math.tanh(Math.tanh(l * fade * 0.9) * DUCK[i] + VO[i] * 0.95 * fade);
+  R[i] = Math.tanh(Math.tanh(r * fade * 0.9) * DUCK[i] + VO[i] * 0.95 * fade);
 }
 
 // ---- write WAV ---------------------------------------------------------------------

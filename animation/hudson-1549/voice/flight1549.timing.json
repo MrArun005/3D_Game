@@ -1,0 +1,119 @@
+{
+ "duration": 100,
+ "lines": [
+  {
+   "id": "open",
+   "text": "January fifteenth, 2009. New York City.",
+   "t0": 1.2,
+   "dur": 3.384
+  },
+  {
+   "id": "takeoff",
+   "text": "Flight 1549 leaves LaGuardia for Charlotte, with a hundred and fifty five people on board.",
+   "t0": 6.8,
+   "dur": 7.263
+  },
+  {
+   "id": "climb",
+   "text": "Captain Chesley Sullenberger and First Officer Jeffrey Skiles climb out over the Bronx.",
+   "t0": 15.6,
+   "dur": 5.354
+  },
+  {
+   "id": "geese",
+   "text": "About two minutes after takeoff, at twenty eight hundred feet, a flock of Canada geese.",
+   "t0": 22.4,
+   "dur": 4.933
+  },
+  {
+   "id": "strike",
+   "text": "Birds hit both engines. Both lose thrust, almost at once.",
+   "t0": 29.0,
+   "dur": 3.927
+  },
+  {
+   "id": "mayday",
+   "text": "Mayday, mayday, mayday. Hit birds. We've lost thrust in both engines. We're turning back towards LaGuardia.",
+   "t0": 34.2,
+   "dur": 7.032
+  },
+  {
+   "id": "apu",
+   "text": "The captain starts the APU, and takes the controls.",
+   "t0": 41.4,
+   "dur": 3.086
+  },
+  {
+   "id": "lga",
+   "text": "Air traffic control offers a return to LaGuardia.",
+   "t0": 44.6,
+   "dur": 3.04
+  },
+  {
+   "id": "unable",
+   "text": "We're unable. We may end up in the Hudson.",
+   "t0": 48.2,
+   "dur": 2.603
+  },
+  {
+   "id": "teb",
+   "text": "Then Teterboro, in New Jersey.",
+   "t0": 52.4,
+   "dur": 1.84
+  },
+  {
+   "id": "cant",
+   "text": "We can't do it. We're gonna be in the Hudson.",
+   "t0": 55.8,
+   "dur": 2.56
+  },
+  {
+   "id": "brace",
+   "text": "This is the captain. Brace for impact.",
+   "t0": 60.6,
+   "dur": 2.474
+  },
+  {
+   "id": "fa",
+   "text": "The flight attendants shout their commands. Brace, brace. Heads down, stay down.",
+   "t0": 64.2,
+   "dur": 4.806
+  },
+  {
+   "id": "final",
+   "text": "Wings level. Nose up. Two hundred and eight seconds after the strike.",
+   "t0": 70.0,
+   "dur": 3.931
+  },
+  {
+   "id": "water",
+   "text": "Flight 1549 is on the Hudson.",
+   "t0": 76.0,
+   "dur": 3.441
+  },
+  {
+   "id": "evac",
+   "text": "Everyone climbs out, onto the wings and into the rafts. The water is five degrees.",
+   "t0": 80.8,
+   "dur": 4.964
+  },
+  {
+   "id": "ferry",
+   "text": "Commuter ferries arrive within minutes.",
+   "t0": 86.4,
+   "dur": 2.112
+  },
+  {
+   "id": "all",
+   "text": "Every one of the one hundred and fifty five people on board survived.",
+   "t0": 91.6,
+   "dur": 4.07
+  },
+  {
+   "id": "miracle",
+   "text": "They called it the Miracle on the Hudson.",
+   "t0": 96.2,
+   "dur": 1.978
+  }
+ ]
+}

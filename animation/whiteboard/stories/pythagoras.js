@@ -31,7 +31,9 @@ const ease = (k) => (k < 0.5 ? 2 * k * k : 1 - 2 * (1 - k) ** 2);
 const fadeIn = (t, t0, d = 0.5) => clamp((t - t0) / d, 0, 1);
 
 // ---- 1 · title ------------------------------------------------------------------
+T(0.8, 1.0, 'CLAWD’S WHITEBOARD', 640, 130, 28, 'grey');
 T(1.2, 1.4, 'PYTHAGORAS', 640, 220, 88, 'red');
+T(at('hook', 'Clawd'), 0.5, '← Clawd', 300, 540, 34, 'orange', 'left');
 T(2.8, 1.8, 'a proof with no algebra', 640, 300, 44, 'blue');
 S(4.7, 0.6, I.line([420, 330], [860, 330], 'blue', 5));
 
@@ -156,7 +158,7 @@ T(at('check', 'three'), 0.9, '3² + 4² = 5²', 640, 110, 56, 'black');
 export const sceneOf = (t) => WIPES.filter((w) => w <= t).length;
 for (const it of ITEMS) it.scene = sceneOf(it.t0);
 
-// ---- the critter ------------------------------------------------------------------------
+// ---- Clawd, the teacher ------------------------------------------------------------------------
 export const WALKS = [
   { t0: 0.0, t1: 2.0, x0: -140, x1: 150 },
   { t0: end('bye') + 0.1, t1: end('bye') + 2.2, x0: 150, x1: 1450 },
