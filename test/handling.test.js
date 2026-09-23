@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { launch, brake100, coastLock, handbrake, heldLock, scrape, headOn } from '../tools/sim/handling.mjs';
+import { launch, brake100, coastLock, handbrake, scrape, headOn, steadyLock, openField, airRatio } from '../tools/sim/handling.mjs';
 
 /*
  * Handling balance, pinned. Every number here comes from tools/sim/handling.mjs
@@ -14,6 +14,15 @@ import { launch, brake100, coastLock, handbrake, heldLock, scrape, headOn } from
  * fronts locked 1% of the stop, coast + full lock at 80 km/h 55 deg of heading
  * in 2 s at 21 deg body slip, handbrake 25 deg vs 22 deg without, peak
  * lateral 0.91-1.00 g.
+ *
+ * This file pins 'sim' -- the raw tyre model, car.assist null, the bare V
+ * constants -- on the legacy grid; the game's default is the gta profile on
+ * the muscle body, pinned in test/handling-gta.test.js. Measured 2026-09-23
+ * after the body-frame fix (dynamics.js `lft`): 0-100 6.73 s, 100-0 38.0 m
+ * with the fronts locked 23%, coast + lock at 80 35 deg / 42 km/h, handbrake
+ * 4 deg vs 1, scrape 60 -> 30 km/h. On the grid a full-lock circle meets the
+ * building line after ~2 s, so anything about cornering grip is measured on
+ * openField() instead (see the lateral-g test).
  */
 
 test('0-100 km/h lands in the sports-sedan band', () => {
@@ -41,9 +50,27 @@ test('lifting off and winding on full lock at 80 km/h is a drift, not a spin', (
   assert.ok(speed > 40, `still carrying ${speed.toFixed(0)} km/h after 2 s; a spun car scrubs to nothing`);
 });
 
-test('the car can pull at least 0.85 g before the rear breaks away', () => {
-  const { peakLatG } = heldLock(80);
-  assert.ok(peakLatG >= 0.85, `peak lateral ${peakLatG.toFixed(2)} g, want >= 0.85`);
+/* This was 'the car can pull at least 0.85 g before the rear breaks away' on
+   heldLock(80), and it passed on a WALL: on the grid the full-lock circle hits
+   the building line at ~1.9 s and the 1.47 g peak was the impulse (2026-09-23;
+   0.86 g peak, 0.64 g steady on open tarmac). What sim actually does on full
+   lock is plough -- the lock runs the fronts ~30 deg past their peak -- so pin
+   that honestly, on open tarmac, and let the gta profile carry the grip. */
+test('sim: full lock on open tarmac ploughs at ~0.6 g (tyres, not a wall), and never spins', () => {
+  openField(true);
+  try {
+    for (const kmh of [50, 80, 120]) {
+      const s = steadyLock(kmh);
+      assert.ok(s.latG > 0.55 && s.latG < 0.75, `${kmh} km/h: steady ${s.latG.toFixed(2)} g, want 0.55-0.75 (sim ploughs)`);
+      assert.ok(s.maxBetaDeg < 8, `${kmh} km/h: body slip ${s.maxBetaDeg.toFixed(1)} deg`);
+    }
+  } finally { openField(false); }
+});
+
+test('a car in the air keeps its velocity while it yaws (the body frame is not mirrored)', () => {
+  // 2.02 rad of velocity turn per rad of heading before the 2026-09-23 fix
+  const k = airRatio();
+  assert.ok(Math.abs(k) < 0.1, `velocity turned ${k.toFixed(2)} rad per rad of yaw with no tyre on the ground`);
 });
 
 test('the handbrake makes the tail step out further than no handbrake', () => {

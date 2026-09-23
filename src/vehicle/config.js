@@ -370,3 +370,62 @@ export function getVehicleProfile(bodyFile) {
   }
   return VEHICLE_PROFILES.street;
 }
+
+/**
+ * Handling profiles layered on the tyre model (2026-09-23, owner: "can drive
+ * like GTA"). `car.assist` holds one; stepVehicle gates every assist on it.
+ *
+ * `sim` (null) is the raw physics the 2026-09-09 harness pins
+ * (test/handling.test.js): on open tarmac it ploughs at 0.6 g on full lock,
+ * because the lock runs the fronts 27-33 deg past their 4.6 deg peak, and the
+ * handbrake barely turns it (4 deg at 60 km/h).
+ * `gta` is the game default: a grip-limited steering lock (steerLimit), traction
+ * control at the tyre's peak slip, a yaw-rate / body-slip stability controller,
+ * the review branch's implicit wheel update (fed the road's acceleration) and
+ * sliding-tyre lateral loss, brake and drive torque capped at what the tyre can
+ * give while it corners (brake and steer at once; no inside-wheel burnout), and
+ * a handbrake that owns the rear axle and throws the tail out. Pinned by
+ * test/handling-gta.test.js on the default body (muscle), open tarmac.
+ *
+ * `?sim` / `?gta` in the address, else localStorage `hb.handling`, else gta:
+ * pickHandling() below, applied once in main.js (resetCar and garage body swaps
+ * leave car.assist alone).
+ */
+export const HANDLING_KEY = 'hb.handling';
+export const HANDLING = {
+  sim: null,
+  gta: {
+    name: 'gta',
+    steerG: 1.0,      // full lock asks for this lateral g at any speed...
+    slipK: 0.6,       // ...plus 0.6x the front's peak slip angle (1/Cf): at the peak, not past it (1.2 overshot a step steer by 25%)
+    minLock: 0.06,    // rad, the floor at very high speed
+    yawDamp: 0.4,     // /s at a crawl, replaces the flat 1.6/s that made low-speed turns plough...
+    yawDampHi: 2.0,   // ...+ this x (speed/38 m/s)^2: 1.07/s at 80 km/h, 2.4 past 137, no limit-cycle wobble
+    tcSlip: 0.07,     // driven-wheel slip ratio where torque starts to be cut (tyre peak = 1/Cx = 0.0625)
+    tcWidth: 0.12,    // ...fully cut this much slip above it...
+    tcFloor: 0.35,    // ...but never below 35%
+    driveCap: 0.9,    // and per driven wheel never more drive than 0.9x what the tyre can react while cornering
+    betaCut: 0.2,     // rad: lever off, throttle fades over this much body slip past betaMax...
+    betaCutFloor: 0.25, // ...to this share, so a power slide cannot wind itself into a spin
+    esc: 8,           // /s, how hard yaw rate beyond the steer's reference is pulled back
+    escG: 1.1,        // g, the grip the reference yaw rate is capped to
+    betaMax: 0.14,    // rad (8 deg) of body slip before the car straightens itself
+    straighten: 6,    // /s, yaw added per rad of excess slip, toward the velocity
+    scrub: 1.5,       // lateral speed shed per rad of excess slip, x speed
+    brakeCap: 1.0,    // foot-brake torque cap, x what the tyre can react while cornering (sim: 0.95 x muFz, cornering or not)
+    hbKick: 5,        // rad/s^2 of yaw the handbrake adds toward the steer, x hand
+    hbBeta: 0.3,      // rad (17 deg): the kick fades to nothing at this body slip
+    hbRmax: 1.6,      // rad/s: and never above this yaw rate
+    hbCap: 0.6,       // rad (34 deg): with the lever held, slip past this is pulled back...
+    hbStraighten: 14, // ...at this rate (/s per rad of excess)
+  },
+};
+
+/** `?sim` / `?gta` in the address  >  the stored choice  >  gta. Returns the
+    HANDLING key; HANDLING[key] is what goes on car.assist (null for sim). */
+export function pickHandling(search = '', stored = null) {
+  const q = new URLSearchParams(search);
+  if (q.has('sim')) return 'sim';
+  if (q.has('gta')) return 'gta';
+  return stored && Object.hasOwn(HANDLING, stored) ? stored : 'gta';
+}

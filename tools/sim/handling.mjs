@@ -1,32 +1,62 @@
 /**
  * Node handling harness for the hero car -- no browser, no three.
  *
- * Drives the shipped `stepVehicle` at the game's 1/120 s step on the legacy
- * grid road (the district file is not loaded, so `surfaceAt` falls back to the
- * kerb-offset rule) and reports the numbers the 2026-09-09 review measured:
- * launch, top speed, braking + front lock, peak lateral g, coast-and-lock
- * heading change, handbrake slide and a wall scrape. `test/handling.test.js`
- * asserts bands on the same functions so a tuning change cannot regress the
- * balance silently.
+ * Drives the shipped `stepVehicle` at the game's 1/120 s step and reports the
+ * numbers the 2026-09-09 review measured: launch, top speed, braking + front
+ * lock, peak lateral g, coast-and-lock heading change, handbrake slide and a
+ * wall scrape -- plus, since 2026-09-23, the GTA-feel scenarios (steady full
+ * lock, power and lift-off oversteer, braking in a turn, a held W + A power
+ * turn, the handbrake's release, a key step and a W+A+Space drift entry
+ * through main.js's steering ramp, the airborne kinematics).
+ * `test/handling.test.js` (sim) and `test/handling-gta.test.js` (gta) assert
+ * bands on the same functions so a tuning change cannot regress the balance
+ * silently.
  *
- *   node tools/sim/handling.mjs          prints the table
+ *   node tools/sim/handling.mjs                        the sim table, bare V profile, legacy grid
+ *   node tools/sim/handling.mjs gta --profile=muscle --open
+ *                                                      gta, the in-game default body, flat tarmac
+ *
+ * WHERE it drives matters. By default the legacy grid road (no district
+ * loaded, so `surfaceAt` falls back to the kerb-offset rule), with the car at
+ * (0, 0): the kerb is 9.2 m out (metrics.js ROAD_HALF) and the building line
+ * 13.2 m (collision.js). A full-lock circle above ~40 km/h meets the kerb at
+ * ~1.6-1.8 s and the building line at ~1.9-2.2 s, so the grid's 'held lock'
+ * peaks are partly a WALL IMPULSE (1.47 g at 80 km/h before the 2026-09-23
+ * frame fix) and its big body slips are the car spinning against it.
+ * `openField()` swaps in infinite flat tarmac; anything about tyres, not
+ * walls, belongs there. scrape()/headOn() bring their own walls, so they
+ * behave the same either way.
  *
  * Every scenario starts from `settled()`: a car parked for three seconds so
- * the springs have found their sag before anything is measured.
+ * the springs have found their sag before anything is measured, wearing
+ * CAR.assist (config.js HANDLING: null = sim) and CAR.profile (null = the bare
+ * V constants; the game's default Camaro is VEHICLE_PROFILES.muscle).
  */
 import { createCarState, resetCar, stepVehicle } from '../../src/vehicle/dynamics.js';
+import { useDistrict } from '../../src/world/metrics.js';
+import { HANDLING, VEHICLE_PROFILES, WHEEL_R } from '../../src/vehicle/config.js';
+
+const FIELD = { roadDepth: () => -50, elevationAt: () => 0, blockTypeAt: () => null };
+/** Infinite flat tarmac (on = true) or back to the legacy grid (false). The
+    district hook in metrics.js is module-global: a test file that calls this
+    changes every scenario after it, so restore it or keep it in its own file. */
+export function openField(on = true) { useDistrict(on ? FIELD : null); }
+/** Car set-up for every scenario: { assist: HANDLING.gta | null, profile: VEHICLE_PROFILES.x | null }. */
+export const CAR = { assist: null, profile: null };
 
 export const H = 1 / 120;
 const KMH = 3.6;
+const DEG = 180 / Math.PI;
 
 export function settled() {
   const c = createCarState(); resetCar(c);
-  c.x = 0; c.z = 0; c.yaw = 0;
+  c.x = 0; c.z = 0; c.yaw = 0; c.assist = CAR.assist; c.profile = CAR.profile;
   for (let i = 0; i < 360; i++) stepVehicle(c, H);
   return c;
 }
 
-/** Body slip angle, rad: the angle between where the car points and where it goes. */
+/** Body slip angle, rad: the angle between where the car points and where it
+    goes, + = moving to the RIGHT of the nose (the tail out in a left turn). */
 export const beta = (c) => Math.atan2(c.vx * Math.sin(c.yaw) + c.vz * Math.cos(c.yaw), c.fwdSpeed);
 
 function accelerateTo(c, kmh) {
@@ -86,13 +116,139 @@ export function coastLock(kmh = 80, seconds = 2) {
   return { headingDeg: Math.abs(c.yaw - y0) * 180 / Math.PI, maxBetaDeg: maxBeta * 180 / Math.PI, speed: c.speed * KMH };
 }
 
-/** Full lock at 60 km/h, throttle off, 1.5 s, with and without the handbrake. */
+/** Full lock (LEFT) at `kmh`, throttle off, 1.5 s, with (`hand` 1) or
+    without (0) the handbrake. Then let go -- wheel straight, a whiff of
+    throttle -- and time how long the slip takes to get back under 8 deg (0 if
+    it never left). `sideDeg` is the signed slip at its largest: + = moving to
+    the right of the nose, i.e. the tail stepped OUT of the left turn. */
 export function handbrake(hand, kmh = 60) {
   const c = accelerateTo(settled(), kmh);
   c.throttle = 0; c.steerTarget = 1; c.hand = hand;
-  let maxBeta = 0;
-  for (let i = 0; i < 180; i++) { stepVehicle(c, H); maxBeta = Math.max(maxBeta, Math.abs(beta(c))); }
-  return { maxBetaDeg: maxBeta * 180 / Math.PI, rearW: c.wheelW[2], speed: c.speed * KMH };
+  let maxBeta = 0, side = 0;
+  for (let i = 0; i < 180; i++) { stepVehicle(c, H); const b = beta(c); if (Math.abs(b) > maxBeta) { maxBeta = Math.abs(b); side = b; } }
+  const out = { maxBetaDeg: maxBeta * DEG, sideDeg: side * DEG, rearW: c.wheelW[2], speed: c.speed * KMH, recoverS: null };
+  c.hand = 0; c.steerTarget = 0; c.throttle = 0.25;
+  if (Math.abs(beta(c)) < 8 / DEG) out.recoverS = 0;
+  for (let i = 0; i < 300; i++) { stepVehicle(c, H); if (out.recoverS === null && Math.abs(beta(c)) < 8 / DEG) out.recoverS = (i + 1) * H; }
+  out.speedAfter = c.speed * KMH;
+  return out;
+}
+
+/** Brake and steer at once from `kmh` (`brake` and `steer` held to a stop):
+    the share of steps with a front wheel below 70% of the road speed, the
+    heading gained in the first second, the stopping distance and the largest
+    body slip. A car whose fronts lock goes straight on. */
+export function brakeTurn(kmh = 80, steer = 1, brake = 1) {
+  const c = accelerateTo(settled(), kmh);
+  c.throttle = 0; c.wantsForward = false; c.steerTarget = steer; c.brake = brake;
+  const y0 = c.yaw, x0 = c.x, z0 = c.z; let n = 0, locked = 0, head1 = 0, maxBeta = 0;
+  while (c.fwdSpeed > 1 && n < 120 * 8) {
+    stepVehicle(c, H); n++;
+    if (c.wheelW[0] * WHEEL_R < 0.7 * c.fwdSpeed || c.wheelW[1] * WHEEL_R < 0.7 * c.fwdSpeed) locked++;
+    maxBeta = Math.max(maxBeta, Math.abs(beta(c)));
+    if (n === 120) head1 = (c.yaw - y0) * DEG;
+  }
+  return { frontLockedFrac: locked / n, headingDeg1s: head1, dist: Math.hypot(c.x - x0, c.z - z0), maxBetaDeg: maxBeta * DEG };
+}
+
+/** Full throttle and full lock from `kmh` for 3 s: power oversteer. */
+export function powerLock(kmh = 30) {
+  const c = accelerateTo(settled(), kmh);
+  c.steerTarget = 1; c.throttle = 1; let maxBeta = 0;
+  for (let i = 0; i < 360; i++) { stepVehicle(c, H); maxBeta = Math.max(maxBeta, Math.abs(beta(c))); }
+  return { maxBetaDeg: maxBeta * DEG, speed: c.speed * KMH };
+}
+
+/** Held at the limit (full lock, speed held) for 2 s at `kmh`, then the throttle snapped shut: lift-off oversteer. */
+export function liftOff(kmh = 100) {
+  const c = accelerateTo(settled(), kmh);
+  c.steerTarget = 1;
+  for (let i = 0; i < 240; i++) { c.throttle = Math.max(0, Math.min(1, 0.3 + (kmh / KMH - c.fwdSpeed) * 0.5)); stepVehicle(c, H); }
+  c.throttle = 0; let maxBeta = 0;
+  for (let i = 0; i < 240; i++) { stepVehicle(c, H); maxBeta = Math.max(maxBeta, Math.abs(beta(c))); }
+  return { maxBetaDeg: maxBeta * DEG, speed: c.speed * KMH };
+}
+
+/** Steady-state full lock at `kmh` for `seconds`: lateral g as speed x yaw rate
+    averaged over the last second (the tyres' steady force, not a transient or
+    a wall), the largest body slip, and the radius of the circle it drives. */
+export function steadyLock(kmh, seconds = 4) {
+  const c = accelerateTo(settled(), kmh);
+  c.steerTarget = 1; let sum = 0, n = 0, maxBeta = 0;
+  for (let i = 0; i < 120 * seconds; i++) {
+    c.throttle = Math.max(0, Math.min(1, 0.3 + (kmh / KMH - c.fwdSpeed) * 0.5));
+    stepVehicle(c, H); maxBeta = Math.max(maxBeta, Math.abs(beta(c)));
+    if (i >= 120 * (seconds - 1)) { sum += c.speed * Math.abs(c.yawRate) / 9.81; n++; }
+  }
+  return { latG: sum / n, maxBetaDeg: maxBeta * DEG, radius: c.speed / Math.max(1e-3, Math.abs(c.yawRate)), speed: c.speed * KMH };
+}
+
+/** Airborne (60 m up, springs off the ground), no tyre force, body yawing at
+    1 rad/s: how far the velocity turns per radian of heading. Physics: 0.
+    Before the 2026-09-23 frame fix, 2.02. */
+export function airRatio() {
+  const c = settled(); c.y = 60; c.vx = 20; c.vz = 0; c.yawRate = 1; const y0 = c.yaw;
+  for (let i = 0; i < 30; i++) { c.vy = 0; c.y = 60; stepVehicle(c, H); }
+  return Math.atan2(-c.vz, c.vx) / (c.yaw - y0);
+}
+
+/** main.js's digital steering ramp (the keyboard path, main.js ~2346): a
+    held key does not hand stepVehicle +-1 at once, it winds steerTarget
+    toward it at 7.0 - 3.6 x speedNorm per second, 2.2x as fast back. */
+function rampSteer(c, key, dt = H) {
+  const rate = 7.0 - 3.6 * Math.min(1, Math.hypot(c.vx, c.vz) / 38);
+  const back = key === 0 || Math.sign(key) !== Math.sign(c.steerTarget);
+  c.steerTarget += (key - c.steerTarget) * Math.min(1, dt * rate * (back ? 2.2 : 1));
+}
+
+/** A steering key pressed and held at `kmh` (speed held), through main.js's
+    ramp: yaw rate at 0.1 / 0.5 / 1.0 s and its peak -- a tap must not snap
+    the car round and a held key must actually turn it. */
+export function keyStep(kmh = 80) {
+  const c = accelerateTo(settled(), kmh);
+  c.steerTarget = 0; const at = {}; let peak = 0;
+  for (let i = 0; i < 120; i++) {
+    rampSteer(c, 1);
+    c.throttle = Math.max(0, Math.min(1, 0.3 + (kmh / KMH - c.fwdSpeed) * 0.5));
+    stepVehicle(c, H); peak = Math.max(peak, Math.abs(c.yawRate));
+    if (i === 11) at.r01 = c.yawRate;
+    if (i === 59) at.r05 = c.yawRate;
+    if (i === 119) at.r10 = c.yawRate;
+  }
+  return { ...at, peak };
+}
+
+/** W + A held for 4 s from `kmh` (throttle with main.js's lag, the steer
+    through its ramp): the fastest a rear wheel's surface turns relative to
+    the road, the share of steps the car smokes (car.slip > 0.3, main.js's
+    tyre-smoke gate) and the speed it comes out at. A driven wheel spinning
+    at 3x the road is a burnout in a corner, not a turn. */
+export function powerTurn(kmh = 80) {
+  const c = accelerateTo(settled(), kmh);
+  c.steerTarget = 0; let spin = 0, smoke = 0;
+  for (let i = 0; i < 480; i++) {
+    rampSteer(c, 1);
+    c.throttle += (1 - c.throttle) * Math.min(1, H * 11);
+    stepVehicle(c, H);
+    if (c.slip > 0.3) smoke++;
+    spin = Math.max(spin, Math.max(c.wheelW[2], c.wheelW[3]) * WHEEL_R / Math.max(1, c.fwdSpeed));
+  }
+  return { spin, smokeFrac: smoke / 480, speed: c.speed * KMH };
+}
+
+/** GTA's drift entry: W + A held, Space tapped for `tapS` at the start, the
+    steer through main.js's ramp and let go after 2.5 s. Largest body slip. */
+export function tapHandbrake(kmh = 70, tapS = 0.6) {
+  const c = accelerateTo(settled(), kmh);
+  c.steerTarget = 0; let maxBeta = 0;
+  for (let i = 0; i < 120 * 5; i++) {
+    const t = i * H;
+    rampSteer(c, t < 2.5 ? 1 : 0);
+    c.throttle += (1 - c.throttle) * Math.min(1, H * 11);                  // main.js's throttle lag
+    c.hand += ((t < tapS ? 1 : 0) - c.hand) * Math.min(1, H * 18);         // ...and handbrake lag
+    stepVehicle(c, H); maxBeta = Math.max(maxBeta, Math.abs(beta(c)));
+  }
+  return { maxBetaDeg: maxBeta * DEG, speed: c.speed * KMH };
 }
 
 /** A 6 deg scrape along a wall at 60 km/h, throttle held: speed kept after 3 s. */
@@ -134,7 +290,27 @@ export function measureAll() {
   };
 }
 
+/** The GTA-feel rows (2026-09-23): run on openField() to measure tyres, not walls. */
+export function measureFeel() {
+  return {
+    steady: [50, 80, 120].map((k) => steadyLock(k)), steady20: steadyLock(20),
+    power30: powerLock(30), lift100: liftOff(100), brakeTurn80: brakeTurn(80),
+    hb: [40, 60, 100].map((k) => handbrake(1, k)),
+    tap: [[70, 0.3], [70, 0.6], [100, 0.6]].map(([k, t]) => tapHandbrake(k, t)),
+    key80: keyStep(80), air: airRatio(), powerTurn80: powerTurn(80),
+  };
+}
+
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop())) {
+  /* args: 'sim' | 'gta' (default sim), --profile=muscle|street|supercar|gt3_race
+     (default: the bare V constants), --open (flat tarmac instead of the grid) */
+  const args = process.argv.slice(2);
+  const mode = args.includes('gta') ? 'gta' : 'sim';
+  const pname = (args.find((a) => a.startsWith('--profile=')) || '').slice(10) || null;
+  if (pname && !VEHICLE_PROFILES[pname]) throw new Error(`no profile '${pname}': ${Object.keys(VEHICLE_PROFILES).join(' ')}`);
+  CAR.assist = HANDLING[mode]; CAR.profile = pname ? VEHICLE_PROFILES[pname] : null;
+  if (args.includes('--open')) openField();
+  console.log(`-- ${mode}, ${pname || 'bare V'} profile, ${args.includes('--open') ? 'open flat tarmac' : 'legacy grid (walls at 13.2 m)'}`);
   const m = measureAll();
   const f = (x, d = 2) => (x == null ? 'n/a' : x.toFixed(d));
   console.log(`0-100 km/h        ${f(m.launch.t100)} s     top speed ${f(m.launch.vmax, 1)} km/h`);
@@ -145,4 +321,13 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop()
   console.log(`handbrake @60     body slip off ${f(m.handbrakeOff.maxBetaDeg, 0)} deg / on ${f(m.handbrakeOn.maxBetaDeg, 0)} deg  (rearW on: ${f(m.handbrakeOn.rearW, 1)})`);
   console.log(`6 deg scrape @60  ${f(m.scrape.before, 0)} -> ${f(m.scrape.after, 0)} km/h after 3 s (lost ${f(m.scrape.lostKmh, 0)})  impact ${f(m.scrape.peakImpact)}  yaw ${f(m.scrape.yawDeg, 1)}`);
   console.log(`head-on @60       ${f(m.headOn.after, 0)} km/h 0.5 s after contact  impact ${f(m.headOn.peakImpact, 1)}`);
+  const g = measureFeel();
+  console.log(`steady lock       ${g.steady.map((s, i) => `@${[50, 80, 120][i]} ${f(s.latG)} g slip ${f(s.maxBetaDeg, 1)}`).join('  ')}  circle @50 ${f(g.steady[0].radius, 1)} m / @20 ${f(g.steady20.radius, 1)} m`);
+  console.log(`oversteer         WOT+lock @30 ${f(g.power30.maxBetaDeg, 1)} deg  lift-off @100 ${f(g.lift100.maxBetaDeg, 1)} deg`);
+  console.log(`brake + lock @80  fronts locked ${f(g.brakeTurn80.frontLockedFrac * 100, 0)}%  heading ${f(g.brakeTurn80.headingDeg1s, 0)} deg in 1 s  stop ${f(g.brakeTurn80.dist, 1)} m  slip ${f(g.brakeTurn80.maxBetaDeg, 0)} deg`);
+  console.log(`handbrake held    ${g.hb.map((h, i) => `@${[40, 60, 100][i]} ${h.sideDeg > 0 ? '+' : ''}${f(h.sideDeg, 0)} deg, <8 deg ${f(h.recoverS)} s after, ${f(h.speedAfter, 0)} km/h`).join('  ')}  (+ = tail out)`);
+  console.log(`W+A, Space tap    @70 0.3 s ${f(g.tap[0].maxBetaDeg, 0)} deg  @70 0.6 s ${f(g.tap[1].maxBetaDeg, 0)} deg  @100 0.6 s ${f(g.tap[2].maxBetaDeg, 0)} deg`);
+  console.log(`W+A held 4 s @80  rear wheel up to ${f(g.powerTurn80.spin)}x the road, smoking ${f(g.powerTurn80.smokeFrac * 100, 0)}% of it, out at ${f(g.powerTurn80.speed, 0)} km/h`);
+  console.log(`key step @80      yaw ${f(g.key80.r01)} / ${f(g.key80.r05)} / ${f(g.key80.r10)} rad/s at 0.1 / 0.5 / 1.0 s, peak ${f(g.key80.peak)}`);
+  console.log(`airborne          velocity turns ${f(g.air)} rad per rad of yaw (physics: 0)`);
 }
