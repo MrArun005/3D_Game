@@ -321,7 +321,7 @@ export function fireControl(o, ctx) {
   }
   if (!ctx.canSee) { out.hold = 'nolos'; out.settleLeft = SETTLE_S; return out; }        // lose the line, lose the sight picture
   if (ctx.blocked) { out.hold = 'blocked'; return out; }                                  // someone is in the way
-  if (!shouldFire(ctx.stars ?? 1, ctx.quietFor ?? 99)) { out.hold = 'holdfire'; return out; }
+  if (!shouldFire(ctx.stars ?? 1, ctx.quietFor ?? 99, ctx.fireFrom ?? 2)) { out.hold = 'holdfire'; return out; }   // fireFrom: difficulty.js (easy 3, hard 2)
   if (out.settleLeft > 0) { out.hold = 'settle'; return out; }
   if (o.state !== 'peek') { out.hold = 'nostate'; return out; }
   const b = burstFor(kind, !!ctx.suppressing);
@@ -422,8 +422,25 @@ export function crimeWitnessed(tag, px, pz, peds, police, wanted = 0, reach = 1)
 /**
  * Does an officer open fire? At one star GTA's police come to ARREST you;
  * they shoot back only if you have been shooting (quietFor is seconds since
- * your last shot). From two stars they fire on sight. Pure; tested.
+ * your last shot). From `from` stars (two in the full game) they fire on
+ * sight; easy passes three, so a driver who picked up two stars from crashes
+ * is chased and arrested, not shot at, unless he shoots. Pure; tested.
  */
-export function shouldFire(stars, quietFor) {
-  return stars >= 2 || quietFor < 8;
+export function shouldFire(stars, quietFor, from = 2) {
+  return stars >= from || quietFor < 8;
+}
+
+/**
+ * Does the zero-star patrol take a call this step? (traffic.js, street life:
+ * lights on and foot down for 8 s, two calls in five an NPC pursuit.) Once it
+ * has been quiet for 30 s, a call comes at 1/25 s: 58 an hour at 60 Hz for
+ * this roll alone, 52.8 once the 25 s NPC pursuits hold it off (a Monte Carlo
+ * of traffic.js's constants). `rand` is called exactly when the old inline roll called it, whether
+ * or not calls are `allowed`, so switching them off (difficulty.js
+ * patrolCalls) leaves the traffic RNG stream, and so the rest of the city,
+ * where it was. Pure given `rand`; tested.
+ */
+export function patrolCallDue(respondT, dt, rand, allowed = true) {
+  const roll = respondT < -30 && rand() < dt / 25;
+  return roll && allowed;
 }

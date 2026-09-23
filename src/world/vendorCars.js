@@ -535,22 +535,38 @@ export async function loadHeroSkin(assets, hero, file = DEFAULT_BODY) {
 }
 
 /**
- * Load every mapped model and install it over assets.geo.stunt. Resolves when
- * done; on any failure that style keeps its lofted body, so the game never
- * waits on or breaks for a missing file.
+ * The traffic styles the boot installs: the ones the fleet can actually spawn
+ * (STYLE_WEIGHT > 0, a missing key counting 1 as in the picker below). The
+ * three `chev` styles are weight 0 -- the Sketchfab bodies left ambient
+ * traffic on 2026-09-11 -- so installing them fetched, parsed and merged
+ * 11.9 MB of NC GLBs for three styles nothing picks. The police cruiser has
+ * no weight key, so it stays.
+ */
+export const bootStyles = () => Object.entries(KENNEY_CARS).filter(([k]) => (STYLE_WEIGHT[k] ?? 1) > 0);
+/** Every body id the boot downloads, and nothing else (tested: no `s-` id). */
+export const bootBodyIds = () => [...new Set(bootStyles().map(([, id]) => id))];
+
+/**
+ * Load every spawnable style's model and install it over assets.geo.stunt.
+ * Resolves when done; on any failure that style keeps its lofted body, so the
+ * game never waits on or breaks for a missing file.
  */
 export async function loadVendorCars(assets) {
   const installed = [];
-  // Pre-cache all BODIES in parallel so mid-game car stealing & garage fitting is 100% instant
-  const allBodyIds = [...new Set([...Object.values(KENNEY_CARS), ...Object.keys(BODIES)])];
-  await Promise.all(allBodyIds.map(async (id) => {
-    try {
-      const spec = BODY_TYPES.sedan;
-      await fetchKit(id, spec, assets).catch(() => null);
-    } catch (e) { /* ignore pre-cache errors */ }
-  }));
+  /* The old boot pre-cached EVERY body in BODIES "so a garage fit is instant":
+     all eight Sketchfab cars, 57 MB, fetched, parsed, skeleton-cloned and
+     merged (~697k triangles of work) and then thrown away -- only the one you
+     drive is ever worn, and main.js's loadHeroSkin fetches that one itself.
+     Measured by recording the loaders' requests (2026-09-23): 'Loading car
+     fleet...' waited on 58.97 MB; it now waits on the 1.72 MB CC0 fleet. A garage fit, the
+     race car and /car fetch their own body when asked (loadHeroSkin keeps the
+     old body on until the new one lands). `?precache` restores the old boot. */
+  if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('precache')) {
+    const allBodyIds = [...new Set([...Object.values(KENNEY_CARS), ...Object.keys(BODIES)])];
+    await Promise.all(allBodyIds.map((id) => fetchKit(id, BODY_TYPES.sedan, assets).catch(() => null)));
+  }
 
-  await Promise.all(Object.entries(KENNEY_CARS).map(async ([key, id]) => {
+  await Promise.all(bootStyles().map(async ([key, id]) => {
     try {
       const spec = BODY_TYPES[key] ?? BODY_TYPES[SPEC_OF[key]] ?? BODY_TYPES.sedan;
       const kit = await fetchKit(id, spec, assets);
@@ -567,6 +583,6 @@ export async function loadVendorCars(assets) {
   // traffic picks from every installed style except the police cruiser, weighted (STYLE_WEIGHT)
   const keys = [...new Set([...BODY_KEYS, ...installed.filter((k) => k !== 'police')])];
   assets.geo.stuntKeys = keys.flatMap((k) => Array(STYLE_WEIGHT[k] ?? 1).fill(k));
-  console.info(`vendor cars: ${installed.length}/${Object.keys(KENNEY_CARS).length} installed (${installed.join(', ')})`);
+  console.info(`vendor cars: ${installed.length}/${bootStyles().length} installed (${installed.join(', ')})`);
   return installed;
 }

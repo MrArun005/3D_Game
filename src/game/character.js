@@ -45,6 +45,21 @@ export const NAMED_CHARACTERS = [
   { id: 'jax', name: 'JAX MILLER', role: 'ENFORCER', perk: 'Heavy ram force & NOS boost', index: 6 },
 ];
 
+/* What the build does not ship: vite.config.js DIST_PRUNE removes
+   models/avatar (the wardrobe GLBs are unlicensed dev fixtures, NOTICE.md).
+   test/character-ship.test.js reads DIST_PRUNE and holds the two together. */
+export const DEV_ONLY_PREFIX = '/models/avatar/';
+
+/**
+ * The personas K may cycle to. In the shipped build (`prod`), one whose model
+ * the build prunes is left out: swap() disposes the current body before it
+ * loads the next, so a 404 there left the on-foot hero with no body at all.
+ * Dev keeps every persona. Pure; tested.
+ */
+export function shippedPersonas(list = NAMED_CHARACTERS, prod = false) {
+  return prod ? list.filter((p) => !CHARACTERS[p.index]?.startsWith(DEV_ONLY_PREFIX)) : list;
+}
+
 /* The wardrobe GLBs carry 11 generated parts (beards, hair shells, torso
    layers) as plain meshes — glTF has no visibility flag and the loader keeps
    everything visible, so an un-hidden avatar wears five beards at once. The

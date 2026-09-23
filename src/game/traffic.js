@@ -9,7 +9,7 @@ import { groundHeightAt } from '../world/metrics.js';
 import { buildOfficer, poseOfficer, PoseBlender, lookAt, officerMaterial, dressOfficer } from '../world/officer.js';
 import { officerPool } from '../world/officerSkinned.js';
 import { buildWeaponMesh, ARSENAL } from './weapons.js';
-import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED, pickRooftops, coverSide, evasionDecay, searchRadius, crimeWitnessed, shouldFire,
+import { weaponForWanted, aimJitter, burstFor, hasLineOfSight, shotLands, targetProfile, nextState, MAX_DEPLOYED, pickRooftops, coverSide, evasionDecay, searchRadius, crimeWitnessed, shouldFire, patrolCallDue,
   assignRoles, rushPlan, moveTarget, stepToward, fireControl, bystanderInLine, RUSH_COOL_S } from './policeAi.js';
 import { roofsNear } from '../world/districtWorld.js';
 import { glow } from '../core/additive.js';
@@ -135,7 +135,12 @@ export class Traffic {
     const px = this.player?.x ?? 0, pz = this.player?.z ?? 0;
     // Underworld Network (reputation <= -750): witnesses and cruisers must be half as close to report you
     const reach = (typeof window !== 'undefined' && (window._reputation?.score ?? 0) <= -750) ? 0.5 : 1;
-    if (!crimeWitnessed(tag, px, pz, this.crowd?.people ?? [], this.police, this.wanted, reach)) return;   // nobody saw it (policeAi.crimeWitnessed)
+    /* Just drive (difficulty.js pedsReportCrashes): a bump into a civilian car
+       is reported only when a cruiser saw it. Downtown there is nearly always
+       a pedestrian within 45 m, so ordinary lane-change contact made four
+       crashes a star. People run over and cruisers hit still count. */
+    const peds = (tag === 'traffic' && this.difficulty?.pedsReportCrashes === false) ? [] : (this.crowd?.people ?? []);
+    if (!crimeWitnessed(tag, px, pz, peds, this.police, this.wanted, reach)) return;   // nobody saw it (policeAi.crimeWitnessed)
     // one pedestrian is about two stars, not five: `force` is m/s, so the
     // multiplier has to be gentle or a single hit at speed maxes the meter
     const gain = worth * Math.min(1.4, 0.5 + force * 0.05);
@@ -1361,7 +1366,8 @@ export class Traffic {
            foot down for eight seconds, then back to a crawl. Nothing to do
            with you; a city where sirens pass is a city with other people in it. */
         c.respondT = (c.respondT ?? 0) - dt;
-        if (c.respondT < -30 && this.rand() < dt / 25) {
+        // just drive (difficulty.js patrolCalls false): no calls, so no lights, sirens, NPC pursuits or dispatch voice; the patrol still drives its beat
+        if (patrolCallDue(c.respondT, dt, this.rand, this.difficulty?.patrolCalls !== false)) {
           c.respondT = 8; c.cruise = (c.baseCruise ??= c.cruise) * 1.7;
           /* Two calls in five are a real one: a civilian within 160 m becomes
              the fugitive. It runs (the flee boost), the patrol hunts it with
@@ -1606,7 +1612,7 @@ export class Traffic {
           || bystanderInLine(c.coverX, gunY, c.coverZ, player.x, ty, player.z, this._mates || []);
         const f = fireControl(c, {
           dt, canSee, blocked: !!inLine || !!this.holdFire,
-          stars: Math.floor(this.wanted), quietFor: c.quietFor,
+          stars: Math.floor(this.wanted), quietFor: c.quietFor, fireFrom: this.difficulty?.fireFrom ?? 2,   // easy: 3 -- two stars from crashes means an arrest, not a firefight
           suppressing: c.role === 'suppress' && this._rushing > 0,
         });
         c.fireT = f.fireT; c.burstLeft = f.burstLeft; c.ammo = f.ammo; c.settleLeft = f.settleLeft; c.reloadLeft = f.reloadLeft;

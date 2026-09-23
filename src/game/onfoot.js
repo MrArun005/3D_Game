@@ -77,6 +77,11 @@ export class OnFoot {
       : defaultIdx;
     this.character = new Character(scene, CHARACTERS[charIdx]);
     this.character.onReady = () => { this.group.visible = false; this.character.show(this.active); };
+    /* A model that fails to load (a 404: the build prunes /models/avatar, and
+       K used to cycle straight to one) hands you the block figure above.
+       Nobody assigned onFail, and swap() had already disposed the old body, so
+       you walked about invisible. */
+    this.character.onFail = () => { this.group.visible = this.active; };
   }
 
   /**
@@ -245,6 +250,7 @@ export class OnFoot {
     if (this.character.ready) {
       this.character.update(dt, this.x, this.y, this.z, this.yaw, this.backing ? -speed : speed, this.isGrounded, this.rollLean, this.pitchLean);
     } else {
+      this.group.visible = true;   // no rigged body right now (still loading after a K swap, or failed): the block figure stands in, never nothing
       this.group.position.set(this.x, this.y + Math.abs(Math.sin(this.bob)) * 0.055, this.z);
       this.group.rotation.y = -this.yaw + Math.PI / 2;
       this.group.rotation.z = this.rollLean;

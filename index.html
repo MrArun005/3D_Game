@@ -60,7 +60,8 @@ body.photo #gameplay-prompt-bar, body.photo #wanted, body.photo #ammo, body.phot
       <h1>Nightfall Drive</h1>
       <p>Open streets. A port city that does not sleep. Nobody waiting for you.</p>
       <div class="modes" role="group" aria-label="How do you want to start">
-        <button type="button" class="mode active" data-mode="free"><b>Free roam</b><span>Eleven districts, the harbour, the metro and the hills. Just drive.</span></button>
+        <!-- Just drive (difficulty.js JUST DRIVE): no patrol calls, far sirens or street voices. Every other card brings the city life back (main.js cityLife). -->
+        <button type="button" class="mode active" data-mode="free"><b>Just drive</b><span>The whole city, no one after you. Pick another card for jobs, heists and city life.</span></button>
         <button type="button" class="mode" data-mode="jobs"><b>Street jobs</b><span>Courier runs, fares, getaways and street races. Cash, rating, heat.</span></button>
         <button type="button" class="mode" data-mode="story"><b>Heists</b><span>Three jobs from the phone, from the harbour jewel to the weapons raid.</span></button>
         <button type="button" class="mode" data-mode="range"><b>Shooting range</b><span>Six boards, sixty seconds. Learn the recoil before it matters.</span></button>
@@ -69,11 +70,18 @@ body.photo #gameplay-prompt-bar, body.photo #wanted, body.photo #ammo, body.phot
       <div class="go" data-pad-default>ENTER THE CITY</div>
       <!-- core/quality.js presets; main.js cycles Auto -> Low -> Medium -> High on click and reloads on ENTER when the choice differs from what booted -->
       <div class="quality" role="button" tabindex="0" title="Quality preset: Low / Medium / High / Auto">QUALITY · <b>AUTO</b> <small>click to change</small></div>
+      <!-- One line to drive on; everything else folds into ALL CONTROLS (the 2026-09-11 brief's <details>, lost in a later merge). main.js hides this first .keys when a pad presses a button. -->
       <div class="keys">
-        <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive &nbsp; <kbd>Space</kbd> handbrake &nbsp; <kbd>Shift</kbd> hold gear &nbsp; <kbd>F</kbd> get out / get in &nbsp; <kbd>C</kbd> camera &nbsp; <kbd>H</kbd> lights<br />
-        <kbd>G</kbd> take a job &nbsp; <kbd>M</kbd> phone (heists, range, hold-out, garage, heli, tank) &nbsp; <kbd>Tab</kbd> map &nbsp; <kbd>P</kbd> photo mode &nbsp; <kbd>L</kbd> radio<br />
-        On foot: <kbd>1</kbd>–<kbd>5</kbd> weapons &nbsp; <kbd>RMB</kbd> aim &nbsp; <kbd>E</kbd>/<kbd>LMB</kbd> fire &nbsp; <kbd>X</kbd> reload &nbsp; <kbd>C</kbd> crouch &nbsp; pad supported &nbsp; mouse look after clicking
+        <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive &nbsp; <kbd>Space</kbd> handbrake &nbsp; <kbd>F</kbd> out / in &nbsp; <kbd>C</kbd> camera &nbsp; <kbd>H</kbd> lights &nbsp; <kbd>Tab</kbd> map &nbsp; <kbd>M</kbd> phone
       </div>
+      <details>
+        <summary>ALL CONTROLS</summary>
+        <div class="keys all">
+          <kbd>Shift</kbd> hold gear &nbsp; <kbd>I</kbd> horn &nbsp; <kbd>R</kbd> respawn &nbsp; <kbd>L</kbd> radio &nbsp; <kbd>P</kbd> photo mode<br />
+          <kbd>G</kbd> take a job &nbsp; <kbd>M</kbd> phone (heists, range, hold-out, garage, heli, tank)<br />
+          On foot: <kbd>1</kbd>–<kbd>6</kbd> weapons &nbsp; <kbd>RMB</kbd> aim &nbsp; <kbd>E</kbd>/<kbd>LMB</kbd> fire &nbsp; <kbd>X</kbd> reload &nbsp; <kbd>C</kbd> crouch &nbsp; pad supported &nbsp; mouse look after clicking
+        </div>
+      </details>
       <div class="touchkeys">
         Drag the left strip to steer &nbsp;·&nbsp; GAS / BRAKE pedals on the right &nbsp;·&nbsp; HANDBRAKE, CAM, HORN, LIGHTS, EXIT up top<br />
         On foot: left thumb stick to walk, drag the right half to look, RUN / JUMP / USE / FIRE / AIM on the right<br />
