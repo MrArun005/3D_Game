@@ -264,7 +264,8 @@ test('every board on every type has a shape the Tokyo atlas draws', () => {
       const b = build(type, p);
       for (const bd of b.boards) {
         n++;
-        const k = bd.kind, W = bd.slice ? bd.w * bd.slice[1] : bd.w, asp = k === 'v' ? bd.h / W : W / bd.h;   // a curved screen's strips: the whole screen keeps the tile's shape
+        // a curved screen's strips: the whole screen keeps the tile's shape; a cropped one the crop's
+        const k = bd.kind, W = (bd.slice ? bd.w * bd.slice[1] : bd.w) / (bd.crop ?? 1), asp = k === 'v' ? bd.h / W : W / bd.h;
         const ok = k === 'h' ? asp >= 2.8 && asp <= 6.2 : k === 'v' ? asp >= 2.3 && asp <= 5.6 : k === 's' ? Math.abs(asp - 2) < 0.05 : false;
         if (!ok || (k === 'v') !== !!bd.vertical || ![bd.x, bd.y, bd.z, bd.yaw].every(Number.isFinite)) bad.push(`${type} ${k} ${bd.w.toFixed(2)}x${bd.h.toFixed(2)}`);
       }
@@ -415,6 +416,14 @@ test('a curved screen\'s strips tile its picture exactly, left to right, and eve
       // the shader's column: floor(u0 * 4 + 0.001) must be the whole screen's for every strip
       assert.equal(Math.floor(cells[i][0] * 4 + 0.001), Math.floor(whole[0] * 4 + 0.001));
     }
+  }
+  // crop keeps the middle of the tile, and the strips then tile the crop; the shader's column is still the tile's
+  for (const crop of [0.7, 0.66]) {
+    const whole = boardCell({ kind: 's', tile: 3 }, 0), c = boardCell({ kind: 's', tile: 3, crop }, 0);
+    assert.ok(Math.abs(c[0] - (whole[0] + whole[2] * (1 - crop) / 2)) < 1e-12 && Math.abs(c[2] - whole[2] * crop) < 1e-12);
+    const last = boardCell({ kind: 's', tile: 3, crop, slice: [5, 6] }, 0);
+    assert.ok(Math.abs(last[0] + last[2] - (c[0] + c[2])) < 1e-12, 'the last strip ends where the crop does');
+    assert.equal(Math.floor(last[0] * 4 + 0.001), Math.floor(whole[0] * 4 + 0.001));
   }
   const b = buildTokyoLot(99, 8.6, 8.6, 34, { force: 'screens' });
   const strips = b.boards.filter((bd) => bd.slice);

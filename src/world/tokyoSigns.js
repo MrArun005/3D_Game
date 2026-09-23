@@ -63,13 +63,17 @@ const BOX = [
 ];
 /**
  * The atlas cell a board shows: the tile it names (`tile`), else the one the
- * 0..1 hash picks; `slice: [i, n]` narrows it to strip i of n, left to right
- * -- the strips of a curved screen each show their part of one picture. Pure;
- * tested. districtWorld and the viewer both lay boards through it.
+ * 0..1 hash picks. `crop` (0..1] keeps the middle fraction of the tile's
+ * width -- a screen that is not 2:1 (Shibuya's run 1.3-1.8:1, the research
+ * pass) shows the centre of its ad instead of a squashed one. `slice: [i, n]`
+ * then narrows it to strip i of n, left to right -- the strips of a curved
+ * screen each show their part of one picture. Pure; tested. districtWorld and
+ * the viewer both lay boards through it.
  */
 export function boardCell(bd, h01) {
   const kind = bd.kind ?? (bd.vertical ? 'v' : 'h');
   const c = bd.tile != null ? tokyoTile(kind, bd.tile) : tokyoCell(kind, h01);
+  if (bd.crop && bd.crop < 1) { c[0] += (c[2] * (1 - bd.crop)) / 2; c[2] *= bd.crop; }
   if (bd.slice) { const [i, n] = bd.slice; c[0] += (c[2] * i) / n; c[2] /= n; }
   return c;
 }
@@ -293,9 +297,12 @@ export function tokyoSignMaterial() {
   const k = col0.add(float(1).sub(c.y.mul(8)).mul(4));
   const n = mod(k.add(floor(time.mul(0.125).add(k.mul(0.37)))), float(8));
   const row = floor(n.mul(0.25));
-  const base = mix(c.xy, vec2(n.sub(row.mul(4)).mul(0.25).add(sub), float(1).sub(row).mul(0.125)), screen);
-  // 1% inset: the mip chain would otherwise bleed the neighbouring tile in along every edge
-  const s = texture(tokyoAtlas(), uv().mul(c.zw.mul(0.98)).add(base).add(c.zw.mul(0.01)));
+  const base = mix(c.xy, vec2(n.sub(row.mul(4)).mul(0.25).add(sub.mul(0.98)), float(1).sub(row).mul(0.125)), screen);
+  /* 1% inset: the mip chain would otherwise bleed the neighbouring tile in
+     along every edge. For a screen it is taken against the whole 512 x 256
+     TILE, not the strip or crop (whose offset is scaled by the same 0.98), so
+     the strips of a curved screen meet without a jump at every seam. */
+  const s = texture(tokyoAtlas(), uv().mul(c.zw.mul(0.98)).add(base).add(mix(c.zw, vec2(0.25, 0.125), screen).mul(0.01)));
   m.colorNode = s.mul(materialReference('color', 'color', m));
   const lit = mix(mix(float(BOARD_DAY), float(BOARD_NIGHT), uNight), mix(float(SCREEN_DAY), float(SCREEN_NIGHT), uNight), screen);
   m.emissiveNode = s.rgb.mul(lit).mul(materialReference('emissiveIntensity', 'float', m));
