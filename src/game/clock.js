@@ -10,7 +10,7 @@ const DIURNAL_PROFILES = {
     split: 0.40,
     shadowTint: [0.94, 0.97, 1.02],
     midTint: [1.0, 1.0, 1.0],
-    highTint: [1.06, 1.01, 0.95],
+    highTint: [1.04, 1.01, 0.99],   // was 0.95 blue: the day sky IS the highlight, and a warm highlight tint turned its blue grey-green (2026-09-23, measured (161,167,165) on screen)
     slope: [1.02, 1.01, 1.0],
     offset: [-0.012, -0.012, -0.010],
     power: [1.02, 1.02, 1.02],
@@ -51,7 +51,7 @@ const DIURNAL_PROFILES = {
   NIGHT: {
     sat: 1.32,
     vibrance: 0.22,
-    contrast: 0.24,
+    contrast: 0.34,   // 0.24 -> 0.34 with the darker moon/fill (2026-09-23): the owner called night 'bad' -- it read as a flat blue wash
     split: 1.0,
     shadowTint: [0.92, 0.93, 1.06],
     midTint: [0.98, 0.98, 1.02],
@@ -298,8 +298,15 @@ export class GameClock {
       this.sunColor.setRGB(0.16, 0.24, 0.42);
       this.hemiSky.setRGB(0.06, 0.09, 0.16);
       this.hemiGround.setRGB(0.03, 0.045, 0.07);
-      sunIntensity = 0.30; // Soft moon key -- the pale far mountains were lit like dusk at 0.42
-      hemiIntensity = 0.17;
+      /* 0.30 / 0.17 -> 0.10 / 0.06 (2026-09-23). At the old levels the moon and
+         the sky fill lit every wall and the whole road to one even blue-grey --
+         "day for night": pale facades glowed, and the lamp pools, shopfronts and
+         headlights had nothing dark to stand out against. A real night street is
+         lit FROM the street (Regent Street's floodlit stone, Shibuya's signs);
+         the moon is a rim, not a key. Measured side by side in the headless
+         render before committing. */
+      sunIntensity = 0.10;
+      hemiIntensity = 0.06;
     }
 
     // Apply to scene lights if provided
@@ -319,7 +326,10 @@ export class GameClock {
     }
     if (scene) {
       // Phase 2 ownership: Sky radiance & HDRI environment intensity follows solar cycle
-      scene.environmentIntensity = (isDay || isGolden) ? 1.05 : (isDusk || isDawn) ? 0.80 : 0.24;   // night: the cover art is ink, not slate
+      /* night 0.24 -> 0.05: the environment map is still the NOON sky (CLAUDE.md,
+         open item), so at night every glossy wall, window and the car reflected a
+         bright blue daytime dome -- the blue sheen over the whole night street. */
+      scene.environmentIntensity = (isDay || isGolden) ? 1.05 : (isDusk || isDawn) ? 0.80 : 0.05;
     }
 
     // Phase 2 ownership: synchronize sky dome rotation & tint and stars visibility
@@ -335,7 +345,12 @@ export class GameClock {
         else hz.setRGB(1, 1, 1);
       }
       if (dome.material) {
-        if (isDay) dome.material.color.setRGB(1.0, 1.0, 1.0);
+        /* Not white (2026-09-23): the painted sky is a good blue, but AgX keeps
+           only ~half the chroma of anything that bright, so it displayed as
+           (161,167,165) grey. Darker and bluer in, blue out: tints measured on
+           screen (1,1,1) -> (162,168,166); (0.58,0.74,1) -> (134,156,169). This
+           goes further, and the day grade's highlight tint no longer eats blue. */
+        if (isDay) dome.material.color.setRGB(0.46, 0.64, 1.0);
         /* GOLDEN HOUR HAD NO BRANCH. 16:00-18:00 fell through every else-if to
            the final `else` and painted the dome INK (0.03, 0.035, 0.075) -- so
            the sky went night-navy at 16:00 while the clock was still running a

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { step as tslStep, abs as tslAbs, float as tslFloat, normalLocal } from 'three/tsl';
 import { InstanceBatch } from './catalogue.js';
 import { dressChunk, dressRoofs, dressFacades, place as placeAsset, farLampHeads } from './dressing.js';
 import { KERB_H, roadDepth } from './metrics.js';
@@ -443,7 +444,21 @@ export class DistrictWorld {
     const farGeo = box.clone();
     farGeo.userData.owned = true;
     farGeo.setAttribute('aUvScale', new THREE.InstancedBufferAttribute(new Float32Array(uvScale), 2));
-    const solidMesh = new THREE.InstancedMesh(farGeo, this.assets.facades[TOWER][0], solids.length);
+    /* Their OWN copy of the tower facade (2026-09-23): the near material lit
+       every window on the far boxes' ROOFS too (a box has a top face), so from
+       any height at night the far city was a field of white slabs. The copy
+       reads the same nodes (its emissive still follows the near material's
+       night intensity through the pinned materialReference) with the glow cut
+       on up- and down-facing faces and dimmed to 40% -- 2,482 boxes of lit
+       windows at distance are a haze, not a light source. One draw, as before. */
+    const nearFacade = this.assets.facades[TOWER][0];
+    let farFacade = nearFacade;
+    if (nearFacade.emissiveNode) {
+      farFacade = nearFacade.clone();
+      farFacade.name = `${nearFacade.name || 'facade'}_far`;
+      farFacade.emissiveNode = nearFacade.emissiveNode.mul(tslStep(tslAbs(normalLocal.y), tslFloat(0.5))).mul(0.4);
+    }
+    const solidMesh = new THREE.InstancedMesh(farGeo, farFacade, solids.length);
     /* Where detail exists the far copy has to get out of the way: a stand-in
        box is full width to the top, so it burst out of every setback and
        crown as a pale cube sitting on the real building. */
