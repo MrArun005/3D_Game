@@ -60,16 +60,20 @@ test('blocks and their buildings join by id', () => {
       if (authored.has(g)) { seen++; continue; }
       infill++;
       assert.ok(g.infill, 'unknown footprint that is neither authored nor infill');
-      assert.ok(Math.abs(g.x) + g.w / 2 <= b.w / 2 && Math.abs(g.y) + g.d / 2 <= b.h / 2,
+      // x/y are MIN corners, block-local (districtWorld places a building at x + w/2); the old
+      // test read them as centres for both kinds, which is how infill came to leave its blocks
+      assert.ok(g.x >= -b.w / 2 && g.x + g.w <= b.w / 2 && g.y >= -b.h / 2 && g.y + g.d <= b.h / 2,
         `infill footprint leaves block ${b.id}`);
       for (const a of list) {
-        if (a === g || !authored.has(a)) continue;
-        const clear = Math.abs(a.x - g.x) >= (a.w + g.w) / 2 || Math.abs(a.y - g.y) >= (a.d + g.d) / 2;
-        assert.ok(clear, `infill overlaps an authored footprint on block ${b.id}`);
+        if (a === g) continue;
+        const clear = Math.min(a.x + a.w, g.x + g.w) - Math.max(a.x, g.x) <= 1e-6 || Math.min(a.y + a.d, g.y + g.d) - Math.max(a.y, g.y) <= 1e-6;
+        assert.ok(clear, `infill overlaps ${authored.has(a) ? 'an authored' : 'another infill'} footprint on block ${b.id}`);
       }
     }
   }
   assert.equal(seen, data.buildings.length, 'every authored building reachable from its block');
+  // and the authored ones are inside their blocks in that same reading (the convention check)
+  for (const g of data.buildings) { const b = data.blocks.find((q) => q.id === g.blockId); if (b) assert.ok(g.x >= -b.w / 2 - 0.01 && g.x + g.w <= b.w / 2 + 0.01 && g.y >= -b.h / 2 - 0.01 && g.y + g.d <= b.h / 2 + 0.01, 'an authored footprint outside its block: the min-corner reading is wrong'); }
   assert.ok(infill > 500, `infill added ${infill} footprints`);
 });
 

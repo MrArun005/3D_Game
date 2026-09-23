@@ -218,6 +218,10 @@ export class LightPool {
     const out = [], r2 = this.radius * this.radius;
     for (const heads of this.world.headsByChunk.values()) {
       for (const h of heads) {
+        /* a head whose light cannot reach the street (the Shibuya crown and
+           roof floodlights, 48-57 m up with a 20-24 m range) keeps its glare
+           sprite but never takes one of the few real lights from the pavement */
+        if (h.y - 0.4 - (h.range ?? 26) > 2) continue;
         const d2 = (h.x - x) ** 2 + (h.z - z) ** 2;
         if (d2 < r2) out.push({ h, d2, score: headScore(h, x, z) });
       }
@@ -299,7 +303,7 @@ export class LightPool {
       l.distance = s.head.range ?? 26;
       if (corona) {
         corona.position.set(s.head.x, s.head.y - 0.15, s.head.z);
-        corona.visible = true;
+        corona.visible = s.head.glare !== 0;   // glare 0: a light with no lamp of its own (the screens' spill over the crossing)
         corona.material.color.setHex(s.head.colour ?? this.colour);
         const g = s.head.neon ? 5.4 : 4.2;
         corona.scale.set(g, g, 1);

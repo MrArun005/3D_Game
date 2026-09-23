@@ -81,7 +81,9 @@ export function boardCell(bd, h01) {
 /* The h tile a colour lands on: paintH gives tile i the board BOX[(i * 5) % 12], so
    tile 11 is the blue board, 6 the green, 8 the red. Tested against BOX, so a
    palette edit cannot quietly turn the blue-over-green roof pair red. */
-export const H_TILE = { white: 0, magenta: 1, green: 6, red: 8, yellow: 10, blue: 11 };
+export const H_TILE = { white: 0, magenta: 1, green: 6, red: 8, yellow: 10, blue: 11,
+  books: 17,   // white board, black ink: 書店 BOOKS (the Taiseido-style fascia on the sign corner)
+  mall: 13 };  // magenta board: ハチ (the drum's crown mark -- brand-free, not the real one's)
 /** The board colour tile `i` of the h region is painted in (for the test). */
 export const hTileBoard = (i) => BOX[(i * 5) % BOX.length][0];
 /* And the v tiles (paintVUpright: BOX[(i * 7 + 3) % 12]): 7 is the red board
@@ -95,8 +97,8 @@ const H_SIGNS = [
   ['カラオケ', 'KARAOKE 24H'], ['焼肉', 'YAKINIKU'], ['ラーメン', 'RAMEN'], ['居酒屋', 'IZAKAYA'],
   ['寿司', 'SUSHI'], ['ドラッグ', 'DRUG STORE'], ['ゲームセンター', 'GAME CENTER'], ['漫画喫茶', 'MANGA CAFE'],
   ['歯科', 'DENTAL CLINIC'], ['質', 'PAWN SHOP'], ['牛丼', 'BEEF BOWL'], ['コンビニ', 'CONVENIENCE'],
-  ['カフェ', 'CAFE'], ['英会話', 'ENGLISH SCHOOL'], ['麻雀', 'MAHJONG'], ['ホテル', 'HOTEL'],
-  ['古着', 'VINTAGE'], ['メガネ', 'OPTICS'], ['中華料理', 'CHINESE'], ['ボウリング', 'BOWLING'],
+  ['カフェ', 'CAFE'], ['ハチ', 'HACHI 88 SHIBUYA'], ['麻雀', 'MAHJONG'], ['ホテル', 'HOTEL'],
+  ['古着', 'VINTAGE'], ['書店', 'BOOKS & MAGAZINES'], ['中華料理', 'CHINESE'], ['ボウリング', 'BOWLING'],
   ['家電', 'ELECTRONICS'], ['餃子', 'GYOZA'], ['占い', 'FORTUNE'], ['バー 夜', 'NIGHT BAR'],
 ];
 const V_SIGNS = [

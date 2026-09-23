@@ -64,8 +64,6 @@ const hash = (x, z) => {
   const n = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
   return n - Math.floor(n);
 };
-/** A plot's identity in the Shibuya hero map: its centre to 0.1 m. */
-const heroKey = (x, z) => `${Math.round(x * 10)},${Math.round(z * 10)}`;
 
 /**
  * The tallest roofs within `radius` of a point, in world space, from the same
@@ -81,6 +79,7 @@ export function roofsNear(district, x, z, radius, n = 6) {
     const scale = DISTRICT_SCALE[bl.district] ?? 1;
     const ca = Math.cos(bl.angle), sa = Math.sin(bl.angle);
     for (const g of district.buildingsOf(bl.id)) {
+      if (g.hero) continue;   // a Shibuya set piece is not the formula height, and its roof is taken (screens, boards)
       const h = (range[0] + hash(g.x + bl.x, g.y + bl.y) * (range[1] - range[0])) * scale;
       const lx = g.x + g.w / 2, lz = g.y + g.d / 2;
       out.push({ x: bl.x + lx * ca - lz * sa, z: bl.y + lx * sa + lz * ca, h, w: g.w, d: g.d, angle: bl.angle });
@@ -415,7 +414,8 @@ export class DistrictWorld {
       const spec = ARCH[ARCHETYPE[bl.type]] ?? ARCH[MID];
       const tileW = spec.wide, tileH = spec.floors * spec.storey;
       for (const g of D.buildingsOf(bl.id)) {
-        const h = (range[0] + hash(g.x + bl.x, g.y + bl.y) * (range[1] - range[0])) * scale;
+        // a Shibuya set piece's stand-in is its own height (district.js heroH), not the formula's 100 m tower
+        const h = g.heroH ?? (range[0] + hash(g.x + bl.x, g.y + bl.y) * (range[1] - range[0])) * scale;
         const lx = g.x + g.w / 2, lz = g.y + g.d / 2;
         const w = Math.max(1, g.w - 0.3), hh = Math.max(1, h - 0.4);
         solids.push(mat4(bl.x + lx * ca - lz * sa, KERB_H,
@@ -1177,47 +1177,6 @@ export class DistrictWorld {
    * same pure phase function the traffic reads. Lenses are one instanced mesh
    * per chunk whose colours are rewritten each frame.
    */
-  /**
-   * The Shibuya set pieces (tokyoTypes.js section 7, docs/REF-SHIBUYA.md) go
-   * on the four corners of ONE scramble: the Little Tokyo crossroads nearest
-   * the spawn (main.js puts the car at 2354, 1408; node 1016 is 48 m ahead of
-   * it, so the crossing is in the first frame). Per corner -- quadrant about
-   * the node -- the nearest plot the Tokyo branch builds; the biggest of them
-   * (at least 14 m both ways) is QFRONT, the corner diagonally across from it
-   * gets the rooftop screens, the other two are sign towers. Worked out once
-   * over the whole district, so a plot's type cannot depend on which chunk
-   * reached it first. Keyed by the plot centre to 0.1 m (heroKey).
-   */
-  #shibuyaHeroes() {
-    if (this._heroes) return this._heroes;
-    const heroes = this._heroes = new Map();
-    let node = null, best = Infinity;
-    for (const n of this.nodeById.values()) {
-      if (n.kind !== 'cross' || this.district.districtAt?.(n.x, n.y) !== 'LITTLE TOKYO') continue;
-      const d = Math.hypot(n.x - 2354, n.y - 1408);
-      if (d < best) { best = d; node = n; }
-    }
-    if (!node) return heroes;
-    const corner = [null, null, null, null];
-    for (const bl of this.district.blocks) {
-      if (bl.district !== 'LITTLE TOKYO' || !ARCHETYPE[bl.type]) continue;
-      const ca = Math.cos(bl.angle), sa = Math.sin(bl.angle);
-      for (const g of this.district.buildingsOf(bl.id)) {
-        if (g.w < 7 || g.d < 7) continue;
-        const lx = g.x + g.w / 2, lz = g.y + g.d / 2, wx = bl.x + lx * ca - lz * sa, wz = bl.y + lx * sa + lz * ca;
-        if (styleFor(bl, g, hash(wx * 0.53, wz * 0.91))) continue;   // the art router takes this plot before the Tokyo branch sees it
-        const dx = wx - node.x, dz = wz - node.y, r = Math.hypot(dx, dz), q = (dx < 0 ? 1 : 0) + (dz < 0 ? 2 : 0);
-        if (r < 70 && (!corner[q] || r < corner[q].r)) corner[q] = { key: heroKey(wx, wz), r, area: g.w * g.d, fits: Math.min(g.w, g.d) >= 14, q };
-      }
-    }
-    const big = corner.filter((c) => c?.fits).sort((a, b) => b.area - a.area)[0];
-    for (const c of corner) {
-      if (!c) continue;
-      heroes.set(c.key, !big ? 'signstack' : c === big ? 'qfront' : c.q === (big.q ^ 3) ? 'screens' : 'signstack');
-    }
-    return heroes;
-  }
-
   #signals(edgeIds, group, key) {
     const A = this.assets;
     const posts = [], arms = [], lens = [], meta = [], zebra = [];
@@ -1857,7 +1816,7 @@ export class DistrictWorld {
       for (const g of this.district.buildingsOf(bl.id)) {
         yield* tick('massing/art/tokyo');
         const scale = DISTRICT_SCALE[bl.district] ?? 1;
-        const h = (range[0] + hash(g.x + bl.x, g.y + bl.y) * (range[1] - range[0])) * scale;
+        const h = g.heroH ?? (range[0] + hash(g.x + bl.x, g.y + bl.y) * (range[1] - range[0])) * scale;   // a set piece builds its own height
         // local footprint -> world, through the block's own transform
         const ca = Math.cos(bl.angle), sa = Math.sin(bl.angle);
         const lx = g.x + g.w / 2, lz = g.y + g.d / 2;
@@ -1911,7 +1870,7 @@ export class DistrictWorld {
           }
         }
 
-        const artStyle = styleFor(bl, g, hash(wx * 0.53, wz * 0.91));
+        const artStyle = g.hero ? null : styleFor(bl, g, hash(wx * 0.53, wz * 0.91));   // a Shibuya set piece (district.js #carveShibuya) is never an art building
         if (bl.district === 'LITTLE TOKYO' && !noTokyo && !artStyle && g.w >= 4 && g.d >= 4) {
           const toWorld = (lx, lz) => [wx + lx * ca - lz * sa, wz + lx * sa + lz * ca];
           const rot = frontRotation((x, z) => this.district.tarmacDepth(x, z), toWorld, g.w / 2, g.d / 2);
@@ -1927,7 +1886,17 @@ export class DistrictWorld {
              ship, 13 materials a building would be 13 draws each. Falls through
              to the generated building when the GLBs have not landed yet (the
              load is async and chunks build from frame one) or none fits. */
-          const hero = this.#shibuyaHeroes().get(heroKey(wx, wz));   // a corner of the scramble ahead of the spawn: a Shibuya set piece, never a kit tower
+          /* A corner of the scramble ahead of the spawn (district.js #carveShibuya
+             marks the footprint): a Shibuya set piece, never a kit tower. It is
+             told which way the crossing lies in its own frame (`toward`, +X the
+             street face), so its screens and its curved corner face the
+             crossing whichever road its front was turned to. */
+          const hero = g.hero ?? null;
+          let toward = null;
+          if (hero && this.district.shibuya?.node) {
+            const nd = this.district.shibuya.node, vx = nd.x - wx, vz = nd.y - wz, vl = Math.hypot(vx, vz) || 1, ph = bl.angle - rot;
+            toward = [(vx * Math.cos(ph) + vz * Math.sin(ph)) / vl, (-vx * Math.sin(ph) + vz * Math.cos(ph)) / vl];
+          }
           if (this.towers && !hero && hash(wx * 0.19, wz * 0.83) < 0.08) {
             // the plot's own world position is the seed, so the choice is stable per building
             const tw = towerFor(this.towers, wx * 7.31 + wz * 3.17, fhw, fhd, h);
@@ -1949,6 +1918,7 @@ export class DistrictWorld {
           const b = buildTokyoLot(Math.floor(hash(wx * 0.71, wz * 0.29) * 1e9), fhw, fhd, h, {
             block: bl.type,
             hero,
+            toward,
             probe: (bx, bz) => this.district.tarmacDepth(...toWorld(bx * Math.cos(rot) + bz * Math.sin(rot), -bx * Math.sin(rot) + bz * Math.cos(rot))),
           });
           // local (front +X) -> footprint local (turned onto the street side) -> world (the block's frame), same rotation sense as mat4()

@@ -12,7 +12,7 @@ import { styleFor } from '../src/world/artBuildings.js';
 
 const NEW = ['tower', 'pencil', 'mansion', 'carpark', 'machiya', 'depato'];
 /* The Shibuya set pieces: never rolled (the census below is NEW only), but held to every geometry rule the others are. */
-const LANDMARK = ['qfront', 'signstack', 'screens'];
+const LANDMARK = ['qfront', 'signstack', 'screens', 'addrum', 'drum'];
 const ALL = [...NEW, ...LANDMARK];
 /* A plot in each type's niche (see pickTokyoType), varied per seed: [hw, hd, h].
    hw is half the DEPTH back from the street, hd half the FRONTAGE. */
@@ -25,7 +25,9 @@ const NICHE = {
   depato: (r) => [8 + r() * 7, 11 + r() * 5, 30 + r() * 40],
   qfront: (r) => [7.5 + r() * 6, 7.5 + r() * 6, 44 + r() * 60],
   signstack: (r) => [4.5 + r() * 8, 4 + r() * 9, 22 + r() * 50],
-  screens: (r) => [4.5 + r() * 8, 4 + r() * 9, 22 + r() * 50],
+  screens: (r) => [8 + r() * 5, 8 + r() * 5, 22 + r() * 50],
+  addrum: (r) => [4 + r() * 3, 4 + r() * 3, 30 + r() * 20],
+  drum: (r) => [4.7 + r() * 2, 4.7 + r() * 2, 40 + r() * 20],
 };
 /* A side street on +Z for half the seeds: the corner-seeking types (mansion corridor, depato atrium) read it. */
 const probeFor = (seed, hd) => (seed % 2 ? (x, z) => (z > hd + 1 ? -2 : 25) : undefined);
@@ -38,7 +40,9 @@ const plotsOf = (type, n = 50) => {
   }
   return out;
 };
-const build = (type, p) => buildTokyoLot(p.seed, p.hw, p.hd, p.h, { force: type, probe: probeFor(p.seed, p.hd) });
+/* The set pieces are told where the crossing is (districtWorld's ctx.toward, unit, local frame): from each of the four corners in turn. */
+const TOWARD = [[0.7, 0.7], [0.7, -0.7], [0.95, 0.3], [0.3, -0.95], null];
+const build = (type, p) => buildTokyoLot(p.seed, p.hw, p.hd, p.h, { force: type, probe: probeFor(p.seed, p.hd), toward: LANDMARK.includes(type) ? TOWARD[p.seed % 5] : undefined });
 
 const ATTRS = ['position', 'normal', 'uv', 'color', 'emit', 'flick', 'surf'];
 function fnv(arrays) {
@@ -372,7 +376,8 @@ test('over the real district the walk-up stays commonest and each new type lands
   t.diagnostic(`atlas boards ${signs.before} -> ${signs.after}, lamp heads ${signs.lampsBefore} -> ${signs.lampsAfter}`);
   // the new kinds are quieter than a walk-up (a mansion is not a sign tower); the street must still be mostly lettered
   assert.ok(signs.after > signs.before * 0.6, `the district lost too many signs: ${signs.before} -> ${signs.after}`);
-  assert.ok(plots > 200, `${plots} Little Tokyo plots`);
+  // 197 since district.js #infill writes min corners (it wrote centres, and 3 plots it counted sat inside authored towers)
+  assert.ok(plots > 180, `${plots} Little Tokyo plots`);
   const walk = count.walkup ?? 0;
   for (const type of NEW) {
     assert.ok((count[type] ?? 0) >= 3, `${type}: ${count[type] ?? 0} plots`);
@@ -401,7 +406,7 @@ test('roundLoop: a closed rounded rectangle, every point on it, every normal poi
 });
 
 test('the named sign tiles are the colours they are named for', () => {
-  const want = { white: '#f5f3ec', magenta: '#e5007e', green: '#00964b', red: '#d7141f', yellow: '#ffd200', blue: '#0a53b5' };
+  const want = { white: '#f5f3ec', magenta: '#e5007e', green: '#00964b', red: '#d7141f', yellow: '#ffd200', blue: '#0a53b5', books: '#f5f3ec', mall: '#e5007e' };
   for (const [name, i] of Object.entries(H_TILE)) assert.equal(hTileBoard(i), want[name], `h ${name} is tile ${i}`);
   for (const [name, i] of Object.entries(V_TILE)) assert.equal(vTileBoard(i), want[name], `v ${name} is tile ${i}`);
 });
@@ -428,11 +433,12 @@ test('a curved screen\'s strips tile its picture exactly, left to right, and eve
   const b = buildTokyoLot(99, 8.6, 8.6, 34, { force: 'screens' });
   const strips = b.boards.filter((bd) => bd.slice);
   assert.ok(strips.length >= 6, `${strips.length} strips`);
-  assert.equal(strips.length % 6, 0);
-  for (let i = 0; i < strips.length; i += 6) {
-    const run = strips.slice(i, i + 6);
-    assert.deepEqual(run.map((q) => q.slice[0]), [0, 1, 2, 3, 4, 5], 'one screen\'s strips, in order');
+  // strips come screen by screen: each run counts 0..n-1 in order and shows one ad
+  for (let i = 0; i < strips.length;) {
+    const n = strips[i].slice[1], run = strips.slice(i, i + n);
+    assert.deepEqual(run.map((q) => q.slice[0]), [...Array(n).keys()], 'one screen\'s strips, in order');
     assert.equal(new Set(run.map((q) => q.tile)).size, 1, 'one ad per screen');
+    i += n;
   }
 });
 

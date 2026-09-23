@@ -130,6 +130,124 @@ export class District {
       if (list) list.push(g); else this.buildingsByBlock.set(g.blockId, [g]);
     }
     this.#infill(data);
+    this.shibuya = this.#carveShibuya(data);
+  }
+
+  /**
+   * The Shibuya corner (2026-09-23, docs/REF-SHIBUYA.md): the Little Tokyo
+   * crossroads nearest the spawn (2354, 1408 in main.js) gets its set pieces
+   * on its four corners -- QFRONT on the biggest, the Shibuhachi screens
+   * diagonally across, the slim sign corner and the ad drum on the other two --
+   * and the vista drum down the street between the screens and the sign
+   * corner. Decided HERE, once, in the footprint data, so everything that
+   * reads buildingsOf() -- the chunk builder, collision, roofsNear, the far
+   * stand-ins -- sees the same plots and the same heights (g.hero, g.heroH).
+   *
+   * Two of the four corners are 99 x 64 m tower plots whose corner is ~30 m
+   * from the crossing: a set piece there takes a corner SQUARE carved out of
+   * the plot (the tower keeps the rest; a filler plot takes the strip beside
+   * the square), so QFRONT stands on the corner and not 40 m back in the
+   * middle of a podium. Pure data; deterministic. `?noshibuya` skips it.
+   */
+  #carveShibuya(data) {
+    if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('noshibuya')) return null;
+    const BUILT = new Set(['row', 'mid', 'tower']);
+    const HEIGHT_OF = { qfront: 46, screens: 44, signstack: 41, addrum: 44, drum: 47 };
+    const nodes = (data.graph?.nodes ?? []).filter((n) => n.kind === 'cross');
+    let node = null, bestD = 150;
+    for (const n of nodes) { const d = Math.hypot(n.x - 2354, n.y - 1408); if (d < bestD) { bestD = d; node = n; } }
+    if (!node) return null;
+    const tokyo = data.blocks.filter((b) => b.district === 'LITTLE TOKYO' && BUILT.has(b.type));
+    const local = (bl, x, z) => { const ca = Math.cos(bl.angle), sa = Math.sin(bl.angle), rx = x - bl.x, rz = z - bl.y; return [rx * ca + rz * sa, -rx * sa + rz * ca]; };
+    const world = (bl, lx, lz) => { const ca = Math.cos(bl.angle), sa = Math.sin(bl.angle); return [bl.x + lx * ca - lz * sa, bl.y + lx * sa + lz * ca]; };
+    // the footprint on each corner: nearest by distance to its RECTANGLE, its centre in that quadrant
+    const corner = [null, null, null, null];
+    for (const bl of tokyo) {
+      const [nx, nz] = local(bl, node.x, node.y);
+      for (const g of this.buildingsOf(bl.id)) {
+        const [wx, wz] = world(bl, g.x + g.w / 2, g.y + g.d / 2), q = (wx < node.x ? 1 : 0) + (wz < node.y ? 2 : 0);
+        const d = Math.hypot(nx - Math.max(g.x, Math.min(nx, g.x + g.w)), nz - Math.max(g.y, Math.min(nz, g.y + g.d)));
+        if (d < 45 && Math.min(g.w, g.d) >= 7 && (!corner[q] || d < corner[q].d)) corner[q] = { bl, g, d, q, nx, nz };
+      }
+    }
+    const live = corner.filter(Boolean);
+    if (!live.length) return null;
+    const big = live.slice().sort((a, b) => b.g.w * b.g.d - a.g.w * a.g.d)[0];
+    for (const c of live) {
+      if (c === big) c.type = 'qfront';
+      else if (c.q === (big.q ^ 3)) c.type = 'screens';
+    }
+    const rest = live.filter((c) => !c.type).sort((a, b) => Math.max(b.g.w, b.g.d) / Math.min(b.g.w, b.g.d) - Math.max(a.g.w, a.g.d) / Math.min(a.g.w, a.g.d));
+    if (rest[0]) rest[0].type = 'signstack';   // the slimmest: the sign corner is a narrow slab
+    if (rest[1]) rest[1].type = 'addrum';
+    const out = { node, plots: [] };
+    const GAP = 1.0;
+    /* A corner square of side S out of footprint g at the corner nearest the
+       node (nx, nz, block-local). The tower keeps the full depth beyond the
+       square along its longer side; the strip beside the square becomes a
+       filler plot. Returns the square (a new footprint in the same list). */
+    const carve = (bl, g, S, nx, nz) => {
+      const list = this.buildingsOf(bl.id);
+      const ex = nx < g.x + g.w / 2 ? -1 : 1, ez = nz < g.y + g.d / 2 ? -1 : 1;   // which end of each axis faces the node
+      const hx0 = ex < 0 ? g.x : g.x + g.w - S, hz0 = ez < 0 ? g.y : g.y + g.d - S;
+      const hero = { blockId: bl.id, block: [bl.x, bl.y], angle: bl.angle, x: hx0, y: hz0, w: S, d: S, type: bl.type, infill: true, carved: true };
+      const alongX = g.w - S >= g.d - S;
+      if (alongX) {
+        // the tower gives up the square's width along x: filler takes the rest of that column
+        const fz0 = ez < 0 ? hz0 + S + GAP : g.y, fd = g.d - S - GAP;
+        if (fd >= 7) list.push({ blockId: bl.id, block: [bl.x, bl.y], angle: bl.angle, x: hx0, y: fz0, w: S, d: fd, type: bl.type, infill: true, carved: true });
+        if (ex < 0) { g.x += S + GAP; } g.w -= S + GAP;
+      } else {
+        const fx0 = ex < 0 ? hx0 + S + GAP : g.x, fw = g.w - S - GAP;
+        if (fw >= 7) list.push({ blockId: bl.id, block: [bl.x, bl.y], angle: bl.angle, x: fx0, y: hz0, w: fw, d: S, type: bl.type, infill: true, carved: true });
+        if (ez < 0) { g.y += S + GAP; } g.d -= S + GAP;
+      }
+      list.push(hero);
+      return hero;
+    };
+    for (const c of live) {
+      const S = c.type === 'qfront' ? 26 : c.type === 'screens' ? 25 : 20;
+      const g = Math.max(c.g.w, c.g.d) > S + 14 ? carve(c.bl, c.g, Math.min(S, c.g.w, c.g.d), c.nx, c.nz) : c.g;
+      g.hero = c.type; g.heroH = HEIGHT_OF[c.type];
+      const [wx, wz] = world(c.bl, g.x + g.w / 2, g.y + g.d / 2);
+      out.plots.push({ type: c.type, x: wx, z: wz, g });
+    }
+    /* The vista drum: down the approach that runs between the screens corner
+       and the sign corner, 90-190 m out, the plot nearest that street's centre
+       line (a corner square out of a big one). */
+    const scr = out.plots.find((p) => p.type === 'screens'), sig = out.plots.find((p) => p.type === 'signstack');
+    if (scr && sig) {
+      let bx = (scr.x + sig.x) / 2 - node.x, bz = (scr.z + sig.z) / 2 - node.y;
+      const bl0 = Math.hypot(bx, bz) || 1; bx /= bl0; bz /= bl0;
+      // snap to the approach edge nearest that bisector
+      let vx = bx, vz = bz, bestDot = -2;
+      for (const e of data.graph.edges ?? []) {
+        const other = e.a === node.id ? e.b : e.b === node.id ? e.a : null;
+        if (other == null) continue;
+        const o = data.graph.nodes.find((n) => n.id === other); if (!o) continue;
+        const ux = o.x - node.x, uz = o.y - node.y, ul = Math.hypot(ux, uz) || 1;
+        const dot = (ux * bx + uz * bz) / ul;
+        if (dot > bestDot) { bestDot = dot; vx = ux / ul; vz = uz / ul; }
+      }
+      let pick = null;
+      for (const bl of tokyo) for (const g of this.buildingsOf(bl.id)) {
+        if (g.hero || Math.min(g.w, g.d) < 9) continue;   // a drum 8.4 m across at the least
+        const [wx, wz] = world(bl, g.x + g.w / 2, g.y + g.d / 2), rx = wx - node.x, rz = wz - node.y;
+        const t = rx * vx + rz * vz, lat = Math.abs(-rx * vz + rz * vx);
+        if (t < 90 || t > 190 || lat > 45) continue;
+        if (!pick || lat < pick.lat) pick = { bl, g, lat, t };
+      }
+      if (pick) {
+        const [cx, cz] = world(pick.bl, 0, 0), ax = node.x + vx * pick.t, az = node.y + vz * pick.t;
+        const [nx, nz] = local(pick.bl, ax, az);
+        const g = Math.max(pick.g.w, pick.g.d) > 26 ? carve(pick.bl, pick.g, 12, nx, nz) : pick.g;
+        g.hero = 'drum'; g.heroH = HEIGHT_OF.drum;
+        const [wx, wz] = world(pick.bl, g.x + g.w / 2, g.y + g.d / 2);
+        out.plots.push({ type: 'drum', x: wx, z: wz, g, along: pick.t, lateral: pick.lat });
+        void cx; void cz;
+      }
+    }
+    return out;
   }
 
   /** Add a road segment dynamically (e.g. race track) and bucket it in the spatial grid. */
@@ -522,17 +640,44 @@ export class District {
       // frontage depth and plot width by block kind
       const depth = bl.type === 'tower' ? 18 : bl.type === 'mid' ? 15 : 11;
       const plot = bl.type === 'tower' ? 16 : bl.type === 'mid' ? 13 : 9;
+      /* A footprint's x/y is its MIN corner in block-local coordinates (the
+         planner's convention; districtWorld places a building at x + w/2).
+         This test and the push below used to read and write CENTRES, so every
+         infill plot landed half its size off the spot it was checked at: 1,123
+         of 1,207 poked out of their block, 110 pairs overlapped, 3 sat wholly
+         inside an authored tower (measured 2026-09-23, scratchpad overlap.mjs)
+         -- the Shibuya corner plot among them. x, y below are centres. */
       const overlaps = (x, y, w, d) => list.some((g) =>
-        Math.abs(g.x - x) < (g.w + w) / 2 + GAP && Math.abs(g.y - y) < (g.d + d) / 2 + GAP);
-      const tryPlace = (x, y, w, d, seedA, seedB) => {
+        Math.abs(g.x + g.w / 2 - x) < (g.w + w) / 2 + GAP && Math.abs(g.y + g.d / 2 - y) < (g.d + d) / 2 + GAP);
+      const place = (x, y, w, d, seedA, seedB) => {
         // shrink a little so a run of plots reads as separate buildings
         const k = 0.86 + hash(seedA, seedB) * 0.12;
         const ww = w * k, dd = d * k;
-        if (Math.abs(x) + ww / 2 > hw - MARGIN || Math.abs(y) + dd / 2 > hh - MARGIN) return;
-        if (overlaps(x, y, ww, dd)) return;
-        list.push({ blockId: bl.id, block: [bl.x, bl.y], angle: bl.angle, x, y, w: ww, d: dd,
+        if (Math.abs(x) + ww / 2 > hw - MARGIN || Math.abs(y) + dd / 2 > hh - MARGIN) return false;
+        if (overlaps(x, y, ww, dd)) return false;
+        list.push({ blockId: bl.id, block: [bl.x, bl.y], angle: bl.angle, x: x - ww / 2, y: y - dd / 2, w: ww, d: dd,
                     type: bl.type, infill: true });
         added++;
+        return true;
+      };
+      /* A slot an authored footprint half blocks still takes a narrower plot
+         beside it: halves, then thirds, along the frontage (never narrower
+         than MIN_W). With the overlap test in the right convention the whole
+         slots alone fill 357 of the old 1,207, so without this the downtown
+         blocks thin out (coverage 0.447 -> 0.398). */
+      const MIN_W = bl.type === 'tower' ? 9 : bl.type === 'mid' ? 7 : 5;
+      const tryPlace = (x, y, w, d, seedA, seedB) => {
+        if (place(x, y, w, d, seedA, seedB)) return;
+        const alongX = w >= d, L = alongX ? w : d;
+        for (const n of [2, 3]) {
+          if (L / n < MIN_W) break;
+          let any = false;
+          for (let i = 0; i < n; i++) {
+            const o = -L / 2 + (L / n) * (i + 0.5);
+            if (place(alongX ? x + o : x, alongX ? y : y + o, alongX ? L / n : w, alongX ? d : L / n, seedA * 7 + n * 13 + i, seedB)) any = true;
+          }
+          if (any) return;
+        }
       };
       // long sides: plots along x, set back `depth` from the top and bottom edges
       const innerW = bl.w - 2 * MARGIN, innerH = bl.h - 2 * MARGIN;

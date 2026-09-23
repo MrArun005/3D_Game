@@ -309,7 +309,8 @@ test('far stand-ins: the ring hides only what a built chunk replaces -- keyed by
     }
   }
   const byOwnCell = at.filter(([px, pz, k]) => kept.has(cellOf(px, pz)) !== k).length;
-  assert.equal(byOwnCell, 35, 'own-cell and block-cell keys disagree for 17 + 18 stand-ins at the clip edge');
+  // 35 (17 + 18) when found; 32 since district.js #infill writes min corners and its plots moved half a plot (2026-09-23)
+  assert.equal(byOwnCell, 32, 'own-cell and block-cell keys disagree for the stand-ins at the clip edge');
   const rnd = mulberry32(5), R = (2 + 0.5) * 256;   // the FULL ring (radius 2)
   let hidden = 0, keptUp = 0;
   for (let k = 0; k < 200; k++) {
