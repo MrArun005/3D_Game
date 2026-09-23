@@ -159,7 +159,13 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
     frustum-culled and hidden groups skipped; every first spark/decal/flash/
     effect compiled mid-game. Warm-up now turns frustumCulled off on dummies
     and un-hidden meshes (restored after), shows the police heli's hidden
-    group, and warms one tank + one civil heli. (2) `district.nearestRoad`
+    group, and warms one tank + one civil heli. It was ALSO gated on the boot
+    overlay (`if (boot && ...)`), which the 12 s stuck-boot guard nulls: a
+    slow boot never warmed at all. Measured by counting WebGL program links
+    in a headless boot (`scratchpad/links.mjs` recipe): the first tank
+    dispatch compiled 373 programs and the police heli's arrival at 3 stars
+    377 in the old build -- 0 and 0 now (the warm-up compiles 1355 up
+    front). (2) `district.nearestRoad`
     (under roadDepth: crowd, car, camera, traffic, every frame) built nine
     template-string grid keys per call -- numeric `gridKey` now, squared
     distances, no result object; crowd steady state 0.556 -> 0.151 ms/frame

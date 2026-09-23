@@ -188,6 +188,9 @@ export class TankVehicle extends Vehicle {
     this.#updateProjectiles(dt);
   }
 
+  /** The feature tour's name for it (featureTour.js calls `tankRef.fireCannon?.()`, which found nothing): fire if loaded. */
+  fireCannon() { if (this.reloadTime <= 0) this.fire(); }
+
   fire() {
     this.reloadTime = this.reloadCooldown;
     this.recoil = 1.0;
