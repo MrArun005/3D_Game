@@ -17,7 +17,8 @@ import { loadTerraces, terraceFor, TERRACES } from './terraceModels.js';
 import { loadIndustrial, industrialYard, INDUSTRIAL } from './industrialYard.js';
 import { tokyoCell, tokyoBoardMesh } from './tokyoSigns.js';
 import { buildDecals, decalMaterial, decalGeometry } from './decals.js';
-import { buildGlare, setGlareRing } from './glare.js';
+import { buildGlare, setGlareRing, setGlareClip } from './glare.js';
+import { keptCellSet, wallProps, ringHides } from './playArea.js';
 import { buildSpan, signatureBridge } from './spans.js';
 import { skirtFoot } from './district.js';
 import { styleFor, buildArt, artMaterial, ART_CAP } from './artBuildings.js';
@@ -145,8 +146,27 @@ export class DistrictWorld {
        styles never matched (see terraceModels.js). Async like the towers:
        until it lands those plots build as they always did. */
     this.terraces = null;
-    loadTerraces().then((m) => { this.terraces = m.size ? m : null; })
-      .catch((e) => console.warn('terraces:', e?.message ?? e));
+    /* THE COMPACT CITY (2026-09-23, world/playArea.js). `opts.keep` is a
+       predicate (x, z) => bool: only the 256 m cells it accepts (centre or a
+       corner, the #cellTouches sample) are ever built -- the city plus a 128 m
+       margin, 50 of the map's 204 cells (73 with the raceway island). Unlike
+       `only`, the far-city LOD is still built whole: it is the view across the
+       river, and #cullFar / the far glare keep their stand-ins up wherever a
+       cell will never be built, so the edge of the detail ring has no holes.
+       `opts.liftClip` () => bool lifts the clip while it answers true (photo
+       mode flies the camera anywhere; main passes `photo.on`). */
+    this.keep = typeof opts.keep === 'function' ? opts.keep : null;
+    this.keptCells = this.keep ? keptCellSet(this.keep, district.bounds, CHUNK) : null;
+    this.liftClip = typeof opts.liftClip === 'function' ? opts.liftClip : null;
+    this.clipLifted = false;
+    /* The terraces are for Marrow Hill, Ashmoor and Vellery Row: fetched only
+       if a block of theirs stands in a cell that will be built, or on the
+       first lift of the clip (photo mode). None of the three is INSIDE the
+       compact city, but four Vellery Row blocks stand in its SW margin cells,
+       so today they still load -- a built chunk looks the same in either map;
+       the gate pays off for any tighter clip. */
+    this.terracesAsked = false;
+    if (!this.keptCells || district.blocks.some((b) => TERRACES[b.district] && this.#cellKept(b.x, b.y))) this.#loadTerraces();
     /* The five industrial modules. Steelgate, Northline and Harbour Point were
        building on 15-16% of their plots because warehouse caps at 44x40 m and
        those yards run to 197x101; these lay a whole compound out instead. */
@@ -188,7 +208,12 @@ export class DistrictWorld {
     this.parkedLod = new Map();        // chunk key -> { near, far, byBody } parked-car LOD sets (#cullFar swaps them; #buildSteps sets, releaseChunk deletes). Dropped by the lite/radius constructor edit in 22c1c0c and every chunk build died on .set -- keep it.
     this.isLite = !!opts.lite;
     this.propRadius = opts.lite ? 1 : (opts.propRadius ?? 2);
-    this.nodeById = new Map(district.graph.nodes.map((n) => [n.id, n]));
+    /* The WHOLE road graph, always. In the compact city (world/playArea.js)
+       district.graph is the clipped gameplay graph; kerbs, markings, signals
+       and gantries are drawn from fullGraph, or the inside half of every exit
+       edge -- and the outside streets in the edge chunks -- lose them. */
+    this.graph = district.fullGraph ?? district.graph;
+    this.nodeById = new Map(this.graph.nodes.map((n) => [n.id, n]));
     this.radius = opts.lite ? 1 : (opts.radius ?? 2);   // 3x3 in LITE (9 chunks = 768m) or 5x5 in FULL (25 chunks = 1.28km)
 
     /* RACE MODE (2026-09-16): `opts.only` is a predicate (x, z) => bool. When
@@ -217,7 +242,7 @@ export class DistrictWorld {
        segment is just a polyline vertex pair and has no idea a crossroads is
        halfway along it. */
     this.edgeByChunk = new Map();
-    district.graph.edges.forEach((e, i) => {
+    this.graph.edges.forEach((e, i) => {
       const p = e.points[Math.floor(e.points.length / 2)];
       const k = ck(Math.floor(p[0] / CHUNK), Math.floor(p[1] / CHUNK));
       (this.edgeByChunk.get(k) ?? this.edgeByChunk.set(k, []).get(k)).push(i);
@@ -228,6 +253,35 @@ export class DistrictWorld {
       const k = ck(Math.floor(bl.x / CHUNK), Math.floor(bl.y / CHUNK));
       (this.blkByChunk.get(k) ?? this.blkByChunk.set(k, []).get(k)).push(bl);
     });
+
+    /* The compact city's edge, dressed (world/playArea.js wallProps): jersey
+       barriers across every road and deck that leaves the city, timber
+       hoarding across open ground -- 636 + 532 authored props on 21 chunks,
+       walked once here (~37 ms cold in node, behind the loading screen) and
+       bucketed like segByChunk; #buildSteps drops each chunk's share into its
+       own dressing batch, so they merge into materials that chunk already
+       draws. `opts.wallProps === false` leaves the edge bare. */
+    this.wallByChunk = null;
+    if (district.play && this.catalogue && opts.wallProps !== false) {
+      this.wallByChunk = new Map();
+      for (const p of wallProps(district, district.play)) {
+        const k = ck(Math.floor(p.x / CHUNK), Math.floor(p.z / CHUNK));
+        (this.wallByChunk.get(k) ?? this.wallByChunk.set(k, []).get(k)).push(p);
+      }
+    }
+  }
+
+  /** Fetch the authored terraces, once (see the constructor for when). */
+  #loadTerraces() {
+    if (this.terracesAsked) return;
+    this.terracesAsked = true;
+    loadTerraces().then((m) => { this.terraces = m.size ? m : null; })
+      .catch((e) => console.warn('terraces:', e?.message ?? e));
+  }
+
+  /** Will the chunk under (x, z) ever be built? Always, without a keep predicate. */
+  #cellKept(x, z) {
+    return !this.keptCells || this.keptCells.has(ck(Math.floor(x / CHUNK), Math.floor(z / CHUNK)));
   }
 
   /**
@@ -245,7 +299,7 @@ export class DistrictWorld {
     let n = this.nodeDegreeById.get(nodeId);
     if (n !== undefined) return n;
     n = 0;
-    for (const e of this.district.graph.edges) if (e.a === nodeId || e.b === nodeId) n++;
+    for (const e of this.graph.edges) if (e.a === nodeId || e.b === nodeId) n++;
     this.nodeDegreeById.set(nodeId, n);
     return n;
   }
@@ -255,7 +309,7 @@ export class DistrictWorld {
     let arm = this.gantryArmByNode.get(nodeId);
     if (arm !== undefined) return arm;
     arm = -1;
-    const edges = this.district.graph.edges;
+    const edges = this.graph.edges;
     for (let i = 0; i < edges.length; i++) {
       const e = edges[i];
       if ((e.a !== nodeId && e.b !== nodeId) || e.width <= 26) continue;
@@ -365,6 +419,8 @@ export class DistrictWorld {
        crown as a pale cube sitting on the real building. */
     this.farSolids = solids;
     this.farAt = solids.map((m) => [m.elements[12], m.elements[14]]);
+    // compact city: a stand-in whose cell is never built stays up inside the ring (#cullFar)
+    this.farKept = this.farAt.map(([px, pz]) => this.#cellKept(px, pz));
     this.farMesh = solidMesh;
     this.farHidden = new Set();
     solids.forEach((m, i) => solidMesh.setMatrixAt(i, m));
@@ -396,7 +452,9 @@ export class DistrictWorld {
     /* Every lamp in the district as a glare sprite (GTA's distant-light quads,
        docs/GTA-VISUALS-RESEARCH.md item 2): one instanced draw, night-faded,
        zero-scaled inside the detailed ring where the chunk's own glare sits. */
-    { const fl = buildGlare(farLampHeads(this.district), 17, true); if (fl) { fl.renderOrder = 2; far.add(fl); this.farGlareCount = fl.count; } }
+    /* `kept` per head (compact city): the ring zeroes only heads whose cell
+       will be built, so the lamps of an unbuilt edge cell keep their far glare. */
+    { const fl = buildGlare(farLampHeads(this.district, this.keptCells ? (x, z) => this.#cellKept(x, z) : null), 17, true); if (fl) { fl.renderOrder = 2; far.add(fl); this.farGlareCount = fl.count; } }
 
     this.scene.add(far);
     this.far = far;
@@ -408,9 +466,13 @@ export class DistrictWorld {
     setGlareRing(x, z, R);
     let dirty = false;
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+    const lifted = this.clipLifted;
     for (let i = 0; i < this.farAt.length; i++) {
       const [px, pz] = this.farAt[i];
-      const inside = Math.abs(px - x) < R && Math.abs(pz - z) < R;
+      /* Hidden only where detail will actually stand: in the compact city a
+         ring cell that is never built keeps its stand-in, or the edge of the
+         ring would be a hole in the skyline. */
+      const inside = ringHides(px, pz, x, z, R, this.farKept[i], lifted);
       if (inside === this.farHidden.has(i)) continue;
       if (inside) { this.farHidden.add(i); this.farMesh.setMatrixAt(i, zero); }
       else { this.farHidden.delete(i); this.farMesh.setMatrixAt(i, this.farSolids[i]); }
@@ -435,6 +497,20 @@ export class DistrictWorld {
   update(x, z, vx = 0, vz = 0) {
     const ix = Math.floor(x / CHUNK), iz = Math.floor(z / CHUNK);
     const speed = Math.hypot(vx, vz);
+    /* Compact city: photo mode lifts the clip (every preset still renders),
+       and dropping it again releases whatever it built outside -- below. A
+       change re-runs the far cull and the scan at once. */
+    if (this.keptCells) {
+      const lifted = !!this.liftClip?.();
+      if (lifted !== this.clipLifted) {
+        this.clipLifted = lifted;
+        setGlareClip(lifted);
+        this.lastCull = undefined;
+        this._lastScanIx = undefined;
+        if (lifted) this.#loadTerraces();
+      }
+    }
+    const clipped = this.keptCells && !this.clipLifted;
     if (this.farAt && (this.lastCull === undefined
         || Math.abs(x - this.lastCull[0]) > 48 || Math.abs(z - this.lastCull[1]) > 48)) {
       this.#cullFar(x, z);
@@ -459,6 +535,7 @@ export class DistrictWorld {
           const k = ck(ix + dx, iz + dz);
           if (this.chunks.has(k) || this.pending.has(k)) continue;
           if (this.only && !this.#cellTouches(ix + dx, iz + dz)) continue;   // race mode: outside the raceway, never built
+          if (clipped && !this.keptCells.has(k)) continue;                    // compact city: beyond the city + 128 m, never built
           const d2 = dx * dx + dz * dz;
           // Chunks ahead in velocity vector get higher priority (lower effective d)
           const dotAhead = hasVel ? (dx * normVx + dz * normVz) : 0;
@@ -488,7 +565,7 @@ export class DistrictWorld {
         if (!w) break;
         // it may have gone out of range while it sat in the queue
         const maxR = wasPrimed ? this.radius + 1 : this.radius;
-        if (Math.abs(w.cx - ix) > maxR || Math.abs(w.cz - iz) > maxR) {
+        if (Math.abs(w.cx - ix) > maxR || Math.abs(w.cz - iz) > maxR || (clipped && !this.keptCells.has(w.k))) {
           this.pending.delete(w.k);
           continue;
         }
@@ -532,7 +609,7 @@ export class DistrictWorld {
     if (this.building) {
       const b = this.building;
       const maxAbandonR = (wasPrimed && speed < 1.0) ? this.radius + 1 : this.radius;
-      if (Math.abs(b.cx - ix) > maxAbandonR || Math.abs(b.cz - iz) > maxAbandonR) {
+      if (Math.abs(b.cx - ix) > maxAbandonR || Math.abs(b.cz - iz) > maxAbandonR || (clipped && !this.keptCells.has(b.k))) {
         b.group.traverse((o) => {
           if (o.userData?.batched) this.catalogue.releaseBatched(o.userData.batched);
           if (!o.isMesh) return;
@@ -622,7 +699,10 @@ export class DistrictWorld {
     const maxReleaseR = (this.primed && speed < 1.0) ? this.radius + 1 : this.radius;
     for (const [k, g] of [...this.chunks]) {
       const [a, b] = k.split(',').map(Number);
-      if (Math.abs(a - ix) > maxReleaseR || Math.abs(b - iz) > maxReleaseR) {
+      /* ...and, in the compact city, a chunk photo mode built outside the
+         clip goes the moment the clip is back: left standing, #cullFar would
+         raise the far stand-ins through it (the pale-cube overlap). */
+      if (Math.abs(a - ix) > maxReleaseR || Math.abs(b - iz) > maxReleaseR || (clipped && !this.keptCells.has(k))) {
         this.scene.remove(g);
         /* Only geometry this chunk built. The old sweep disposed shared
            assets.geo.* buffers that 24 other live chunks were still drawing
@@ -904,7 +984,7 @@ export class DistrictWorld {
     };
 
     for (const ei of edgeIds) {
-      const e = this.district.graph.edges[ei];
+      const e = this.graph.edges[ei];
       if (e.class === 'freeway' || e.class === 'ramp') continue;
       const half = e.width / 2;
       /* The file says lanes:2 on a 34m carriageway, which would put the lane
@@ -1110,7 +1190,7 @@ export class DistrictWorld {
     };
 
     for (const ei of edgeIds) {
-      const e = this.district.graph.edges[ei];
+      const e = this.graph.edges[ei];
       if (e.class === 'freeway' || e.class === 'ramp') continue;
       for (const end of [e.a, e.b]) {
         const node = this.nodeById.get(end);   // 1789 nodes; a scan per approach is not free
@@ -1987,6 +2067,8 @@ export class DistrictWorld {
         blocks, district: this.district, solids: solidParked, pools: dressPools,
         heads: dressHeads,
       });
+      // the compact city's barriers and hoarding, when this chunk carries part of its edge
+      for (const p of this.wallByChunk?.get(k) ?? []) batch.add(p.name, placeAsset(p.x, p.y, p.z, p.yaw));
       // emissive caps on the authored lamps, so the heads bloom at night
       for (const hd of dressHeads) heads.push(mat4(hd.x, hd.y, hd.z, -hd.yaw, 1, 1, 1));
       // lamp-head positions for game/lighting.js: the pool of real lights follows the nearest

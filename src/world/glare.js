@@ -21,6 +21,14 @@ export function setGlareNight(k) { glareNight.value = Math.max(0, Math.min(1, k)
    chunk there carries its own (depth-pulled) glare on the real lamp head. */
 const ringCentre = uniform(vec3(0, 0, 0)), ringR = uniform(1e9);
 export function setGlareRing(x, z, r) { ringCentre.value.set(x, 0, z); ringR.value = r; }
+/* The compact city (world/playArea.js) never builds the cells beyond its
+   margin, so a far head there has no chunk glare to hand over to: each far
+   head carries `kept` (1 = its cell gets built) and only kept heads collapse
+   inside the ring. Photo mode lifts the clip -- every cell may build -- and
+   this uniform says so. A uniform, not a rebuild: the far sprite is one draw
+   for the whole map and must never change count (see districtWorld). */
+const clipLift = uniform(0);
+export function setGlareClip(lifted) { clipLift.value = lifted ? 1 : 0; }
 
 let TEX = null;
 
@@ -50,7 +58,7 @@ function streakTexture() {
   return t;
 }
 
-function glareMaterial(posAttr, colAttr, phAttr, far = false, scAttr = null) {
+function glareMaterial(posAttr, colAttr, phAttr, far = false, scAttr = null, keptAttr = null) {
   TEX ??= streakTexture();
   const m = new THREE.SpriteNodeMaterial({
     transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, fog: false,
@@ -61,7 +69,8 @@ function glareMaterial(posAttr, colAttr, phAttr, far = false, scAttr = null) {
        own sprite takes over, so these scale to zero there (a uniform, no matrix
        rewrites -- unlike #cullFar's stand-ins). No depth pull: no head to hide in. */
     const d = pos.sub(ringCentre);
-    const inside = max(abs(d.x), abs(d.z)).lessThan(ringR);
+    let inside = max(abs(d.x), abs(d.z)).lessThan(ringR);
+    if (keptAttr) inside = inside.and(instancedBufferAttribute(keptAttr).greaterThan(0.5).or(clipLift.greaterThan(0.5)));
     m.positionNode = pos;
     m.scaleNode = select(inside, vec2(0), vec2(1.6));
   } else {
@@ -111,7 +120,10 @@ export function buildGlare(heads, seed = 1, far = false) {
   });
   const posAttr = new THREE.InstancedBufferAttribute(pos, 3), colAttr = new THREE.InstancedBufferAttribute(col, 3), phAttr = new THREE.InstancedBufferAttribute(ph, 1);
   const scAttr = far ? null : new THREE.InstancedBufferAttribute(sc, 1);
-  const sp = new THREE.Sprite(glareMaterial(posAttr, colAttr, phAttr, far, scAttr));
+  // far heads that say whether their cell is ever built (compact city); absent = all kept, the old shader
+  const keptAttr = far && heads.some((h) => h.kept === 0)
+    ? new THREE.InstancedBufferAttribute(Float32Array.from(heads, (h) => (h.kept === 0 ? 0 : 1)), 1) : null;
+  const sp = new THREE.Sprite(glareMaterial(posAttr, colAttr, phAttr, far, scAttr, keptAttr));
   sp.count = n;
   sp.frustumCulled = false;      // bundle contents are culled as a chunk
   sp.renderOrder = 3;

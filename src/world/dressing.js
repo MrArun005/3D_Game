@@ -208,7 +208,7 @@ function oldQuarterClusters(batch, s, L, ux, uz, nx, nz, district, solids) {
    into an O(props x nodes) walk. */
 let _nodeGrid = null, _nodeGridFor = null;
 function nearJunction(district, x, z, r) {
-  const nodes = district?.graph?.nodes;
+  const nodes = (district?.fullGraph ?? district?.graph)?.nodes;   // every junction, not the compact city's gameplay graph (world/playArea.js)
   if (!nodes) return false;
   if (_nodeGridFor !== nodes) {
     _nodeGrid = new Map();
@@ -876,7 +876,7 @@ export function dressFacades(batch, boxes, district, roadNear, signs = null, win
  * where the real lamp will stand when its chunk streams in. Cheap: pure
  * arithmetic over the segment list, run once at load.
  */
-export function farLampHeads(district) {
+export function farLampHeads(district, keptAt = null) {
   const out = [];
   for (const s of district.segments) {
     if (s.cls === 'freeway' || s.cls === 'ramp') continue;
@@ -898,7 +898,10 @@ export function farLampHeads(district) {
         if (district.tarmacDepth(px, pz) <= 0.2) continue;
         const yaw = Math.atan2(nx * -side, nz * -side);
         const y = KERB_H + district.elevationAt(px, pz);
-        out.push({ x: px + Math.sin(yaw) * reach, y: y + h, z: pz + Math.cos(yaw) * reach });
+        const hx = px + Math.sin(yaw) * reach, hz = pz + Math.cos(yaw) * reach;
+        /* `keptAt` (compact city): does this head's chunk ever build? 0 keeps
+           its far glare lit inside the detail ring (world/glare.js). */
+        out.push(keptAt ? { x: hx, y: y + h, z: hz, kept: keptAt(hx, hz) ? 1 : 0 } : { x: hx, y: y + h, z: hz });
       }
     }
   }

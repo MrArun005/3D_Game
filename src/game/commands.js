@@ -121,7 +121,15 @@ export class CommandEngine {
       case 'teleport': {
         const targetKey = (args[0] || '').toLowerCase();
         const spot = LANDMARKS[targetKey];
-        if (spot) {
+        /* The compact city (world/playArea.js): harbour, bridge, airport, north,
+           marrow and steelgate all stand outside its wall, and a teleport there
+           would only be pushed straight back. `wall` is the city plus the
+           raceway island, so downtown, tokyo and track still go. */
+        const wall = this.ctx.world?.district?.wall;
+        if (spot && wall && !wall.contains(spot.x, spot.z)) {
+          chat.post('SYSTEM', `${spot.name} is outside the compact city. Reload with ?fullmap for the whole bay.`);
+          this.ctx.hud?.flash?.('OUTSIDE THE COMPACT CITY · ?fullmap');
+        } else if (spot) {
           this.ctx.teleport(spot.x, spot.z, spot.yaw);
           chat.post('SYSTEM', `Teleported to ${spot.name}.`);
         } else {

@@ -28,6 +28,11 @@ export class StreetLife {
     console.info('streetLife: 4 draws (steam, hydrants instanced, geyser, debris)');
   }
 
+  /* In the compact city (world/playArea.js) the first roads in file order run
+     mostly outside the wall, so every pick is taken from inside it instead;
+     with the whole bay, anywhere. */
+  #inCity = (x, z) => !this.district?.play || this.district.play.contains(x, z);
+
   #buildManholeSteam() {
     // 16 manhole locations around main roads
     const STEAM_COUNT = 80;
@@ -71,12 +76,14 @@ export class StreetLife {
 
     // Pick 12 manhole centers
     const roads = this.district?.data?.roads || [];
+    const inCity = this.#inCity;
     let count = 0;
     for (const r of roads) {
       if (!r.points || r.points.length < 2) continue;
       for (let i = 0; i < r.points.length - 1; i += 3) {
         if (count >= 12) break;
         const p = r.points[i];
+        if (!inCity(p[0] + 1.2, p[1] + 1.2)) continue;   // the compact city: 5 of the 12 fell outside its wall
         this.manholes.push({ x: p[0] + 1.2, z: p[1] + 1.2 });
         count++;
       }
@@ -109,6 +116,7 @@ export class StreetLife {
         // Place on pavement curb edge
         const cx = (p1[0] + p2[0]) / 2 + nx * (r.width / 2 + 0.8);
         const cz = (p1[1] + p2[1]) / 2 + nz * (r.width / 2 + 0.8);
+        if (!this.#inCity(cx, cz)) continue;   // the compact city: 11 of the 24 fell outside its wall
         spots.push({ x: cx, z: cz });
       }
     }

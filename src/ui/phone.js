@@ -398,7 +398,10 @@ export class Phone {
         }
         this.toggle(false);
       };
-      this.content.appendChild(bridgeCard);
+      /* Not in the compact city (world/playArea.js): the lift bridge is 335 m
+         past its wall, so WARP would be pushed back and GPS has no road there.
+         ?fullmap brings the card back. */
+      if (!(typeof window !== 'undefined' && window.district?.play)) this.content.appendChild(bridgeCard);
 
       // Shooting range and hold-out (game/modes.js). window.__modes is set by main
       // once the scene exists; the cards read the player's position from onFoot/car.

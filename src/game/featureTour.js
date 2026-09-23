@@ -84,6 +84,7 @@ export class FeatureTour {
       },
       {
         id: 'bridge_physics',
+        fullMap: true,   // the lift bridge is outside the compact city (world/playArea.js): start() skips this scene there
         badge: 'SCENE 4 / 8',
         title: '🌉 HALSTEAD LIFT BRIDGE · ELEVATED PHYSICS & PARAPETS',
         desc: 'Continuous 7.6m river deck, smooth 62m approach ramp & solid collision parapet walls',
@@ -214,6 +215,13 @@ export class FeatureTour {
 
   start() {
     if (this.active) return;
+    /* The compact city (world/playArea.js) has no lift bridge: the scene that
+       warps there is skipped and the rest run as they are (every other warp is
+       Little Tokyo). ctx.compact wins; otherwise the loaded district says. Record
+       the full eight with ?fullmap. */
+    this.allStages ??= this.stages;
+    const compact = this.ctx.compact ?? (typeof window !== 'undefined' && !!window.district?.play);
+    this.stages = compact ? this.allStages.filter((s) => !s.fullMap) : this.allStages;
     this.active = true;
     this.stageIdx = 0;
     this.stageTime = 0;

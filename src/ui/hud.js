@@ -13,6 +13,27 @@ const FLASH_DEDUP_MS = 2500;
    a per-frame countdown fills the queue and the screen runs seconds behind. */
 const flashKey = (t) => t.replace(/[\d.,]+/g, '#');
 
+/**
+ * The big map's one transform, world metres -> canvas pixels: px = ox + x * sc,
+ * pz = oz + z * sc, the box `b` ({x0, z0, x1, z1}) fitted under the title bar.
+ * The whole bay is b = (0, 0, w, h) -- the old transform exactly; the compact
+ * city (world/playArea.js) passes its own box and the map zooms ~2x onto it.
+ * Pure, so the click-to-waypoint inverse can be tested against it.
+ */
+export function mapTransform(elW, elH, b) {
+  const PAD_X = 26, PAD_TOP = 54, PAD_BOT = 26;      // room for the title bar
+  const bw = b.x1 - b.x0, bh = b.z1 - b.z0;
+  const sc = Math.min((elW - PAD_X * 2) / bw, (elH - PAD_TOP - PAD_BOT) / bh);
+  return {
+    sc,
+    ox: (elW - bw * sc) / 2 - b.x0 * sc,
+    oz: PAD_TOP + (elH - PAD_TOP - PAD_BOT - bh * sc) / 2 - b.z0 * sc,
+  };
+}
+/* The compact city's box on the big map: its outline's own box plus 60 m, so
+   the wall and the bridges it cuts read as an edge, not as the canvas border. */
+const PLAY_MARGIN = 60;
+
 export class Hud {
   constructor() {
     this.dials = document.getElementById('dials').getContext('2d');
@@ -269,10 +290,11 @@ export class Hud {
 
   /** One transform for the whole map, so a click maps back to the same metres. */
   #mapTransform() {
-    const el = this.mapEl, b = this.district.bounds;
-    const PAD_X = 26, PAD_TOP = 54, PAD_BOT = 26;      // room for the title bar
-    const sc = Math.min((el.width - PAD_X * 2) / b.w, (el.height - PAD_TOP - PAD_BOT) / b.h);
-    return { sc, ox: (el.width - b.w * sc) / 2, oz: PAD_TOP + (el.height - PAD_TOP - PAD_BOT - b.h * sc) / 2 };
+    const el = this.mapEl, pb = this.district.playBounds, b = this.district.bounds;
+    const box = pb
+      ? { x0: pb.x0 - PLAY_MARGIN, z0: pb.z0 - PLAY_MARGIN, x1: pb.x1 + PLAY_MARGIN, z1: pb.z1 + PLAY_MARGIN }
+      : { x0: 0, z0: 0, x1: b.w, z1: b.h };
+    return mapTransform(el.width, el.height, box);
   }
 
   /** The static half of the map: ground, blocks, roads, labels, places, legend.
@@ -354,6 +376,23 @@ export class Hud {
       }
     }
 
+    /* The compact city (world/playArea.js): everything past its wall is dimmed
+       and the wall itself is a dashed amber line -- the barriers and hoarding
+       the car stops at. Even-odd: the canvas rectangle minus the polygon. */
+    const play = this.district.play;
+    if (play) {
+      g.save();
+      g.beginPath();
+      g.rect(0, 0, W, H);
+      for (const ring of play.rings) { ring.forEach(([x, z], i) => (i ? g.lineTo(X(x), Z(z)) : g.moveTo(X(x), Z(z)))); g.closePath(); }
+      g.fillStyle = 'rgba(10,13,19,0.7)';
+      g.fill('evenodd');
+      g.beginPath();
+      for (const ring of play.rings) { ring.forEach(([x, z], i) => (i ? g.lineTo(X(x), Z(z)) : g.moveTo(X(x), Z(z)))); g.closePath(); }
+      g.setLineDash([10, 7]); g.strokeStyle = 'rgba(255,176,32,0.9)'; g.lineWidth = 2; g.stroke();
+      g.restore();
+    }
+
     // district names, letterspaced, over a soft plate so they read on any block
     g.textAlign = 'center'; g.textBaseline = 'middle';
     for (const [name, c] of Object.entries(this.districtCentres())) {
@@ -370,9 +409,12 @@ export class Hud {
     // title bar and scale
     g.textAlign = 'left'; g.textBaseline = 'middle';
     g.fillStyle = '#e6edf7'; g.font = '700 15px ui-sans-serif,system-ui,sans-serif';
-    g.fillText('H A L S T E A D   B A Y', 26, 28);
+    const title = play ? 'K I N G S W A Y   ·   L I T T L E   T O K Y O' : 'H A L S T E A D   B A Y';
+    g.fillText(title, 26, 28);
+    const titleW = g.measureText(title).width;
     g.fillStyle = 'rgba(150,168,192,0.75)'; g.font = '11px ui-monospace,Menlo,monospace';
-    g.fillText('click anywhere to set a GPS waypoint  ·  TAB to close', 250, 29);
+    g.fillText(play ? 'click to set a GPS waypoint  ·  TAB to close  ·  ?fullmap for the whole bay' : 'click anywhere to set a GPS waypoint  ·  TAB to close',
+      Math.max(250, 26 + titleW + 24), 29);
     const barM = 500, barPx = barM * sc;
     const bx = W - 26 - barPx, by = H - 26;
     g.strokeStyle = 'rgba(190,205,225,0.8)'; g.lineWidth = 1.5;
@@ -465,6 +507,7 @@ export class Hud {
       ['rgba(255,255,255,0.7)', 'line', 'Search area when they lost you'],
       ['rgba(255,64,180,0.6)', 'dot', 'Little Tokyo'],
     ];
+    if (this.district?.play) items.push(['rgba(255,176,32,0.9)', 'line', 'Road closed (?fullmap: whole bay)']);
     const w = 250, h = 30 + items.length * 20, x = W - w - 26, y = H - h - 26;
     g.fillStyle = 'rgba(9,12,18,0.9)'; g.fillRect(x, y, w, h);
     g.strokeStyle = 'rgba(120,140,170,0.28)'; g.lineWidth = 1; g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
@@ -615,6 +658,19 @@ export class Hud {
   }
   /** Cash and the current job, first line of the mission drawer (jobs.js). */
   setJob(text) { this.jobLine = text; }
+
+  /**
+   * The compact city's soft wall answering (main.js, world/playArea.js
+   * holdInside): one line, at most every 4 s however long you lean on it --
+   * flash()'s own 2.5 s de-dup would re-post it every few seconds of a slide
+   * along the barrier.
+   */
+  roadClosed(text = 'ROAD CLOSED · ?fullmap FOR THE WHOLE BAY') {
+    const now = performance.now();
+    if (now - (this._roadClosedAt ?? -Infinity) < 4000) return;
+    this._roadClosedAt = now;
+    this.flash(text);
+  }
 
   /** The place line: "OLD QUARTER · 15:30 · AFTERNOON", top centre, always on (2026-09-10). */
   setPlace(text) {
@@ -1005,6 +1061,20 @@ export class Hud {
         g.lineTo((seg.bx - car.x) * SC, (seg.bz - car.z) * SC);
       }
       g.stroke();
+      /* The compact city's wall (world/playArea.js), dashed amber as on the
+         big map: five segments, so no culling -- the canvas clips the rest. */
+      const play = this.district.play;
+      if (play) {
+        g.save();
+        g.setLineDash([7, 5]); g.strokeStyle = 'rgba(255,176,32,0.85)'; g.lineWidth = 2;
+        g.beginPath();
+        for (const ring of play.rings) {
+          ring.forEach(([x, z], i) => (i ? g.lineTo((x - car.x) * SC, (z - car.z) * SC) : g.moveTo((x - car.x) * SC, (z - car.z) * SC)));
+          g.closePath();
+        }
+        g.stroke();
+        g.restore();
+      }
     } else {
       g.strokeStyle = 'rgba(140,162,190,0.28)';
       g.lineWidth = CELL * SC * 0.2;

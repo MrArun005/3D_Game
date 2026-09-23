@@ -1,3 +1,5 @@
+import { remapMission } from '../world/playArea.js';
+
 export const STORY_MISSIONS = [
   {
     id: 'heist_1',
@@ -105,12 +107,24 @@ export class StoryManager {
 
     this.active = null;
     this.stepIdx = 0;
+    this.area = null;    // the compact city (world/playArea.js), set by useArea
+    this.nodes = null;
   }
+
+  /**
+   * The compact city: 15 of the 22 step targets above stand outside its wall
+   * (the Harbour Point depot alone is 393 m out). Each mission then runs on a
+   * copy whose outside targets are moved to the nearest junction >= 60 m
+   * inside, 150 m clear of the step before (world/playArea.js remapMission);
+   * this table is never edited, so ?fullmap plays the originals. `nodes` is
+   * the compact gameplay graph's.
+   */
+  useArea(area, nodes) { this.area = area; this.nodes = nodes; }
 
   startMission(missionId, car) {
     const def = STORY_MISSIONS.find((m) => m.id === missionId);
     if (!def) return false;
-    this.active = def;
+    this.active = this.area && this.nodes ? remapMission(def, this.area, this.nodes) : def;
     this.stepIdx = 0;
     this.#advanceStep(car);
     if (this.hud?.flash) {

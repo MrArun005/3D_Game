@@ -369,7 +369,7 @@ export function buildDecals(segments, district, seed = 0, opts = {}) {
      end is usually just a polyline joint mid-block (measured: zero of the 55
      segments around a downtown chunk ended at one). Seeded by node id, so a
      junction on a chunk seam belongs to exactly one chunk. */
-  for (const nd of district.graph?.nodes ?? []) {
+  for (const nd of (district.fullGraph ?? district.graph)?.nodes ?? []) {   // the whole graph: the compact city clips district.graph to gameplay
     if (matrices.length >= max) break;
     if (nd.kind !== 'cross' && nd.kind !== 'tee') continue;
     if (!jb) break;
