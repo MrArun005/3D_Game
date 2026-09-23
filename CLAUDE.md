@@ -16,6 +16,12 @@ on-foot mode, police, traffic, pedestrians, a helicopter, checkpoint missions.
 **Constraint: everything must be free.** Free tools, free/CC0 assets, or
 authored by me. No paid licences anywhere in the pipeline.
 
+## Talking to Arun
+
+- **Times are in IST (UTC+5:30)** -- every ETA, timestamp and "done at" in a
+  reply, unless he asks for another zone. The cloud container runs on UTC:
+  convert (`TZ=Asia/Kolkata date`) before quoting a clock time.
+
 ## Hard rules
 
 1. **Never regress frame rate to buy fidelity.** 60fps at 1440x860 is the floor.
