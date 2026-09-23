@@ -147,7 +147,11 @@ export class Garage {
     if (!this.browsing || c.file === this.fitted) {
       // a stolen body: the only thing N does with it is sell it, and only at the chop shop
       if (!this.owned.has(this.fitted)) {
-        const at = this.where?.();
+        /* Measured from the car being sold. `where` was never assigned anywhere
+           (22c1c0c), so `at` was always undefined, d Infinity, and no chop shop
+           ever bought a car: "... AT STEELGATE CHOP SHOP (Infinity m)". `where`
+           stays an override; the default is the hero car the garage fits. */
+        const at = this.where?.() ?? this.car;
         const chop = this.chop ?? CHOP_SHOP;   // the compact city's own, when main set one
         const d = at ? Math.hypot(at.x - chop.x, at.z - chop.z) : Infinity;
         const rep = (typeof window !== 'undefined') ? window._reputation : null;

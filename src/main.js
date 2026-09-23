@@ -36,7 +36,7 @@ import { mergeDrive } from './game/input.js';
 import { City, releaseCell } from './world/city.js';
 import { DistrictWorld } from './world/districtWorld.js';
 import { loadDistrict } from './world/district.js';
-import { pickMapMode, MAP_KEY, COMPACT_POLY, holdInside } from './world/playArea.js';
+import { pickMapMode, MAP_KEY, COMPACT_POLY, holdInside, heliInset } from './world/playArea.js';
 import { buildSurrounds } from './world/surrounds.js';
 import { buildWater } from './world/water.js';
 import { buildPlaces } from './world/places.js';
@@ -1773,7 +1773,12 @@ const warpTo = (x, z, yaw = 0) => {
      a debug __warp, a tour recorded for the whole bay -- lands on the nearest
      junction inside and says why; the soft wall would only push it back from
      a spot with nothing built round it. The raceway island is inside
-     district.wall; photo mode moves only its own camera. */
+     district.wall; photo mode moves only its own camera. Before the district
+     lands there is no wall to clamp against, and a harbour warp in the first
+     seconds was then dragged, in one physics step, to the outline -- mid-river
+     on the west side -- so a compact boot refuses until the city is in, as
+     startHalsteadMile and startCircuitRace do. */
+  if (COMPACT && !districtRef && !photo?.on) { hud.flash('CITY STILL LOADING'); return; }
   const wallA = districtRef?.wall;
   if (wallA && !photo?.on && !wallA.contains(x, z)) {
     let best = null, bd = Infinity;
@@ -2305,9 +2310,13 @@ function frameBody() {
   /* The compact city's soft wall (world/playArea.js holdInside), whatever you
      are in: pushed back to the inset, the outward speed taken off, no damage,
      no shake, no star. district.wall is the city plus the raceway island and
-     null under ?fullmap; a circuit race suspends it. Frame scope: the on-foot,
-     tank and helicopter branches below and the car's physics steps read it. */
-  const wall = districtRef?.wall && (raceCircuit?.state ?? 'idle') === 'idle' ? districtRef.wall : null;
+     null under ?fullmap. It stays ON through a circuit race: every point of
+     the track surface is >= 27 m inside the island's outline (tested), and
+     suspending it on raceCircuit.state switched it off for the session --
+     the state rests at 'finished' after a race, never 'idle' again. Frame
+     scope: the on-foot, tank and helicopter branches below and the car's
+     physics steps read it. */
+  const wall = districtRef?.wall ?? null;
 
   // ---- controls ----
   let c = null;   // this frame's input snapshot; null in film mode (the camera block below reads it)
@@ -2345,12 +2354,13 @@ function frameBody() {
   if (!started && (c.throttle > 0.08 || c.brake > 0.25 || Math.abs(c.steer) > 0.3)) start();
   if (activeVehicle && activeVehicle.type === 'helicopter') {
     activeVehicle.update(c, dt, { keys: input.keys });
-    // the helicopter may hover up to 150 m past the wall (over the river), no further
-    if (wall && holdInside(activeVehicle, wall, -150)) hud.roadClosed('RESTRICTED AIRSPACE · ?fullmap FOR THE WHOLE BAY');
+    /* the helicopter may range up to 150 m past the wall (over the river) up high, and is back
+       inside by the time it is low enough to step out of -- so every exit lands inside (heliInset) */
+    if (wall && holdInside(activeVehicle, wall, heliInset(activeVehicle.altitudeAboveGround), dt)) hud.roadClosed('RESTRICTED AIRSPACE · ?fullmap FOR THE WHOLE BAY');
     car.throttle = 0; car.brake = 1; car.steerTarget = 0; car.vx = 0; car.vz = 0;
   } else if (activeVehicle && activeVehicle.type === 'tank') {
     activeVehicle.update(c, dt, { firing: firing || c.fire, chase });
-    if (wall && holdInside(activeVehicle, wall, 4)) {   // 4 m: the tank's own solid() is a 3.5 m circle
+    if (wall && holdInside(activeVehicle, wall, 4, dt)) {   // 4 m: the tank's own solid() is a 3.5 m circle; dt: the scrub is per second
       const tk = activeVehicle;
       tk.fwdSpeed = tk.vx * Math.cos(tk.yaw) - tk.vz * Math.sin(tk.yaw);   // back onto the tracks, as tank.js does after a building
       hud.roadClosed();
@@ -2358,7 +2368,7 @@ function frameBody() {
     car.throttle = 0; car.brake = 1; car.steerTarget = 0; car.vx = 0; car.vz = 0;
   } else if (onFoot.active) {
     onFoot.update(c, dt, camera, walkSolid, (x, z) => Math.max(world.district?.elevationAt?.(x, z) ?? 0, groundHeightAt(x, z)));
-    if (wall && holdInside(onFoot, wall, 0.5)) hud.roadClosed();
+    if (wall && holdInside(onFoot, wall, 0.5, dt)) hud.roadClosed();
     car.throttle = 0; car.brake = 1; car.steerTarget = 0;
     // on foot too: stand still for twenty seconds and the camera circles you; any input, aiming or firing ends it
     idleCam = idleT > 20 && (onFoot.speed || 0) < 0.2 && !photo.on && !aiming && !firing;
@@ -2441,7 +2451,7 @@ function frameBody() {
       /* Every step, not every frame: at 80 m/s a frame is 1.3 m. Inset 2.6 m:
          the hull's nose probe sits at +2.25 m (collision.js), so the bumper
          stops ~0.35 m short of the line and ~1 m short of the barriers. */
-      if (wall && holdInside(car, wall, 2.6)) walled = true;
+      if (wall && holdInside(car, wall, 2.6, STEP)) walled = true;
       physicsAccumulator -= STEP;
     }
     if (walled) hud.roadClosed();

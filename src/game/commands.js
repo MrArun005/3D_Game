@@ -126,7 +126,15 @@ export class CommandEngine {
            would only be pushed straight back. `wall` is the city plus the
            raceway island, so downtown, tokyo and track still go. */
         const wall = this.ctx.world?.district?.wall;
-        if (spot && wall && !wall.contains(spot.x, spot.z)) {
+        /* Before the district lands (world is still the legacy City, which has
+           no district) there is no wall to check against: a /tp harbour in the
+           first seconds was dragged to the outline -- mid-river in the west --
+           the moment the wall arrived. Refused in either map, as the Mile and
+           the raceway already are. */
+        if (spot && !this.ctx.world?.district) {
+          chat.post('SYSTEM', 'The city is still loading. Try again in a moment.');
+          this.ctx.hud?.flash?.('CITY STILL LOADING');
+        } else if (spot && wall && !wall.contains(spot.x, spot.z)) {
           chat.post('SYSTEM', `${spot.name} is outside the compact city. Reload with ?fullmap for the whole bay.`);
           this.ctx.hud?.flash?.('OUTSIDE THE COMPACT CITY · ?fullmap');
         } else if (spot) {

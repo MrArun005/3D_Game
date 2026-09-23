@@ -222,6 +222,10 @@ export class FeatureTour {
     this.allStages ??= this.stages;
     const compact = this.ctx.compact ?? (typeof window !== 'undefined' && !!window.district?.play);
     this.stages = compact ? this.allStages.filter((s) => !s.fullMap) : this.allStages;
+    /* The badges were literals ('SCENE 5 / 8'), so the seven-scene compact tour
+       counted 1, 2, 3, 5 ... of 8. Numbered from the list that actually plays;
+       copies, so the full table keeps its own. */
+    if (this.stages !== this.allStages) this.stages = this.stages.map((s, i, all) => ({ ...s, badge: `SCENE ${i + 1} / ${all.length}` }));
     this.active = true;
     this.stageIdx = 0;
     this.stageTime = 0;

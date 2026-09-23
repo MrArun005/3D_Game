@@ -1,5 +1,6 @@
 import { STORY_MISSIONS } from '../game/storyMissions.js';
 import { REPAIR } from '../game/garage.js';
+import { dropFacingIn, holdInside } from '../world/playArea.js';
 
 export class Phone {
   constructor(storyManager, garage, hero, traffic, dispatchService = null, car = null, reputation = null, intel = null, navigation = null) {
@@ -440,8 +441,7 @@ export class Phone {
       heliCard.querySelector('#dispatch-heli-btn').onclick = (e) => {
         e.stopPropagation();
         if (this.dispatch) {
-          const pos = this.#getPlayerPos();
-          this.dispatch.dispatchHelicopter(pos);
+          this.#keepInside(this.dispatch.dispatchHelicopter(this.#dropPos()), 6);
           this.toggle(false);
         }
       };
@@ -462,8 +462,7 @@ export class Phone {
       tankCard.querySelector('#dispatch-tank-btn').onclick = (e) => {
         e.stopPropagation();
         if (this.dispatch) {
-          const pos = this.#getPlayerPos();
-          this.dispatch.dispatchTank(pos, this.traffic?.wanted || 0);
+          this.#keepInside(this.dispatch.dispatchTank(this.#dropPos(), this.traffic?.wanted || 0), 6);
           this.toggle(false);
         }
       };
@@ -577,6 +576,26 @@ export class Phone {
         }
       }
     }
+  }
+
+  /* Dispatch drops in the compact city (world/playArea.js). game/dispatch.js
+     lands a tank or helicopter 24-80 m AHEAD of the caller with no idea of the
+     wall, so facing out near it the drop went past the wall, where a walker
+     held 0.5 m inside could never reach it. Ask facing into the city
+     (dropFacingIn); if it still lands outside -- a rooftop pad, dispatch.js's
+     30 m +x fallback -- bring it `inset` m inside (past the tank's 4 m and the
+     grounded helicopter's 3.5 m, so boarding does not move it again) and
+     re-point the GPS at it. Idle vehicles re-pose from x/z every frame. */
+  #dropPos() {
+    const pos = this.#getPlayerPos();
+    const wall = typeof window !== 'undefined' ? window.district?.wall : null;
+    return wall ? dropFacingIn(wall, pos) : pos;
+  }
+
+  #keepInside(v, inset) {
+    const wall = typeof window !== 'undefined' ? window.district?.wall : null;
+    if (!v || !wall || !holdInside(v, wall, inset)) return;
+    if (this.navigation) { this.navigation.setWaypoint(v.x, v.z); this.navigation.lastTarget = null; }
   }
 
   #getPlayerPos() {
