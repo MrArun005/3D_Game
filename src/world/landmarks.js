@@ -89,8 +89,9 @@ export function assembleTenement(gltf, bays = 17, floors = 4, seed = 7) {
  * No collision yet: the hull collider only knows footprints from the file.
  */
 const BASE = '/models/vendor/sketchfab/props/';
-/* `lazy`: fetched only once you come within LOAD_R of the lot, and hidden
-   past HIDE_R (Landmarks.update, fed by main's 2 Hz district poll). The three
+/* `lazy`: fetched only once you come within LOAD_R (or its own `loadR`) of
+   the lot, and hidden past HIDE_R (Landmarks.update, fed by main's 2 Hz
+   district poll). The three
    Sketchfab props are 24.75 MB between them and stand 1.0-1.9 km from the
    Tokyo spawn; they were fetched and parsed the moment the district landed,
    and drawn (227k triangles when the camera faced them) from any distance.
@@ -138,6 +139,14 @@ const LANDMARKS = [
     frontage: { assemble: { bays: 17, floors: 4 }, groundY: 0, depth: 14, colour: 0x6f5548 },
     name: 'Old Quarter tenements',
     lazy: true,   // 10.6 MB when downloaded: by distance, like the Sketchfab props
+    /* On the full map its lot (block 244, at 1754,1349) is 603 m from the
+       Tokyo spawn (2354,1408), inside LOAD_R: on a machine that has the file
+       (gitignored; tools/polyhaven.mjs, and so on the owner's deploy) the
+       first 2 Hz poll fetched it, and the default boot was 10.6 MB heavier
+       than measured (review 2026-09-23). 450 m keeps it out of the boot with
+       150 m to spare, and still leaves ~20 s of city driving for the download
+       and the ~150-clone assembly. */
+    loadR: 450,
   },
   /* Ours, authored in Blender (tools/blender/build_tokyo_neon_building.py):
      four seeded neon towers -- konbini ground floor, ribbon windows,
@@ -207,8 +216,14 @@ const SKYLINE = [
 ];
 
 export class Landmarks {
-  constructor(scene, district, world = null, { search = typeof location !== 'undefined' ? location.search : '' } = {}) {
+  constructor(scene, district, world = null, { search = typeof location !== 'undefined' ? location.search : '', prepare = null } = {}) {
     this.scene = scene; this.district = district; this.world = world; this.placed = [];
+    /* `prepare(obj)`: a promise that compiles obj's pipelines (main.js hands in
+       renderer.compileAsync). A lazy prop lands MID-DRIVE, long after the boot
+       warm-up, so without it its first frame on screen links every program
+       its materials need in that frame. Awaited before the prop joins the
+       scene; a failure or a slow one only means the old first-view compile. */
+    this.prepare = prepare;
     this.usedBlocks = new Set();     // block ids the skyline took; #pickLots() must not offer them to a vendor model
     this.solids = [];                // world-frame collision boxes, in districtWorld's own { x, z, hw, hd, angle, height } shape
     this.keepOut = [];               // world-frame ground footprints the dressing must not scatter into
@@ -237,7 +252,7 @@ export class Landmarks {
     if (this.eager) return;
     for (const p of this.picks) {
       if (!p.lm.lazy) continue;
-      const w = landmarkWanted(Math.hypot(p.lot.x - px, p.lot.y - pz), p.state !== 'idle');
+      const w = landmarkWanted(Math.hypot(p.lot.x - px, p.lot.y - pz), p.state !== 'idle', p.lm.loadR ?? LOAD_R);
       if (w.load) this.#load(p).catch((e) => this.#failed(p, e));
       if (p.wrap) p.wrap.visible = w.visible;
     }
@@ -478,6 +493,7 @@ export class Landmarks {
         }
       }
       wrap.traverse((o) => { if (o.isMesh) { o.castShadow = !lm.heavy; o.receiveShadow = true; } });
+      if (this.prepare) { try { await this.prepare(wrap); } catch (e) { console.warn('landmark compile', lm.file, e?.message ?? e); } }
       this.scene.add(wrap);
       this.placed.push({ ...lm, x: lot.x, z: lot.y, scale: k });
       console.info(`landmark ${lm.name} at ${lot.x | 0},${lot.y | 0} (${lm.district}) x${k.toFixed(2)}`);

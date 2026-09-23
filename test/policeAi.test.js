@@ -346,7 +346,7 @@ test('fireControl holds fire at two stars when ctx.fireFrom is 3', () => {
   assert.equal(AI.fireControl(o, { ...ctx, fireFrom: 3, quietFor: 1 }).fire, true, 'you shot first: he answers');
 });
 
-test('patrolCallDue: ~53 calls an hour when allowed, none when not, the same RNG stream either way', () => {
+test('patrolCallDue: ~53 calls an hour when allowed; none, and no draws, when not', () => {
   const run = (allowed) => {
     const rand = mulberry32(7);
     let calls = 0, draws = 0, respondT = 0;
@@ -362,7 +362,8 @@ test('patrolCallDue: ~53 calls an hour when allowed, none when not, the same RNG
   const on = run(true), off = run(false);
   assert.equal(off.perHour, 0);
   assert.ok(on.perHour > 40 && on.perHour < 65, `~53 an hour (${on.perHour})`);
-  assert.ok(off.draws > 0 && off.draws >= on.draws, 'rand is still drawn while calls are off');
+  assert.ok(on.draws > 0);
+  assert.equal(off.draws, 0, 'calls off: the patrol never touches the traffic RNG for them');
   assert.equal(patrolCallDue(-10, 1, () => 0), false, 'not until 30 s of quiet');
   assert.equal(patrolCallDue(-31, 1, () => 0), true);
   assert.equal(patrolCallDue(-31, 1, () => 0, false), false);
@@ -377,10 +378,27 @@ test('Traffic.reportCrime on easy ignores pedestrian witnesses for crashes, not 
   const { Traffic } = await import('../src/game/traffic.js');
   const { DIFFICULTY } = await import('../src/game/difficulty.js');
   const stub = (difficulty) => ({ player: { x: 0, z: 0 }, crowd: { people: [{ live: true, x: 10, z: 0 }, { live: true, x: -8, z: 4 }] }, police: [], wanted: 0, cool: 3, difficulty });
-  const hit = (tag, d) => { const s = stub(d); Traffic.prototype.reportCrime.call(s, tag, 15); return s.wanted; };
-  assert.equal(hit('traffic', DIFFICULTY.easy), 0, 'a bumped car with only pedestrians about: no star');
-  assert.ok(hit('traffic', DIFFICULTY.hard) > 0, 'the full game: a pedestrian saw it');
-  assert.ok(hit('traffic', undefined) > 0, 'no difficulty set (tests, old callers): the full game');
-  assert.ok(hit('person', DIFFICULTY.easy) > 0, 'running people over still counts');
-  assert.ok(hit('police', DIFFICULTY.easy) > 0, 'hitting a cruiser still counts');
+  // main.js's collision path (car.hitTag) is the one caller that passes crash: true
+  const crash = (tag, d) => { const s = stub(d); Traffic.prototype.reportCrime.call(s, tag, 15, { crash: true }); return s.wanted; };
+  assert.equal(crash('traffic', DIFFICULTY.easy), 0, 'a bumped car with only pedestrians about: no star');
+  assert.ok(crash('traffic', DIFFICULTY.hard) > 0, 'the full game: a pedestrian saw it');
+  assert.ok(crash('traffic', undefined) > 0, 'no difficulty set (tests, old callers): the full game');
+  assert.ok(crash('person', DIFFICULTY.easy) > 0, 'running people over still counts');
+  assert.ok(crash('police', DIFFICULTY.easy) > 0, 'hitting a cruiser still counts');
+});
+
+test('the other crimes that borrow the traffic tag keep their pedestrian witnesses on easy', async () => {
+  /* Review 2026-09-23: keyed on the tag alone, pedsReportCrashes also zeroed a
+     gunshot (main.js fire path), a grenade, a punched car, a carjack and a
+     stolen parked car in front of a pavement full of people. Each is the
+     caller's own (tag, force), with no crash flag; easy keeps 40% of hard. */
+  const { Traffic } = await import('../src/game/traffic.js');
+  const { DIFFICULTY } = await import('../src/game/difficulty.js');
+  const people = Array.from({ length: 12 }, (_, i) => ({ live: true, x: 10 + i, z: 5 }));
+  const heat = (force, d) => { const s = { player: { x: 0, z: 0 }, crowd: { people }, police: [{ live: true, x: 200, z: 0 }], wanted: 0, cool: 3, difficulty: d }; Traffic.prototype.reportCrime.call(s, 'traffic', force); return s.wanted; };
+  for (const [what, force] of [['missed gunshot', 1], ['shot into a civilian car', 9], ['carjack', 6], ['grenade', 6], ['parked-car theft', 3], ['punched car', 1]]) {
+    const easy = heat(force, DIFFICULTY.easy), hard = heat(force, DIFFICULTY.hard);
+    assert.ok(hard > 0, `${what}: the full game reports it`);
+    assert.ok(Math.abs(easy - hard * DIFFICULTY.easy.crimeScale) < 1e-9, `${what}: easy is 40% of hard (${easy} vs ${hard})`);
+  }
 });

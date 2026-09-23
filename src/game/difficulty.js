@@ -29,9 +29,13 @@
  *   pedVoices          pedestrians' spoken shouts (near misses, horn answers)
  *   pedsReportCrashes  a pedestrian witness is enough for a crash into traffic
  *                      (without it only a cruiser within 90 m sees it -- GTA's
- *                      rule; running people over and hitting cruisers still count)
+ *                      rule; running people over and hitting cruisers still count).
+ *                      COLLISIONS only (reportCrime's `crash` flag): gunshots,
+ *                      grenades, carjacks and car thefts share the 'traffic'
+ *                      tag and keep their pedestrian witnesses
  *   fireFrom           the star level at which officers fire on sight (below it
- *                      they come to arrest and only shoot back)
+ *                      they come to arrest and only shoot back); hold-out keeps
+ *                      two whatever this says (fireFromFor)
  *   quietHud           frame-rate governor notices go to the console, not a toast
  * The patrol cruiser itself still drives about: a policed-looking city, and the
  * witness crimeWitnessed needs. `?city` (or any title card but Just drive,
@@ -83,4 +87,18 @@ export function pickDifficulty(search = '', stored = null) {
  */
 export function addHeat(wanted, gain, diff = DIFFICULTY.hard) {
   return Math.max(wanted, Math.min(diff.maxWanted, wanted + gain * diff.crimeScale));
+}
+
+/**
+ * The star level officers fire on sight from, in game mode `mode`
+ * (modes.js `active`). Hold-out is the firefight on demand: it starts you at
+ * two stars and climbs half a star every 40 s, so easy's three would have its
+ * first 80 s be a wave that walks up to cuff you and holds fire until you
+ * shoot. It keeps the full game's two whatever the difficulty; everything else
+ * reads the difficulty (easy 3, hard 2, and 2 when none is set, as in the
+ * tests). Pure; tested.
+ */
+export function fireFromFor(d, mode = null) {
+  const f = d?.fireFrom ?? 2;
+  return mode === 'holdout' ? Math.min(f, 2) : f;
 }

@@ -1416,7 +1416,17 @@ Promise.all([districtReady, catalogueReady, new URLSearchParams(location.search)
      lights at all (lighting.js reads world.heroLightsByChunk), and Landmarks is
      what fills that map; it also puts world.extraSolids in place before the
      first chunk builds its box list. */
-  landmarks = RACE_MODE ? null : new Landmarks(scene, district, world);   // Phase 6 skyline + gun shop, supermarket, street set (world/landmarks.js); none on the race run
+  /* A landmark that lands mid-drive (the lazy props, 900 m out) compiles its
+     pipelines before it joins the scene, off the frame: compileAsync culls like
+     a render (the boot warm-up's lesson below), so it runs unculled, and it is
+     capped at 3 s -- a slow one is only the old first-view compile. */
+  const prepareLandmark = (obj) => {
+    const unculled = [];
+    obj.traverse((o) => { if (o.isMesh && o.frustumCulled) { unculled.push(o); o.frustumCulled = false; } });
+    return Promise.race([renderer.compileAsync(obj, camera, scene), new Promise((r) => setTimeout(r, 3000))])
+      .finally(() => { for (const o of unculled) o.frustumCulled = true; });
+  };
+  landmarks = RACE_MODE ? null : new Landmarks(scene, district, world, { prepare: prepareLandmark });   // Phase 6 skyline + gun shop, supermarket, street set (world/landmarks.js); none on the race run
   /* Always, not `if (!DAY)`. The pool was built only for a ?night boot, so a
      normal session -- which boots at 16.85 and runs a full day in 24 real
      minutes -- reached midnight with no pool: 2 lights alive, parked at the
@@ -1766,6 +1776,7 @@ chat = new Chat();
 hud.useChat(chat);
 chatter = new ChatterEngine(audio, chat);
 modes = new Modes(scene, hud, traffic);
+traffic.modes = modes;   // a hold-out (title card or phone) fires from two stars even on easy (difficulty.js fireFromFor)
 if (new URLSearchParams(location.search).has('range')) setTimeout(() => { if (onFoot.active) modes.startRange(onFoot.x, onFoot.z, onFoot.camYaw); else hud.flash('?range: press F to get out, then Range from the phone'); }, 8000);
 window.__modes = modes;   // phone cards call startRange / startHoldout
 /* The phone's gun counter. Cash is the garage's; the weapon is the player's. */
@@ -2246,6 +2257,7 @@ const padNav = createPadNav(() =>
 // a pad shows itself on its first button press: swap the title card's key legend for its own
 addEventListener('gamepadconnected', () => {
   document.querySelector('#hud .keys:not(.pad)')?.setAttribute('hidden', '');
+  document.querySelector('#hud details')?.setAttribute('hidden', '');   // ALL CONTROLS lists keyboard keys: the pad legend replaces both
   document.querySelector('#hud .keys.pad')?.removeAttribute('hidden');
 });
 
@@ -3133,7 +3145,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
       else if (f > 1.2) audio.scrape?.(Math.min(1, f / 4.5));
       if (f > 9) audio.glass?.();
     }
-    traffic.reportCrime(car.hitTag, car.hitForce || 0);
+    traffic.reportCrime(car.hitTag, car.hitForce || 0, { crash: true });   // crash: on easy only a cruiser reports a bumped civilian car (traffic.js); shots, blasts and carjacks share the tag but not this flag
     damageModel.hit(car.hitForce || 0, car.hitAt, DIFF.crashScale);
     // ramming a car or a cruiser hurts ITS engine too: a hard hit is one or two of its eight points (PIT them back)
     if (car.hitRef && (car.hitForce || 0) > 4.5) damageVehicle(car.hitRef, (car.hitForce || 0) > 9 ? 2 : 1, car.hitTag === 'police');

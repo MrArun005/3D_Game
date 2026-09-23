@@ -1,4 +1,4 @@
-import { loadHeroSkin, DEFAULT_BODY } from '../world/vendorCars.js';
+import { loadHeroSkin, DEFAULT_BODY, bodyNeedsDownload } from '../world/vendorCars.js';
 import { getVehicleProfile } from '../vehicle/config.js';
 import { COMPACT_CHOP } from '../world/playArea.js';
 
@@ -177,8 +177,7 @@ export class Garage {
       if (!this.spendCash(c.price)) { this.hud.flash(`${c.name} · $${c.price} · NOT ENOUGH CASH`); return; }
       this.owned.add(c.file);
     }
-    await this.#fit(c.file);
-    this.hud.flash(`${c.name} FITTED`);
+    if (await this.#fit(c.file)) this.hud.flash(`${c.name} FITTED`);   // not after a failed or superseded fit: with bodies downloading on demand, "FITTED" wrote over "GARAGE CLOSED"
   }
 
   /** Drive what you stole: fit a body without buying it. */
@@ -188,19 +187,23 @@ export class Garage {
     await this.#fit(file);
   }
 
-  async #fit(file) {
+  async #fit(file, { quiet = false } = {}) {
     /* The old body stays ON while the new one loads. This removed the skin
        before the await, which was harmless while the boot pre-cached every
        body; now a Sketchfab body downloads on its first fit (1.7-11.7 MB,
        vendorCars.loadVendorCars), and with the loft already hidden under the
        old skin the car went invisible for the whole download. loadHeroSkin
        removes the stale skin itself AFTER its await, behind the skinGen
-       counter, so a later fit still wins over an earlier one. Only the
-       Sketchfab bodies (`s-`) are a download worth a word; the CC0 traffic
-       bodies a carjack fits are already in memory. */
-    if (file.startsWith('s-')) this.hud?.flash?.('GARAGE · DELIVERING…');
+       counter, so a later fit still wins over an earlier one. Only a body
+       that is really a download is worth a word (vendorCars.bodyNeedsDownload:
+       a Sketchfab body not fetched yet; the CC0 bodies a carjack fits are in
+       memory), and `quiet` fits (the race grid's equipRaceCar, which flashes
+       its own line) never say it. A fit a later one superseded (null) says
+       nothing either: the later fit reports. Resolves true once it is on. */
+    if (!quiet && bodyNeedsDownload(file)) this.hud?.flash?.('GARAGE · DELIVERING…');
     const ok = await loadHeroSkin(this.assets, this.hero, file);
-    if (!ok) { this.hud.flash('GARAGE CLOSED'); return; }
+    if (ok === null) return false;
+    if (!ok) { if (!quiet) this.hud.flash('GARAGE CLOSED'); return false; }
     this.fitted = file;
     if (this.car) {
       this.car.profile = getVehicleProfile(file);
@@ -211,12 +214,13 @@ export class Garage {
       localStorage.setItem('hb.garage', JSON.stringify([...this.owned]));
     } catch { /* private mode */ }
     this.browsing = false;
+    return true;
   }
 
   /** Immediately equip and fit a dedicated race car */
   async equipRaceCar(file = 's-porsche-gt3r') {
     this.owned.add(file);
-    await this.#fit(file);
+    await this.#fit(file, { quiet: true });   // raceCircuit flashes RACEDAY itself; no garage lines on the grid
     return true;
   }
 

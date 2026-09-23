@@ -164,6 +164,13 @@ const SPEC_OF = { taxi: 'sedan', police: 'sedan', sports: 'sedan', sports2: 'sed
 const loader = new GLTFLoader();
 const gltfCache = new Map();          // file -> Promise<gltf>; the fleet, the hero skin and the garage share one fetch
 const fetchGltf = (file, base = BASE) => { const k = base + file; let p = gltfCache.get(k); if (!p) { p = new Promise((res, rej) => loader.load(base + file + '.glb', res, undefined, rej)); gltfCache.set(k, p); } return p; };
+/**
+ * Is body `id` a download away? Only a Sketchfab (`s-`) body that nothing has
+ * asked for yet: the boot's CC0 fleet is in memory, and a body fitted once
+ * sits in gltfCache (a failed one too -- asking again fails at once). The
+ * garage says "delivering" only then (garage.js #fit).
+ */
+export const bodyNeedsDownload = (id) => { const def = BODIES[id]; return def?.src === 's' && !gltfCache.has(SBASE + def.file); };
 const _m = new THREE.Matrix4(), _v = new THREE.Vector3();
 
 function samplePalette(image) {
@@ -475,6 +482,7 @@ export async function fetchKit(id, spec, assets, opts = {}) {
    whose most-saturated material is paint rather than lights or calipers. */
 export const DEFAULT_BODY = 's-camaro-350';
 
+/** Wear body `file` on the hero. Resolves true when it is on, false when it failed (the old body stays), null when a newer fit superseded it. */
 export async function loadHeroSkin(assets, hero, file = DEFAULT_BODY) {
   const u = hero.userData;
   u.loftHull ??= u.hull;
@@ -491,8 +499,8 @@ export async function loadHeroSkin(assets, hero, file = DEFAULT_BODY) {
   const bb = hull.geometry.boundingBox;                 // shell space: nose at 0, tail at +L
   const L = bb.max.x - bb.min.x, W = bb.max.z - bb.min.z;
   const kit = await fetchKit(file, { L, wMax: W / 2 }, assets, { wheels: false }).catch((e) => { console.warn('hero skin', file, e.message); return null; });
+  if (u.skinGen !== gen) return null;                   // a newer fit landed while this one loaded (or failed: it is no longer the one being fitted): null, not false -- the garage leaves the flash to the newer fit
   if (!kit) return false;
-  if (u.skinGen !== gen) return false;                  // a newer fit landed while this one loaded
   if (u.skin) { u.skin.parent?.remove(u.skin); u.skin = null; }
 
   const shellG = hull.parent;

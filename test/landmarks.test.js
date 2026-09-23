@@ -122,3 +122,37 @@ test('a compact play area offers only lots inside it, with no fallback to anothe
   assert.ok(!files.includes('supermarket') && !files.includes('street-set'), 'lots at x 3000 / 5000 are outside the play area');
   assert.ok(files.includes('gun-shop'));
 });
+
+test('the tenement has its own 450 m load radius: 603 m from the Tokyo spawn, it stays out of the boot', async () => {
+  /* Review 2026-09-23: at LOAD_R 900 the tenement's real lot (1754,1349) was
+     inside the radius from the spawn (2354,1408), so wherever the 10.6 MB file
+     is installed the first 2 Hz poll fetched it. */
+  urls.length = 0;
+  const l = await build();
+  const ten = l.picks.find((p) => p.lm.frontage?.assemble);
+  assert.equal(ten.lm.loadR, 450);
+  assert.ok(Math.hypot(1754 - 2354, 1349 - 1408) > ten.lm.loadR, 'the real lot is further than that from the spawn');
+  const tenUrls = () => urls.filter((u) => u.includes('/polyhaven/'));
+  await quietly(async () => { l.update(7000 - 603, 0); await settle(); });
+  assert.deepEqual(tenUrls(), [], '603 m out: not yet');
+  await quietly(async () => { l.update(7000 - 449, 0); await settle(); });
+  assert.equal(tenUrls().length, 1, '449 m out: fetched');
+});
+
+test('prepare() compiles a lazy prop before it joins the scene (main.js: renderer.compileAsync)', async () => {
+  urls.length = 0;
+  const scene = new THREE.Scene(), seen = [];
+  const prepare = async (obj) => { seen.push({ obj, inScene: obj.parent === scene }); };
+  const l = await quietly(async () => { const x = new Landmarks(scene, district(), null, { search: '', prepare }); await settle(); return x; });
+  await quietly(async () => { l.update(1000, 100); await settle(); });
+  const gun = l.picks.find((p) => p.lm.file === 'gun-shop');
+  const mine = seen.find((s) => s.obj === gun.wrap);
+  assert.ok(mine, 'prepare saw the gun shop');
+  assert.equal(mine.inScene, false, 'it was compiled before it was added');
+  assert.equal(gun.wrap.parent, scene);
+  // a prepare that throws only costs the old first-view compile: the prop still lands
+  const bad = await quietly(async () => { const x = new Landmarks(new THREE.Scene(), district(), null, { search: '', prepare: async () => { throw new Error('device lost'); } }); await settle(); return x; });
+  await quietly(async () => { bad.update(1000, 100); await settle(); });
+  assert.equal(bad.picks.find((p) => p.lm.file === 'gun-shop').state, 'placed');
+});
+
