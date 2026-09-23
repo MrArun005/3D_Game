@@ -1,0 +1,18 @@
+{
+  "voice": "af_heart",
+  "speed": 0.95,
+  "lines": [
+    { "id": "hook",   "gap": 1.0, "text": "Hi, I'm Clawd! A very long time ago, people had no shops, no tools, and not even clothes. Just their hands, their brains, and each other." },
+    { "id": "play",   "gap": 0.9, "text": "Meet Koa and his friends. Their favourite thing? Racing through the corn, and playing chase until the sun goes down." },
+    { "id": "spot",   "gap": 0.9, "text": "One hot day, Koa is hungry and thirsty. High up in a palm tree, he spots something round. Coconuts!" },
+    { "id": "slip",   "gap": 0.7, "text": "Koa hugs the trunk and starts to climb. Up a little, and whoops! Back down he slides." },
+    { "id": "climb",  "gap": 0.8, "text": "He tries again, and again. Then he finds a trick. Grip with the feet, push, reach, and pull. Up, up, up!" },
+    { "id": "pick",   "gap": 0.6, "text": "At the top, he twists a coconut free. Thud! It lands in the sand." },
+    { "id": "try",    "gap": 0.8, "text": "Now for the hard part. Koa bites it. He squeezes it. He kicks it. Ow! Nothing. That shell is tough." },
+    { "id": "idea",   "gap": 0.9, "text": "Then Koa has an idea. He picks up a heavy stone." },
+    { "id": "crack",  "gap": 0.5, "text": "Bash! Bash! Crack! The coconut splits open, and there's sweet water inside." },
+    { "id": "tool",   "gap": 0.9, "text": "A stone used to do a job is a tool. Humans and our ancestors have been making stone tools for more than three million years." },
+    { "id": "share",  "gap": 0.8, "text": "Koa shares with his friends. And that's how you open a coconut: try, fail, and try again!" },
+    { "id": "bye",    "gap": 0.8, "text": "See you in the next story!" }
+  ]
+}

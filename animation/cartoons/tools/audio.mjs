@@ -1,13 +1,14 @@
 // Soundtrack for the farming cartoon: a gentle plucked-and-flute tune, birds and
 // breeze, story sound effects on their cues, and Clawd's narration on top with
 // the music ducked beneath it. All synthesised except the narration WAV.
-//   node tools/audio.mjs -> out/cartoon-farming.wav
+//   node tools/audio.mjs [farming|coconut] -> out/cartoon-<story>.wav
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import timing from '../stories/farming.timing.json' with { type: 'json' };
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const STORY = process.argv[2] || 'farming';
+const timing = JSON.parse(fs.readFileSync(path.join(ROOT, 'stories', `${STORY}.timing.json`), 'utf8'));
 const SR = 44100, DUR = timing.duration, N = Math.ceil(DUR * SR), TAU = Math.PI * 2;
 const rng = (seed) => { let a = seed >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
 const L = Object.fromEntries(timing.lines.map((l) => [l.id, l]));
@@ -49,12 +50,18 @@ for (let bar = 0; bar * 4 * BEAT < DUR - 2; bar++) {
   }
 }
 
-// ---- ambience: breeze and birds -------------------------------------------------------------------
-{ let lp = 0; for (let i = 0; i < N; i++) { lp += 0.003 * ((nz() * 2 - 1) - lp); const w = lp * 1.6 * (0.7 + 0.3 * Math.sin(i / SR * 0.3)); put(FX, i, w, w * 0.9); } }
+// ---- ambience ----------------------------------------------------------------------------------------
+if (STORY === 'coconut') {
+  // Surf: slow swells of filtered noise.
+  let lp = 0; for (let i = 0; i < N; i++) { lp += 0.01 * ((nz() * 2 - 1) - lp); const t = i / SR; const sw = 0.5 + 0.5 * Math.sin(t * 0.9) * Math.sin(t * 0.37 + 1); put(FX, i, lp * 1.5 * sw, lp * 1.4 * (1 - sw * 0.3)); }
+} else {
+  let lp = 0; for (let i = 0; i < N; i++) { lp += 0.003 * ((nz() * 2 - 1) - lp); const w = lp * 1.6 * (0.7 + 0.3 * Math.sin(i / SR * 0.3)); put(FX, i, w, w * 0.9); }
+}
 {
   const r = rng(11);
+  const quiet = STORY === 'farming' ? [at('change', 'It all'), L.bye.t0] : [L.tool.t0 - 0.5, L.tool.t0 + L.tool.dur];
   for (let t = 1.5; t < DUR - 2; t += 1.2 + r() * 2.8) {
-    if (t > at('change', 'It all') && t < L.bye.t0) continue;
+    if (t > quiet[0] && t < quiet[1]) continue;
     const reps = 2 + Math.floor(r() * 3), f0 = 2800 + r() * 1800, pan = r();
     for (let k = 0; k < reps; k++) {
       const s = Math.round((t + k * 0.11) * SR), n = Math.round(0.07 * SR);
@@ -66,6 +73,27 @@ for (let bar = 0; bar * 4 * BEAT < DUR - 2; bar++) {
 
 // ---- story sound effects ----------------------------------------------------------------------------
 const tick = (t, f, d, g) => { const s = Math.round(t * SR), n = Math.round(d * SR); for (let j = 0; j < n; j++) { const v = Math.sin(TAU * f * j / SR) * Math.exp(-j / (n / 5)) * g; put(FX, s + j, v); } };
+const sweep = (t, f0, f1, d, g) => { const s = Math.round(t * SR), n = Math.round(d * SR); let ph = 0; for (let j = 0; j < n; j++) { const u = j / n; ph += TAU * (f0 + (f1 - f0) * u) / SR; put(FX, s + j, Math.sin(ph) * g * Math.min(1, (1 - u) * 6, u * 30)); } };
+const thud = (t, g = 0.35) => { tick(t, 70, 0.25, g); const s = Math.round(t * SR); let lp = 0; for (let j = 0; j < SR * 0.12; j++) { lp += 0.2 * ((nz() * 2 - 1) - lp); put(FX, s + j, lp * g * (1 - j / (SR * 0.12))); } };
+const snap = (t, g = 0.4) => { const s = Math.round(t * SR); for (let j = 0; j < SR * 0.09; j++) put(FX, s + j, (nz() * 2 - 1) * g * Math.exp(-j / (SR * 0.015))); };
+const chime = (t, g = 0.08) => { for (const [f, d] of [[1318, 0], [1760, 0.09], [2637, 0.18]]) tick(t + d, f, 0.6, g); };
+if (STORY === 'coconut') {
+  { const a = at('play', 'Racing'); for (let t = L.play.t0 - 0.4; t < L.play.t0 + L.play.dur + 0.3; t += 0.11) tick(t, 150 + nz() * 80, 0.04, 0.07); void a; }
+  chime(at('spot', 'Coconuts'), 0.07);
+  { const w = at('slip', 'whoops'); sweep(w, 1400, 300, 0.7, 0.09); thud(w + 0.72); }
+  { const c0 = L.climb.t0 - 0.45; sweep(c0 + 0.78, 1200, 400, 0.5, 0.07); thud(c0 + 1.3, 0.2); sweep(c0 + 2.1, 1200, 400, 0.5, 0.07); thud(c0 + 2.6, 0.2);
+    for (let t = at('climb', 'Grip'); t < L.climb.t0 + L.climb.dur; t += 0.28) tick(t, 600 + nz() * 300, 0.05, 0.05); }
+  { const f = at('pick', 'free'), th = at('pick', 'Thud'); tick(f - 0.3, 300, 0.2, 0.08); sweep(f, 1800, 500, th - f, 0.06); thud(th, 0.45); }
+  { snap(at('try', 'bites'), 0.18); tick(at('try', 'bites') + 0.15, 900, 0.05, 0.1);
+    for (let k = 0; k < 6; k++) tick(at('try', 'squeezes') + k * 0.12, 220, 0.08, 0.05);
+    thud(at('try', 'kicks') + 0.3, 0.3); sweep(at('try', 'Ow'), 500, 900, 0.3, 0.08); }
+  chime(at('idea', 'idea'), 0.1);
+  { tick(at('crack', 'Bash'), 90, 0.2, 0.3); thud(at('crack', 'Bash'), 0.3); thud(at('crack', 'Bash! C'), 0.35); snap(at('crack', 'Crack'), 0.5); thud(at('crack', 'Crack'), 0.3);
+    const s0 = at('crack', 'Crack') + 0.1; for (let k = 0; k < 8; k++) tick(s0 + k * 0.05, 2000 + k * 150, 0.03, 0.05); }
+  chime(at('tool', 'tool'), 0.08);
+  { const t = at('share', 'try'); for (const [m, d] of [[74, 0], [78, 0.12], [81, 0.24], [86, 0.36]]) tick(t + d, midi(m), 0.4, 0.07); }
+}
+if (STORY === 'farming') {
 // Grains pattering to the ground as the wheat shatters.
 { const d0 = at('shatter', 'shatter'); for (let i = 0; i < 10; i++) { const t = d0 + (i / 10) * 2.2 + 0.55; tick(t, 1800 + i * 90, 0.05, 0.12); tick(t + 0.07, 1400, 0.03, 0.06); } }
 // Gazelle hooves.
@@ -86,10 +114,12 @@ for (const [id, w] of [['world', 'And'], ['world', 'China'], ['world', 'Mexico']
   for (let j = 0; j < n; j++) { ph += TAU * (500 + 900 * j / n) / SR; put(FX, s + j, Math.sin(ph) * (1 - j / n) * 0.12); }
 }
 
+}
+
 // ---- narration + mix ------------------------------------------------------------------------------
 const VO = new Float32Array(N), duck = new Float32Array(N).fill(1);
 {
-  const wav = fs.readFileSync(path.join(ROOT, 'out', 'farming-voice.wav'));
+  const wav = fs.readFileSync(path.join(ROOT, 'out', `${STORY}-voice.wav`));
   const sr = wav.readUInt32LE(24), bits = wav.readUInt16LE(34);
   let off = 12; while (wav.toString('ascii', off, off + 4) !== 'data') off += 8 + wav.readUInt32LE(off + 4);
   const n = wav.readUInt32LE(off + 4) / (bits / 8), d0 = off + 8;
@@ -115,5 +145,5 @@ for (let i = 0; i < N; i++) {
   buf.writeInt16LE(Math.round(out[0] * 32000), 44 + i * 4);
   buf.writeInt16LE(Math.round(out[1] * 32000), 46 + i * 4);
 }
-fs.writeFileSync(path.join(ROOT, 'out', 'cartoon-farming.wav'), buf);
-console.log(`wrote out/cartoon-farming.wav, peak ${peak.toFixed(2)}`);
+fs.writeFileSync(path.join(ROOT, 'out', `cartoon-${STORY}.wav`), buf);
+console.log(`wrote out/cartoon-${STORY}.wav, peak ${peak.toFixed(2)}`);

@@ -28,7 +28,7 @@ await new Promise((r) => server.listen(0, r));
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.on('pageerror', (e) => { console.error('[page error]', e.message); process.exitCode = 1; });
-await page.goto(`http://127.0.0.1:${server.address().port}/index.html?render`);
+await page.goto(`http://127.0.0.1:${server.address().port}/index.html?render&story=${STORY}`);
 await page.waitForFunction(() => window.ready === true);
 const { DURATION, FPS } = await page.evaluate(() => ({ DURATION: window.DURATION, FPS: window.FPS }));
 const grab = (i, type) => page.evaluate(([i, type]) => { window.renderFrame(i); return document.getElementById('c').toDataURL(type, 0.93); }, [i, type]);

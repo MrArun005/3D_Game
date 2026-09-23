@@ -9,11 +9,19 @@ seeds sprouting by camp, generations of selection, the first villages, tamed
 sheep and goats, farming's independent origins around the world, and what it
 led to.
 
+**The Coconut Problem** (79 s): Koa and friends race through the corn; Koa
+spots coconuts, slips down the palm, finds the trick to climbing, and can't
+open the shell (bite, squeeze, kick, ow) until he uses a stone. A stone used
+to do a job is a tool; the oldest known stone tools are about 3.3 million
+years old (Lomekwi, Kenya). `src/humans.js` is the jointed early-human rig
+(no clothes, kept smooth and simple) and the beach, palm, corn and coconut props.
+
 ```sh
 npm install
 python3 ../whiteboard/tools/voice.py stories/farming.lines.json out   # narration + timing
-node tools/audio.mjs                                                  # music, birds, effects, voice
-node tools/render.mjs                                                 # out/cartoon-farming.mp4 (~1 min)
+node tools/audio.mjs farming                                          # music, birds, effects, voice
+node tools/render.mjs --story farming                                 # out/cartoon-farming.mp4 (~1 min)
+# the same three steps with coconut for The Coconut Problem
 ```
 
 `src/art.js` is the drawing kit (landscape, wheat, people, tents, houses,

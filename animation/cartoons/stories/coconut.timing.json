@@ -1,0 +1,77 @@
+{
+ "duration": 78.663,
+ "lines": [
+  {
+   "id": "hook",
+   "text": "Hi, I'm Clawd! A very long time ago, people had no shops, no tools, and not even clothes. Just their hands, their brains, and each other.",
+   "t0": 1.0,
+   "dur": 9.06
+  },
+  {
+   "id": "play",
+   "text": "Meet Koa and his friends. Their favourite thing? Racing through the corn, and playing chase until the sun goes down.",
+   "t0": 10.96,
+   "dur": 6.824
+  },
+  {
+   "id": "spot",
+   "text": "One hot day, Koa is hungry and thirsty. High up in a palm tree, he spots something round. Coconuts!",
+   "t0": 18.684,
+   "dur": 6.433
+  },
+  {
+   "id": "slip",
+   "text": "Koa hugs the trunk and starts to climb. Up a little, and whoops! Back down he slides.",
+   "t0": 25.817,
+   "dur": 5.086
+  },
+  {
+   "id": "climb",
+   "text": "He tries again, and again. Then he finds a trick. Grip with the feet, push, reach, and pull. Up, up, up!",
+   "t0": 31.703,
+   "dur": 6.669
+  },
+  {
+   "id": "pick",
+   "text": "At the top, he twists a coconut free. Thud! It lands in the sand.",
+   "t0": 38.972,
+   "dur": 4.126
+  },
+  {
+   "id": "try",
+   "text": "Now for the hard part. Koa bites it. He squeezes it. He kicks it. Ow! Nothing. That shell is tough.",
+   "t0": 43.898,
+   "dur": 6.386
+  },
+  {
+   "id": "idea",
+   "text": "Then Koa has an idea. He picks up a heavy stone.",
+   "t0": 51.184,
+   "dur": 2.952
+  },
+  {
+   "id": "crack",
+   "text": "Bash! Bash! Crack! The coconut splits open, and there's sweet water inside.",
+   "t0": 54.637,
+   "dur": 4.393
+  },
+  {
+   "id": "tool",
+   "text": "A stone used to do a job is a tool. Humans and our ancestors have been making stone tools for more than three million years.",
+   "t0": 59.929,
+   "dur": 7.914
+  },
+  {
+   "id": "share",
+   "text": "Koa shares with his friends. And that's how you open a coconut: try, fail, and try again!",
+   "t0": 68.644,
+   "dur": 5.4
+  },
+  {
+   "id": "bye",
+   "text": "See you in the next story!",
+   "t0": 74.844,
+   "dur": 1.319
+  }
+ ]
+}
