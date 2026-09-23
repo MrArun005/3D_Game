@@ -8,6 +8,6 @@ while true; do
   if [ -z "$next" ]; then sleep 30; [ -f out/queue.stop ] && exit 0; continue; fi
   sed -i '1d' out/queue.txt
   echo "START $next $(date +%T)" >> out/queue.log
-  RES=${RES:-960x540} SAMPLES=16 python3 shots/$next.py > out/render-$next.log 2>&1
+  RES=${RES:-640x360} SAMPLES=${SAMPLES:-8} STEP=${STEP:-3} python3 shots/$next.py > out/render-$next.log 2>&1
   echo "END $next $(date +%T) $(tail -1 out/render-$next.log)" >> out/queue.log
 done

@@ -26,8 +26,12 @@ def run(args):
 def clip(name):
     src = os.path.join(OUT, 'frames', name, '%04d.png')
     dst = os.path.join(OUT, f'clip-{name}.mp4')
-    # Scale first (renders may be 960x540), then synthesise the in-between frames.
-    run(['-framerate', '12', '-i', src, '-vf',
+    # Shots render at 12 or 8 fps: recover the rate from the frame count.
+    secs = next(s['seconds'] for s in shots if s['shot'] == name)
+    n = len([f for f in os.listdir(os.path.dirname(src)) if f.endswith('.png')])
+    fps = 12 if abs(n - secs * 12) < abs(n - secs * 8) else 8
+    # Scale first (renders may be smaller than 720p), then synthesise the in-between frames.
+    run(['-framerate', str(fps), '-i', src, '-vf',
          f'scale={W}:{H}:flags=lanczos,minterpolate=fps=24:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1,unsharp=5:5:0.4',
          '-c:v', 'libx264', '-preset', 'medium', '-crf', '15', '-pix_fmt', 'yuv420p', dst])
     return dst
