@@ -2,17 +2,25 @@
 // marker squeaks while ink goes down, eraser swishes, the critter's 8-bit
 // chatter while it talks, little boings for hops, and a plucked ukulele-ish tune
 // (Karplus-Strong strings).
-//   node tools/audio.mjs -> out/whiteboard-1549.wav
+// A story with a VOICE file gets the narration mixed in, with the music ducked
+// under it.
+//   node tools/audio.mjs              -> out/whiteboard-1549.wav
+//   node tools/audio.mjs pythagoras   -> out/whiteboard-pythagoras.wav
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DURATION, ITEMS, WIPES, WIPE_DUR, BUBBLES, TYPE_RATE, HOPS } from '../src/story.js';
 import { rng } from '../src/ink.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const NAME = process.argv[2];
+const story = await import(NAME ? `../stories/${NAME}.js` : '../src/story.js');
+const { DURATION, ITEMS, WIPES, WIPE_DUR, BUBBLES, TYPE_RATE, HOPS } = story;
+const OUTNAME = NAME ? `whiteboard-${NAME}` : 'whiteboard-1549';
 const SR = 44100, N = Math.ceil(DURATION * SR), TAU = Math.PI * 2;
 const L = new Float32Array(N), Rr = new Float32Array(N);
-const add = (i, l, r = l) => { if (i >= 0 && i < N) { L[i] += l; Rr[i] += r; } };
+const ML = new Float32Array(N), MR = new Float32Array(N);   // music, ducked under the voice
+let music = false;
+const add = (i, l, r = l) => { if (i >= 0 && i < N) { if (music) { ML[i] += l; MR[i] += r; } else { L[i] += l; Rr[i] += r; } } };
 const nz = rng(3);
 
 // ---- the tune: C G Am F, one chord a bar, strummed plucks ------------------------------
@@ -32,6 +40,7 @@ function pluck(t0, freq, gain, pan) {
 const midi = (m) => 440 * 2 ** ((m - 69) / 12);
 const CHORDS = [[60, 64, 67, 72], [55, 62, 67, 71], [57, 60, 64, 69], [53, 60, 65, 69]];
 const BAR = 2.4;
+music = true;
 for (let bar = 0; bar * BAR < DURATION - 1; bar++) {
   const ch = CHORDS[bar % 4];
   for (const [beat, down] of [[0, 1], [0.6, 0], [1.2, 1], [1.8, 0]]) {
@@ -43,10 +52,13 @@ for (let bar = 0; bar * BAR < DURATION - 1; bar++) {
   pluck(bar * BAR, midi(CHORDS[bar % 4][0] - 12), 0.09, 0.5);
 }
 
+music = false;
+
 // ---- marker squeak / scribble while ink goes down ---------------------------------------------
 {
   let y1 = 0, y2 = 0;
   for (const it of ITEMS) {
+    if (it.kind === 'custom') continue;
     const a = Math.round(it.t0 * SR), b = Math.round((it.t0 + it.dur) * SR);
     const r = rng(a), f0 = it.kind === 'text' ? 2600 : 1900;
     for (let i = a; i < b; i++) {
@@ -102,6 +114,25 @@ for (const h of HOPS) {
   }
 }
 
+// ---- narration --------------------------------------------------------------------------------
+const duck = new Float32Array(N).fill(1), VO = new Float32Array(N);
+if (story.VOICE) {
+  const wav = fs.readFileSync(path.join(ROOT, 'out', story.VOICE));
+  const sr = wav.readUInt32LE(24), bits = wav.readUInt16LE(34);
+  let off = 12; while (wav.toString('ascii', off, off + 4) !== 'data') off += 8 + wav.readUInt32LE(off + 4);
+  const n = wav.readUInt32LE(off + 4) / (bits / 8), d0 = off + 8;
+  const rd = bits === 16 ? (i) => wav.readInt16LE(d0 + i * 2) / 32768 : (i) => wav.readFloatLE(d0 + i * 4);
+  let envl = 0;
+  for (let i = 0; i < N; i++) {
+    const x = i * sr / SR, j = Math.floor(x), f = x - j;
+    const v = j + 1 < n ? rd(j) * (1 - f) + rd(j + 1) * f : 0;
+    VO[i] = v;
+    envl = Math.max(Math.abs(v), envl * 0.99995);
+    duck[i] = 1 - 0.6 * Math.min(1, envl * 6);
+  }
+}
+for (let i = 0; i < N; i++) { L[i] += ML[i] * duck[i]; Rr[i] += MR[i] * duck[i]; }
+
 // ---- write ----------------------------------------------------------------------------------
 const fade = (i) => Math.min(1, i / (SR * 0.6), (N - i) / (SR * 1.2));
 const buf = Buffer.alloc(44 + N * 4);
@@ -111,11 +142,13 @@ buf.writeUInt32LE(SR, 24); buf.writeUInt32LE(SR * 4, 28); buf.writeUInt16LE(4, 3
 buf.write('data', 36); buf.writeUInt32LE(N * 4, 40);
 let peak = 0;
 for (let i = 0; i < N; i++) {
-  const l = Math.tanh(L[i] * 2.6) * fade(i), r = Math.tanh(Rr[i] * 2.6) * fade(i);
+  // Effects and music through the soft drive; the voice added clean on top.
+  const vo = VO[i] * 0.95;
+  const l = Math.tanh(Math.tanh(L[i] * 2.6) * 0.75 + vo) * fade(i), r = Math.tanh(Math.tanh(Rr[i] * 2.6) * 0.75 + vo) * fade(i);
   peak = Math.max(peak, Math.abs(l));
   buf.writeInt16LE(Math.round(l * 32000), 44 + i * 4);
   buf.writeInt16LE(Math.round(r * 32000), 46 + i * 4);
 }
 fs.mkdirSync(path.join(ROOT, 'out'), { recursive: true });
-fs.writeFileSync(path.join(ROOT, 'out', 'whiteboard-1549.wav'), buf);
-console.log(`wrote out/whiteboard-1549.wav, peak ${peak.toFixed(2)}`);
+fs.writeFileSync(path.join(ROOT, 'out', `${OUTNAME}.wav`), buf);
+console.log(`wrote out/${OUTNAME}.wav, peak ${peak.toFixed(2)}`);

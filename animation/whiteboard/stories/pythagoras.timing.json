@@ -1,0 +1,71 @@
+{
+ "duration": 64.265,
+ "lines": [
+  {
+   "id": "hook",
+   "text": "Can you prove the Pythagorean theorem without any algebra? Let's do it with just four triangles.",
+   "t0": 1.0,
+   "dur": 5.693
+  },
+  {
+   "id": "tri",
+   "text": "Here's a right triangle. Its two short sides are a and b, and the long side is c.",
+   "t0": 7.193,
+   "dur": 5.11
+  },
+  {
+   "id": "claim",
+   "text": "The theorem says: a squared, plus b squared, equals c squared.",
+   "t0": 12.702,
+   "dur": 3.933
+  },
+  {
+   "id": "build",
+   "text": "Make four copies of the triangle, and fit them into a big square, with sides a plus b.",
+   "t0": 17.836,
+   "dur": 5.169
+  },
+  {
+   "id": "csq",
+   "text": "Look at the empty space in the middle. It's a tilted square, with every side c. So its area is c squared.",
+   "t0": 23.605,
+   "dur": 6.548
+  },
+  {
+   "id": "slide",
+   "text": "Now slide the very same triangles into new spots, inside the very same square.",
+   "t0": 30.953,
+   "dur": 5.093
+  },
+  {
+   "id": "absq",
+   "text": "This time, the empty space is two squares. One is a squared, the other is b squared.",
+   "t0": 36.646,
+   "dur": 4.921
+  },
+  {
+   "id": "same",
+   "text": "Same big square. Same four triangles. So the space that's left over must be the same, too.",
+   "t0": 42.268,
+   "dur": 5.616
+  },
+  {
+   "id": "qed",
+   "text": "And that means a squared plus b squared equals c squared. Proved, just by moving shapes!",
+   "t0": 48.383,
+   "dur": 5.552
+  },
+  {
+   "id": "check",
+   "text": "Try it with three, four and five. Nine, plus sixteen, is twenty five.",
+   "t0": 55.135,
+   "dur": 4.511
+  },
+  {
+   "id": "bye",
+   "text": "See you in the next story!",
+   "t0": 60.446,
+   "dur": 1.319
+  }
+ ]
+}

@@ -1,8 +1,13 @@
 // Draws one frame of the whiteboard story at time t: board, ink, the eraser,
 // the pixel critter and its speech bubbles. window.renderFrame(i) for tools/render.mjs.
 import { drawShape, rng } from './ink.js';
-import { FPS, DURATION, ITEMS, MOVER, WIPES, WIPE_DUR, sceneOf, BUBBLES, TYPE_RATE, HOPS, POINTS, critterX } from './story.js';
 import * as I from './ink.js';
+
+// ?story=name loads stories/name.js; the default is story 1 (src/story.js).
+const params = new URLSearchParams(location.search);
+const story = params.get('story') ? await import(`../stories/${params.get('story')}.js`) : await import('./story.js');
+const { FPS, DURATION, ITEMS, WIPES, WIPE_DUR, sceneOf, BUBBLES, TYPE_RATE, HOPS, POINTS, critterX } = story;
+const MOVER = story.MOVER || [], SUBTITLES = story.SUBTITLES || [], TALK = story.TALK || [];
 
 const W = 1280, H = 720;
 const c = document.getElementById('c'), g = c.getContext('2d');
@@ -55,7 +60,7 @@ function critter(t) {
   const { x, walking, dir } = critterX(t);
   let hop = 0;
   for (const h of HOPS) { const k = (t - h) / 0.42; if (k > 0 && k < 1) hop = Math.max(hop, Math.sin(k * Math.PI) * 34); }
-  const talking = BUBBLES.some((b) => t >= b.t0 && t < b.t0 + b.text.length / TYPE_RATE);
+  const talking = BUBBLES.some((b) => t >= b.t0 && t < b.t0 + b.text.length / TYPE_RATE) || TALK.some((q) => t >= q.t0 && t < q.t1);
   if (talking) hop = Math.max(hop, Math.abs(Math.sin(t * 14)) * 5);
   const pointing = POINTS.some((q) => t >= q.t0 && t < q.t1);
   const blink = (t % 3.1) < 0.13;
@@ -111,6 +116,22 @@ function bubble(b, t, who) {
   g.restore();
 }
 
+// ---- subtitles: the narration, for anyone watching muted ------------------------------------
+function subtitles(t) {
+  const s = SUBTITLES.find((q) => t >= q.t0 && t < q.t1);
+  if (!s) return;
+  const o = clamp(Math.min((t - s.t0) / 0.2, (s.t1 - t) / 0.2), 0, 1);
+  g.font = `bold 25px ${FONT}`;
+  const lines = wrap(s.text, 880);
+  const w = Math.max(...lines.map((l) => g.measureText(l).width)) + 36, h = lines.length * 32 + 16;
+  const cx = 760, y = H - 58 - 12 - h;
+  g.save(); g.globalAlpha = o;
+  g.fillStyle = 'rgba(20,22,26,0.82)'; g.beginPath(); g.roundRect(cx - w / 2, y, w, h, 12); g.fill();
+  g.fillStyle = '#fff'; g.textAlign = 'center';
+  lines.forEach((l, i) => g.fillText(l, cx, y + 32 + i * 32));
+  g.restore();
+}
+
 // ---- the eraser ----------------------------------------------------------------------------
 function eraserX(t) {
   for (const w of WIPES) if (t >= w && t < w + WIPE_DUR) return -160 + (W + 320) * (t - w) / WIPE_DUR;
@@ -128,6 +149,7 @@ function drawScene(scene, t) {
     if (it.scene !== scene || t < it.t0) continue;
     const p = (t - it.t0) / it.dur;
     if (it.kind === 'shape') drawShape(g, it.shape, p);
+    else if (it.kind === 'custom') it.draw(g, t);
     else writeText(it, p);
   }
   for (const m of MOVER) {
@@ -156,6 +178,7 @@ function frame(t) {
   if (ex !== null) drawEraser(ex, t);
   const who = critter(t);
   for (const b of BUBBLES) bubble(b, t, who);
+  subtitles(t);
   // Fade in and out.
   const f = Math.max(1 - clamp(t / 0.6, 0, 1), clamp((t - (DURATION - 0.8)) / 0.8, 0, 1));
   if (f > 0) { g.fillStyle = `rgba(0,0,0,${f})`; g.fillRect(0, 0, W, H); }
@@ -167,7 +190,7 @@ window.FPS = FPS;
 window.renderFrame = (i) => frame(i / FPS);
 window.ready = true;
 
-if (!new URLSearchParams(location.search).has('render')) {
+if (!params.has('render')) {
   const t0 = performance.now();
   const loop = () => { frame(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); };
   loop();

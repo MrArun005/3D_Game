@@ -24,5 +24,21 @@ Open `index.html` from any static server for a live preview.
 | `tools/audio.mjs` | The soundtrack, synthesised from the same timings |
 | `tools/render.mjs` | Headless Chromium, canvas pixels into ffmpeg |
 
+**Story 2: Pythagoras, proved with four triangles** (64 s, narrated):
+four copies of a right triangle fit a big square two ways; the space left over
+is c² one way and a² + b² the other. Voice-over and subtitles.
+
+```sh
+pip install kokoro-onnx soundfile     # plus kokoro-v1.0.onnx and voices-v1.0.bin in KOKORO_DIR
+python3 tools/voice.py stories/pythagoras.lines.json   # narration + timing
+node tools/audio.mjs pythagoras
+node tools/render.mjs --story pythagoras               # out/whiteboard-pythagoras.mp4
+```
+
+The narration is Kokoro, an open-weight neural text-to-speech model run
+locally (`tools/voice.py`); the voice is the one thing not synthesised by this
+code. Everything on screen is timed from the measured length of each spoken
+line, so the drawing lands on the words.
+
 To make a new story, write a new `story.js`: shapes and text go on the board at
 their times, and the eraser sweeps at each `WIPES` time.

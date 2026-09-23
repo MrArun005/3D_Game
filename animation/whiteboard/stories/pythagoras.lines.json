@@ -1,0 +1,17 @@
+{
+  "voice": "af_heart",
+  "speed": 0.95,
+  "lines": [
+    { "id": "hook",   "gap": 1.0, "text": "Can you prove the Pythagorean theorem without any algebra? Let's do it with just four triangles." },
+    { "id": "tri",    "gap": 0.5, "text": "Here's a right triangle. Its two short sides are a and b, and the long side is c." },
+    { "id": "claim",  "gap": 0.4, "text": "The theorem says: a squared, plus b squared, equals c squared." },
+    { "id": "build",  "gap": 1.2, "text": "Make four copies of the triangle, and fit them into a big square, with sides a plus b." },
+    { "id": "csq",    "gap": 0.6, "text": "Look at the empty space in the middle. It's a tilted square, with every side c. So its area is c squared." },
+    { "id": "slide",  "gap": 0.8, "text": "Now slide the very same triangles into new spots, inside the very same square." },
+    { "id": "absq",   "gap": 0.6, "text": "This time, the empty space is two squares. One is a squared, the other is b squared." },
+    { "id": "same",   "gap": 0.7, "text": "Same big square. Same four triangles. So the space that's left over must be the same, too." },
+    { "id": "qed",    "gap": 0.5, "text": "And that means a squared plus b squared equals c squared. Proved, just by moving shapes!" },
+    { "id": "check",  "gap": 1.2, "text": "Try it with three, four and five. Nine, plus sixteen, is twenty five." },
+    { "id": "bye",    "gap": 0.8, "text": "See you in the next story!" }
+  ]
+}
