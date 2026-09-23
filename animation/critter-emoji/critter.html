@@ -1,0 +1,56 @@
+<!doctype html><html><body style="margin:0;background:transparent">
+<canvas id="c" width="512" height="512"></canvas>
+<script>
+// The orange pixel critter, running. 16 x 11 cells: body, side nubs, two eyes,
+// four legs that scurry in alternating pairs. Two loops:
+//   draw('place', t)  runs on the spot, 512 x 512
+//   draw('around', t) runs across a 1024 x 384 strip, turns, runs back
+const c = document.getElementById('c'), g = c.getContext('2d');
+const ORANGE = '#d97757', TOP = '#e38c6e', EYE = '#15171a';
+function sprite(ox, oy, cell, t, dir) {
+  const px = (x, y, w, h, col) => {
+    const X = dir > 0 ? x : 16 - x - w;
+    g.fillStyle = col; g.fillRect(Math.round(ox + X * cell), Math.round(oy + y * cell), Math.ceil(w * cell), Math.ceil(h * cell));
+  };
+  const frame = Math.floor(t * 12) % 4;              // 4-step scurry
+  const bob = [0, -0.5, 0, -0.5][frame];
+  px(2, bob, 12, 8, ORANGE); px(2, bob, 12, 1, TOP);
+  px(0, 3 + bob, 2, 2, ORANGE); px(14, 3 + bob, 2, 2, ORANGE);
+  // Legs: pairs A and B swing; a lifted leg is shorter and leans forward.
+  const legs = [[3, 0], [5, 1], [10, 0], [12, 1]];
+  for (const [lx, pair] of legs) {
+    const up = (frame < 2) === (pair === 0);
+    px(lx + (up ? 0.5 : 0), 8 + bob, 1, up ? 2 : 3, ORANGE);
+  }
+  const blink = (t % 2.4) > 2.28;
+  px(9.5 + 0.5, 3 + bob + (blink ? 1 : 0), 1, blink ? 0.4 : 2, EYE);
+  px(4.5 + 0.5, 3 + bob + (blink ? 1 : 0), 1, blink ? 0.4 : 2, EYE);
+}
+function dust(x, y, t, dir) {
+  for (let i = 0; i < 3; i++) {
+    const k = ((t * 3 + i / 3) % 1);
+    if (k > 0.7) continue;
+    g.fillStyle = '#cfc6bc';
+    const s = Math.round((18 - 10 * k) / 6) * 6;
+    g.fillRect(Math.round(x - dir * (20 + 60 * k)), Math.round(y - 10 - 18 * k * (i % 2 ? 1 : 0.5)), s, s);
+  }
+}
+window.draw = (mode, t) => {
+  g.clearRect(0, 0, c.width, c.height);
+  if (mode === 'place') {
+    const cell = 26;
+    dust(512 / 2 - 8 * cell + 20, 400, t, 1);
+    sprite(256 - 8 * cell, 400 - 11 * cell, cell, t, 1);
+  } else {
+    // Out and back in one loop (t 0..1), easing into each turn.
+    const cell = 14, w = 16 * cell, span = c.width - w - 40;
+    const phase = t < 0.5 ? t * 2 : (1 - t) * 2;
+    const e = phase < 0.5 ? 2 * phase * phase : 1 - 2 * (1 - phase) ** 2;
+    const dir = t < 0.5 ? 1 : -1;
+    const x = 20 + span * e;
+    dust(x + (dir > 0 ? 30 : w - 30), 340, t * 3, dir);
+    sprite(x, 340 - 11 * cell, cell, t * 3, dir);
+  }
+};
+window.ready = true;
+</script></body></html>
