@@ -24,6 +24,7 @@ import { keptCellSet, wallProps, ringHides, segmentSplit, pieceHas } from './pla
 import { buildSpan, signatureBridge } from './spans.js';
 import { skirtFoot } from './district.js';
 import { styleFor, buildArt, artMaterial, ART_CAP } from './artBuildings.js';
+import { regentChunk, regentEnabled } from './regent.js';
 
 /**
  * Halstead Bay in three dimensions.
@@ -2013,6 +2014,31 @@ export class DistrictWorld {
         const pitched = this.#massing(arch, wx, wz, bl.angle, g.w, g.d, h,
                       { bases, facades, roofs, glassRoofs, crowns, masts, plant, gables }, bl.district, chunkDist2);
         boxes.push({ x: wx, z: wz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: h, district: bl.district, pitched });
+      }
+    }
+
+    /* Kingsway's street wall (world/regent.js): Regent Street stone frontages
+       down the empty grid round Little Tokyo. ONE mesh a chunk on the Tokyo
+       facade material (+1 draw where a chunk has any; the pipeline is the Tokyo
+       mesh's, already warmed), cast like the Tokyo mesh. Their boxes join the
+       chunk's solids (tagged `art`, so the kit dressing below leaves them alone)
+       and each building's shop light joins the kanban as a night-light and glare
+       candidate. The first chunk pays for the city-wide plan (~85 ms cold, in the
+       boot's unbudgeted build); each building after that is its own slice. ?noregent */
+    yield* brk('regent');
+    if (regentEnabled()) {
+      const rg = yield* regentChunk(this.district, k, tick);
+      if (rg) {
+        rg.geo.userData.owned = true;
+        const rm = new THREE.Mesh(rg.geo, tokyoFacadeMaterial());
+        rm.name = 'regent';
+        rm.castShadow = true; rm.receiveShadow = true;
+        rm.frustumCulled = false;                       // bundle contents are culled at record time (see the header)
+        rm.userData.shell = true;                       // casts into the far cascades like a shell
+        rm.layers.enable(SHADOW_FAR_LAYER);
+        group.add(rm);
+        for (const b of rg.boxes) boxes.push(b);
+        for (const l of rg.lamps) tokyoHeads.push(l);
       }
     }
 
