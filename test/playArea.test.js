@@ -186,7 +186,11 @@ test('leaning on the wall is a slide, not a brake: the scrub is per second, meas
     const kmh = [];
     let contacts = 0;
     for (let s = 0; s < 3; s++) {
-      for (let i = 0; i < 120; i++) { stepVehicle(c, H); if (holdInside(c, wallZ, 2.6, H)) contacts++; }
+      /* Steering a touch INTO the wall, as a player leaning on it does. With the
+         body frame un-mirrored (drive/handling P1) a car released at 11.5 deg
+         glances off after ~1.7 s instead of riding the wall, so without the
+         steer only 205 of 360 steps were in contact. */
+      for (let i = 0; i < 120; i++) { c.steerTarget = -0.15; stepVehicle(c, H); if (holdInside(c, wallZ, 2.6, H)) contacts++; }
       kmh.push(Math.hypot(c.vx, c.vz) * KMH);
       assert.ok(wallZ.probe(c.x, c.z).d <= -2.6 + 1e-9, 'held at the inset');
     }
