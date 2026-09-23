@@ -1,0 +1,18 @@
+{
+  "name": "hudson-1549",
+  "version": "1.0.0",
+  "description": "3D reconstruction of US Airways Flight 1549, every asset generated in code",
+  "scripts": {
+    "audio": "node tools/audio.mjs",
+    "render": "node tools/render.mjs",
+    "mux": "node tools/mux.mjs",
+    "film": "node tools/audio.mjs && node tools/render.mjs && node tools/mux.mjs"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "ffmpeg-static": "^5.3.0",
+    "playwright-core": "^1.63.0",
+    "three": "^0.170.0"
+  },
+  "type": "module"
+}

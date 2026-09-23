@@ -1,0 +1,29 @@
+html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+#stage { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; transform-origin: 0 0; overflow: hidden;
+  font-family: "Liberation Sans", "Helvetica Neue", Arial, sans-serif; color: #fff; }
+canvas { display: block; }
+#vignette { position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,0.38) 100%); }
+#fade { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; }
+#clock { position: absolute; top: 34px; right: 44px; font: 600 20px "Liberation Mono", monospace; letter-spacing: 1px;
+  padding: 6px 12px; background: rgba(10,14,20,0.55); border-left: 3px solid #e0443a; }
+#captions { position: absolute; left: 60px; bottom: 58px; width: 820px; }
+.cap.caption { position: absolute; bottom: 0; left: 0; font-size: 26px; line-height: 1.32; padding: 12px 18px;
+  background: rgba(8,12,18,0.62); border-left: 4px solid #f2c21b; text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
+#radio { position: absolute; right: 60px; bottom: 58px; width: 520px; }
+.cap.radio { position: absolute; bottom: 0; right: 0; width: 520px; box-sizing: border-box; padding: 14px 18px 16px;
+  background: rgba(6,10,14,0.78); border: 1px solid rgba(120,220,160,0.35); }
+.cap.radio .who { font: 700 15px "Liberation Mono", monospace; color: #8fe0a8; letter-spacing: 2px; margin-bottom: 8px; }
+.cap.radio .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #e0443a; margin-right: 10px; vertical-align: 1px; }
+.cap.radio .txt { font: 22px/1.35 "Liberation Mono", monospace; color: #e8f4ec; min-height: 60px; }
+#center { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; pointer-events: none; }
+.cap.title, .cap.end { position: absolute; text-shadow: 0 2px 12px rgba(0,0,0,0.65); }
+.cap .big { font-size: 64px; font-weight: 700; letter-spacing: 1px; }
+.cap .sub { font-size: 25px; margin-top: 14px; opacity: 0.92; }
+.cap.end { background: rgba(0,0,0,0.45); padding: 34px 56px; }
+.cap.end .big { font-size: 52px; }
+.cap.end .sub { font-size: 18px; line-height: 1.6; margin-top: 18px; opacity: 0.85; }
+#labels { position: absolute; inset: 0; pointer-events: none; }
+.label { position: absolute; transform: translate(-50%, -140%); font: 700 17px "Liberation Sans", sans-serif; letter-spacing: 1px;
+  padding: 3px 8px; background: rgba(8,12,18,0.7); white-space: nowrap; }
+.label::after { content: ""; position: absolute; left: 50%; top: 100%; width: 1px; height: 14px; background: rgba(255,255,255,0.8); }
