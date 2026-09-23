@@ -381,7 +381,8 @@ export function getVehicleProfile(bodyFile) {
  * handbrake barely turns it (4 deg at 60 km/h).
  * `gta` is the game default: a grip-limited steering lock (steerLimit), traction
  * control at the tyre's peak slip, a yaw-rate / body-slip stability controller,
- * the review branch's implicit wheel update (fed the road's acceleration) and
+ * the four wheels stepped implicitly TOGETHER with the body (dynamics.js: no
+ * step-rate chatter, and a stopped car stays stopped) with Coulomb brakes and
  * sliding-tyre lateral loss, brake and drive torque capped at what the tyre can
  * give while it corners (brake and steer at once; no inside-wheel burnout), and
  * a handbrake that owns the rear axle and throws the tail out. Pinned by
@@ -412,11 +413,11 @@ export const HANDLING = {
     betaMax: 0.14,    // rad (8 deg) of body slip before the car straightens itself
     straighten: 6,    // /s, yaw added per rad of excess slip, toward the velocity
     scrub: 1.5,       // lateral speed shed per rad of excess slip, x speed
-    brakeCap: 1.0,    // foot-brake torque cap, x what the tyre can react while cornering (sim: 0.95 x muFz, cornering or not)
+    brakeCap: 0.95,   // foot-brake torque cap, x what the tyre can react while cornering (sim: 0.95 x muFz, cornering or not); 1.0 sat on the peak and locked the fronts at a crawl
     hbKick: 5,        // rad/s^2 of yaw the handbrake adds toward the steer, x hand
     hbBeta: 0.3,      // rad (17 deg): the kick fades to nothing at this body slip
     hbRmax: 1.6,      // rad/s: and never above this yaw rate
-    hbCap: 0.6,       // rad (34 deg): with the lever held, slip past this is pulled back...
+    hbCap: 0.6,       // rad (34 deg): with the lever held, slip past this is pulled back (42-53 deg at most while moving; from 40 km/h a ~95-110 deg U-turn to a stop)...
     hbStraighten: 14, // ...at this rate (/s per rad of excess)
   },
 };

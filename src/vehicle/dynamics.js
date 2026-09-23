@@ -69,6 +69,17 @@ export function resetCar(car) {
 
 const DRIVEN = [2, 3];   // rear-wheel drive
 const GRAV = 9.81;
+/* gta scratch for the coupled wheel + body solve in stepVehicle, per wheel
+   FL FR RL RR: the tyre's secant stiffness (N per m/s of slip speed), the
+   wheel's torque before the brake, the brake torque, the wheel's inertia,
+   the steer cos/sin, the step-start longitudinal and lateral forces, the
+   longitudinal budget the ellipse leaves, the solve's a/b terms and net
+   torque, and whether the brake holds the wheel. Module scope so a 120 Hz
+   step allocates nothing. */
+const G_K = new Float64Array(4), G_T = new Float64Array(4), G_BT = new Float64Array(4), G_I = new Float64Array(4);
+const G_CD = new Float64Array(4), G_SD = new Float64Array(4), G_FL = new Float64Array(4), G_FC = new Float64Array(4);
+const G_LON = new Float64Array(4), G_A = new Float64Array(4), G_B = new Float64Array(4), G_TE = new Float64Array(4);
+const G_HELD = new Uint8Array(4);
 
 /**
  * The road-wheel angle full lock (steerTarget = +-1) asks for at `speed`, rad.
@@ -266,9 +277,15 @@ export function stepVehicle(car, dt) {
        torque from tcSlip of driven-wheel slip (the tyre's peak is 1/Cx =
        0.0625) to tcFloor over tcWidth -- and, lever off, a throttle cut past
        betaMax of body slip so a power slide cannot become a spin. tcCut is
-       a readout (1 = nothing cut) for the harness and any HUD lamp. */
+       a readout (1 = nothing cut) for the harness and any HUD lamp.
+       The slip is the GRIPPING driven wheel's (the slower one), not the
+       axle average: the per-wheel drive cap below reins in a spinning one,
+       and the average let one unloaded rear -- the one by the wall in a
+       scrape -- cut the loaded one's torque (street body, 6 deg scrape at
+       60 km/h, full throttle: 36 km/h kept with that rear at 1.59x the
+       road; 49 and 1.16x now; the other bodies were within 1 km/h). */
     if (car.hand > 0.5) engT = 0;
-    const sr = (wAvg * WHEEL_R - u) / Math.max(1.2, Math.abs(u));
+    const sr = (Math.min(car.wheelW[2], car.wheelW[3]) * WHEEL_R - u) / Math.max(1.2, Math.abs(u));
     const tc = Math.max(A.tcFloor, Math.min(1, 1 - (sr - A.tcSlip) / A.tcWidth));
     const bNow = Math.abs(Math.atan2(v, Math.max(1, Math.abs(u))));
     const slide = car.hand > 0.1 ? 1 : Math.max(A.betaCutFloor, Math.min(1, 1 - (bNow - A.betaMax) / A.betaCut));
@@ -317,11 +334,8 @@ export function stepVehicle(car, dt) {
 
     const isDriven = DRIVEN.includes(i);
     const I = V.wheelI + (isDriven && car.gear !== 1 ? Iref * 0.5 : 0);
-    // gta: the road's acceleration along this wheel -- last step's body
-    // acceleration plus the frame terms, as u/v integrate below
-    const aL = A ? ((car.lastAx || 0) + v * r) * cd + ((car.lastAy || 0) - u * r) * sd : 0;
     let drive = isDriven ? axleT * 0.5 : 0;
-    if (A && isDriven) {
+    if (A && isDriven && !car.airborne) {
       /* gta traction control, per driven wheel: never more drive torque than
          the tyre can react while it corners (A.driveCap x max^2/hypot(max,
          Fc), what the ellipse leaves at the peak -- the same budget as the
@@ -333,9 +347,24 @@ export function stepVehicle(car, dt) {
          and smoking the whole way (sim does the same: 316 km/h at 92).
          Capped, the rears track the road (0.98-1.03x of it), no smoke, and
          the car drives out of the corner (80 -> 102 km/h in 4 s) instead of
-         bogging (80 -> 79); 0-100 is unchanged (5.19 -> 5.23 s). 2026-09-23. */
-      const budget = (A.driveCap * WHEEL_R * max * max) / Math.max(1e-6, Math.hypot(max, FcRaw));
-      const spin = (I * aL) / WHEEL_R;
+         bogging (80 -> 79); the cap costs the launch nothing. 2026-09-23.
+         Past the tyre's peak (|slip| > 1/Cx) the budget drops to driveCap x
+         what the tyre is giving NOW, about zero: a cap sized for the peak is
+         more than the 72% sliding plateau, and the spin-up allowance reads
+         last step's TYRE acceleration, which a wall's drag is not part of, so
+         a wheel that got past the peak could never come back (a 6 deg wall
+         scrape unloads the rear by the wall: it ran 2.1x the road for the
+         whole scrape, smoking; now 1.10x). With the whole car in the air
+         there is no cap, or the engine could not rev off the ground (the
+         driven wheels held at x0.99 of road speed over a 0.5 s jump at full
+         throttle; now x1.49, sim x2.0). Per wheel it would un-cap the GT3's
+         lifted inside rear at 1.46 g, which then spun to 153 m/s. aL, the
+         road's acceleration along the wheel, is last step's body
+         acceleration plus the frame terms. */
+      const aL = ((car.lastAx || 0) + v * r) * cd + ((car.lastAy || 0) - u * r) * sd;
+      let budget = (A.driveCap * WHEEL_R * max * max) / Math.max(1e-6, Math.hypot(max, FcRaw));
+      let spin = (I * aL) / WHEEL_R;
+      if (Math.abs(slipRatio) > 1 / V.Cx) { budget = Math.min(budget, A.driveCap * WHEEL_R * Math.abs(Fl)); spin = 0; }
       drive = Math.max(spin - budget, Math.min(spin + budget, drive));
     }
     let T = drive - Fl * WHEEL_R;
@@ -346,47 +375,40 @@ export function stepVehicle(car, dt) {
        0.95x -> 1%). The handbrake is added AFTER the cap: it is meant to lock.
        gta: A.brakeCap x the braking force the tyre can still make while it
        corners -- max^2 / hypot(max, Fc), what the ellipse leaves at the
-       peak slip ratio (1.0x in a straight line: its implicit wheel, below,
-       holds the fronts off the lock where sim's explicit one chattered into
-       it). The plain muFz cap exceeds that whenever the tyre is also
-       cornering, so brake + steer locked the fronts for 92-96% of the stop
-       (the inside front first) and the car went straight on; now 0-4%, and
-       full brake + full lock at 80 km/h turns 21 deg in the first second
-       instead of 13, stopping in 24.5 m instead of 26.1 (2026-09-23). */
+       peak slip ratio. The plain muFz cap exceeds that whenever the tyre is
+       also cornering, so brake + steer locked the fronts for 92-96% of the
+       stop (the inside front first) and the car went straight on; now 1%,
+       and full brake + full lock at 80 km/h turns 23 deg in the first second
+       instead of 13 (2026-09-23). 0.95 like sim's, not 1.0: a brake torque
+       AT the peak is a knife edge -- once a front crossed it at a crawl
+       (where the slip band is only +-0.075 m/s wide) the brake out-held the
+       72% sliding force and the fronts locked for the last 8 km/h of every
+       stop (9-10% of a 100-0). 100-0 is 35.0 m (33.6 at 1.0, sim 36.6). */
     const cap = A ? A.brakeCap * WHEEL_R * max * max / Math.max(1e-6, Math.hypot(max, FcRaw)) : max * WHEEL_R * 0.95;
     const footBt = Math.min(brakeT * (front ? 0.62 : 0.38) * 0.5, cap);
     const bt = footBt + (i >= 2 ? car.hand * V.handbrake * 0.5 : 0);
+    if (A) {
+      /* gta: the wheel is stepped WITH the body in the coupled solve below
+         the loop, not here. Its tyre stiffness there is the SECANT through
+         the origin, Fl / slip speed (the curve's small-slip slope 2 Cx mu Fz
+         at zero), not the tangent: the curve is concave, so the secant is
+         never below the tangent and never 0 -- a wheel past the peak is
+         pulled back toward the road instead of jumping clean across it. On
+         the tangent (0 past the peak, so an explicit step there) a front let
+         go locked at 5 km/h chattered across the road speed 59 times in
+         0.5 s and never settled: one step moves it ~2 m/s, the +-0.075 m/s
+         linear band ~30 times over. On the secant it is on the road speed in
+         3 steps (2026-09-23, harness unlockFront). */
+      const e0 = slipRatio * denom;
+      G_K[i] = Math.abs(e0) > 1e-6 ? Fl / e0 : (kEll * 2 * V.Cx * mu * Fz[i]) / denom;
+      G_T[i] = T; G_BT[i] = bt; G_I[i] = I; G_CD[i] = cd; G_SD[i] = sd;
+      G_FL[i] = Fl; G_FC[i] = Fc; G_LON[i] = Math.sqrt(Math.max(0, max * max - Fc * Fc));
+      continue;
+    }
     T -= Math.sign(car.wheelW[i] || uL || 1) * bt;
 
     const before = car.wheelW[i];
-    if (A) {
-      /* gta: semi-implicit wheel update (after review branch d6c7ddf). A
-         free wheel against Cx = 16 has a ~5 ms time constant, under the
-         8.3 ms step, so the explicit update overshoots the road speed every
-         step: at steady full lock the fronts alternate 0.71 / 1.07 of u and
-         the lateral g 0.43 / 0.79 (2026-09-23), and it is the fronts' 23-25%
-         'locked' in a 100-0. Implicit Euler on the LINEARISED tyre reaction,
-         Fl(s1) ~ Fl(s0) + k (s1 - s0), s1 - s0 = (R dw - aL dt) / denom:
-           dw = (T/I dt + R k aL dt^2 / (denom I)) / (1 + dt k R^2 / (denom I))
-         k = dFl/dslip on the rising side of the curve (0 past the peak, so
-         a wheel that really is locking or spinning up keeps its live
-         dynamics). Two corrections to the branch's version, both measured:
-         - aL, the road's acceleration along the wheel (above). Without
-           it the wheel lags the road by one step whenever the car speeds up
-           or slows down, and at slope ~1.75e5 N that lag is a phantom
-           ~600-1200 N per free wheel against every launch and stop: muscle
-           0-100 6.83 -> 5.23 s, 100-0 36.4 -> 33.6 m with it.
-         - k is the slope the wheel actually feels, the raw curve's scaled
-           by the ellipse; the branch differenced the RAW force against the
-           CLIPPED one, which under combined slip read as a stiff spring on
-           the driven wheels and a soft one on the braked ones (the stiff one
-           held a wall-scraping car's rears at their old speed: 53 km/h kept
-           after a 6 deg scrape at 60, against 35 with the true slope and 30
-           in sim). */
-      const slope = (kEll * Math.max(0, tyreForce(slipRatio + 1e-3, V.Cx, Fz[i], mu) - FlRaw)) / 1e-3;
-      const stiff = (dt * slope * WHEEL_R) / (denom * I);
-      car.wheelW[i] += ((T / I) * dt + stiff * aL * dt) / (1 + stiff * WHEEL_R);
-    } else car.wheelW[i] += (T / I) * dt;
+    car.wheelW[i] += (T / I) * dt;
     if (bt > 1 && before !== 0 && Math.sign(car.wheelW[i]) !== Math.sign(before)) car.wheelW[i] = 0;
     car.wheelW[i] -= car.wheelW[i] * drags[i] * 0.02 * dt;
 
@@ -396,7 +418,90 @@ export function stepVehicle(car, dt) {
     Mz += fy * ax - fx * az;
   }
 
-  Fx -= V.dragC * u * Math.abs(u) + V.rollC * u;
+  if (A) {
+    /* gta: the four wheels and the body's u and yaw rate stepped TOGETHER,
+       implicit Euler on the tyres' linearised longitudinal reaction. Why
+       implicit: a free wheel against Cx = 16 has a ~5 ms time constant,
+       under the 8.3 ms step, so an explicit wheel overshoots the road speed
+       every step (at steady full lock the fronts alternated 0.71 / 1.07 of
+       u; it is sim's 23-25% 'locked' in a 100-0). Review branch d6c7ddf made
+       the WHEEL implicit on its own, and 2026-09-23 fed it last step's body
+       acceleration so it would not lag the road. Why together: at a crawl
+       the slip is measured against the 1.2 m/s floor, so the tyre is stiff
+       against the BODY as well as the wheel -- dt x sum(dFl/du) / m = 2.2 mu per step
+       (3.1 on the road cars, 4.0 on the GT3), and an explicit body update is
+       unstable above 2; with the wheel implicit alone and the road's
+       acceleration taken from last step, the bound is 0.5. What that did,
+       measured: below ~6 km/h the body chattered at the step rate (ax
+       +-1.1 g on alternate steps) and the chatter's asymmetry DROVE the car.
+       Coasting it never came to rest (supercar 6.1 km/h and GT3 5.5 after 3
+       min, rolling 43-44 m every 30 s; muscle 0.2); stopped and released it
+       crept 6.3 m a minute (74-82 m on the supercar and GT3); with the brake
+       held, 0.5-1.6 m in 2 min. Now 0.00 km/h, 0.00-0.02 m and 0.001 m. The
+       lag also left a phantom push: in a wall scrape the free fronts
+       'anticipated' an acceleration the wall took away and pushed +0.9 kN.
+       sim keeps its explicit wheels: they saturate symmetrically, so its
+       body chatter only jitters in place.
+         Per wheel, the slip speed moves by delta = R dw - (p du + q dr): p =
+       cos steer, q = the wheel's yaw arm (sin steer * a - cos steer * z,
+       which is also the yaw moment arm of a force along the wheel). With the
+       force F0 + K delta, the wheel I dw = dt (Te - R K delta) (Te: the
+       step-start net torque, -R F0 included) gives delta = a - b (p du +
+       q dr), a = R dt Te / g, b = I / g, g = I + dt R^2 K. A wheel the brake
+       HOLDS (it could stop it this step) has dw = 0: a = 0, b = 1. The body,
+       m du = dt (Fx0 + m v r + sum p K delta) and Iz dr = dt (Mz0 + sum q K
+       delta), is then a symmetric positive 2x2, solved by Cramer. The brake
+       is Coulomb friction: it holds the wheel if it can, else pushes against
+       the spin with bt (sim's sign(w || uL) flips every step at rest). Cost:
+       +0.2-0.4 us a step over the per-wheel version (best of 7 x 60k steps
+       2.05 -> 2.25 us; sim 1.6), ~0.5 us a frame. */
+    let FxDrag = V.dragC * u * Math.abs(u) + V.rollC * u;
+    for (let i = 0; i < 4; i++) FxDrag += drags[i] * u * 0.25;
+    let Fx0 = -FxDrag, Mz0 = 0;
+    let m11 = mass, m12 = 0, m22 = inertia, s1 = 0, s2 = 0;
+    for (let i = 0; i < 4; i++) {
+      const [ax, az] = offsets[i];
+      const cd = G_CD[i], sd = G_SD[i], K = G_K[i], I = G_I[i], bt = G_BT[i], T = G_T[i];
+      const fx = G_FL[i] * cd - G_FC[i] * sd, fy = G_FL[i] * sd + G_FC[i] * cd;
+      Fx0 += fx; Mz0 += fy * ax - fx * az;
+      const w0 = car.wheelW[i];
+      const need = (I * w0) / dt + T;            // the brake torque that would stop this wheel this step
+      let a, b;
+      G_HELD[i] = bt > 1 && Math.abs(need) <= bt ? 1 : 0;
+      if (G_HELD[i]) { a = 0; b = 1; }
+      else {
+        const Te = T - Math.sign(w0 || need) * bt;
+        const g = I + dt * WHEEL_R * WHEEL_R * K;
+        a = (WHEEL_R * dt * Te) / g; b = I / g; G_TE[i] = Te;
+      }
+      G_A[i] = a; G_B[i] = b;
+      const p = cd, q = sd * ax - cd * az, c = dt * K * b;
+      m11 += c * p * p; m12 += c * p * q; m22 += c * q * q;
+      s1 += p * K * a; s2 += q * K * a;
+    }
+    const r1 = dt * (Fx0 + mass * v * r + s1), r2 = dt * (Mz0 + s2);
+    const det = m11 * m22 - m12 * m12;
+    const du = (r1 * m22 - r2 * m12) / det, dr = (m11 * r2 - m12 * r1) / det;
+    for (let i = 0; i < 4; i++) {
+      const [ax, az] = offsets[i];
+      const cd = G_CD[i], sd = G_SD[i];
+      const delta = G_A[i] - G_B[i] * (cd * du + (sd * ax - cd * az) * dr);
+      // the implicit force, kept inside what the ellipse leaves beside the lateral
+      const Fl = Math.max(-G_LON[i], Math.min(G_LON[i], G_FL[i] + G_K[i] * delta));
+      const w0 = car.wheelW[i];
+      if (G_HELD[i]) car.wheelW[i] = 0;
+      else {
+        car.wheelW[i] = w0 + (dt * (G_TE[i] - (Fl - G_FL[i]) * WHEEL_R)) / G_I[i];   // Te already carries -R F0
+        if (G_BT[i] > 1 && w0 !== 0 && Math.sign(car.wheelW[i]) !== Math.sign(w0)) car.wheelW[i] = 0;
+      }
+      car.wheelW[i] -= car.wheelW[i] * drags[i] * 0.02 * dt;
+      const fx = Fl * cd - G_FC[i] * sd, fy = Fl * sd + G_FC[i] * cd;
+      Fx += fx; Fy += fy;
+      Mz += fy * ax - fx * az;
+    }
+  }
+
+  Fx -= V.dragC * u * Math.abs(u) + V.rollC * u;   // FxDrag again, in sim's order so its numbers stay bit-identical
   Fy -= V.rollC * v * 1.4;
   for (let i = 0; i < 4; i++) Fx -= drags[i] * u * 0.25;
 
@@ -448,8 +553,12 @@ export function stepVehicle(car, dt) {
          Cap: past hbCap of slip the nose is pulled back toward the velocity
          -- even with the lever held a slide is a slide, not a spin.
          Measured, muscle, full lock held 1.5 s at 60 / 100 km/h: 46 / 42
-         deg of slip (sim 4 / 1), under 8 again 0.45 / 0.66 s after letting
-         go; at 40 km/h the car is nearly stopped by then, 63 deg. */
+         deg of slip (sim 4 / 1), under 8 again 0.40 / 0.65 s after letting
+         go. From 40 km/h the slide stops the car inside the 1.5 s: 50 deg of
+         slip while it moves and ~95 deg of heading, a handbrake U-turn (the
+         light GT3: 39 deg, 109 deg of heading). Its '145 deg spin' in the
+         2026-09-23 review was the direction of a ~0 velocity, read through
+         the stop; this block is off below u = 2 m/s either way. */
       if (u > 3 && Math.abs(car.yawRate) < A.hbRmax) {
         const dir = Math.sign(car.steer) || Math.sign(r);
         car.yawRate += dir * A.hbKick * car.hand * Math.min(1, u / 8) * Math.max(0, 1 - Math.abs(b) / A.hbBeta) * dt;

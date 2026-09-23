@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import {
   CAR, H, openField, settled, launch, brake100, steadyLock, coastLock, powerLock, liftOff,
   handbrake, brakeTurn, tapHandbrake, keyStep, airRatio, scrape, headOn, powerTurn,
+  lockWobble, coastToRest, stopAndRelease, parkedBrake, airRev, unlockFront,
 } from '../tools/sim/handling.mjs';
-import { HANDLING, VEHICLE_PROFILES, pickHandling } from '../src/vehicle/config.js';
+import { HANDLING, VEHICLE_PROFILES, pickHandling, getVehicleProfile } from '../src/vehicle/config.js';
 import { stepVehicle, steerLimit, createCarState, resetCar } from '../src/vehicle/dynamics.js';
 import { Autopilot, buildRoute } from '../src/game/autopilot.js';
+import { Garage } from '../src/game/garage.js';
 
 /*
  * The GTA handling profile -- the game default (main.js car.assist) -- pinned
@@ -15,15 +17,18 @@ import { Autopilot, buildRoute } from '../src/game/autopilot.js';
  * file because openField() swaps metrics.js's module-global district for the
  * whole process; node --test gives every file its own.
  *
- * Measured 2026-09-23 (node tools/sim/handling.mjs gta --profile=muscle --open):
- * 0-100 5.23 s, 214 km/h; 100-0 33.6 m, fronts locked 0%; full lock
- * 1.14 / 1.19 / 1.21 g at 50 / 80 / 120 km/h, slip <= 2.4 deg, an 18 m circle
- * at 50; WOT + lock 9.5 deg, lift-off 1.5; handbrake 46 deg at 60, tail out,
- * under 8 again 0.45 s after letting go, 27 km/h left; W+A with Space tapped
- * 0.6 s at 70: 27 deg; brake + full lock at 80: fronts locked 0%, 21 deg of
- * heading in the first second. sim on the same car: 0.62 g, a 34 m circle,
- * handbrake 4 deg, brake + lock 98% locked. Bands, not values, with room for a
- * tuning pass.
+ * Measured 2026-09-23 (node tools/sim/handling.mjs gta --profile=muscle --open),
+ * after the coupled wheel + body solve: 0-100 5.09 s, 214 km/h; 100-0 35.0 m,
+ * fronts locked 0%; full lock 1.14 / 1.19 / 1.21 g at 50 / 80 / 120 km/h,
+ * slip <= 2.4 deg, an 18 m circle at 50, yaw rate steady to 0.4 / 2.1% at
+ * 120 / 160; WOT + lock 9.5 deg, lift-off 1.5; handbrake 46 deg at 60, tail
+ * out, under 8 again 0.40 s after letting go, 26 km/h left; W+A with Space
+ * tapped 0.6 s at 70: 27 deg; brake + full lock at 80: fronts locked 1%, 23
+ * deg of heading in the first second; a 6 deg wall scrape at 60 keeps 49
+ * km/h; and a car left alone stays put (0.00 km/h after a 3 min coast,
+ * 0.00 m in the minute after a stop, 0.001 m in 2 min with the brake held).
+ * sim on the same car: 0.62 g, a 34 m circle, handbrake 4 deg, brake + lock
+ * 98% locked. Bands, not values, with room for a tuning pass.
  */
 CAR.assist = HANDLING.gta; CAR.profile = VEHICLE_PROFILES.muscle;
 openField();
@@ -40,12 +45,24 @@ test('pickHandling: ?sim / ?gta beat the stored choice, which beats the gta defa
 });
 
 test('the handling profile survives a reset and a body swap (main.js sets it once)', () => {
-  // respawns, WASTED/BUSTED and R all go through resetCar; the garage only rewrites car.profile
+  // respawns, WASTED/BUSTED and R all go through resetCar
   const c = createCarState(); c.assist = HANDLING.gta; c.profile = VEHICLE_PROFILES.muscle;
   c.vx = 20; c.yawRate = 1; resetCar(c);
   assert.equal(c.assist, HANDLING.gta);
-  c.profile = VEHICLE_PROFILES.gt3_race;
-  assert.equal(c.assist, HANDLING.gta);
+  /* ...and the garage's body swap, through the real Garage: its constructor
+     fits hb.body onto the car with the same `this.car.profile =
+     getVehicleProfile(file)` line that #fit and equipRaceCar run (garage.js
+     :68 and :187; #fit itself needs a loaded skin, which node cannot fetch). */
+  const store = { 'hb.body': 's-porsche-gt3r' }, orig = globalThis.localStorage;
+  globalThis.localStorage = { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = String(v); } };
+  try {
+    new Garage({ cash: 0, persist() {} }, {}, { userData: {} }, null, { flash() {} }, c);
+    assert.equal(c.profile, getVehicleProfile('s-porsche-gt3r'), 'the garage fitted the GT3');
+    assert.notEqual(c.profile, VEHICLE_PROFILES.muscle, 'the body really changed');
+    assert.equal(c.assist, HANDLING.gta, 'and the handling profile did not');
+  } finally {
+    if (orig) globalThis.localStorage = orig; else delete globalThis.localStorage;
+  }
 });
 
 test('steerLimit is the angle stepVehicle actually applies at full lock (sim and gta)', () => {
@@ -82,6 +99,32 @@ test('gta: full lock at any speed is a tight ~1.1 g turn, never a spin', () => {
   assert.ok(r50 < 20, `full lock at 50 km/h drives a ${r50.toFixed(1)} m circle, want < 20`);
 });
 
+test('gta: a held full lock at speed is a steady turn, not a car pumping round the bend', () => {
+  // yawDampHi: flat 0.4/s yaw damping left a ~0.7 Hz yaw limit cycle, 52 / 50% peak to peak at 120 / 160
+  for (const kmh of [120, 160]) {
+    const w = lockWobble(kmh);
+    assert.ok(w.p2p < 0.1, `${kmh} km/h: yaw rate ${(w.p2p * 100).toFixed(1)}% peak to peak over 3 s, want < 10%`);
+  }
+});
+
+test('gta: a car left alone stays where it stopped (muscle and the race-mode GT3)', () => {
+  /* The first gta wheel update chattered the body at the step rate below
+     ~6 km/h and the chatter drove the car: after a 3 min coast the GT3 still
+     did 5.5 km/h, released after a stop it crept 82 m a minute, and with the
+     brake held (on foot the empty car keeps stepping) 1.6 m in 2 min. */
+  try {
+    for (const p of ['muscle', 'gt3_race']) {
+      CAR.profile = VEHICLE_PROFILES[p];
+      const c = coastToRest();
+      assert.ok(c.kmh < 0.1, `${p}: ${c.kmh.toFixed(2)} km/h after coasting 3 min, want < 0.1`);
+      const r = stopAndRelease();
+      assert.ok(r.moved < 0.5, `${p}: moved ${r.moved.toFixed(2)} m in the minute after stopping, want < 0.5`);
+      const k = parkedBrake();
+      assert.ok(k.moved < 0.1, `${p}: moved ${k.moved.toFixed(3)} m in 2 min with the brake held, want < 0.1`);
+    }
+  } finally { CAR.profile = VEHICLE_PROFILES.muscle; }
+});
+
 test('gta: throttle and lift-off never spin it', () => {
   const p = powerLock(30), l = liftOff(100), c = coastLock(80);
   assert.ok(p.maxBetaDeg < 12, `full throttle on full lock from 30 km/h: ${p.maxBetaDeg.toFixed(1)} deg`);
@@ -97,6 +140,14 @@ test('gta: W + full lock is a turn, not a burnout -- the driven wheels track the
     assert.ok(p.smokeFrac < 0.05, `${kmh} km/h: smoking ${(p.smokeFrac * 100).toFixed(0)}% of a held power turn`);
     assert.ok(p.speed > kmh * 0.9, `${kmh} km/h: came out at ${p.speed.toFixed(0)} km/h -- full throttle should not bog`);
   }
+  /* The GT3 at 1.46 g lifts its inside wheels clean off the ground; a drive
+     cap skipped for any unloaded WHEEL (not the airborne car) let that rear
+     spin to 7.3x the road (153 m/s) through five gears. */
+  try {
+    CAR.profile = VEHICLE_PROFILES.gt3_race;
+    const g = powerTurn(40);
+    assert.ok(g.spin < 1.2, `GT3 at 40 km/h: a rear wheel reached ${g.spin.toFixed(2)}x the road speed, want < 1.2`);
+  } finally { CAR.profile = VEHICLE_PROFILES.muscle; }
 });
 
 test('gta: you can brake and steer at once -- the fronts do not lock and the car turns', () => {
@@ -116,6 +167,27 @@ test('gta: the handbrake throws the TAIL out and it straightens itself when rele
   assert.ok(on.speedAfter > 15, `still rolling (${on.speedAfter.toFixed(0)} km/h) after the slide`);
 });
 
+test('gta: a wheel let go locked at a crawl rolls back up to the road, it does not chatter', () => {
+  // the coupled solve's tyre stiffness is the SECANT: on the tangent (0 past the peak) this flipped 59 times in 0.5 s
+  for (const kmh of [5, 10, 40]) {
+    const w = unlockFront(kmh);
+    assert.ok(w.flips === 0, `${kmh} km/h: the front's slip speed changed sign ${w.flips} times, want 0`);
+    assert.ok(w.settle !== null && w.settle <= 12, `${kmh} km/h: on the road speed after ${w.settle} steps, want <= 12`);
+  }
+});
+
+test('gta: from 40 km/h the handbrake is a U-turn, not a spin -- on the light GT3 too', () => {
+  // the GT3 read '145 deg' when slip was measured through the stop; while moving it slides <= 42 deg
+  try {
+    for (const p of ['muscle', 'gt3_race']) {
+      CAR.profile = VEHICLE_PROFILES[p];
+      const h = handbrake(1, 40);
+      assert.ok(h.maxBetaDeg < 60, `${p}: slid at ${h.maxBetaDeg.toFixed(0)} deg while moving, want < 60`);
+      assert.ok(h.yawDeg > 60 && h.yawDeg < 135, `${p}: turned ${h.yawDeg.toFixed(0)} deg of heading, want 60-135`);
+    }
+  } finally { CAR.profile = VEHICLE_PROFILES.muscle; }
+});
+
 test('gta: through main.js steering ramp a key tap is gentle, a held key turns, W+A+Space drifts', () => {
   const k = keyStep(80);
   assert.ok(Math.abs(k.r01) < 0.1, `yaw rate ${k.r01.toFixed(2)} rad/s 0.1 s into a key press at 80 km/h, want < 0.1`);
@@ -130,9 +202,30 @@ test('gta: kinematics -- a yawing car in the air keeps its velocity', () => {
   assert.ok(Math.abs(k) < 0.1, `velocity turned ${k.toFixed(2)} rad per rad of yaw, want ~0`);
 });
 
+test('gta: the engine revs with the wheels in the air, and the car lands straight', () => {
+  // the per-wheel drive cap held the driven wheels at road speed in the air (x0.99, rpm at the launch flare)
+  const a = airRev(100);
+  assert.ok(a.wheelGain > 1.2, `driven wheels x${a.wheelGain.toFixed(2)} over 0.5 s airborne at full throttle, want > 1.2`);
+  assert.ok(a.maxBetaDeg < 3 && a.landedKmh > 95, `landed at ${a.landedKmh.toFixed(0)} km/h, ${a.maxBetaDeg.toFixed(1)} deg of slip`);
+});
+
 test('gta: walls still scrape and stop', () => {
-  const s = scrape(60, 6);
-  assert.ok(s.after > 25 && s.after < 58, `scrape left ${s.after.toFixed(0)} km/h`);
+  /* Full throttle along a wall should drive: 49 km/h kept (sim 30). 35 is the
+     floor because under a peak-sized drive cap the rear the scrape unloads
+     spun up, the axle's traction control read it and cut the loaded rear to
+     its 35% floor, and the car kept 24 km/h (the 35 before that was the free
+     fronts' phantom push, gone with the lagged road acceleration). The
+     street body (every unlisted car) too: with the TC on the axle average
+     it kept 36 with that rear at 1.59x the road. */
+  try {
+    for (const p of ['muscle', 'street']) {
+      CAR.profile = VEHICLE_PROFILES[p];
+      const s = scrape(60, 6);
+      assert.ok(s.after > 35 && s.after < 58, `${p}: scrape left ${s.after.toFixed(0)} km/h, want 35-58`);
+      // ...and the unloaded rear must not burn out against the wall (2.7x the road under a peak-sized drive cap)
+      assert.ok(s.spin < 1.3, `${p}: a rear wheel ran ${s.spin.toFixed(2)}x the road speed along the wall, want < 1.3`);
+    }
+  } finally { CAR.profile = VEHICLE_PROFILES.muscle; }
   assert.ok(headOn(60).after < 5);
 });
 
