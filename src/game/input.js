@@ -51,18 +51,61 @@ export function axisToSteer(x, dz = STICK_DZ) {
   return s === 0 ? 0 : -s;
 }
 
+/* Keyboard steering ramp, in steerTarget units per second: 6/s out when
+   parking, falling to 2.5/s by 137 km/h (vHi, m/s -- dynamics.js's own
+   speedNorm), and 8/s back to centre at any speed. */
+export const KEY_STEER = { outLo: 6.0, outHi: 2.5, back: 8.0, vHi: 38 };
+
+/**
+ * One frame of the keyboard's steerTarget: move `cur` toward the key (-1, 0,
+ * +1, or a scripted fraction) at a CONSTANT rate. Pure, tested.
+ *
+ * It replaced an exponential ease in main.js (`cur += (key - cur) * dt*rate`),
+ * which had two faults:
+ *   - it never reached 0, and dynamics.js's 2x return rate is gated on
+ *     `steerTarget === 0`, so on a key release the wheel went on chasing a
+ *     decaying target at the OUTWARD rate: a 0.1 s tap at 120 km/h kept
+ *     steering after the key was up and turned the car 8.0 deg (62% of a
+ *     1 s hold);
+ *   - its "returning" test was a sign compare, which counts a centred wheel
+ *     as returning, so the first frame of every press ran at 2.2x.
+ * Constant-rate steps land on the key exactly and are frame-rate independent:
+ * a reversal (A straight to D) returns to 0 at the back rate and spends what
+ * is left of the frame going out the other side, so 60 Hz and 144 Hz agree.
+ */
+export function keyboardSteer(cur, key, speed, dt, k = KEY_STEER) {
+  if (!(dt > 0)) return cur;
+  if (key * cur < 0) {   // the other key: back through centre first, then out with the rest of the frame
+    const toZero = Math.abs(cur) / k.back;
+    if (toZero >= dt) return cur - Math.sign(cur) * k.back * dt;
+    return keyboardSteer(0, key, speed, dt - toZero, k);
+  }
+  const back = key === 0 || Math.abs(key) < Math.abs(cur);
+  const rate = back ? k.back : k.outLo + (k.outHi - k.outLo) * Math.min(1, Math.abs(speed) / k.vHi);
+  const step = rate * dt, d = key - cur;
+  return Math.abs(d) <= step ? key : cur + Math.sign(d) * step;
+}
+
 export function mergeDrive(kb, pad) {
   const padLive = pad.throttle > 0.02 || pad.brake > 0.02
     || Math.abs(pad.steer) > 0.02 || pad.handbrake > 0.1 || pad.hold;
+  const padSteers = Math.abs(pad.steer) >= Math.abs(kb.steer);
   return {
     throttle: Math.max(kb.throttle, pad.throttle),
     brake: Math.max(kb.brake, pad.brake),
-    steer: Math.abs(pad.steer) >= Math.abs(kb.steer) ? pad.steer : kb.steer,
+    steer: padSteers ? pad.steer : kb.steer,
     handbrake: Math.max(kb.handbrake, pad.handbrake),
     hold: !!(kb.hold || pad.hold),
     nos: !!(kb.nos || pad.nos),
     lookBack: !!(kb.lookBack || pad.lookBack),
     analogue: !!(padLive && (pad.throttle > 0.02 || pad.brake > 0.02 || Math.abs(pad.steer) > 0.02)),
+    /* Whether the STEER value came off a stick or a touch strip (pass it
+       straight through) or off a key (ramp it: keyboardSteer). `analogue`
+       was used for both, so holding R2 while steering with A/D handed the
+       binary +-1 straight to steerTarget -- instant full lock. `analogue`
+       stays for the pedal lags. `kb` can itself be a merge (touch merges over
+       keys+pad), so a steer it already owned keeps its flag. */
+    steerAnalogue: padSteers ? Math.abs(pad.steer) > 0.02 : !!kb.steerAnalogue,
     fire: !!(kb.fire || pad.fire),        // the pad's; the mouse buttons are main.js's. Either side:
     aim: !!(kb.aim || pad.aim),           // touch merges as mergeDrive(c, t) over the pad's result
     lookX: (kb.lookX || 0) + (pad.lookX || 0),   // right stick, mouse pixels per second

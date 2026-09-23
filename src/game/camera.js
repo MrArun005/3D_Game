@@ -55,8 +55,18 @@ export const RIGS = [
      A higher camera or a steeper pitch cannot hit all three numbers at once --
      30% width, lower-middle placement and a visible horizon -- only a low one
      can, which is why the brief says "just above the spoiler". */
-  { back: 5.9, up: 1.5, aim: 6.2, aimUp: -0.25, fov: 48, lag: 3.4, tilt: 1 },   // 7.2 measured 24% wide on the GT3 R; 30% is 7.2 * 24/30
-  { back: 4.7, up: 1.92, aim: 8.2, fov: 63, lag: 6.0, tilt: 1 },
+  /* yawLag (the two chase rigs only): the camera's own HEADING follows the
+     car's at this rate (1/s) instead of being welded to it. Welded, the lens
+     only swung out by the position follower's lag -- 4.7 deg off the car's
+     centreline in a 40 km/h corner, 1.7 at 120 -- so the car looked bolted
+     to the view. 3.5 puts it 12.7 / 7.0 / 5.1 deg out at 40 / 80 / 120 km/h
+     (full keyboard lock, default car): you see the flank, and the view is
+     back within 1 deg ~1 s after the key comes up (0.5-0.7 s welded). 3.0
+     gives ~14 deg at 40, 4.5 ~11: it is the one knob. Every other rig
+     (bonnet, bumper, cockpit, tank, heli, the video angles that do not copy
+     these) keeps the welded heading. */
+  { back: 5.9, up: 1.5, aim: 6.2, aimUp: -0.25, fov: 48, lag: 3.4, tilt: 1, yawLag: 3.5 },   // 7.2 measured 24% wide on the GT3 R; 30% is 7.2 * 24/30
+  { back: 4.7, up: 1.92, aim: 8.2, fov: 63, lag: 6.0, tilt: 1, yawLag: 4.5 },
   { back: -1.3, up: 1.28, aim: 14.0, fov: 62, lag: 22.0, tilt: 0 },
   { back: -0.55, up: 1.3, aim: 16.0, fov: 55, lag: 26.0, tilt: 0 },
   /* COCKPIT. Every number here was found by putting the camera there and
@@ -100,6 +110,8 @@ export function insideBoxes(x, z, boxes, pad = 0.6) {
   return false;
 }
 
+const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));   // an angle onto (-pi, pi]
+
 export class ChaseCamera {
   constructor(camera) {
     this.camera = camera;
@@ -124,6 +136,17 @@ export class ChaseCamera {
     this.looking = false;
     this.lookBehind = false;
     this.mouseIdle = 0;
+    /* The eased look-ahead. It was `this.look`, which after the first update()
+       replaced the look() METHOD below with a number: every mousemove in the
+       car threw, and the pad's right stick threw inside the frame, so the game
+       froze on the last good frame for as long as the stick was deflected
+       (and the tank turret, which aims from lookYaw, could not be aimed). */
+    this.lookAhead = 0;
+    this.camYaw = null;      // the lagged heading of a yawLag rig (null: take the car's on the next update)
+    this.yawRateSm = 0;      // yawRate and lastAy, smoothed for the roll, bank and look-ahead terms
+    this.aySm = 0;
+    this.aimDSm = null;      // eased aim distance (drive 6-7 m ahead, free look 2 m)
+    this.wasBehind = false;  // look-back last frame: its change is a cut
   }
 
   /** Mouse delta, in pixels. */
@@ -155,12 +178,30 @@ export class ChaseCamera {
        at the loft's seat. `this.hero` is set once by main. */
     const eye = base.cockpit ? this.hero?.userData?.cockpit : null;
     const rig = eye ? { ...base, ...eye } : base;
-    const yaw = car.renderYaw ?? car.yaw;
+    const snapping = !(dt <= 0.25);   // snap() passes 60; a missing dt snaps rather than poisoning every follower with NaN
+    const carYaw = car.renderYaw ?? car.yaw;
+    /* The camera's heading. A yawLag rig follows the car's heading at its own
+       rate (see RIGS), so a corner shows the car's flank; wrapped both ways,
+       so a yaw that has wound up to +20 pi or crosses +-pi is no jump. */
+    if (rig.yawLag && !rig.rigid) {
+      if (snapping || this.camYaw === null) this.camYaw = wrap(carYaw);
+      else this.camYaw = wrap(this.camYaw + wrap(carYaw - this.camYaw) * (1 - Math.exp(-rig.yawLag * dt)));
+    } else this.camYaw = wrap(carYaw);
+    const yaw = this.camYaw;
     const cy = Math.cos(yaw), sy = Math.sin(yaw);
     const rx = sy, rz = cy;
     const carX = car.renderX ?? car.x;
     const carZ = car.renderZ ?? car.z;
     const speedK = Math.min(1, (car.speed || 0) / 42);
+    /* yawRate and lastAy swing on alternate 1/120 physics steps in a steady
+       corner (0.54 <-> 0.72 g, 0.26 <-> 0.31 rad/s at 80 km/h; dynamics.js).
+       At an even 60 fps every frame samples the same phase; at 144 Hz, or with
+       real frame-time jitter, the phase walks and the lens roll read it raw:
+       0.21 deg/frame of roll second difference at 144 Hz (0.48 worst). Eased
+       at 8/s (the bank lands ~0.12 s later), 0.007 (0.02 worst). */
+    const sk = snapping ? 1 : 1 - Math.exp(-8 * dt);
+    this.yawRateSm += ((car.yawRate || 0) - this.yawRateSm) * sk;
+    this.aySm += ((car.lastAy || 0) - this.aySm) * sk;
     /* Speed used to pull the camera back 18%, widen the lens 12 degrees AND push
        the aim 55% further ahead, all at once -- three zoom-outs compounding, and
        the car shrank to half its width by 86 km/h ("everything is small"). GTA V
@@ -174,7 +215,7 @@ export class ChaseCamera {
        the part the follower has not caught up with is the bob, capped at
        0.45 m so a ramp jump still tracks the car. w=9 rad/s, zeta=1. */
     const heave = car.renderHeave ?? car.heave ?? 0;
-    if (dt > 0.25) { this.heaveSm = heave; this.heaveV = 0; }   // snap(): a 2 km teleport must not spring
+    if (snapping) { this.heaveSm = heave; this.heaveV = 0; }   // snap(): a 2 km teleport must not spring
     else {
       const h = Math.min(dt, 1 / 30), w = 9;
       this.heaveV += (-(this.heaveSm - heave) * w * w - this.heaveV * 2 * w) * h;
@@ -203,17 +244,39 @@ export class ChaseCamera {
       }
     }
 
-    // Auto-recenter after 2 seconds of no mouse look input
-    if (this.looking) {
+    /* Free look comes home GTA's way, and only here. It used to SNAP to 0
+       after 2 s idle (a 30.7 deg one-frame jump parked, 5.2 at 60 km/h) while
+       main.js ran a second ease on top that also fought live mouse input.
+       Now: a 1 s hold after the last input, then an ease home at 2.5/s --
+       only while moving, so parked the view stays where you put it, and never
+       on a holdLook rig (the tank's turret aims from lookYaw). lookYaw is
+       wrapped first: a mouse spun three turns must come home the short way
+       and still reach the recentre threshold. A snap (spawn, respawn,
+       teleport) lands behind the car, as snap()'s 60 s step always did. */
+    if (this.looking && snapping) this.recentre();
+    else if (this.looking) {
       this.mouseIdle += dt;
-      if (this.mouseIdle > 2.0) this.recentre();
+      const moving = Math.abs(car.fwdSpeed ?? car.speed ?? 0) > 6;
+      if (this.mouseIdle > 1.0 && moving && !rig.holdLook) {
+        const d = 1 - Math.exp(-2.5 * dt);
+        this.lookYaw = wrap(this.lookYaw);
+        this.lookYaw -= this.lookYaw * d;
+        this.lookPitch -= this.lookPitch * d;
+        if (Math.abs(this.lookYaw) < 0.005 && Math.abs(this.lookPitch) < 0.005) this.recentre();
+      }
     }
 
     /* The look offset orbits the rig around the car rather than just turning
        the camera, so you can see the flank of your own car, the road behind,
        and the sky above it. */
     let ly = this.lookYaw;
-    if (this.lookBehind || rig.lookBack) ly += Math.PI;   // the look-back key, or a rig that is a reverse shot by design (video.js HERO REVERSE)
+    const behind = !!(this.lookBehind || rig.lookBack);   // the look-back key, or a rig that is a reverse shot by design (video.js HERO REVERSE)
+    if (behind) ly += Math.PI;
+    /* Looking back is a CUT, as in GTA. Eased, the lens swung through the car
+       to get there: 1.52 m from the car's centre (through the roof) at
+       60 km/h, 132 deg of view rotation in one frame. */
+    const cut = behind !== this.wasBehind;
+    this.wasBehind = behind;
     const lift = Math.sin(this.lookPitch);
     const flat = Math.cos(this.lookPitch);
     const ox = Math.cos(ly) * (-cy) - Math.sin(ly) * (sy);
@@ -229,46 +292,64 @@ export class ChaseCamera {
        why the car was one size stopped and half that size at 90 km/h: at speed
        you were 4 m further back without anyone asking for it, and every rig
        had been tuned against the moving frame -- so at rest it clipped the
-       wheels off the bottom. Lead the target by 70% of the trail: transients
-       stay soft, steady-state distance stays what the rig says, and the last
-       30% keeps a touch of hang-back for the sense of speed. Not for rigid
-       rigs -- they have no lag to compensate. */
+       wheels off the bottom. Lead the target by 90% of the trail: transients
+       stay soft and steady-state distance stays what the rig says. It was
+       70%, and the 30% left over was not "a touch" of hang-back: +1.5 m at
+       120 km/h (7.43 m behind the car's centre, the car at 80% of its parked
+       width). At 90%: 5.91 / 6.15 / 6.38 / 6.55 m at 0 / 60 / 120 / 180 km/h
+       (8.10 m at 180 before), 93% of the width at 120; the sense of speed is
+       the +4 deg FOV below.
+       Not for rigid rigs -- they have no lag to compensate. */
     const lambda = 6.44 * (rig.lag / 3.4);
-    const lead = rig.rigid ? 0 : 0.7 / lambda;
+    const lead = rig.rigid ? 0 : 0.9 / lambda;
     const tx = carX + ox * back * flat + rx * side + (car.vx || 0) * lead;
     const tz = carZ + oz * back * flat + rz * side + (car.vz || 0) * lead;
     const ty = targetY + rig.up + lift * back * 1.15;
-    const k = rig.rigid ? 1 : 1 - Math.pow(0.0016, dt * (rig.lag / 3.4));
-    this.pos.x += (tx - this.pos.x) * k;
-    this.pos.y += (ty - this.pos.y) * k;
-    this.pos.z += (tz - this.pos.z) * k;
+    if (!rig.rigid && (snapping || cut)) {
+      /* A snap or a cut lands where the follower SETTLES -- the target less
+         the steady trail v / lambda. Landing on the lead-shifted target itself
+         put a snap at 60 km/h 4.20 m behind the car, then drifted back to
+         6.68; now 6.28 at the snap, 6.15 settled. */
+      this.pos.set(tx - (car.vx || 0) / lambda, ty, tz - (car.vz || 0) / lambda);
+    } else {
+      const k = rig.rigid ? 1 : 1 - Math.pow(0.0016, dt * (rig.lag / 3.4));
+      this.pos.x += (tx - this.pos.x) * k;
+      this.pos.y += (ty - this.pos.y) * k;
+      this.pos.z += (tz - this.pos.z) * k;
+    }
 
     /* Shake is kicked once per impact EVENT and capped. It used to add
        impact * 0.022 every FRAME while main.js let impact decay over half a
        second: ~3.5x the kick, frame-rate dependent (twice as hard at 120 Hz),
-       and a 20 m/s wall threw the camera 2 m a frame. 0.07 per m/s of rise
-       lands a real crash about where it was at 60 fps; 1.6 m is the ceiling
-       whatever hits you. */
+       and a 20 m/s wall threw the camera 2 m a frame. Then 0.07 per m/s of
+       rise capped at 1.6, re-randomised every frame: a 60 km/h wall still
+       threw the lens up to 0.62 m off its follower point, a landed pistol
+       round 0.14 m. 0.03 and a 0.6 ceiling: 0.30 m for the wall, 0.07 for
+       the round. main.js's direct `chase.shake = ...` writes (blasts, the
+       tank cannon) are capped here on the next frame. */
     const impact = car.impact || 0;
     const rise = Math.max(0, impact - this.lastImpact);
     this.lastImpact = impact;
-    this.shake = Math.min(1.6, this.shake * Math.exp(-dt * 6) + rise * 0.07);
+    this.shake = Math.min(0.6, (snapping ? 0 : this.shake * Math.exp(-dt * 6)) + rise * 0.03);
     /* Speed vibration. The old `(Math.random()-0.5) * speedK * 0.008` per
        FRAME buzzed twice as often at 120 Hz as at 60 -- same amplitude, a
        different texture. Two incommensurate sines of accumulated TIME give
        the same motion at any frame rate. Quadratic in speed so town driving
        is still. 6 mm at 150 km/h, 22 mm over a kerb. */
-    this.vibT = (this.vibT + dt) % 3600;
+    if (!snapping) this.vibT = (this.vibT + dt) % 3600;
     const vib = speedK * speedK * (car.kerb ? 0.022 : 0.006);
     const t = this.vibT;
     const vx = (Math.sin(t * 61.3) + Math.sin(t * 43.1) * 0.6) * vib;
     const vy = (Math.sin(t * 52.7 + 1.7) + Math.sin(t * 37.9) * 0.6) * vib * 0.7;
     const vz = (Math.sin(t * 47.3 + 3.1) + Math.sin(t * 68.2) * 0.6) * vib;
-    const j = this.shake;   // the impact kick stays a random jolt: it is an impulse, not a tone
+    /* The impact jolt is three faster sines of the same clock (11-13 Hz),
+       not a fresh Math.random() per frame: the same motion at 60 and 144 Hz,
+       and no unseeded randomness. +-0.5 x shake per axis, as before. */
+    const j = this.shake * 0.5;
     this.camera.position.set(
-      this.pos.x + (Math.random() - 0.5) * j + vx,
-      this.pos.y + (Math.random() - 0.5) * j * 0.55 + vy,
-      this.pos.z + (Math.random() - 0.5) * j + vz,
+      this.pos.x + Math.sin(t * 71.0 + 0.3) * j + vx,
+      this.pos.y + Math.sin(t * 83.0 + 2.1) * j * 0.55 + vy,
+      this.pos.z + Math.sin(t * 59.0 + 4.2) * j + vz,
     );
 
     // rain on the lens, for main.js -> grade.setDrops (see lensDrops above)
@@ -285,18 +366,25 @@ export class ChaseCamera {
        at 1.6 m, eased at 6/s so a tap does not twitch the frame. Still earned
        by speed: at a standstill the car cannot move, so neither should the
        view. */
-    const lookTarget = Math.max(-1.6, Math.min(1.6, (car.yawRate || 0) * (car.speed || 0) * 0.28)) * speedK;
-    // update() is also called without dt (the boot snap); a single NaN here poisoned this.look for the whole session
-    const lookK = Number.isFinite(dt) ? Math.min(1, dt * 6) : 1;
-    this.look = Number.isFinite(this.look) ? this.look + (lookTarget - this.look) * lookK : lookTarget;
-    const look = this.look;
+    const lookTarget = Math.max(-1.6, Math.min(1.6, this.yawRateSm * (car.speed || 0) * 0.28)) * speedK;
+    // update() is also called without dt (the boot snap); a single NaN here poisoned the look-ahead for the whole session
+    const lookK = snapping ? 1 : Math.min(1, dt * 6);
+    this.lookAhead = Number.isFinite(this.lookAhead) ? this.lookAhead + (lookTarget - this.lookAhead) * lookK : lookTarget;
+    const look = this.lookAhead;
     /* Look FURTHER ahead the faster you go. At a standstill you are looking at
        your own car; at speed you need the corner. Same principle every racing
        camera uses, and the reason GTA players complain they cannot see through
        a turn. */
     const aimAhead = 1 + speedK * 0.20;
-    // when free-looking or looking behind, aim through the car rather than down the road
-    const aimD = (this.looking || this.lookBehind) ? 2.0 : rig.aim * aimAhead;
+    /* When free-looking or looking behind, aim through the car rather than
+       down the road. Eased at 6/s: stepped, the first pixel of mouse moved
+       the aim from 6.2 m to 2 m in one frame -- a 4.4 deg jump and a pitch pop
+       from -8.2 to -12.5 deg. A snap, a look-back cut and the rigid cockpit
+       still set it outright. */
+    const aimWant = (this.looking || this.lookBehind) ? 2.0 : rig.aim * aimAhead;
+    if (snapping || cut || rig.rigid || this.aimDSm === null) this.aimDSm = aimWant;
+    else this.aimDSm += (aimWant - this.aimDSm) * (1 - Math.exp(-6 * dt));
+    const aimD = this.aimDSm;
     /* Sliding: the car POINTS one way and TRAVELS another, and a camera locked
        to the heading leaves you staring at your own flank through a drift --
        the single loudest complaint about GTA IV's chase view. Lean the aim a
@@ -308,7 +396,7 @@ export class ChaseCamera {
     if (!this.looking && !this.lookBehind) {
       const vx2 = car.vx || 0, vz2 = car.vz || 0, sp = Math.hypot(vx2, vz2);
       if (sp > 4) {
-        const fx = cy, fz = -sy;                       // the car's own forward
+        const fx = Math.cos(carYaw), fz = -Math.sin(carYaw);   // the CAR's own forward, not the lagged camera heading
         const cross = fx * (vz2 / sp) - fz * (vx2 / sp);
         const slip = Math.max(-0.45, Math.min(0.45, cross)) * speedK;
         slipX = rx * slip * 5.5; slipZ = rz * slip * 5.5;
@@ -325,8 +413,8 @@ export class ChaseCamera {
          it. lastAy is the lateral acceleration the tyres produced (dynamics.js),
          same sign as roll, so this term opposes the roll term and grows with
          speed: nothing at a crawl, ~3 deg at 1 g and 150 km/h (2026-09-11). */
-      const bank = Math.max(-0.06, Math.min(0.06, -((car.lastAy || 0) / 9.81) * 0.05 * speedK * Math.sqrt(speedK)));
-      this.camera.rotation.z += (car.renderRoll ?? car.roll ?? 0) * 0.35 - (car.yawRate || 0) * 0.018 + bank;
+      const bank = Math.max(-0.06, Math.min(0.06, -(this.aySm / 9.81) * 0.05 * speedK * Math.sqrt(speedK)));   // smoothed signals: see yawRateSm above
+      this.camera.rotation.z += (car.renderRoll ?? car.roll ?? 0) * 0.35 - this.yawRateSm * 0.018 + bank;
     }
 
     const nosBoost = car.nosActive ? 11 : 0;
@@ -338,7 +426,7 @@ export class ChaseCamera {
     const fov = (rig.fov ?? 62) + speedK * 4 + nosBoost;   // was 12: the speed zoom-out is the car shrinking, not the sensation of speed
     const near = rig.near ?? 0.5;
     let reproject = false;
-    if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 5.5); reproject = true; }
+    if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov += (fov - this.camera.fov) * (snapping ? 1 : Math.min(1, dt * 5.5)); reproject = true; }
     // stepped, not eased: the near plane is not a look, and easing it would crawl the whole far field
     if (this.camera.near !== near) { this.camera.near = near; reproject = true; }
     if (reproject) this.camera.updateProjectionMatrix();
