@@ -150,19 +150,33 @@ export function makePlayArea(polys) {
   return { poly: rings[0], rings, bbox: { x0, z0, x1, z1 }, contains, probe };
 }
 
+/* The scrub along the wall, per SECOND of contact (holdInside's `dt`). It was
+   a flat x0.985 per call, and the car calls at 120 Hz: leaning on the wall at
+   full throttle from 100 km/h with the nose 1.7 deg in left 20 / 4 / 0 km/h
+   after 1 / 2 / 3 s -- a silent ~2 g brake, the opposite of a slide -- and the
+   tank, helicopter and walker, called once a frame, scrubbed at a rate that
+   followed the frame rate. exp(-0.1 * t), measured the same way with the
+   shipped stepVehicle (test/playArea.test.js): 94 / 84 / 70 km/h at 1.7 deg,
+   90 / 78 / 64 at 11.5 deg; no scrub at all is 102 / 101 / 95. Most of what
+   is lost is the car yawing into the wall (the heading is not touched), not
+   the scrub. */
+export const WALL_SCRUB = 0.1;
+
 /**
  * The soft wall. Keeps a body ({x, z, vx, vz}) at least `inset` metres inside
  * the area: pushed back along the outward normal and the OUTWARD part of its
- * velocity removed, the rest kept (x0.985, a light scrub, so you slide along
- * the barrier instead of sticking to it). Writes nothing else -- no impact,
+ * velocity removed, the rest kept but for a light scrub over `dt` seconds of
+ * contact (WALL_SCRUB, per second -- dt 0 scrubs nothing), so you slide along
+ * the barrier instead of sticking to it. Writes nothing else -- no impact,
  * no hitAt -- so touching the edge costs no damage (damage.js), shakes no
  * camera (camera.js) and earns no star. Returns true when it moved the body.
  *
  * A negative inset lets the body that far PAST the outline (the helicopter
- * may hover 150 m out over the river). Cost: one probe, ~0.2 us in node for
- * the city + raceway union -- 1.6 us a frame at the car's worst 8 steps.
+ * may hover up to 150 m out over the river, heliInset). Cost: one probe,
+ * ~0.2 us in node for the city + raceway union -- 1.6 us a frame at the car's
+ * worst 8 steps.
  */
-export function holdInside(body, area, inset = 2.6) {
+export function holdInside(body, area, inset = 2.6, dt = 0) {
   const p = area.probe(body.x, body.z);
   if (p.d <= -inset) return false;
   const push = p.d + inset;
@@ -170,10 +184,90 @@ export function holdInside(body, area, inset = 2.6) {
   body.z -= p.nz * push;
   const vo = (body.vx || 0) * p.nx + (body.vz || 0) * p.nz;
   if (vo > 0) {
-    body.vx = ((body.vx || 0) - p.nx * vo) * 0.985;
-    body.vz = ((body.vz || 0) - p.nz * vo) * 0.985;
+    const keep = dt > 0 ? Math.exp(-WALL_SCRUB * dt) : 1;
+    body.vx = ((body.vx || 0) - p.nx * vo) * keep;
+    body.vz = ((body.vz || 0) - p.nz * vo) * keep;
   }
   return true;
+}
+
+/**
+ * The flown helicopter's inset, by height above the ground under it. Up high
+ * it may range 150 m past the wall (the view over the river); the allowance
+ * shrinks 3 m per metre of descent and is 3.5 m INSIDE once it is low enough
+ * to step out of (main.js useVehicle: <= 3.5 m). A flat -150 let it land 150 m
+ * out, and the walker it put down there was then held 0.5 m inside -- a 150 m
+ * jump in one frame, onto the river's centreline on the west side. Now a
+ * descent past the wall drifts back in as it comes down (at 3x the sink rate)
+ * and every exit lands inside: 3.5 m in, minus the 2.6 m exit offset.
+ */
+export function heliInset(alt) {
+  return 3.5 - Math.min(153.5, Math.max(0, (alt || 0) - 3.5) * 3);
+}
+
+/**
+ * A dispatch request's position, facing into the city. game/dispatch.js
+ * #findStreetDrop walks 24-80 m AHEAD of the caller's yaw (+-0.8 rad) to the
+ * first pavement, with no idea of the wall: facing out within 80 m of it, the
+ * tank or helicopter landed past it, where a walker held 0.5 m inside could
+ * never reach it. When the ray `reach` m ahead leaves the area, the yaw turns
+ * to the inward normal (dispatch.js's heading is (cos yaw, -sin yaw)).
+ */
+export function dropFacingIn(area, pos, reach = 90) {
+  const yaw = pos.yaw || 0;
+  const fx = Math.cos(yaw), fz = -Math.sin(yaw);
+  if (area.probe(pos.x + fx * reach, pos.z + fz * reach).d < -4) return pos;
+  const p = area.probe(pos.x, pos.z);
+  return { ...pos, yaw: Math.atan2(p.nz, -p.nx) };   // heading (-nx, -nz): into the city
+}
+
+/**
+ * Which chunk builds which stretch of a road SEGMENT. districtWorld builds a
+ * segment -- tarmac, lamps, trees, kerbside props, parked cars -- whole, in
+ * the chunk of its midpoint. Segments are long (grid streets run 1-1.4 km
+ * straight across the map), so in the compact city 17 whose midpoint cell is
+ * never built still ran INTO the city for 30-175 m: 1,408 m of tarmac inside
+ * the wall with no near road, no lamp, no tree, no kerb furniture. Moving each
+ * one whole to a kept cell would have built 15 km of street past the margin,
+ * so the segment is split instead:
+ *   - the stretch that lies in kept cells ([lo, hi) metres along it, sampled
+ *     every `step` m) is built by the kept cell covering most of it;
+ *   - the rest ([0, lo) and [hi, L)) stays with the midpoint's cell, which
+ *     only photo mode ever builds -- so a lifted clip still draws it all, once.
+ * Returns null when nothing needs splitting: no clip, a kept midpoint (the
+ * whole segment is built there, as before), or no kept cell on it at all.
+ * Keys are districtWorld's `${ix},${iz}`. Seeds along a segment are taken
+ * from its own start (dressing.js hash(s.ax + t...)), so a split stretch
+ * places exactly the props -- and lamp heads -- the whole segment would.
+ */
+export function segmentSplit(s, kept, chunk = 256, step = 4) {
+  if (!kept) return null;
+  const mid = `${Math.floor((s.ax + s.bx) / 2 / chunk)},${Math.floor((s.az + s.bz) / 2 / chunk)}`;
+  if (kept.has(mid)) return null;
+  const L = Math.hypot(s.bx - s.ax, s.bz - s.az), n = Math.max(1, Math.ceil(L / step)), dl = L / n;
+  const len = new Map();
+  let lo = Infinity, hi = -Infinity;
+  for (let j = 0; j < n; j++) {
+    const f = (j + 0.5) / n;
+    const k = `${Math.floor((s.ax + (s.bx - s.ax) * f) / chunk)},${Math.floor((s.az + (s.bz - s.az) * f) / chunk)}`;
+    if (!kept.has(k)) continue;
+    len.set(k, (len.get(k) ?? 0) + dl);
+    lo = Math.min(lo, j * dl); hi = Math.max(hi, (j + 1) * dl);
+  }
+  if (!len.size) return null;
+  let key = null, most = 0;
+  for (const [k, l] of len) if (l > most) { most = l; key = k; }
+  const rest = [];
+  if (lo > 0.5) rest.push([0, lo]); else lo = 0;
+  if (hi < L - 0.5) rest.push([hi, L]); else hi = L;
+  return { key, lo, hi, mid, rest, L };
+}
+
+/** Is `t` metres along a segment inside one of its build `pieces` ([[lo, hi), ...]; null = the whole segment)? */
+export function pieceHas(pieces, t) {
+  if (!pieces) return true;
+  for (let i = 0; i < pieces.length; i++) if (t >= pieces[i][0] && t < pieces[i][1]) return true;
+  return false;
 }
 
 /**
@@ -225,9 +319,14 @@ export function keptCellSet(keep, bounds, chunk = 256) {
 /**
  * Does the detail ring hide the far stand-in (or far glare head) at (px, pz)?
  * districtWorld #cullFar's rule: inside the square ring of half-size R about
- * the streaming centre AND in a cell that will be built -- `kept` -- unless the
- * clip is lifted. A stand-in in a ring cell the compact city never builds
- * stays up, or the ring's edge would be a hole in the skyline.
+ * the streaming centre AND owned by a cell that will be built -- `kept` --
+ * unless the clip is lifted. "Owned" is the cell whose chunk builds the real
+ * thing: a stand-in's BLOCK centre (blkByChunk), a lamp head's SEGMENT
+ * (ownerCell), never the stand-in's or the head's own position -- at the
+ * clip's edge the two differ, and keying by position left 17 stand-ins hidden
+ * over nothing (holes) and 18 drawn through the building their chunk built.
+ * A stand-in whose owner the compact city never builds stays up, or the
+ * ring's edge would be a hole in the skyline.
  */
 export function ringHides(px, pz, x, z, R, kept = true, lifted = false) {
   return Math.abs(px - x) < R && Math.abs(pz - z) < R && (lifted || !!kept);

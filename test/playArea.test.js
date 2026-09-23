@@ -6,12 +6,15 @@ import { District } from '../src/world/district.js';
 import {
   COMPACT_POLY, RACEWAY_POLY, COMPACT_PLACES, COMPACT_CHOP, COMPACT_TARGETS, JERSEY, HOARDING,
   makePlayArea, holdInside, clipGraph, pickMapMode, keptCellSet, wallProps, remapMission, ringHides,
+  segmentSplit, pieceHas, heliInset, dropFacingIn, WALL_SCRUB,
 } from '../src/world/playArea.js';
-import { isRacewayArea } from '../src/world/raceTrack.js';
-import { farLampHeads } from '../src/world/dressing.js';
+import { isRacewayArea, getSampledTrack, TRACK_HALF, GRID_SLOTS } from '../src/world/raceTrack.js';
+import { createCarState, resetCar, stepVehicle } from '../src/vehicle/dynamics.js';
+import { DispatchService } from '../src/game/dispatch.js';
+import { farLampHeads, dressChunk } from '../src/world/dressing.js';
 import { KERB_H } from '../src/world/metrics.js';
 import { STORY_MISSIONS, StoryManager } from '../src/game/storyMissions.js';
-import { CHOP_SHOP_COMPACT, CHOP_SHOP } from '../src/game/garage.js';
+import { CHOP_SHOP_COMPACT, CHOP_SHOP, Garage, chopValue } from '../src/game/garage.js';
 import { CommandEngine } from '../src/game/commands.js';
 import { FeatureTour } from '../src/game/featureTour.js';
 import { Jobs } from '../src/game/jobs.js';
@@ -167,6 +170,100 @@ test('the soft wall leaves the inside alone and only takes the outward speed', (
   assert.ok(Math.abs(W.probe(h.x, h.z).d - 150) < 1e-6, 'held at 150 m out');
 });
 
+test('leaning on the wall is a slide, not a brake: the scrub is per second, measured with the shipped stepVehicle', () => {
+  /* The review's harness: a straight wall at z = 10, the car held 2.6 m inside
+     it, full throttle from 100 km/h with the nose into the wall. The old x0.985
+     per 1/120 s step left 20 / 4 / 0 km/h after 1 / 2 / 3 s -- a silent 2 g brake. */
+  const wallZ = makePlayArea([[-5000, -5000], [5000, -5000], [5000, 10], [-5000, 10]]);
+  const H = 1 / 120, KMH = 3.6;
+  const run = (deg) => {
+    const c = createCarState(); resetCar(c); c.x = 0; c.z = 0; c.yaw = 0;
+    for (let i = 0; i < 360; i++) stepVehicle(c, H);
+    c.wantsForward = true; c.throttle = 1;
+    while (c.fwdSpeed * KMH < 100) stepVehicle(c, H);
+    const a = deg * Math.PI / 180, sp = Math.hypot(c.vx, c.vz);
+    c.x = 0; c.z = 10 - 2.65; c.yaw = -a; c.vx = Math.cos(a) * sp; c.vz = Math.sin(a) * sp;   // forward is (cos yaw, -sin yaw): into +z
+    const kmh = [];
+    let contacts = 0;
+    for (let s = 0; s < 3; s++) {
+      for (let i = 0; i < 120; i++) { stepVehicle(c, H); if (holdInside(c, wallZ, 2.6, H)) contacts++; }
+      kmh.push(Math.hypot(c.vx, c.vz) * KMH);
+      assert.ok(wallZ.probe(c.x, c.z).d <= -2.6 + 1e-9, 'held at the inset');
+    }
+    assert.ok(contacts > 300, `${contacts} steps in contact: it really leaned on the wall`);
+    assert.equal(c.impact || 0, 0, 'no impact: no damage, no shake');
+    return kmh;
+  };
+  const shallow = run(1.7), steep = run(11.5);
+  assert.ok(shallow[0] > 85 && shallow[2] > 60, `1.7 deg: ${shallow.map((v) => v.toFixed(0)).join(' / ')} km/h`);
+  assert.ok(steep[0] > 80 && steep[2] > 55, `11.5 deg: ${steep.map((v) => v.toFixed(0)).join(' / ')} km/h`);
+  // frame-rate independent: one call over a 1/30 s frame scrubs what four 1/120 s steps do
+  // (pressing outward each time: the scrub only bites while the body pushes into the wall)
+  const one = { x: 2954, z: 1500, vx: 5, vz: 20 }, four = { x: 2954, z: 1500, vx: 5, vz: 20 };
+  holdInside(one, W, 2.6, 1 / 30);
+  for (let i = 0; i < 4; i++) { four.x = 2954; four.vx = 5; holdInside(four, W, 2.6, 1 / 120); }
+  assert.ok(Math.abs(one.vz - four.vz) < 1e-9 && Math.abs(one.vz - 20 * Math.exp(-WALL_SCRUB / 30)) < 1e-9);
+  // dt 0 (the default) scrubs nothing
+  const z0 = { x: 2954, z: 1500, vx: 5, vz: 20 };
+  holdInside(z0, W, 2.6);
+  assert.equal(z0.vz, 20);
+});
+
+test('the flown helicopter ranges 150 m out up high and is back inside by the time it can land', () => {
+  assert.equal(heliInset(0), 3.5);
+  assert.equal(heliInset(3.5), 3.5, 'low enough to step out (main.js useVehicle): 3.5 m inside');
+  assert.equal(heliInset(200), -150);
+  assert.ok(heliInset(20) < 0 && heliInset(20) > -150);
+  // descend at 6 m/s from 80 m, 140 m out over the river: it drifts back in and touches down inside
+  const h = { x: 1466, z: 1300, vx: 0, vz: 0 };   // the west wall is the river centreline, x ~1606 here
+  assert.ok(W.probe(h.x, h.z).d > 130);
+  let alt = 80, worstJump = 0;
+  for (let i = 0; i < 60 * 20 && alt > 0; i++) {
+    const dt = 1 / 60, x0 = h.x, z0 = h.z;
+    alt = Math.max(0, alt - 6 * dt);
+    holdInside(h, W, heliInset(alt), dt);
+    worstJump = Math.max(worstJump, Math.hypot(h.x - x0, h.z - z0));
+  }
+  assert.ok(W.probe(h.x, h.z).d <= -3.5 + 1e-9, 'landed 3.5 m inside');
+  assert.ok(worstJump < 0.35, `a drift, never a jump: ${worstJump.toFixed(2)} m in one frame`);
+  // the walker it puts down, 2.6 m aside (main.js exitOffset), is inside too
+  for (let a = 0; a < 6.28; a += 0.3) assert.ok(W.contains(h.x + Math.cos(a) * 2.6, h.z + Math.sin(a) * 2.6));
+});
+
+test('a tank or helicopter asked for near the wall lands inside it (dispatch.js drop, phone.js dropFacingIn + keepInside)', () => {
+  const garage = { cash: 1e9, spendCash(n) { this.cash -= n; return true; } };
+  const ds = new DispatchService(new THREE.Group(), { district: city, nearbyBuildings: () => [] }, garage, null, null, { flash() {} }, null);
+  const rnd = mulberry32(9);
+  let n = 0, outAsAsked = 0, nudged = 0;
+  while (n < 200) {
+    const e = Math.floor(rnd() * COMPACT_POLY.length), [ax, az] = COMPACT_POLY[e], [bx, bz] = COMPACT_POLY[(e + 1) % COMPACT_POLY.length];
+    const f = rnd(), p0 = A.probe(ax + (bx - ax) * f, az + (bz - az) * f);
+    const depth = 1 + rnd() * 79, x = p0.px - p0.nx * depth, z = p0.pz - p0.nz * depth;
+    if (!A.contains(x, z) || A.probe(x, z).d > -0.5) continue;
+    n++;
+    const pos = { x, z, y: 0, yaw: rnd() * Math.PI * 2 };
+    const before = ds.dispatchTank(pos, 5);
+    if (!W.contains(before.x, before.z)) outAsAsked++;
+    const v = ds.dispatchTank(dropFacingIn(W, pos), 5);
+    if (holdInside(v, W, 6)) nudged++;             // phone.js #keepInside
+    assert.ok(W.probe(v.x, v.z).d <= -6 + 1e-9, 'lands 6 m inside: past the tank\'s own 4 m inset, so boarding does not move it');
+    ds.dispatchedVehicles.length = 0;
+  }
+  assert.ok(outAsAsked >= 15, `${outAsAsked} of 200 landed past the wall before`);
+  assert.ok(nudged < outAsAsked / 2, `facing in does most of it (${nudged} nudged)`);
+  const deep = { x: 2354, z: 1408, yaw: 1.2 };
+  assert.equal(dropFacingIn(W, deep), deep, 'deep inside: the request is left as it was');
+});
+
+test('the wall stays on through a circuit race: the whole track is well inside the raceway island', () => {
+  let worst = -Infinity;
+  for (const p of getSampledTrack(40)) {
+    for (const side of [-1, 0, 1]) worst = Math.max(worst, W.probe(p.x + p.nx * TRACK_HALF * side, p.z + p.nz * TRACK_HALF * side).d);
+  }
+  assert.ok(worst < -27, `the track's edge is ${(-worst).toFixed(1)} m inside the island at worst`);
+  for (const g of GRID_SLOTS) assert.ok(W.probe(g.x, g.z).d < -30, 'the grid');
+});
+
 test('the raceway island is inside the wall, and RACEWAY_POLY is isRacewayArea exactly', () => {
   assert.ok(W.contains(3560, 2457), 'the circuit grid');
   assert.ok(!A.contains(3560, 2457), 'but not part of the city');
@@ -191,25 +288,31 @@ test('streaming: 50 cells within 128 m of the city, the spawn ring whole, no pla
   assert.ok(kw.size > kc.size && kw.has(cellOf(3560, 2457)), 'the raceway island streams when you are there');
 });
 
-test('far stand-ins: the ring hides only what a built chunk replaces, from 200 places inside', () => {
+test('far stand-ins: the ring hides only what a built chunk replaces -- keyed by the BLOCK, not the stand-in', () => {
   const kept = keptCellSet((x, z) => W.probe(x, z).d < 128, full.bounds);
-  // stand-in centres, as districtWorld #buildFarCity lays them
+  /* Stand-in centres, as districtWorld #buildFarCity lays them, with the cell
+     that BUILDS each one's real building: its block's centre (blkByChunk). The
+     stand-in's own centre is the wrong key -- the review found 17 hidden over
+     a cell that never builds (holes) and 18 left standing through the building
+     their block's chunk did build. test/compactStreaming.test.js reads the
+     real DistrictWorld's farKept; this holds the rule itself. */
   const at = [];
   for (const bl of city.blocks) {
     const ca = Math.cos(bl.angle), sa = Math.sin(bl.angle);
     for (const g of city.buildingsOf(bl.id)) {
       const lx = g.x + g.w / 2, lz = g.y + g.d / 2;
-      at.push([bl.x + lx * ca - lz * sa, bl.y + lx * sa + lz * ca]);
+      at.push([bl.x + lx * ca - lz * sa, bl.y + lx * sa + lz * ca, kept.has(cellOf(bl.x, bl.y))]);
     }
   }
+  const byOwnCell = at.filter(([px, pz, k]) => kept.has(cellOf(px, pz)) !== k).length;
+  assert.equal(byOwnCell, 35, 'own-cell and block-cell keys disagree for 17 + 18 stand-ins at the clip edge');
   const rnd = mulberry32(5), R = (2 + 0.5) * 256;   // the FULL ring (radius 2)
   let hidden = 0, keptUp = 0;
   for (let k = 0; k < 200; k++) {
     const n = city.graph.nodes[(rnd() * city.graph.nodes.length) | 0];
-    for (const [px, pz] of at) {
-      const isKept = kept.has(cellOf(px, pz));
+    for (const [px, pz, isKept] of at) {
       const h = ringHides(px, pz, n.x, n.y, R, isKept, false);
-      if (h) { hidden++; assert.ok(isKept, 'a stand-in hidden over a cell that never builds: a hole'); }
+      if (h) { hidden++; assert.ok(isKept, 'a stand-in hidden over a block that never builds: a hole'); }
       else if (Math.abs(px - n.x) < R && Math.abs(pz - n.y) < R) keptUp++;
       // photo mode lifts the clip: everything in the ring may build, so everything in it hides
       if (Math.abs(px - n.x) < R && Math.abs(pz - n.y) < R) assert.ok(ringHides(px, pz, n.x, n.y, R, isKept, true));
@@ -219,16 +322,70 @@ test('far stand-ins: the ring hides only what a built chunk replaces, from 200 p
   assert.equal(ringHides(10, 10, 0, 0, 100), true, 'without a clip the rule is the old one');
 });
 
-test('far glare: heads in a cell that is never built keep their glare, every inside head hands over', () => {
+test('far glare: a head is tagged by the chunk that stands its lamp -- the segment, split or whole', () => {
   const kept = keptCellSet((x, z) => W.probe(x, z).d < 128, full.bounds);
-  const heads = farLampHeads(city, (x, z) => kept.has(cellOf(x, z)));
+  const splits = city.segments.map((sg) => segmentSplit(sg, kept));
+  // districtWorld #buildFarCity's predicate, verbatim in meaning
+  const heads = farLampHeads(city, (sg, i, t) => (splits[i] ? t >= splits[i].lo && t < splits[i].hi
+    : kept.has(cellOf((sg.ax + sg.bx) / 2, (sg.az + sg.bz) / 2))));
   assert.equal(heads.length, farLampHeads(full).length, 'the same heads, tagged');
   const inside = heads.filter((h) => A.contains(h.x, h.z));
   assert.ok(inside.length > 600, `${inside.length} inside`);
-  for (const h of inside) assert.equal(h.kept, 1, 'inside heads collapse to the chunk glare');
+  for (const h of inside) assert.equal(h.kept, 1, 'every head inside the city hands over to a chunk lamp');
   const nKept = heads.filter((h) => h.kept).length;
   assert.ok(nKept >= inside.length && nKept < heads.length * 0.35, `${nKept} of ${heads.length} kept`);
   assert.equal(farLampHeads(full)[0].kept, undefined, 'no tag without a predicate: the whole-bay shader is untouched');
+});
+
+test('segmentSplit: long streets that run into the city are built there, in pieces that tile the segment once', () => {
+  const kept = keptCellSet((x, z) => W.probe(x, z).d < 128, full.bounds);
+  assert.equal(segmentSplit(city.segments[0], null), null, 'no clip, no split');
+  let split = 0, recovered = 0;
+  city.segments.forEach((sg) => {
+    const sp = segmentSplit(sg, kept);
+    const L = Math.hypot(sg.bx - sg.ax, sg.bz - sg.az);
+    const mid = cellOf((sg.ax + sg.bx) / 2, (sg.az + sg.bz) / 2);
+    if (kept.has(mid)) { assert.equal(sp, null, 'a kept midpoint builds the whole segment, as before'); return; }
+    if (!sp) return;
+    split++;
+    assert.ok(kept.has(sp.key) && !kept.has(sp.mid) && sp.mid === mid);
+    // [lo, hi) plus the rest cover [0, L) exactly once
+    const pieces = [[sp.lo, sp.hi], ...sp.rest].sort((a, b) => a[0] - b[0]);
+    assert.equal(pieces[0][0], 0);
+    for (let i = 1; i < pieces.length; i++) assert.equal(pieces[i][0], pieces[i - 1][1]);
+    assert.ok(Math.abs(pieces[pieces.length - 1][1] - L) < 1e-9);
+    for (let t = 2; t < L; t += 8) {
+      const x = sg.ax + (sg.bx - sg.ax) * t / L, z = sg.az + (sg.bz - sg.az) * t / L;
+      const own = pieceHas([[sp.lo, sp.hi]], t);
+      if (A.contains(x, z)) { assert.ok(own, 'a stretch inside the city goes to the kept owner'); recovered += 8; }
+      // (to the split's 4 m sampling: a cell border inside a sample's 4 m is resolved by its centre)
+      if (kept.has(cellOf(x, z))) assert.ok(own || Math.min(Math.abs(t - sp.lo), Math.abs(t - sp.hi)) < 4, 'every stretch in a kept cell is built by the kept owner');
+    }
+  });
+  assert.equal(split, 49, `${split} segments split`);
+  assert.ok(recovered > 1300, `${recovered} m of road inside the city built near-detail again (was none)`);
+  assert.equal(pieceHas(null, 5), true);
+  assert.equal(pieceHas([[0, 4], [9, 12]], 5), false);
+  assert.equal(pieceHas([[0, 4], [9, 12]], 9), true);
+  assert.equal(pieceHas([[0, 4]], 4), false, 'half-open: the next piece owns its start');
+});
+
+test('a split stretch places exactly the kerbside props the whole segment places there (seeds from the segment start)', () => {
+  const kept = keptCellSet((x, z) => W.probe(x, z).d < 128, full.bounds);
+  const record = () => { const out = []; return { out, add: (name, m) => out.push(`${name}@${m.elements[12].toFixed(3)},${m.elements[14].toFixed(3)}`) }; };
+  let checked = 0;
+  city.segments.forEach((sg) => {
+    const sp = segmentSplit(sg, kept);
+    if (!sp) return;
+    const whole = record(), parts = record();
+    dressChunk(whole, { segments: [sg], blocks: [], district: city, solids: [], pools: [], heads: [] });
+    for (const pieces of [[[sp.lo, sp.hi]], sp.rest]) {
+      if (pieces.length) dressChunk(parts, { segments: [Object.assign(Object.create(sg), { pieces })], blocks: [], district: city, solids: [], pools: [], heads: [] });
+    }
+    assert.deepEqual(parts.out.slice().sort(), whole.out.slice().sort(), 'the pieces together are the whole segment, nothing twice');
+    checked += whole.out.length;
+  });
+  assert.ok(checked > 500, `${checked} props compared`);
 });
 
 test('the wall is dressed: jersey barriers on roads and decks, hoarding on open ground, 1 m outside', () => {
@@ -316,6 +473,29 @@ test('the chop shop moves inside with the city, on a pavement', () => {
   assert.equal(CHOP_SHOP_COMPACT.r, CHOP_SHOP.r);
 });
 
+test('N at the chop shop actually sells a stolen body (garage.act measured from the car; `where` was never set)', async () => {
+  const store = { 'hb.garage': JSON.stringify(['q-sports']), 'hb.body': 'q-suv' };
+  const had = globalThis.localStorage;
+  globalThis.localStorage = { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = String(v); } };
+  try {
+    const jobs = { cash: 100, persist() {} }, flashed = [];
+    const car = { x: CHOP_SHOP_COMPACT.x + 20, z: CHOP_SHOP_COMPACT.z - 15 };
+    const g = new Garage(jobs, {}, { userData: {} }, null, { flash: (m) => flashed.push(m) }, car);
+    g.chop = CHOP_SHOP_COMPACT;                          // what main sets in the compact city
+    let worn = null;
+    g.wear = async (file) => { worn = file; };           // the GLB swap needs a browser
+    assert.equal(g.owned.has(g.fitted), false, 'driving a body we do not own');
+    await g.act();
+    assert.equal(jobs.cash, 100 + chopValue('q-suv'), `paid: ${flashed.join(' | ')}`);
+    assert.equal(worn, 'q-sports', 'handed back the last body we owned');
+    // 300 m away it quotes the price and the distance -- a number, not Infinity
+    car.x = CHOP_SHOP_COMPACT.x + 300; flashed.length = 0;
+    await g.act();
+    assert.match(flashed[0], /HARBOUR CHOP SHOP \(\d+ m\)/);
+    assert.equal(jobs.cash, 100 + chopValue('q-suv'), 'no second payout');
+  } finally { if (had) globalThis.localStorage = had; else delete globalThis.localStorage; }
+});
+
 test('/tp refuses the destinations past the wall and still goes downtown, to Tokyo and the track', () => {
   const run = (dist, line) => {
     const hops = [];
@@ -328,6 +508,11 @@ test('/tp refuses the destinations past the wall and still goes downtown, to Tok
     assert.equal(run(full, `/tp ${out}`), 1, `${out} with the whole bay`);
   }
   for (const ok of ['downtown', 'tokyo', 'track']) assert.equal(run(city, `/tp ${ok}`), 1, `${ok} allowed`);
+  // before the district lands (world is the legacy City: no district) there is no wall to check: refused, either map
+  const early = [];
+  const eng = new CommandEngine({ chat: { post() {} }, hud: { flash: (m) => early.push(m) }, world: {}, teleport: () => early.push('hop') });
+  eng.execute('/tp harbour');
+  assert.deepEqual(early, ['CITY STILL LOADING']);
 });
 
 test('the feature tour skips the lift bridge in the compact city and keeps its eight scenes otherwise', () => {
@@ -342,11 +527,13 @@ test('the feature tour skips the lift bridge in the compact city and keeps its e
   t.start();
   assert.equal(t.stages.length, 7);
   assert.ok(!t.stages.some((s) => s.id === 'bridge_physics'));
+  assert.deepEqual(t.stages.map((s) => s.badge), [1, 2, 3, 4, 5, 6, 7].map((i) => `SCENE ${i} / 7`), 'numbered from what plays');
   for (let i = 0; i < 40 && t.active; i++) t.update(3);
   for (const [x, z] of c.warps) assert.ok(A.contains(x, z), `tour warped to (${x},${z})`);
   const f = new FeatureTour(ctx(false));
   f.start();
   assert.equal(f.stages.length, 8);
+  assert.equal(f.stages[4].badge, 'SCENE 5 / 8', 'the whole tour keeps its own table');
   f.stop({ download: false });
 });
 

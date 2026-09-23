@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { KERB_H } from './metrics.js';
+import { pieceHas } from './playArea.js';
 
 /**
  * Where the catalogue goes.
@@ -166,8 +167,9 @@ export const OQ_KIT = [
  * nothing stands on the tarmac of ANY road, everything is seeded off world
  * position, and the one prop big enough to stop a car pushes a solid.
  */
-function oldQuarterClusters(batch, s, L, ux, uz, nx, nz, district, solids) {
+function oldQuarterClusters(batch, s, L, ux, uz, nx, nz, district, solids, pieces = null) {
   for (let t = 12, ci = 0; t < L - 10; t += OQ_PITCH, ci++) {
+    if (!pieceHas(pieces, t)) continue;                             // a split segment: another chunk builds this stretch
     if (hash(s.ax + t * 2.17, s.az - t * 1.41) > 0.85) continue;   // the deliberate empty stretch
     /* Successive clusters mostly alternate sides. Picking the side purely at
        random leaves one pavement of a short street bare; alternating keeps
@@ -319,6 +321,12 @@ export function dressChunk(batch, ctx) {
 function kerbside(batch, segments, district, solids, pools, heads) {
   for (const s of segments) {
     if (s.cls === 'freeway' || s.cls === 'ramp') continue;
+    /* `s.pieces` (compact city, playArea.js segmentSplit): this chunk builds
+       only these stretches of the segment, [lo, hi) metres from its start;
+       another chunk -- or none -- builds the rest. The seeds below are taken
+       from the segment's own start, so a stretch places exactly what the
+       whole segment would there. Absent: the whole segment, as always. */
+    const pieces = s.pieces ?? null;
     const dx = s.bx - s.ax, dz = s.bz - s.az;
     const L = Math.hypot(dx, dz);
     if (L < 22) continue;
@@ -329,7 +337,7 @@ function kerbside(batch, segments, district, solids, pools, heads) {
        carry no district, so it comes from the nearest block; memoised on the
        segment because segments are shared between chunks and never move. */
     if (s._district === undefined) s._district = district.districtAt?.((s.ax + s.bx) / 2, (s.az + s.bz) / 2) ?? null;
-    if (s._district === 'OLD QUARTER') oldQuarterClusters(batch, s, L, ux, uz, nx, nz, district, solids);
+    if (s._district === 'OLD QUARTER') oldQuarterClusters(batch, s, L, ux, uz, nx, nz, district, solids, pieces);
 
     /* Clean carriageway: zero roadworks/debris blocking high-speed lanes */
     const works = -1;
@@ -338,6 +346,7 @@ function kerbside(batch, segments, district, solids, pools, heads) {
       if (row.on && !row.on.includes(s.cls)) continue;
       if (row.district && s._district !== row.district) continue;
       for (let t = rowStart(row, s); t < L - 8; t += row.every) {
+        if (!pieceHas(pieces, t)) continue;
         const seed = hash(s.ax + t * 1.31, s.az + t * 0.77);
         if (seed > row.chance) continue;
         const side = hash(s.az + t, s.ax) < 0.5 ? 1 : -1;
@@ -391,7 +400,7 @@ function kerbside(batch, segments, district, solids, pools, heads) {
     /* A hoarding on open ground beside a fast road. Sited off the segment
        rather than off a block so it lands on whatever is there -- which is
        what an advertiser does. */
-    if (s.cls === 'arterial' && L > 90 && hash(s.ax * 1.9, s.bz) < 0.3) {
+    if (s.cls === 'arterial' && L > 90 && hash(s.ax * 1.9, s.bz) < 0.3 && pieceHas(pieces, 40 + hash(s.bx, s.ax) * (L - 70))) {
       const t = 40 + hash(s.bx, s.ax) * (L - 70);
       const side = hash(s.bz, s.ax + t) < 0.5 ? 1 : -1;
       const off = (s.half + 9) * side;
@@ -413,7 +422,8 @@ function kerbside(batch, segments, district, solids, pools, heads) {
         const off = (s.half - 0.7) * side;
         const px = s.ax + ux * t + nx * off, pz = s.az + uz * t + nz * off;
         // roadworks live on their OWN road's edge; never in the crossing one
-        if (district.tarmacDepth(px, pz, s) <= 0.3) continue;
+        // (by identity: a split segment's view is not the segment, its prototype is)
+        if (district.tarmacDepth(px, pz, pieces ? Object.getPrototypeOf(s) : s) <= 0.3) continue;
         /* AND NEVER AT A JUNCTION (2026-09-14).
            These sit 0.7 m inside their own carriageway edge on purpose -- real
            roadworks take a lane -- and the guard above passes `s` so it only
@@ -875,10 +885,20 @@ export function dressFacades(batch, boxes, district, roadNear, signs = null, win
  * kerbside() uses -- so the far glare sprite (world/glare.js) sits exactly
  * where the real lamp will stand when its chunk streams in. Cheap: pure
  * arithmetic over the segment list, run once at load.
+ *
+ * `keptFor(segment, index, t)` (compact city): will the chunk that builds
+ * this stretch of the segment's kerbside -- and so the real lamp, `t` metres
+ * along it -- ever be built? Asked of the SEGMENT's owner, not the head's
+ * position: at the clip's edge a head often stands in another cell than the
+ * chunk that builds it (211 heads were zeroed with no chunk lamp to take
+ * over, 235 drawn twice beside one), and a split segment (playArea.js
+ * segmentSplit) has two owners along its length.
  */
-export function farLampHeads(district, keptAt = null) {
+export function farLampHeads(district, keptFor = null) {
   const out = [];
-  for (const s of district.segments) {
+  const segs = district.segments;
+  for (let si = 0; si < segs.length; si++) {
+    const s = segs[si];
     if (s.cls === 'freeway' || s.cls === 'ramp') continue;
     const dx = s.bx - s.ax, dz = s.bz - s.az;
     const L = Math.hypot(dx, dz);
@@ -899,9 +919,9 @@ export function farLampHeads(district, keptAt = null) {
         const yaw = Math.atan2(nx * -side, nz * -side);
         const y = KERB_H + district.elevationAt(px, pz);
         const hx = px + Math.sin(yaw) * reach, hz = pz + Math.cos(yaw) * reach;
-        /* `keptAt` (compact city): does this head's chunk ever build? 0 keeps
-           its far glare lit inside the detail ring (world/glare.js). */
-        out.push(keptAt ? { x: hx, y: y + h, z: hz, kept: keptAt(hx, hz) ? 1 : 0 } : { x: hx, y: y + h, z: hz });
+        /* `kept` 0 (compact city): no chunk ever builds this lamp, so its far
+           glare stays lit inside the detail ring (world/glare.js). */
+        out.push(keptFor ? { x: hx, y: y + h, z: hz, kept: keptFor(s, si, t) ? 1 : 0 } : { x: hx, y: y + h, z: hz });
       }
     }
   }

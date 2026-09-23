@@ -18,7 +18,7 @@ import { loadIndustrial, industrialYard, INDUSTRIAL } from './industrialYard.js'
 import { tokyoCell, tokyoBoardMesh } from './tokyoSigns.js';
 import { buildDecals, decalMaterial, decalGeometry } from './decals.js';
 import { buildGlare, setGlareRing, setGlareClip } from './glare.js';
-import { keptCellSet, wallProps, ringHides } from './playArea.js';
+import { keptCellSet, wallProps, ringHides, segmentSplit, pieceHas } from './playArea.js';
 import { buildSpan, signatureBridge } from './spans.js';
 import { skirtFoot } from './district.js';
 import { styleFor, buildArt, artMaterial, ART_CAP } from './artBuildings.js';
@@ -228,19 +228,39 @@ export class DistrictWorld {
        main.js keep working; they just have nothing to return. */
     this.only = typeof opts.only === 'function' ? opts.only : null;
 
-    if (!this.only) this.#buildFarCity(opts.day);
-
-    // bucket road segments and blocks into chunks once
+    /* Bucket road segments, edges and blocks into chunks once -- BEFORE the
+       far city, which keys its stand-ins' and far glare's "will a chunk
+       replace this?" by these same owners (compact city, #buildFarCity). */
     this.segByChunk = new Map();
-    district.segments.forEach((s, i) => {
-      const mx = (s.ax + s.bx) / 2, mz = (s.az + s.bz) / 2;
-      const k = ck(Math.floor(mx / CHUNK), Math.floor(mz / CHUNK));
+    /* A segment is built whole by its midpoint's chunk. In the compact city a
+       long one whose midpoint cell is never built is SPLIT (playArea.js
+       segmentSplit): its stretch in kept cells goes to the kept cell covering
+       most of it, the rest stays with the midpoint (photo mode only) -- 17 of
+       them ran into the city for 30-175 m with no near road, lamp or kerb
+       furniture. `segPieces` holds `${chunk}|${index}` -> [[lo, hi), ...]
+       metres along the segment for every split share (absent = whole), and
+       `segSplit[i]` the split itself (the far glare reads it). Measured: 49
+       split, 1,408 m of road inside the wall built again; the kept stretches
+       are 9.8 km in all, within 4 m of the kept cells, +415 kerbside props
+       over 21 edge chunks (worst chunk +101). */
+    this.segPieces = new Map();
+    this.segSplit = district.segments.map((s) => segmentSplit(s, this.keptCells, CHUNK));
+    const bucketSeg = (k, i, pieces) => {
       (this.segByChunk.get(k) ?? this.segByChunk.set(k, []).get(k)).push(i);
+      if (pieces) this.segPieces.set(`${k}|${i}`, pieces);
+    };
+    district.segments.forEach((s, i) => {
+      const sp = this.segSplit[i];
+      if (!sp) { bucketSeg(ck(Math.floor((s.ax + s.bx) / 2 / CHUNK), Math.floor((s.az + s.bz) / 2 / CHUNK)), i, null); return; }
+      bucketSeg(sp.key, i, [[sp.lo, sp.hi]]);
+      if (sp.rest.length) bucketSeg(sp.mid, i, sp.rest);
     });
     /* Kerbs and markings are built from graph EDGES, not road segments: an
        edge runs junction to junction, so it knows where to stop painting. A
        segment is just a polyline vertex pair and has no idea a crossroads is
-       halfway along it. */
+       halfway along it. Edges are short enough that the compact clip loses
+       none: every edge with a point inside the wall is owned by a kept cell
+       (test/compactStreaming.test.js). */
     this.edgeByChunk = new Map();
     this.graph.edges.forEach((e, i) => {
       const p = e.points[Math.floor(e.points.length / 2)];
@@ -253,6 +273,8 @@ export class DistrictWorld {
       const k = ck(Math.floor(bl.x / CHUNK), Math.floor(bl.y / CHUNK));
       (this.blkByChunk.get(k) ?? this.blkByChunk.set(k, []).get(k)).push(bl);
     });
+
+    if (!this.only) this.#buildFarCity(opts.day);
 
     /* The compact city's edge, dressed (world/playArea.js wallProps): jersey
        barriers across every road and deck that leaves the city, timber
@@ -369,11 +391,17 @@ export class DistrictWorld {
     far.add(roads);
 
     const slabs = [], solids = [], uvScale = [];
+    /* Compact city: will the chunk that builds this stand-in's REAL building
+       ever build? That is the chunk of its BLOCK's centre (blkByChunk), not of
+       the stand-in's own centre -- at the clip's edge the two differ (17 hidden
+       over nothing, 18 drawn through their building, keyed by position). */
+    const kept = [];
     const c = new THREE.Color();
     for (const bl of D.blocks) {
       slabs.push(mat4(bl.x, 0, bl.y, bl.angle, bl.w, KERB_H * 0.9, bl.h));
       const range = HEIGHT[bl.type];
       if (!range || !range[1]) continue;
+      const blockKept = this.#cellKept(bl.x, bl.y);
       const scale = DISTRICT_SCALE[bl.district] ?? 1;
       const ca = Math.cos(bl.angle), sa = Math.sin(bl.angle);
       /* The stand-in wears the same tiled facade as the near building, so it
@@ -390,6 +418,7 @@ export class DistrictWorld {
                          bl.y + lx * sa + lz * ca, bl.angle,
                          w, hh, Math.max(1, g.d - 0.3)));
         uvScale.push(w / tileW, hh / tileH);
+        kept.push(blockKept);
       }
     }
     const box = this.assets.geo.box;
@@ -419,8 +448,8 @@ export class DistrictWorld {
        crown as a pale cube sitting on the real building. */
     this.farSolids = solids;
     this.farAt = solids.map((m) => [m.elements[12], m.elements[14]]);
-    // compact city: a stand-in whose cell is never built stays up inside the ring (#cullFar)
-    this.farKept = this.farAt.map(([px, pz]) => this.#cellKept(px, pz));
+    // compact city: a stand-in whose block's chunk is never built stays up inside the ring (#cullFar)
+    this.farKept = kept;
     this.farMesh = solidMesh;
     this.farHidden = new Set();
     solids.forEach((m, i) => solidMesh.setMatrixAt(i, m));
@@ -452,9 +481,20 @@ export class DistrictWorld {
     /* Every lamp in the district as a glare sprite (GTA's distant-light quads,
        docs/GTA-VISUALS-RESEARCH.md item 2): one instanced draw, night-faded,
        zero-scaled inside the detailed ring where the chunk's own glare sits. */
-    /* `kept` per head (compact city): the ring zeroes only heads whose cell
-       will be built, so the lamps of an unbuilt edge cell keep their far glare. */
-    { const fl = buildGlare(farLampHeads(this.district, this.keptCells ? (x, z) => this.#cellKept(x, z) : null), 17, true); if (fl) { fl.renderOrder = 2; far.add(fl); this.farGlareCount = fl.count; } }
+    /* `kept` per head (compact city): the ring zeroes only heads whose lamp a
+       chunk will actually stand -- the chunk that builds that stretch of the
+       SEGMENT (its midpoint's, or for a split segment the kept owner of
+       [lo, hi)), never the head's own cell -- so the lamps of an unbuilt edge
+       cell keep their far glare and no head is drawn twice beside its chunk's own. */
+    const headKept = this.keptCells ? (s, i, t) => {
+      const sp = this.segSplit[i];
+      if (sp) return t >= sp.lo && t < sp.hi;
+      return this.keptCells.has(ck(Math.floor((s.ax + s.bx) / 2 / CHUNK), Math.floor((s.az + s.bz) / 2 / CHUNK)));
+    } : null;
+    const farHeads = farLampHeads(this.district, headKept);
+    // the flags handed to the shader, kept for debugging and test/compactStreaming.test.js (5 kB)
+    this.farGlareKept = headKept ? Uint8Array.from(farHeads, (h) => h.kept) : null;
+    { const fl = buildGlare(farHeads, 17, true); if (fl) { fl.renderOrder = 2; far.add(fl); this.farGlareCount = fl.count; } }
 
     this.scene.add(far);
     this.far = far;
@@ -1572,7 +1612,22 @@ export class DistrictWorld {
           [s.ax + nx, s.az + nz], [s.bx + nx, s.bz + nz],
           [s.bx - nx, s.bz - nz], [s.ax - nx, s.az - nz],
         ];
-        const tri = [q[0], q[1], q[2], q[0], q[2], q[3]];
+        /* Compact city: a split segment (playArea.js segmentSplit) lays only
+           its own stretches here, [lo, hi) metres along; the quad of each is
+           cut from the whole one, so deck heights, UV pitch and the skirt read
+           exactly as the unsplit road would. `null` is the whole segment. */
+        const pieces = this.segPieces.get(`${k}|${id}`) ?? null;
+        const quads = pieces ? pieces.map(([lo, hi]) => {
+          const a = lo / L, b = hi / L;
+          const pq = [
+            [q[0][0] + (q[1][0] - q[0][0]) * a, q[0][1] + (q[1][1] - q[0][1]) * a],
+            [q[0][0] + (q[1][0] - q[0][0]) * b, q[0][1] + (q[1][1] - q[0][1]) * b],
+            [q[3][0] + (q[2][0] - q[3][0]) * b, q[3][1] + (q[2][1] - q[3][1]) * b],
+            [q[3][0] + (q[2][0] - q[3][0]) * a, q[3][1] + (q[2][1] - q[3][1]) * a],
+          ];
+          pq.lo = lo; pq.hi = hi;
+          return pq;
+        }) : [Object.assign(q, { lo: 0, hi: L })];
         /* Deck height: sampled at the two END CENTRES, then applied flat across
            the width. Sampling each CORNER instead made a road ramp along AND
            bank across, and spanHeight is a cliff -- full height inside a band
@@ -1589,14 +1644,17 @@ export class DistrictWorld {
           const t = L > 0.001 ? Math.max(0, Math.min(1, ((px - s.ax) * dx + (pz - s.az) * dz) / (L * L))) : 0;
           return decA + (decB - decA) * t;
         };
-        for (const [px, pz] of tri) {
-          pos.push(px, deckY(px, pz), pz);
-          nor.push(0, 1, 0);
+        for (const pq of quads) {
+          for (const [px, pz] of [pq[0], pq[1], pq[2], pq[0], pq[2], pq[3]]) {
+            pos.push(px, deckY(px, pz), pz);
+            nor.push(0, 1, 0);
+          }
+          // the tile is 18.4m square; stretching one across a 34m carriageway is
+          // what turned every arterial into a car park with faint stripes on it.
+          // Measured from the segment's start, so a split stretch tiles on unbroken.
+          const v0 = pq.lo / 18.4, v = pq.hi / 18.4, u = (s.half * 2) / 18.4;
+          uv.push(v0, 0, v, 0, v, u, v0, 0, v, u, v0, u);
         }
-        // the tile is 18.4m square; stretching one across a 34m carriageway is
-        // what turned every arterial into a car park with faint stripes on it
-        const v = L / 18.4, u = (s.half * 2) / 18.4;
-        uv.push(0, 0, v, 0, v, u, 0, 0, v, u, 0, u);
 
         // elevated? then this segment gets sides
         const e0 = deckY(q[0][0], q[0][1]), e1 = deckY(q[1][0], q[1][1]);
@@ -1615,10 +1673,10 @@ export class DistrictWorld {
             for (const b of sp.solids) boxes.push(b);
           }
           const ground = (px, pz) => (D.inWater && D.inWater(px, pz) ? -2.6 : 0);
-          for (const [a, b, ox, oz] of [
-            [q[0], q[1],  nx / s.half,  nz / s.half],   // one edge, facing out
-            [q[3], q[2], -nx / s.half, -nz / s.half],   // the other
-          ]) {
+          for (const [a, b, ox, oz] of quads.flatMap((pq) => [
+            [pq[0], pq[1],  nx / s.half,  nz / s.half],   // one edge, facing out
+            [pq[3], pq[2], -nx / s.half, -nz / s.half],   // the other
+          ])) {
             const ya = deckY(a[0], a[1]), yb = deckY(b[0], b[1]);   // the deck's own height, so the skirt and parapet cannot disagree with the tarmac
             /* Over water, or wherever spans.js carries this deck on piers, the
                skirt is the 0.9 m soffit band those piers hold up -- not a dam to
@@ -1933,7 +1991,9 @@ export class DistrictWorld {
       if (L < 24) continue;
       const ux = dx / L, uz = dz / L, nx = -uz, nz = ux;
       const off = s2.half + 1.4;
+      const pieces = this.segPieces.get(`${k}|${id}`) ?? null;   // a split segment: only this chunk's stretches (see the carriageway loop)
       for (let t = 16, i = 0; t < L - 8; t += 38, i++) {
+        if (!pieceHas(pieces, t)) continue;
         const side = i % 2 ? 1 : -1;
         const px = s2.ax + ux * t + nx * off * side;
         const pz = s2.az + uz * t + nz * off * side;
@@ -1987,6 +2047,7 @@ export class DistrictWorld {
       // kerbside parking on the quieter streets
       if (s2.cls === 'street') {
         for (let t = 20; t < L - 12; t += 12) {
+          if (!pieceHas(pieces, t)) continue;
           if (hash(s2.ax + t, s2.az) > 0.42) continue;
           const side = hash(s2.az, s2.ax + t) < 0.5 ? 1 : -1;
           const px = s2.ax + ux * t + nx * (s2.half - 1.2) * side;
@@ -2063,7 +2124,12 @@ export class DistrictWorld {
       const dressPools = [], dressHeads = [];
       yield* brk('dressChunk');
       dressChunk(batch, {
-        segments: segs.map((id) => this.district.segments[id]),
+        /* a split segment goes in as a view carrying its `pieces` (dressing.js
+           kerbside reads them); the shared segment object itself is never written */
+        segments: segs.map((id) => {
+          const sg = this.district.segments[id], pieces = this.segPieces.get(`${k}|${id}`);
+          return pieces ? Object.assign(Object.create(sg), { pieces }) : sg;
+        }),
         blocks, district: this.district, solids: solidParked, pools: dressPools,
         heads: dressHeads,
       });
