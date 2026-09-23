@@ -47,6 +47,8 @@ import { createCarState, resetCar, stepVehicle } from './vehicle/dynamics.js';
 import { Vehicle, CarVehicle } from './game/vehicle.js';
 import { HelicopterVehicle } from './game/flight.js';
 import { TankVehicle } from './game/tank.js';
+import { buildTankModel } from './world/tankModel.js';
+import { buildHeliModel } from './world/heliModel.js';
 import { DispatchService } from './game/dispatch.js';
 import { groundHeightAt } from './world/metrics.js';
 import { CG_X, WHEEL_R, getVehicleProfile } from './vehicle/config.js';
@@ -2622,7 +2624,11 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   skids.update(car, car.wheelGround ? car.wheelGround[2] : 0);
   if (firing || c?.fire) pullTrigger();   // left mouse, or R2 on foot / R1 in the car
   if (crowd) crowd.signalTime = worldTime;   // pedestrians wait for the same lights the cars obey
-  if (crowd) crowd.update(car, dt, (speed, p) => {
+  /* On foot the crowd lives round YOU, not round the car you left (it spawned,
+     despawned and picked its detailed faces 50 m away by the parked car); the
+     detailed-mesh set follows the camera, which is what a LOD is for. */
+  if (crowd) crowd.focus = camera.position;
+  if (crowd) crowd.update(onFoot.active ? quarry : car, dt, (speed, p) => {
     traffic.reportCrime('person', speed);
     if (p && speed > 3) {   // a pedestrian under the car: blood where they fell, a scuff of dust, and it hurts to watch
       const gy = groundHeightAt(p.x, p.z);
@@ -2865,14 +2871,35 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     }
     // Little Tokyo's boards, the same way: an InstancedMesh carrying aCell. Also paints their atlas now, not in the first Tokyo chunk.
     dummyGroup.add(tokyoBoardMesh([{ m: new THREE.Matrix4().makeTranslation(0, -50, 0), cell: [0, 0, 0.25, 0.0625] }]));
+    /* The machines that arrive mid-game (2026-09-23): a dispatched tank and a
+       delivered helicopter share their materials with every later one, so one
+       model of each here is the whole cost of their pipelines. */
+    const warmHeli = buildHeliModel({ livery: 'civil' });
+    dummyGroup.add(buildTankModel().group, warmHeli.group);
     scene.add(dummyGroup);
 
+    /* compileAsync runs the RENDER's visibility pass: an invisible group skips
+       its whole subtree and every mesh is frustum-tested against the boot
+       camera. The dummies sat at the world origin, 2.7 km behind the spawn
+       camera, so the list above was culled before it compiled -- every first
+       spark, decal, flash and effect was a pipeline compile mid-game. For the
+       warm-up nothing is culled: dummies and un-hidden meshes compile with
+       frustumCulled off (and get it back), and the police helicopter's hidden
+       group is shown, since it only appears at three stars, mid-pursuit. */
+    const unculled = [];
+    const uncull = (o) => { if (o.frustumCulled) { unculled.push(o); o.frustumCulled = false; } };
+    dummyGroup.traverse(uncull);
     const hidden = [];
-    scene.traverse((o) => { if ((o.isPoints || o.isMesh) && !o.visible && !o.isInstancedMesh && !o.userData?.shell) { hidden.push(o); o.visible = true; } });
+    scene.traverse((o) => { if ((o.isPoints || o.isMesh) && !o.visible && !o.isInstancedMesh && !o.userData?.shell) { hidden.push(o); o.visible = true; uncull(o); } });
+    const hiddenGroups = [heli?.group].filter((g) => g && !g.visible);
+    for (const g of hiddenGroups) { g.visible = true; g.traverse(uncull); }
     // never let the warm-up hold the game hostage: 1.5 s, then in you go regardless
     const drop = () => {
       setBootProgress(100, 'Ready!');
       for (const o of hidden) o.visible = false;
+      for (const g of hiddenGroups) g.visible = false;
+      for (const o of unculled) o.frustumCulled = true;
+      for (const m of [warmHeli.disc, warmHeli.beacon, warmHeli.tailStrobe]) { m.geometry.dispose(); m.material.dispose(); }   // its own parts; the rest is the shared kit
       scene.remove(dummyGroup);
       testBox.dispose();
       if (boot) { boot.remove(); boot = null; }

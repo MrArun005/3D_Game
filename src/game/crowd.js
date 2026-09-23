@@ -142,7 +142,7 @@ export class Crowd {
          Going down removes them from bodies(), so the collision pass never
          sees the impact it would have had to infer the crime from -- and a
          0.36m circle barely registers against the hull probes anyway. */
-      if (!p.down && gap < 1.7 && car.speed > 2.2) {
+      if (!p.down && gap < 1.7 && car.speed > 2.2 && !car.onFoot) {   // on foot main passes the walker: a jog into someone is not a hit-and-run
         p.down = 0.001;
         p.dead = car.speed > 12.5;   // ~45 km/h and up is fatal (2026-09-22): nobody used to die, everyone stood up after 4.8 s
         const push = Math.max(3.0, car.speed * 0.48);
@@ -223,7 +223,7 @@ export class Crowd {
       const lift = this.district?.elevationAt ? this.district.elevationAt(p.x, p.z) : 0;   // bridge pavements
       this.fleet.write(i, p.x, FOOT_DROP * p.height + lift, p.z, p.yaw, p.phase, state, p.height);
     }
-    this.fleet.focus = car;   // the nearest people get the detailed mesh (world/figure.js)
+    this.fleet.focus = this.focus ?? car;   // the nearest people get the detailed mesh (world/figure.js); main points focus at the camera
     this.fleet.flush();
   }
 }
