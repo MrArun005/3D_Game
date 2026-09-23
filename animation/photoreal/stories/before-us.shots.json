@@ -1,0 +1,7 @@
+[
+  { "shot": "volcano", "start": 0.0,   "seconds": 13.2, "line": "fire" },
+  { "shot": "rain",    "start": 12.44, "seconds": 11.5, "line": "rain" },
+  { "shot": "coast",   "start": 23.12, "seconds": 13.5, "line": "rock" },
+  { "shot": "glacier", "start": 35.87, "seconds": 9.6,  "line": "ice" },
+  { "shot": "wheat",   "start": 44.6,  "seconds": 18.4, "line": "wheat" }
+]

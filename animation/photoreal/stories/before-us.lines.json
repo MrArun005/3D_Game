@@ -1,0 +1,12 @@
+{
+  "voice": "bm_george",
+  "speed": 0.92,
+  "lines": [
+    { "id": "fire",   "gap": 2.0, "text": "Four and a half billion years ago, the Earth was young, and it was on fire. Volcanoes poured out molten rock, and the sky filled with steam." },
+    { "id": "rain",   "gap": 1.6, "text": "As the planet cooled, the steam fell as rain. It rained for an unimaginably long time, and the rain filled the first oceans." },
+    { "id": "rock",   "gap": 1.6, "text": "For billions of years, the land stayed bare. No trees, no grass. Only rock, wind and waves. Life had begun, but only in the sea, far too small to see." },
+    { "id": "ice",    "gap": 1.6, "text": "Ice ages came and went. Great sheets of ice crept across the land, and slowly melted away again." },
+    { "id": "wheat",  "gap": 1.6, "text": "When the last ice age ended, about twelve thousand years ago, wild grasses spread across warm hills. Among them grew a plant that would change everything. Wild wheat." },
+    { "id": "end",    "gap": 1.2, "text": "And that is where our story begins." }
+  ]
+}
