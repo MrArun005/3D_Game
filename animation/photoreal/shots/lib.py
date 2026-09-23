@@ -171,8 +171,11 @@ def finish(shot, seconds):
         d = os.path.join(ROOT, 'out', 'frames', shot); os.makedirs(d, exist_ok=True)
         first = int(args[args.index('--from') + 1]) if '--from' in args else 1
         step = int(os.environ.get('STEP', 2))          # 12 fps renders, interpolated to 24 later
+        # PART=i/n renders every n-th output frame starting at i, so n machines can share a shot.
+        part, parts = map(int, os.environ.get('PART', '0/1').split('/'))
         for f in range(first, sc.frame_end + 1, step):
             path = os.path.join(d, f'{(f - 1) // step + 1:04d}.png')
+            if ((f - 1) // step) % parts != part: continue
             if os.path.exists(path): continue            # resumable
             sc.frame_set(f); sc.render.filepath = path
             t0 = time.time(); bpy.ops.render.render(write_still=True)
