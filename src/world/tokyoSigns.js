@@ -38,6 +38,12 @@ function tileRect(kind, i) {
   return { x: (idx % perRow) * r.w, y: r.y + Math.floor(idx / perRow) * r.h, w: r.w, h: r.h };
 }
 
+/** (u0, v0, du, dv) for tile `i` of `kind` itself: a board that must be a given colour (the Shibuya set pieces) names its tile. */
+export function tokyoTile(kind, i) {
+  const k = REGION[kind] ? kind : 'h', t = tileRect(k, i);
+  return [t.x / AW, 1 - (t.y + t.h) / AH, t.w / AW, t.h / AH];
+}
+
 /** (u0, v0, du, dv) for a board of `kind` ('h' | 'v' | 's') from a 0..1 hash. Canvas y runs down, v runs up. Pure; tested. */
 export function tokyoCell(kind, h01) {
   const k = REGION[kind] ? kind : 'h';
@@ -55,6 +61,31 @@ const BOX = [
   ['#00964b', '#ffffff', '#ffd200'], ['#0a53b5', '#ffffff', '#ffd200'], ['#ff7300', '#ffffff', '#141414'],
   ['#00a0dc', '#ffffff', '#ffe14d'], ['#15171c', '#ffd200', '#e5007e'], ['#15171c', '#ffffff', '#00b0e8'],
 ];
+/**
+ * The atlas cell a board shows: the tile it names (`tile`), else the one the
+ * 0..1 hash picks; `slice: [i, n]` narrows it to strip i of n, left to right
+ * -- the strips of a curved screen each show their part of one picture. Pure;
+ * tested. districtWorld and the viewer both lay boards through it.
+ */
+export function boardCell(bd, h01) {
+  const kind = bd.kind ?? (bd.vertical ? 'v' : 'h');
+  const c = bd.tile != null ? tokyoTile(kind, bd.tile) : tokyoCell(kind, h01);
+  if (bd.slice) { const [i, n] = bd.slice; c[0] += (c[2] * i) / n; c[2] /= n; }
+  return c;
+}
+
+/* The h tile a colour lands on: paintH gives tile i the board BOX[(i * 5) % 12], so
+   tile 11 is the blue board, 6 the green, 8 the red. Tested against BOX, so a
+   palette edit cannot quietly turn the blue-over-green roof pair red. */
+export const H_TILE = { white: 0, magenta: 1, green: 6, red: 8, yellow: 10, blue: 11 };
+/** The board colour tile `i` of the h region is painted in (for the test). */
+export const hTileBoard = (i) => BOX[(i * 5) % BOX.length][0];
+/* And the v tiles (paintVUpright: BOX[(i * 7 + 3) % 12]): 7 is the red board
+   with 薬 on it -- the drugstore's banner in every night photo -- and 10 white
+   with black characters. */
+export const V_TILE = { red: 7, white: 10 };
+export const vTileBoard = (i) => BOX[(i * 7 + 3) % BOX.length][0];
+
 // brand-free trades, the Japanese the street reads and a line of English under it
 const H_SIGNS = [
   ['カラオケ', 'KARAOKE 24H'], ['焼肉', 'YAKINIKU'], ['ラーメン', 'RAMEN'], ['居酒屋', 'IZAKAYA'],
@@ -254,10 +285,15 @@ export function tokyoSignMaterial() {
      comes from its own cell (k, 0..7: the column, plus 4 on the bottom row) and
      its switching beat is offset by k, so a junction of them does not cut in
      step. Row 0 of the screens sits at v0 0.125, row 1 at 0. */
-  const k = c.x.mul(4).add(float(1).sub(c.y.mul(8)).mul(4));
+  /* A strip of a curved screen (boardCell's slice) carries its offset inside
+     the tile in u0: the column is the whole part, the offset the rest, so every
+     strip of one screen runs the same ad on the same beat. A whole screen's u0
+     is a whole column and its offset is 0 -- exactly as before strips. */
+  const kx = c.x.mul(4), col0 = floor(kx.add(0.001)), sub = kx.sub(col0).mul(0.25);
+  const k = col0.add(float(1).sub(c.y.mul(8)).mul(4));
   const n = mod(k.add(floor(time.mul(0.125).add(k.mul(0.37)))), float(8));
   const row = floor(n.mul(0.25));
-  const base = mix(c.xy, vec2(n.sub(row.mul(4)).mul(0.25), float(1).sub(row).mul(0.125)), screen);
+  const base = mix(c.xy, vec2(n.sub(row.mul(4)).mul(0.25).add(sub), float(1).sub(row).mul(0.125)), screen);
   // 1% inset: the mip chain would otherwise bleed the neighbouring tile in along every edge
   const s = texture(tokyoAtlas(), uv().mul(c.zw.mul(0.98)).add(base).add(c.zw.mul(0.01)));
   m.colorNode = s.mul(materialReference('color', 'color', m));

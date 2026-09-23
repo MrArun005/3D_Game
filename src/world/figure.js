@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Umbrellas } from './umbrellas.js';
 import {
   Fn, attribute, instancedBufferAttribute, positionGeometry, normalGeometry, normalLocal, positionWorld, normalWorld,
   vec3, vec4, float, sin, cos, abs, max, mix, select, step, smoothstep, fract, floor, exp2, dot, clamp,
@@ -523,6 +524,11 @@ export class FigureFleet {
     this.mesh = this.near.mesh;
     this._d = new Float32Array(count);
     this._order = new Int32Array(count);
+    /* opts.umbrellas: the crowd's rain layer (world/umbrellas.js, +1 draw);
+       `rain` (0..1) is set by the owner each frame and read in flush(). */
+    this.rain = 0;
+    this.umbrellas = opts.umbrellas ? new Umbrellas(scene, count, { shadows: opts.shadows }) : null;
+    if (this.umbrellas) this.meshes.push(this.umbrellas.mesh);
     for (let i = 0; i < count; i++) this.hide(i);
   }
 
@@ -575,6 +581,7 @@ export class FigureFleet {
     }
     near.mesh.count = nn; far.mesh.count = nf;
     for (const L of [near, far]) for (const at of Object.values(L.attrs)) at.needsUpdate = true;
+    this.umbrellas?.update(r, a, n, this.rain);
   }
 
   #put(L, slot, i) {
@@ -590,6 +597,7 @@ export class FigureFleet {
 
   dispose() {
     for (const L of [this.near, this.far]) { L.mesh.parent?.remove(L.mesh); L.mesh.geometry.dispose(); L.material.dispose(); }
+    this.umbrellas?.dispose();
   }
 }
 

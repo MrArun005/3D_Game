@@ -45,7 +45,7 @@ export class Crowd {
     this.people = [];
     this.rand = mulberry(9137);
 
-    this.fleet = new FigureFleet(scene, count, { shadows: true });
+    this.fleet = new FigureFleet(scene, count, { shadows: true, umbrellas: true });   // umbrellas open with the rain (world/umbrellas.js)
     for (let i = 0; i < count; i++) {
       this.fleet.colour(i, WEAR[i % WEAR.length], SKIN[(i * 3) % SKIN.length], TROUSERS[(i * 7) % TROUSERS.length]);
       this.people.push({ live: false, x: 0, z: 0, yaw: 0, speed: 0, phase: 0, down: 0,
@@ -253,6 +253,7 @@ export class Crowd {
       this.fleet.write(i, p.x, FOOT_DROP * p.height + lift, p.z, p.yaw, p.phase, state, p.height);
     }
     this.fleet.focus = this.focus ?? car;   // the nearest people get the detailed mesh (world/figure.js); main points focus at the camera
+    this.fleet.rain = this.rain || 0;
     this.fleet.flush();
   }
 }

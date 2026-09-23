@@ -108,6 +108,26 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
 
 ## Current state
 
+- **Shibuya scramble + night pass (2026-09-23, from Arun's photos --
+  `docs/REF-SHIBUYA.md`, `docs/REF-REGENT-STREET.md` say line by line what
+  each photo shows).** The Little Tokyo crossroads nearest the spawn (node
+  1016, 48 m ahead of the car) gets set pieces on its four corners,
+  `districtWorld.#shibuyaHeroes()` -> `ctx.hero`: QFRONT (`tokyoTypes.js
+  buildTokyoQFront`, a rounded glass drum from `roundLoop`, white fins 0.72 m
+  apart, a video wall set into the fins, a lit two-level podium, a crown of
+  fins over a grille), the rooftop-screens corner diagonally across from it,
+  and two sign towers (`buildTokyoSignStack`: the street face all
+  lightboxes, a dark and a blue-framed screen, the blue-over-green board pair
+  on the roof). Never rolled -- `pickTokyoType` only hands them out, and
+  `?tokyotype=` still wins. Boards can name their atlas tile (`bd.tile`,
+  `tokyoTile`, `H_TILE` -- tested against the palette, so the roof pair stays
+  blue over green). ~3.7k / 0.5k triangles, no draws added. The three types
+  run every geometry test the other Tokyo types do. Night: sun 0.10, hemi
+  0.06, env 0.05, contrast 0.34; the far city's facade is a 0.4x-emissive
+  clone with no lit roofs; the day grade's warm high tint (it turned the sky
+  grey-green) is near-neutral. Still open: one pale walk-up at the spawn reads
+  floodlit at night (suspect the LightPool lights on a LIGHT wall).
+
 - **"Smaller, and drive like GTA" (2026-09-23, branches drive/handling,
   drive/controls, drive/compact, drive/boot merged as drive/integrate).**
   Owner: "Make the game smaller and can drive like GTA for now bro". Four
@@ -372,7 +392,7 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
     `mergeDrive`; mobile forces the lite tier; `body.touch` CSS in style.css;
     no pointer lock on touch, TAP TO START, rotate card in portrait.
 
-- Tests: `npm test` — 509/509 passing (2026-09-23, after the drive/* merge and its review fixes). Node's built-in runner, no framework.
+- Tests: `npm test` — 536/536 passing (2026-09-23, after the Shibuya set pieces). Node's built-in runner, no framework.
 - Deploy (2026-09-03): Vercel project `halstead-bay`, public at
   https://halstead-bay.vercel.app. Git-triggered builds never leave UNKNOWN;
   deploy with `vercel --prod --yes` run detached (>6 min upload), then check

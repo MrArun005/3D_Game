@@ -14,6 +14,7 @@
  *   &t=1.3                              freeze animation time (seconds); omit to run
  *   &webgl                              three's WebGL2 backend
  *   ?asset=tokyo&types=tower,pencil     Little Tokyo building types in a row along Z, fronts to +X
+ *   ?asset=people&rain=1                the crowd with its umbrellas open
  *                                       (&seed=7; the shadow box grows to fit a 100 m tower)
  */
 import * as THREE from 'three';
@@ -23,6 +24,7 @@ import { buildHeliModel, heliTriangles } from './world/heliModel.js';
 import { buildOfficer, poseOfficer } from './world/officer.js';
 import { TOKYO_TYPES } from './world/tokyoTypes.js';
 import { tokyoFacadeMaterial, setTokyoNight } from './world/tokyo.js';
+import { tokyoBoardMesh, boardCell } from './world/tokyoSigns.js';
 
 const q = new URLSearchParams(location.search);
 const asset = q.get('asset') || 'people';
@@ -76,7 +78,8 @@ const info = [];
 if (asset === 'tokyo') {
   /* One plot of each type side by side, as a street would put them: sizes are
      typical of the plots pickTokyoType gives each type (tokyoTypes.js). */
-  const SIZE = { walkup: [8, 7, 26], tower: [14, 14, 96], pencil: [3.4, 6, 30], mansion: [10, 9, 42], carpark: [17, 17, 18], machiya: [4.5, 6, 9], depato: [18, 13, 38] };
+  const SIZE = { walkup: [8, 7, 26], tower: [14, 14, 96], pencil: [3.4, 6, 30], mansion: [10, 9, 42], carpark: [17, 17, 18], machiya: [4.5, 6, 9], depato: [18, 13, 38], qfront: [8.7, 8.7, 70], signstack: [5.1, 12.5, 34], screens: [8.6, 8.6, 34] };
+  const boards = [];   // the atlas boards too, as districtWorld lays them (pushTokyoBoard): a sign tower is mostly boards
   const types = (q.get('types') || 'walkup,tower,pencil,mansion,carpark,machiya,depato').split(',');
   const seed = +(q.get('seed') ?? 7), mat = tokyoFacadeMaterial();
   setTokyoNight(+(q.get('night') ?? 0));
@@ -86,18 +89,28 @@ if (asset === 'tokyo') {
     const b = TOKYO_TYPES[t].build(seed, hw, hd, h, {});
     const m = new THREE.Mesh(b.geo, mat);
     m.castShadow = m.receiveShadow = true;
-    m.position.set(0, 0, z + hd); z += 2 * hd + 4;
+    m.position.set(0, 0, z + hd);
+    for (const bd of b.boards) {
+      const p = new THREE.Vector3(bd.x, bd.y, bd.z + z + hd);
+      const m4 = bd.vertical
+        ? new THREE.Matrix4().compose(p, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, bd.yaw, Math.PI / 2, 'YXZ')), new THREE.Vector3(bd.h, bd.w, 1))
+        : new THREE.Matrix4().compose(p, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, bd.yaw, 0)), new THREE.Vector3(bd.w, bd.h, 1));
+      boards.push({ m: m4, cell: boardCell(bd, (boards.length * 0.618034) % 1) });
+    }
+    z += 2 * hd + 4;
     scene.add(m); tris += b.tris;
     info.push(`${t}: ${Math.round(b.tris)} tris, ${b.floors} floors, ${b.height.toFixed(1)} m`);
   }
-  info.push(`row: ${Math.round(tris)} tris, 1 draw`);
+  if (boards.length) scene.add(tokyoBoardMesh(boards));
+  info.push(`row: ${Math.round(tris)} tris, ${boards.length} boards, ${boards.length ? 2 : 1} draws`);
   Object.assign(sun.shadow.camera, { left: -140, right: 140, top: 140, bottom: -140, near: 1, far: 700 });
   sun.position.multiplyScalar(5); sun.target.position.set(0, 0, z / 2);
   scene.fog.near = 400; scene.fog.far = 1600;
 }
 if (asset === 'people') {
   const n = 12;
-  const fleet = new FigureFleet(scene, n, { shadows: true });
+  const fleet = new FigureFleet(scene, n, { shadows: true, umbrellas: q.has('rain') });   // &rain=1: the crowd's umbrellas (world/umbrellas.js)
+  fleet.rain = +(q.get('rain') ?? 0);
   const WEAR = [0xc94a3a, 0x2e7fb8, 0xe0b23a, 0x2b3444, 0xd8d3c8, 0x6a9a4a, 0x8a4a9a, 0x1f1f24, 0xe07a3a, 0x35485e, 0xa8a29a, 0x6a3f38];
   const SKIN = [0xf0c8a0, 0xd9a173, 0xa8724a, 0x7a4f33, 0x5a3a26, 0xe8b890];
   const LEGS = [0x2a3550, 0x1d1f24, 0x6b6045, 0x3b3f47, 0x27303d];

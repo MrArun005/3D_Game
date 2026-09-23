@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { mulberry32 } from '../core/rng.js';
 import { buildTokyoBuilding, TOKYO_KIT } from './tokyo.js';
+import { H_TILE, V_TILE } from './tokyoSigns.js';
 
 /**
  * Little Tokyo's other buildings (2026-09-23, the owner: "improve the
@@ -48,7 +49,7 @@ import { buildTokyoBuilding, TOKYO_KIT } from './tokyo.js';
  * weights in pickTokyoType, not more boards on a mansion.
  */
 
-const { SURF, paint, box, metal, cyl, quad, glass, at, faces, onFace, wallFinish, flickerOf, WALLS, LIGHT, NEON, WARM, COOL, GROUND_H, FLOOR_H } = TOKYO_KIT;
+const { SURF, paint, box, metal, cyl, quad, glass, at, faces, onFace, wallFinish, flickerOf, WALLS, LIGHT, NEON, WARM, COOL, MAGENTA, GROUND_H, FLOOR_H } = TOKYO_KIT;
 
 const PI = Math.PI;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -1136,6 +1137,307 @@ export function buildTokyoDepato(seed, hw, hd, h, ctx = {}) {
   return finish(parts, finishOf(grnd, 0.3), { boards, lamps, height: H + 1.0, floors: N });
 }
 
+/* ============================================ 7. SHIBUYA SET PIECES */
+
+/* Arun's five photos of the scramble (docs/REF-SHIBUYA.md): what makes the
+   crossing read as Shibuya is not the walk-ups, it is three buildings round
+   it -- the glass drum with a white fin grid and a screen set into it
+   (QFRONT), a mid-rise whose street face is ALL boards with a blue-over-green
+   pair on the roof (the Hisamitsu corner), and the corner opposite with two
+   video walls on its roof (Shibuhachi). pickTokyoType never rolls these:
+   districtWorld hands them to the plots round the one scramble in front of
+   the spawn (ctx.hero), and ?tokyotype=qfront etc. forces them for a look. */
+
+/**
+ * A closed rounded rectangle in plan, half sizes tx, tz, corner radius R, a
+ * point at most every `step` m: { x, z, nx, nz } with the outward normal.
+ * Segment i runs pts[i] -> pts[i + 1], wrapping. Pure; tested.
+ */
+export function roundLoop(tx, tz, R, step) {
+  R = clamp(R, 0.01, Math.min(tx, tz));
+  const pts = [], C = [[tx - R, tz - R], [-(tx - R), tz - R], [-(tx - R), -(tz - R)], [tx - R, -(tz - R)]];
+  for (let k = 0; k < 4; k++) {
+    const [cx, cz] = C[k], a0 = k * PI / 2, na = Math.max(2, Math.ceil((PI / 2) * R / step));
+    for (let j = 0; j < na; j++) { const a = a0 + (j / na) * (PI / 2); pts.push({ x: cx + R * Math.cos(a), z: cz + R * Math.sin(a), nx: Math.cos(a), nz: Math.sin(a) }); }
+    const a1 = a0 + PI / 2, [ncx, ncz] = C[(k + 1) % 4], ux = Math.cos(a1), uz = Math.sin(a1);
+    const x0 = cx + R * ux, z0 = cz + R * uz, x1 = ncx + R * ux, z1 = ncz + R * uz, L = Math.hypot(x1 - x0, z1 - z0);
+    if (L < 1e-3) continue;
+    const ns = Math.max(1, Math.ceil(L / step - 1e-9));   // at most `step` apart
+    for (let j = 0; j < ns; j++) { const t = j / ns; pts.push({ x: x0 + (x1 - x0) * t, z: z0 + (z1 - z0) * t, nx: ux, nz: uz }); }
+  }
+  return pts;
+}
+/** An upright band round a loop from y0 to y1, `o` out along the normals, smooth-shaded; `pane` gives each segment 0..1 UVs (a glass pane per segment per storey). */
+function loopWall(s, pts, y0, y1, o = 0, pane = false) {
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i], q = pts[(i + 1) % pts.length];
+    const a = [p.x + p.nx * o, y0, p.z + p.nz * o], b = [q.x + q.nx * o, y0, q.z + q.nz * o];
+    s.quad(a, b, [b[0], y1, b[2]], [a[0], y1, a[2]], [p.nx + q.nx, 0, p.nz + q.nz], pane ? [[0, 0], [1, 0], [1, 1], [0, 1]] : null,
+      [[p.nx, 0, p.nz], [q.nx, 0, q.nz], [q.nx, 0, q.nz], [p.nx, 0, p.nz]]);
+  }
+}
+/** A closed ledge round a loop: its face `o` out from y to y + t, and its top and underside back to the wall. */
+function loopLedge(s, pts, y, t, o) {
+  loopWall(s, pts, y, y + t, o);
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i], q = pts[(i + 1) % pts.length];
+    for (const [yy, up] of [[y + t, 1], [y, -1]]) s.quad([p.x, yy, p.z], [q.x, yy, q.z], [q.x + q.nx * o, yy, q.z + q.nz * o], [p.x + p.nx * o, yy, p.z + p.nz * o], [0, up, 0]);
+  }
+}
+/** A flat roof over a loop: a fan from the centre. */
+function loopCap(s, pts, y) {
+  for (let i = 0; i < pts.length; i++) { const p = pts[i], q = pts[(i + 1) % pts.length]; s.tri([0, y, 0], [p.x, y, p.z], [q.x, y, q.z], [0, 1, 0], [[0, 0], [p.x, p.z], [q.x, q.z]]); }
+}
+/** The side a corner plot's second street is on (+1 = +Z), from the probe; a seeded guess without one. */
+function sideStreetOf(ctx, hd, rnd) {
+  let cs = rnd() < 0.5 ? 1 : -1;
+  if (ctx.probe) { const L = ctx.probe(0, hd + 4) < 3, R = ctx.probe(0, -hd - 4) < 3; if (L !== R) cs = L ? 1 : -1; }
+  return cs;
+}
+
+/**
+ * A curved video wall: `strips` 's' boards on an arc bulging out along the
+ * face normal of `yaw` (the Tokyo board convention: normal = (sin yaw, cos
+ * yaw)), centred at (cx, cz), `sw` wide, its foot at y0, each strip showing
+ * its slice of the one ad (boardCell's `slice`), each on its own dark housing.
+ * Height is half the strips' own width, so the picture keeps the tile's 2:1
+ * round the curve. Returns the frame it used and the screen's top.
+ */
+function curvedScreen(parts, boards, cx, cz, yaw, y0, sw, tile, strips = 6) {
+  const nx = Math.sin(yaw), nz = Math.cos(yaw), tx = Math.cos(yaw), tz = -Math.sin(yaw);   // tangent: the way a board's u runs
+  const bulge = sw * 0.09, Rc = (sw * sw / 4 + bulge * bulge) / (2 * bulge), Th = 2 * Math.asin(sw / (2 * Rc));
+  const cw = 2 * Rc * Math.sin(Th / (2 * strips)), sh = (cw * strips) / 2, y = y0 + sh / 2;
+  for (let i = 0; i < strips; i++) {
+    const a = Th / 2 - (Th * (i + 0.5)) / strips, ca = Math.cos(a), sa = Math.sin(a);   // strip 0 is the picture's left end, at -tangent
+    const rx = nx * ca - tx * sa, rz = nz * ca - tz * sa, off = Rc * ca - Rc + bulge, along = -Rc * sa;
+    const px = cx + nx * off + tx * along, pz = cz + nz * off + tz * along;
+    parts.push(at(metal(0.5, sh + 0.6, cw + 0.04, 0x0c0d10), px - 0.26 * rx, y, pz - 0.26 * rz, Math.atan2(-rz, rx)));
+    boards.push({ x: px + 0.01 * rx, y, z: pz + 0.01 * rz, yaw: Math.atan2(rx, rz), w: cw, h: sh, kind: 's', tile, slice: [i, strips] });
+  }
+  return { nx, nz, tx, tz, top: y + sh / 2, bulge };
+}
+
+/**
+ * QFRONT: a glass drum with rounded corners, wrapped floor to crown in white
+ * vertical fins 0.72 m apart, a video wall set into the fins on the street
+ * face and a smaller one on the side street, a two-level lit podium (the
+ * store, the cafe over the crossing) under a canopy, and a crown where the
+ * fins run on past the glass in front of a grille, capped by a ring of light.
+ * The drum is at most 26 x 26 m whatever the plot (it is a drum, not a slab).
+ * Measured: see test/tokyoTypes.test.js's diagnostic line.
+ */
+export function buildTokyoQFront(seed, hw, hd, h, ctx = {}) {
+  const rnd = stream(seed, 0x0f70), grnd = stream(seed, 0x0f71);
+  const parts = [], boards = [], lamps = [];
+  const POD = 9.0, OH = 3.6, CROWN = 5.0;
+  const N = clamp(Math.round((clamp(h, 44, 58) - POD - CROWN) / OH), 8, 12);
+  const GT = POD + N * OH, H = GT + CROWN;
+  const tx = Math.min(hw - 0.7, 13), tz = Math.min(hd - 0.7, 13), R = Math.min(tx, tz) * 0.5;
+  const pts = roundLoop(tx, tz, R, 1.9), fins = roundLoop(tx, tz, R, 0.72);
+  const TINT = 0x2c3b47, FIN = 0xe4e6e8, cs = sideStreetOf(ctx, hd, rnd);
+  const gs = SURF.GLASS + 0.05 + 0.8 * 0.9;
+
+  // the glass: the podium's two lit levels, then a floor at a time, lit by the floor
+  const pod = new Shape(), off = new Shape(), cool = new Shape(), warm = new Shape();
+  loopWall(pod, pts, 0, 4.3, 0, true);
+  loopWall(pod, pts, 4.6, POD - 0.3, 0, true);
+  for (let f = 0; f < N; f++) {
+    const r = grnd();
+    loopWall(r < 0.5 ? off : r < 0.85 ? cool : warm, pts, POD + f * OH, POD + (f + 1) * OH, 0, true);
+  }
+  parts.push(shaped(pod, TINT, WARM, 0.55, 0, gs));
+  for (const [s, em, k] of [[off, null, 1], [cool, COOL, 0.2], [warm, WARM, 0.22]]) if (!s.empty) parts.push(shaped(s, TINT, em, k, 0, gs));
+
+  // white ledges: between the podium levels, over the podium, at the glass top
+  const ledge = new Shape();
+  loopLedge(ledge, pts, 4.3, 0.3, 0.35);
+  loopLedge(ledge, pts, POD - 0.3, 0.3, 0.6);
+  loopLedge(ledge, pts, GT - 0.05, 0.3, 0.6);
+  parts.push(shaped(ledge, FIN));
+
+  // the crown: a grille behind the fins (the wall surf: the one thing on this building that is not glass or metal), three lattice rings, a lit rim, the roof
+  const grille = new Shape(), lattice = new Shape(), rim = new Shape(), roof = new Shape();
+  loopWall(grille, pts, GT + 0.25, H);
+  for (const y of [GT + 1.4, GT + 2.7]) loopLedge(lattice, pts, y, 0.16, 0.55);
+  loopLedge(rim, pts, H - 0.4, 0.4, 0.6);
+  loopCap(roof, pts, H);
+  parts.push(shaped(grille, 0x6d7074, null, 1, 0, SURF.WALL + 0.05), shaped(lattice, FIN), shaped(rim, 0xe8ecf0, COOL, 1.3), shaped(roof, 0x55585c));
+  parts.push(at(box(Math.max(2, 2 * (tx - 4)), 2.4, Math.max(2, 2 * (tz - 4)), 0x55585c), 0, H + 1.2, 0));
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(at(box(0.25, 0.25, 0.25, 0xff2030, [1.0, 0.1, 0.15], 2.8, 0.85), sx * (tx - R * 0.35), H + 0.15, sz * (tz - R * 0.35)));
+
+  // the fins, podium top to crown top, turned to the loop's normal (their backs against the glass are never seen)
+  for (const p of fins) parts.push(at(trim(metal(0.12, H - POD - 0.4, 0.5, FIN), 'nz', 'ny'), p.x + p.nx * 0.25, POD + (H - POD - 0.4) / 2, p.z + p.nz * 0.25, Math.atan2(p.nx, p.nz)));
+
+  // the big screen on the street face and a smaller one on the side street, framed proud of the fins
+  const sw = clamp(2 * tz * 0.95, 8, 20), sh = sw / 2, sy = POD + (GT - POD) * 0.55;   // the photos' screen fills the face between the corners
+  parts.push(at(metal(0.4, sh + 0.6, sw + 0.6, 0x0c0d10), tx + 0.72, sy, 0));
+  for (const e of [-1, 1]) { const ez = e * (sw / 2 + 0.1), ex = Math.min(tx, tx - R + Math.sqrt(Math.max(0, R * R - (Math.abs(ez) - (tz - R)) ** 2))); parts.push(at(metal(tx + 0.6 - ex + 0.1, sh + 0.2, 0.2, 0x0c0d10), (ex + tx + 0.6) / 2, sy, ez)); }
+  boards.push({ x: tx + 0.94, y: sy, z: 0, yaw: PI / 2, w: sw, h: sh, kind: 's' });
+  // the screen's rim glows (magenta in the night photos): four thin tubes round the frame
+  for (const e of [-1, 1]) {
+    parts.push(at(box(0.1, 0.14, sw + 0.7, 0x16161a, MAGENTA, 1.8), tx + 0.95, sy + e * (sh / 2 + 0.3), 0));
+    parts.push(at(box(0.1, sh + 0.74, 0.14, 0x16161a, MAGENTA, 1.8), tx + 0.95, sy, e * (sw / 2 + 0.3)));
+  }
+  lamps.push(lampAt(tx + 4, sy - sh / 2, 0, [0.84, 0.9, 1.0], 110, 40, 2.4));
+  // what the screens throw on the crossing at night: a violet spill over the road, no sprite of its own
+  lamps.push(lampAt(tx + 10, 11, 0, [0.62, 0.48, 1.0], 170, 55, 0));
+  const sw2 = clamp(2 * tx * 0.55, 6, 11), sh2 = sw2 / 2, sy2 = POD + (GT - POD) * 0.36;
+  parts.push(at(metal(sw2 + 0.6, sh2 + 0.6, 0.4, 0x0c0d10), 0, sy2, cs * (tz + 0.72)));
+  boards.push({ x: 0, y: sy2, z: cs * (tz + 0.94), yaw: cs > 0 ? 0 : PI, w: sw2, h: sh2, kind: 's' });
+
+  // floodlights on the crown's four rounded corners, aimed down the fins (the four stars in the night photos)
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const cx = sx * (tx - R + R * Math.SQRT1_2 + 0.7), cz = sz * (tz - R + R * Math.SQRT1_2 + 0.7);
+    parts.push(at(metal(0.5, 0.35, 0.5, 0x2b2e33), cx, H + 0.2, cz));
+    lamps.push(lampAt(cx, H + 0.1, cz, [1.0, 0.95, 0.86], 50, 24, 3.4));
+  }
+  // two tall banners down the fins beside the side-street screen, proud of them
+  for (const e of [-1, 1]) {
+    const bx = e * Math.min(tx - R * 0.5, sw2 / 2 + 1.6), bh = Math.min(10, (GT - POD) * 0.45), bw = bh / 4.6;
+    // off the fins where the drum is already turning the corner: the glass line at bx, plus the fins, plus a gap
+    const zs = tz - R + Math.sqrt(Math.max(0, R * R - Math.max(0, Math.abs(bx) - (tx - R)) ** 2)), bz = cs * (zs + 0.7);
+    parts.push(at(metal(bw + 0.2, bh + 0.2, 0.2, 0x141619), bx, POD + 2 + bh / 2, bz));
+    boards.push({ x: bx, y: POD + 2 + bh / 2, z: bz + cs * 0.11, yaw: cs > 0 ? 0 : PI, w: bw, h: bh, vertical: true, kind: 'v' });
+  }
+
+  // the store: its name over the doors, a canopy with a lit soffit, the doors' light on the pavement
+  const flat = Math.max(3, 2 * (tz - R));
+  parts.push(at(metal(0.25, 1.2, 5.0, 0x141619), tx + 0.13, 3.55, 0));
+  boards.push({ x: tx + 0.27, y: 3.55, z: 0, yaw: PI / 2, w: 4.8, h: 1.0, kind: 'h', tile: H_TILE.white });
+  parts.push(at(metal(1.8, 0.22, flat, 0x2a2c30), tx + 0.9, 4.45, 0));
+  parts.push(at(soffit(1.7, flat - 0.2, 0x2a2622, WARM, 0.6), tx + 0.9, 4.33, 0));
+  lamps.push(lampAt(tx + 2.0, 2.6, 0, WARM, 110, 32, 2.0));
+  lamps.push(lampAt(0, 2.6, cs * (tz + 2), WARM, 80, 26, 1.6));
+  return finish(parts, finishOf(grnd, 0.1), { boards, lamps, height: H + 2.4, floors: N + 2 });
+}
+
+/**
+ * A sign tower (the Hisamitsu / DHC corner, or with `ctx.variant === 'screens'`
+ * the Shibuhachi corner): a plain pale mid-rise whose street face is covered,
+ * storey to parapet, in rows of lightboxes, a big dark video wall low and a
+ * blue-framed one higher; a blue bookshop fascia over a lit shopfront; a tall
+ * blue banner and a red round logo on the side street; and on the roof either
+ * the blue-over-green board pair on a steel frame or two video walls side by
+ * side. The walls stay pale: the colour in the photos is in the signs.
+ */
+export function buildTokyoSignStack(seed, hw, hd, h, ctx = {}) {
+  const rnd = stream(seed, 0x5157), grnd = stream(seed, 0x5158);
+  const pick = (a) => a[Math.floor(rnd() * a.length)];
+  const parts = [], boards = [], lamps = [];
+  const screens = ctx.variant === 'screens';
+  const SH = 3.4, N = clamp(Math.round(clamp(h, 22, 40) / SH), 7, 11), H = N * SH;
+  const FW = 2 * hd, W = FW - 0.8, wall = pick(LIGHT)[0], cs = sideStreetOf(ctx, hd, rnd);
+  const F = faces(hw, hd), front = F[0], side = F[cs > 0 ? 2 : 3];
+  parts.push(at(box(2 * hw, H, FW, wall), 0, H / 2, 0));
+  ring(parts, 0, 0, hw, hd, H, 0.9, 0.2, wall);
+
+  // the shop: lit glass between dark piers, the bookshop's blue fascia over it
+  pane(parts, front, 0, 2.05, FW - 1.2, 3.5, 0x3a2a1c, WARM, 0.6, 0.95);
+  for (const e of [-1, 1]) proud(parts, box(0.5, 4.1, 0.3, 0x1c1e22), front, e * (FW / 2 - 0.3), 2.05, 0, 0.3);
+  proud(parts, box(FW - 0.3, 1.4, 0.3, 0x0a53b5, [0.12, 0.3, 1.0], 0.5), front, 0, 4.8, 0, 0.3);
+  {
+    // one name centred on the band, as the bookshop's is: the band itself stays plain blue either side
+    const bw = Math.min(W, 5.6), bh = clamp(bw / 4.2, 0.7, 1.25), [x, z] = on(front, 0, 0.32);
+    boards.push({ x, y: 4.8, z, yaw: front.yaw, w: bw, h: bh, kind: 'h', tile: H_TILE.blue });
+  }
+  lamps.push(lampAt(hw + 1.2, 2.6, 0, WARM, 90, 28, 1.8));
+
+  // the street face, all boards: rows of lightboxes with a dark video wall low and a blue-framed one higher
+  const bigAt = 1 + Math.floor(rnd() * 2), blueAt = bigAt + 2 + Math.floor(rnd() * 2), top = H - 0.35;
+  let y = 5.85, row = 0;
+  while (y < top - 1.6) {
+    let used = 0;
+    if (row === bigAt || row === blueAt) {
+      const blue = row === blueAt, sh = Math.min(top - y - 0.6, W * (blue ? 0.36 : 0.46), blue ? 5.5 : 7.5), sw = 2 * sh;
+      if (sh >= 2.2) {
+        proud(parts, box(sw + 0.6, sh + 0.6, 0.4, blue ? 0x0a53b5 : 0x0c0d10, blue ? [0.15, 0.35, 1.0] : null, 0.6), front, 0, y + sh / 2 + 0.3, 0, 0.4);
+        const [x, z] = on(front, 0, 0.42);
+        boards.push({ x, y: y + sh / 2 + 0.3, z, yaw: front.yaw, w: sw, h: sh, kind: 's' });
+        lamps.push(lampAt(hw + 3, y + sh / 2, 0, [0.84, 0.9, 1.0], 80, 30, 2.0));
+        used = sh + 0.6;
+      }
+    }
+    if (!used) {
+      const t = pick([2.0, 2.4, 2.8]);
+      let n = Math.max(1, Math.round(W / (t * 4.2 + 0.3))), bw = W / n - 0.3, bh = clamp(bw / 4.2, 1.2, 3.4);
+      while (bw / bh > 5.8) { n++; bw = W / n - 0.3; bh = clamp(bw / 4.2, 1.2, 3.4); }
+      if (bh + 0.28 > top - y) break;
+      for (let k = 0; k < n; k++) {
+        const s = -W / 2 + (W / n) * (k + 0.5), c = pick(NEON);
+        proud(parts, box(bw + 0.18, bh + 0.18, 0.3, 0x141418, c, 0.9, flickerOf(rnd)), front, s, y + bh / 2 + 0.14, 0, 0.3);
+        const [x, z] = on(front, s, 0.32);
+        boards.push({ x, y: y + bh / 2 + 0.14, z, yaw: front.yaw, w: bw, h: bh, kind: 'h' });
+      }
+      if (row % 2) lamps.push(lampAt(hw + 1.5, y + bh / 2, 0, pick(NEON), 60, 22, 1.6));
+      used = bh + 0.28;
+    }
+    y += used + 0.25; row++;
+  }
+
+  /* Tate-kanban on the two front corners, standing out from the boards: the red
+     drugstore blade (two boards stacked, several storeys) and a white one, both
+     lettered on both faces -- the red 薬 column is in every night photo. */
+  for (const [zs, tile, n] of [[cs, V_TILE.red, 2], [-cs, V_TILE.white, 1]]) {
+    const bz = zs * (hd - 0.2), bw = 1.2, bh = Math.min(6.2, (H - 7) / n - 0.4), x = hw + 0.35 + 0.75;
+    if (bh < 3) continue;
+    for (let k = 0; k < n; k++) {
+      const y = H - 1.6 - bh / 2 - k * (bh + 0.4);
+      parts.push(at(box(1.5, bh + 0.2, 0.22, 0x141418, tile === V_TILE.red ? [1.0, 0.15, 0.12] : [1, 1, 1], 0.9), x, y, bz));
+      for (const side of [-1, 1]) boards.push({ x, y, z: bz + side * 0.12, yaw: side > 0 ? 0 : PI, w: bw, h: bh, vertical: true, kind: 'v', tile });
+    }
+    for (const y of [H - 1.9, H - 1.2 - n * (bh + 0.4)]) parts.push(at(metal(0.4, 0.12, 0.12, 0x2b2e33), hw + 0.2, y, bz));   // the brackets to the wall
+  }
+
+  // the sides: a window strip a storey (clear of the banner end), the banner and the logo on the side street
+  const sgn = side.t[0] > 0 ? 1 : -1, sb = sgn * (hw - 1.1);
+  for (const f of [F[2], F[3]]) {
+    const fs = (f.t[0] > 0 ? 1 : -1), ww = f.w - 4.2;
+    if (ww > 1.5) for (let s = 2; s < N; s++) pane(parts, f, -fs * 1.2, s * SH + 1.75, ww, 1.4, 0x27313a, grnd() < 0.4 ? COOL : null, 0.16, grnd());
+  }
+  const bh = Math.min(6.0, H - 9), bw = bh / 4;
+  if (bh >= 3) {
+    proud(parts, box(bw + 0.2, bh + 0.2, 0.25, 0x0a53b5, [0.2, 0.5, 1.0], 0.8), side, sb, H - 1.2 - bh / 2, 0, 0.25);
+    const [bx, bz] = on(side, sb, 0.27);
+    boards.push({ x: bx, y: H - 1.2 - bh / 2, z: bz, yaw: side.yaw, w: bw, h: bh, vertical: true, kind: 'v' });
+  }
+  if (H > 18) {
+    const r = 1.5, yc = H - bh - 3.4;
+    const [dx, dz] = on(side, sb, 0.15), [ix, iz] = on(side, sb, 0.32);
+    parts.push(at(paint(new THREE.CylinderGeometry(r, r, 0.3, 20).rotateX(PI / 2), 0xd7141f, [1.0, 0.1, 0.12], 0.9, 0, SURF.PAINT + 0.05), dx, yc, dz, side.yaw));
+    parts.push(at(paint(new THREE.CylinderGeometry(r * 0.6, r * 0.6, 0.04, 20).rotateX(PI / 2), 0xf4f4f4, [1, 1, 1], 0.9, 0, SURF.PAINT + 0.05), ix, yc, iz, side.yaw));
+  }
+
+  // the roof
+  if (!screens) {
+    const bw2 = Math.min(FW * 0.92, 15), bh2 = bw2 / 3.6, x = hw - 0.9;
+    const y1 = H + 1.4 + bh2 / 2, y2 = y1 + bh2 + 0.5;
+    for (const [yy, hex, em, tile] of [[y1, 0x00964b, [0.1, 0.9, 0.4], H_TILE.green], [y2, 0x0a53b5, [0.15, 0.35, 1.0], H_TILE.blue]]) {
+      parts.push(at(box(0.45, bh2 + 0.35, bw2 + 0.35, hex, em, 0.5), x, yy, 0));
+      boards.push({ x: x + 0.24, y: yy, z: 0, yaw: PI / 2, w: bw2, h: bh2, kind: 'h', tile });
+    }
+    const postH = y2 + bh2 / 2 + 0.2 - H;
+    for (const k of [-1, -1 / 3, 1 / 3, 1]) parts.push(at(metal(0.22, postH, 0.22, 0x2b2e33), x - 0.45, H + postH / 2, k * (bw2 / 2 - 0.2)));
+    lamps.push(lampAt(hw + 3, y1, 0, [0.3, 0.6, 1.0], 90, 40, 2.4));
+  } else {
+    /* Two video walls wrapping the corner on a steel frame -- one to the
+       crossing, one to the side street, meeting in a seam at the corner, each
+       about the building's width and CURVED, bulging out (the Shibuhachi pair in
+       the night photos). Floodlights on the frames, and the violet spill they
+       throw on the road. */
+    const shots = [
+      { cx: hw - 0.2, cz: 0, yaw: PI / 2, sw: clamp(FW + 0.2, 8, 24) },
+      { cx: 0, cz: cs * (hd - 0.2), yaw: cs > 0 ? 0 : PI, sw: clamp(2 * hw + 0.2, 8, 24) },
+    ];
+    for (const sc of shots) {
+      const tile = Math.floor(rnd() * 8), { nx, nz, tx: ux, tz: uz, top, bulge } = curvedScreen(parts, boards, sc.cx, sc.cz, sc.yaw, H + 1.4, sc.sw, tile);
+      for (const k of [-1, 0, 1]) { const px = sc.cx - nx * 0.45 + ux * k * (sc.sw / 2 - 0.8), pz = sc.cz - nz * 0.45 + uz * k * (sc.sw / 2 - 0.8); parts.push(at(metal(0.25, 1.3, 0.25, 0x2b2e33), px, H + 0.65, pz)); }
+      for (const k of [-0.35, 0.35]) lamps.push(lampAt(sc.cx + nx * (bulge + 0.8) + ux * k * sc.sw, top + 0.6, sc.cz + nz * (bulge + 0.8) + uz * k * sc.sw, [1.0, 0.95, 0.86], 40, 20, 3.2));
+      lamps.push(lampAt(sc.cx + nx * 10, 12, sc.cz + nz * 10, [0.62, 0.48, 1.0], 170, 55, 0));
+    }
+  }
+  return finish(parts, finishOf(grnd, 0.35), { boards, lamps, height: H + 1.0, floors: N });
+}
+
 /* ========================================================== DISPATCHER */
 
 /**
@@ -1154,6 +1456,10 @@ export const TOKYO_TYPES = {
   carpark: { build: buildTokyoCarPark, min: [16, 16], budget: 5500 },
   machiya: { build: buildTokyoMachiya, min: [3.5, 5], budget: 3200 },
   depato:  { build: buildTokyoDepato, min: [16, 12], budget: 2600 },
+  // the Shibuya set pieces: never rolled, handed to the scramble's corners (ctx.hero) or forced with ?tokyotype
+  qfront:    { build: buildTokyoQFront, min: [14, 14], budget: 6500 },
+  signstack: { build: buildTokyoSignStack, min: [7, 7], budget: 1200 },
+  screens:   { build: (s, hw, hd, h, ctx = {}) => buildTokyoSignStack(s, hw, hd, h, { ...ctx, variant: 'screens' }), min: [7, 7], budget: 1200 },
 };
 
 /* ?tokyotype=machiya (etc.) builds every Little Tokyo plot as that type where
@@ -1175,7 +1481,7 @@ const FORCED = typeof location !== 'undefined' ? new URLSearchParams(location.se
  * district in test/tokyoTypes.test.js.
  */
 export function pickTokyoType(seed, hw, hd, h, ctx = {}) {
-  const force = ctx.force ?? FORCED;
+  const force = ctx.force ?? FORCED ?? ctx.hero;   // ?tokyotype=walkup still shows the street as it was, heroes included
   const fits = (t) => TOKYO_TYPES[t] && 2 * hd >= TOKYO_TYPES[t].min[0] && 2 * hw >= TOKYO_TYPES[t].min[1];
   if (force && TOKYO_TYPES[force]) return fits(force) ? force : 'walkup';
   const F = 2 * hd, D = 2 * hw, small = Math.min(F, D);

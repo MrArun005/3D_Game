@@ -4,12 +4,16 @@ import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { mulberry32 } from '../src/core/rng.js';
-import { TOKYO_TYPES, buildTokyoLot, pickTokyoType } from '../src/world/tokyoTypes.js';
+import { TOKYO_TYPES, buildTokyoLot, pickTokyoType, roundLoop } from '../src/world/tokyoTypes.js';
+import { H_TILE, V_TILE, hTileBoard, vTileBoard, boardCell } from '../src/world/tokyoSigns.js';
 import { buildTokyoBuilding, frontRotation, ensureSurf, SURF, buildShrine } from '../src/world/tokyo.js';
 import { District } from '../src/world/district.js';
 import { styleFor } from '../src/world/artBuildings.js';
 
 const NEW = ['tower', 'pencil', 'mansion', 'carpark', 'machiya', 'depato'];
+/* The Shibuya set pieces: never rolled (the census below is NEW only), but held to every geometry rule the others are. */
+const LANDMARK = ['qfront', 'signstack', 'screens'];
+const ALL = [...NEW, ...LANDMARK];
 /* A plot in each type's niche (see pickTokyoType), varied per seed: [hw, hd, h].
    hw is half the DEPTH back from the street, hd half the FRONTAGE. */
 const NICHE = {
@@ -19,6 +23,9 @@ const NICHE = {
   carpark: (r) => [9 + r() * 6, 9 + r() * 6, 20 + r() * 40],
   machiya: (r) => [3 + r() * 11, 2.5 + r() * 5.5, 17 + r() * 6],
   depato: (r) => [8 + r() * 7, 11 + r() * 5, 30 + r() * 40],
+  qfront: (r) => [7.5 + r() * 6, 7.5 + r() * 6, 44 + r() * 60],
+  signstack: (r) => [4.5 + r() * 8, 4 + r() * 9, 22 + r() * 50],
+  screens: (r) => [4.5 + r() * 8, 4 + r() * 9, 22 + r() * 50],
 };
 /* A side street on +Z for half the seeds: the corner-seeking types (mansion corridor, depato atrium) read it. */
 const probeFor = (seed, hd) => (seed % 2 ? (x, z) => (z > hd + 1 ? -2 : 25) : undefined);
@@ -44,7 +51,7 @@ function fnv(arrays) {
 }
 
 test('every new type builds for 50 seeds: indexed, every attribute present and finite, surf kinds valid, inside its budget', (t) => {
-  for (const type of NEW) {
+  for (const type of ALL) {
     let sum = 0, max = 0;
     for (const p of plotsOf(type)) {
       const b = build(type, p);
@@ -92,7 +99,7 @@ test('forced onto every real plot shape it fits, no type builds worse than the w
   const sizes = [];
   for (const bl of data.blocks) if (bl.district === 'LITTLE TOKYO') for (const g of d.buildingsOf(bl.id)) sizes.push([g.w / 2, g.d / 2], [g.d / 2, g.w / 2]);
   let worst = 0, at = '';
-  for (const type of NEW) {
+  for (const type of ALL) {
     for (let i = 0; i < sizes.length; i += 3) {
       const [hw, hd] = sizes[i], [mf, md] = TOKYO_TYPES[type].min;
       if (2 * hd < mf || 2 * hw < md) continue;
@@ -106,7 +113,7 @@ test('forced onto every real plot shape it fits, no type builds worse than the w
 
 test('every triangle winds the way its normals point (the first tank track was inside out)', () => {
   const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), f = new THREE.Vector3(), n = new THREE.Vector3(), v = new THREE.Vector3();
-  for (const type of NEW) {
+  for (const type of ALL) {
     for (const p of plotsOf(type, 12)) {
       const g = build(type, p).geo, pos = g.attributes.position, nn = g.attributes.normal, ix = g.index.array;
       let wrong = 0, total = 0;
@@ -160,7 +167,7 @@ function castAt(geo) {
 
 const SEEN = {};   // the level rays' first hits by surf kind, per type: the glass/wall/paint test reads it
 test('seen from outside, the nearest surface always faces the camera: no holes, nothing inside out', () => {
-  for (const type of NEW) {
+  for (const type of ALL) {
     SEEN[type] = { 1: 0, 2: 0, 3: 0 };
     for (const p of plotsOf(type, 3)) {
       const b = build(type, p);
@@ -179,7 +186,7 @@ test('seen from outside, the nearest surface always faces the camera: no holes, 
 test('every pane of glass looks out at open air, not into a wall', () => {
   const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3(), m = new THREE.Vector3();
   const rc = new THREE.Raycaster();
-  for (const type of NEW) {
+  for (const type of ALL) {
     for (const p of plotsOf(type, 4)) {
       const g = build(type, p).geo, pos = g.attributes.position, sf = g.attributes.surf.array, ix = g.index.array;
       const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
@@ -229,7 +236,7 @@ function surfaces(geo) {
    counting it would call a glass tower 30% glass. */
 test('glass, wall and paint go where they belong', () => {
   const tot = {};
-  for (const type of NEW) {
+  for (const type of ALL) {
     tot[type] = { tile: 0, plaster: 0 };
     for (const p of plotsOf(type, 10)) {
       const g = build(type, p).geo, s = surfaces(g);
@@ -239,7 +246,7 @@ test('glass, wall and paint go where they belong', () => {
     }
   }
   assert.ok(SEEN.tower, 'runs after the ray test');
-  for (const type of NEW) for (const k of [1, 2]) if (type !== 'carpark' || k === 1) assert.ok(SEEN[type][k] > 0, `${type} shows no ${['', 'wall', 'glass'][k]}`);
+  for (const type of ALL) for (const k of [1, 2]) if (type !== 'carpark' || k === 1) assert.ok(SEEN[type][k] > 0, `${type} shows no ${['', 'wall', 'glass'][k]}`);
   const share = (t, k) => SEEN[t][k] / (SEEN[t][1] + SEEN[t][2] + SEEN[t][3]);
   assert.ok(share('tower', 2) > 0.45, `the curtain wall is ${(100 * share('tower', 2)).toFixed(0)}% glass`);
   assert.ok(share('depato', 1) > share('depato', 2), 'a department store is stone first, glass second');
@@ -252,12 +259,12 @@ test('glass, wall and paint go where they belong', () => {
 test('every board on every type has a shape the Tokyo atlas draws', () => {
   const bad = [];
   let n = 0;
-  for (const type of NEW) {
+  for (const type of ALL) {
     for (const p of plotsOf(type)) {
       const b = build(type, p);
       for (const bd of b.boards) {
         n++;
-        const k = bd.kind, asp = k === 'v' ? bd.h / bd.w : bd.w / bd.h;
+        const k = bd.kind, W = bd.slice ? bd.w * bd.slice[1] : bd.w, asp = k === 'v' ? bd.h / W : W / bd.h;   // a curved screen's strips: the whole screen keeps the tile's shape
         const ok = k === 'h' ? asp >= 2.8 && asp <= 6.2 : k === 'v' ? asp >= 2.3 && asp <= 5.6 : k === 's' ? Math.abs(asp - 2) < 0.05 : false;
         if (!ok || (k === 'v') !== !!bd.vertical || ![bd.x, bd.y, bd.z, bd.yaw].every(Number.isFinite)) bad.push(`${type} ${k} ${bd.w.toFixed(2)}x${bd.h.toFixed(2)}`);
       }
@@ -269,7 +276,7 @@ test('every board on every type has a shape the Tokyo atlas draws', () => {
 });
 
 test('every type merges with the walk-up, the shrine and a kit tower into one mesh: one attribute set', () => {
-  const geos = NEW.map((type) => build(type, plotsOf(type, 1)[0]).geo);
+  const geos = ALL.map((type) => build(type, plotsOf(type, 1)[0]).geo);
   geos.push(buildTokyoBuilding(7, 6, 6, 30).geo, buildShrine(3).geo);
   const kit = new THREE.BoxGeometry(4, 20, 4);   // a kit tower as the chunk sees it: colour/emit/flick, no surf until ensureSurf
   const nk = kit.attributes.position.count;
@@ -284,7 +291,7 @@ test('every type merges with the walk-up, the shrine and a kit tower into one me
 });
 
 test('the same seed builds the same building; another seed a different one', () => {
-  for (const type of NEW) {
+  for (const type of ALL) {
     const [p, q] = plotsOf(type, 2);
     const A = build(type, p), B = build(type, p), C = build(type, { ...p, seed: q.seed });
     const key = (b) => fnv([b.geo.attributes.position.array, b.geo.attributes.color.array, b.geo.attributes.surf.array, b.geo.attributes.emit.array, new Float32Array(b.geo.index.array)]);
@@ -372,4 +379,59 @@ test('over the real district the walk-up stays commonest and each new type lands
   }
   assert.ok(walk / plots > 0.35 && walk / plots < 0.7, `walk-up share ${(walk / plots).toFixed(2)}`);
   assert.ok(tris.after <= tris.before * 1.1, `the district went ${tris.before} -> ${tris.after} triangles`);
+});
+
+test('roundLoop: a closed rounded rectangle, every point on it, every normal pointing out', () => {
+  for (const [tx, tz, R, step] of [[8, 8, 4, 1.9], [12, 7, 3.5, 0.72], [6, 6, 6, 1.0]]) {
+    const pts = roundLoop(tx, tz, R, step);
+    let len = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i], q = pts[(i + 1) % pts.length];
+      assert.ok(Math.abs(Math.hypot(p.nx, p.nz) - 1) < 1e-9, 'unit normals');
+      assert.ok(p.x * p.nx + p.z * p.nz > 0, `normal at (${p.x.toFixed(2)}, ${p.z.toFixed(2)}) points in`);
+      assert.ok(Math.abs(p.x) <= tx + 1e-9 && Math.abs(p.z) <= tz + 1e-9, 'inside its box');
+      const d = Math.hypot(q.x - p.x, q.z - p.z);
+      assert.ok(d <= step + 1e-6 && d > 1e-4, `a ${d.toFixed(3)} m segment`);
+      len += d;
+    }
+    const want = 4 * (tx - R) + 4 * (tz - R) + 2 * Math.PI * R;
+    assert.ok(Math.abs(len - want) / want < 0.02, `perimeter ${len.toFixed(2)} vs ${want.toFixed(2)}`);
+  }
+});
+
+test('the named sign tiles are the colours they are named for', () => {
+  const want = { white: '#f5f3ec', magenta: '#e5007e', green: '#00964b', red: '#d7141f', yellow: '#ffd200', blue: '#0a53b5' };
+  for (const [name, i] of Object.entries(H_TILE)) assert.equal(hTileBoard(i), want[name], `h ${name} is tile ${i}`);
+  for (const [name, i] of Object.entries(V_TILE)) assert.equal(vTileBoard(i), want[name], `v ${name} is tile ${i}`);
+});
+
+test('a curved screen\'s strips tile its picture exactly, left to right, and every strip runs the same ad', () => {
+  for (const n of [1, 4, 6]) {
+    const cells = Array.from({ length: n }, (_, i) => boardCell({ kind: 's', tile: 5, slice: [i, n] }, 0));
+    const whole = boardCell({ kind: 's', tile: 5 }, 0);
+    for (let i = 0; i < n; i++) {
+      assert.ok(Math.abs(cells[i][0] - (whole[0] + (whole[2] * i) / n)) < 1e-12 && Math.abs(cells[i][2] - whole[2] / n) < 1e-12);
+      assert.deepEqual([cells[i][1], cells[i][3]], [whole[1], whole[3]]);
+      // the shader's column: floor(u0 * 4 + 0.001) must be the whole screen's for every strip
+      assert.equal(Math.floor(cells[i][0] * 4 + 0.001), Math.floor(whole[0] * 4 + 0.001));
+    }
+  }
+  const b = buildTokyoLot(99, 8.6, 8.6, 34, { force: 'screens' });
+  const strips = b.boards.filter((bd) => bd.slice);
+  assert.ok(strips.length >= 6, `${strips.length} strips`);
+  assert.equal(strips.length % 6, 0);
+  for (let i = 0; i < strips.length; i += 6) {
+    const run = strips.slice(i, i + 6);
+    assert.deepEqual(run.map((q) => q.slice[0]), [0, 1, 2, 3, 4, 5], 'one screen\'s strips, in order');
+    assert.equal(new Set(run.map((q) => q.tile)).size, 1, 'one ad per screen');
+  }
+});
+
+test('the scramble corners get their set piece whatever the plot would roll, and ?tokyotype still wins', () => {
+  assert.equal(pickTokyoType(12345, 8.7, 8.7, 70, { hero: 'qfront' }), 'qfront');
+  assert.equal(pickTokyoType(12345, 5, 12, 30, { hero: 'screens' }), 'screens');
+  assert.equal(pickTokyoType(12345, 3, 3, 30, { hero: 'qfront' }), 'walkup', 'a plot too small for it falls back');
+  assert.equal(pickTokyoType(12345, 8.7, 8.7, 70, { hero: 'qfront', force: 'walkup' }), 'walkup');
+  // the set pieces are only ever handed out: no roll lands on one
+  for (let s = 1; s <= 400; s++) assert.ok(!LANDMARK.includes(pickTokyoType(s * 97, 4 + (s % 11), 4 + (s % 13), 10 + (s % 17) * 8)));
 });

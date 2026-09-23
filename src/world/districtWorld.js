@@ -17,7 +17,7 @@ import { buildTokyoLot } from './tokyoTypes.js';
 import { loadTokyoTowers, towerFor } from './tokyoTowers.js';
 import { loadTerraces, terraceFor, TERRACES } from './terraceModels.js';
 import { loadIndustrial, industrialYard, INDUSTRIAL } from './industrialYard.js';
-import { tokyoCell, tokyoBoardMesh } from './tokyoSigns.js';
+import { boardCell, tokyoBoardMesh } from './tokyoSigns.js';
 import { buildDecals, decalMaterial, decalGeometry } from './decals.js';
 import { buildGlare, setGlareRing, setGlareClip } from './glare.js';
 import { keptCellSet, wallProps, ringHides, segmentSplit, pieceHas } from './playArea.js';
@@ -64,6 +64,8 @@ const hash = (x, z) => {
   const n = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
   return n - Math.floor(n);
 };
+/** A plot's identity in the Shibuya hero map: its centre to 0.1 m. */
+const heroKey = (x, z) => `${Math.round(x * 10)},${Math.round(z * 10)}`;
 
 /**
  * The tallest roofs within `radius` of a point, in world space, from the same
@@ -1175,6 +1177,47 @@ export class DistrictWorld {
    * same pure phase function the traffic reads. Lenses are one instanced mesh
    * per chunk whose colours are rewritten each frame.
    */
+  /**
+   * The Shibuya set pieces (tokyoTypes.js section 7, docs/REF-SHIBUYA.md) go
+   * on the four corners of ONE scramble: the Little Tokyo crossroads nearest
+   * the spawn (main.js puts the car at 2354, 1408; node 1016 is 48 m ahead of
+   * it, so the crossing is in the first frame). Per corner -- quadrant about
+   * the node -- the nearest plot the Tokyo branch builds; the biggest of them
+   * (at least 14 m both ways) is QFRONT, the corner diagonally across from it
+   * gets the rooftop screens, the other two are sign towers. Worked out once
+   * over the whole district, so a plot's type cannot depend on which chunk
+   * reached it first. Keyed by the plot centre to 0.1 m (heroKey).
+   */
+  #shibuyaHeroes() {
+    if (this._heroes) return this._heroes;
+    const heroes = this._heroes = new Map();
+    let node = null, best = Infinity;
+    for (const n of this.nodeById.values()) {
+      if (n.kind !== 'cross' || this.district.districtAt?.(n.x, n.y) !== 'LITTLE TOKYO') continue;
+      const d = Math.hypot(n.x - 2354, n.y - 1408);
+      if (d < best) { best = d; node = n; }
+    }
+    if (!node) return heroes;
+    const corner = [null, null, null, null];
+    for (const bl of this.district.blocks) {
+      if (bl.district !== 'LITTLE TOKYO' || !ARCHETYPE[bl.type]) continue;
+      const ca = Math.cos(bl.angle), sa = Math.sin(bl.angle);
+      for (const g of this.district.buildingsOf(bl.id)) {
+        if (g.w < 7 || g.d < 7) continue;
+        const lx = g.x + g.w / 2, lz = g.y + g.d / 2, wx = bl.x + lx * ca - lz * sa, wz = bl.y + lx * sa + lz * ca;
+        if (styleFor(bl, g, hash(wx * 0.53, wz * 0.91))) continue;   // the art router takes this plot before the Tokyo branch sees it
+        const dx = wx - node.x, dz = wz - node.y, r = Math.hypot(dx, dz), q = (dx < 0 ? 1 : 0) + (dz < 0 ? 2 : 0);
+        if (r < 70 && (!corner[q] || r < corner[q].r)) corner[q] = { key: heroKey(wx, wz), r, area: g.w * g.d, fits: Math.min(g.w, g.d) >= 14, q };
+      }
+    }
+    const big = corner.filter((c) => c?.fits).sort((a, b) => b.area - a.area)[0];
+    for (const c of corner) {
+      if (!c) continue;
+      heroes.set(c.key, !big ? 'signstack' : c === big ? 'qfront' : c.q === (big.q ^ 3) ? 'screens' : 'signstack');
+    }
+    return heroes;
+  }
+
   #signals(edgeIds, group, key) {
     const A = this.assets;
     const posts = [], arms = [], lens = [], meta = [], zebra = [];
@@ -1291,6 +1334,17 @@ export class DistrictWorld {
             const ys = Math.atan2(-sz, sx);
             // flatRect's first extent runs ACROSS the yaw direction here (measured: the 4 m run merged the row into a band), so the stripe's 0.62 goes first
             for (let k = -reach; k <= reach; k += 1.45) zebra.push(flatRect(node.x + ddx * k, 0.022, node.y + ddz * k, ys, 0.62, 4.0));
+          }
+          /* Globe lanterns on the four corners: black posts with old-style
+             globes stand at every corner of the crossing in Arun's night photos.
+             Kit props through the signal batch (no new draws); a corner whose
+             point is not pavement -- a fifth road, a plaza -- gets none. */
+          if (sigBatch) {
+            for (const a of [-1, 1]) for (const b of [-1, 1]) {
+              const r = half + 2.4, lx = node.x + (dx * a - dz * b) * r, lz = node.y + (dz * a + dx * b) * r;
+              if (this.district.tarmacDepth(lx, lz) < 0.8) continue;
+              sigBatch.add('props/double_lantern_lamp', placeAsset(lx, KERB_H + ly(lx, lz), lz, Math.atan2(-(dz * a + dx * b), dx * a - dz * b)));
+            }
           }
         }
 
@@ -1765,7 +1819,7 @@ export class DistrictWorld {
        building's two turns. */
     const pushTokyoBoard = (bd, M, yaw) => {
       const p = new THREE.Vector3(bd.x, bd.y, bd.z).applyMatrix4(M);
-      const cell = tokyoCell(bd.kind ?? (bd.vertical ? 'v' : 'h'), hash(p.x * 0.37 + bd.y, p.z * 1.3));
+      const cell = boardCell(bd, hash(p.x * 0.37 + bd.y, p.z * 1.3));
       const m = bd.vertical
         ? new THREE.Matrix4().compose(p, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, Math.PI / 2, 'YXZ')), new THREE.Vector3(bd.h, bd.w, 1))
         : mat4(p.x, p.y, p.z, -yaw, bd.w, bd.h, 1);
@@ -1873,7 +1927,8 @@ export class DistrictWorld {
              ship, 13 materials a building would be 13 draws each. Falls through
              to the generated building when the GLBs have not landed yet (the
              load is async and chunks build from frame one) or none fits. */
-          if (this.towers && hash(wx * 0.19, wz * 0.83) < 0.08) {
+          const hero = this.#shibuyaHeroes().get(heroKey(wx, wz));   // a corner of the scramble ahead of the spawn: a Shibuya set piece, never a kit tower
+          if (this.towers && !hero && hash(wx * 0.19, wz * 0.83) < 0.08) {
             // the plot's own world position is the seed, so the choice is stable per building
             const tw = towerFor(this.towers, wx * 7.31 + wz * 3.17, fhw, fhd, h);
             if (tw) {
@@ -1893,6 +1948,7 @@ export class DistrictWorld {
              corner-seeking types use to find a side street. */
           const b = buildTokyoLot(Math.floor(hash(wx * 0.71, wz * 0.29) * 1e9), fhw, fhd, h, {
             block: bl.type,
+            hero,
             probe: (bx, bz) => this.district.tarmacDepth(...toWorld(bx * Math.cos(rot) + bz * Math.sin(rot), -bx * Math.sin(rot) + bz * Math.cos(rot))),
           });
           // local (front +X) -> footprint local (turned onto the street side) -> world (the block's frame), same rotation sense as mat4()

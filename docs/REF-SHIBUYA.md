@@ -65,6 +65,72 @@ level). Numbers are estimates from the photos. Each line is something
 - Buildings under the signs are pale grey or white. The colour is in the
   signage, not the walls.
 
+## At night (Arun's five night photos, 2026-09-23)
+
+These are what the night mode must match. The crossing at night is lit by its
+screens, not by street lamps.
+
+- **The screens light the street.** The crossing and the wet road read
+  mid-grey to violet, not black. The zebra bars glow white. In rain the
+  whole surface mirrors magenta and purple from the screens overhead. The
+  sky above is flat black-navy with no stars.
+- **The Shibuhachi rooftop pair**: two huge screens side by side, roughly
+  20 x 11 m each (estimated from the photo), both **curved** (bulging
+  forward, wrapping the corner) and edge-to-edge with a thin dark seam. They
+  are the brightest thing in view: purple, blue and pink content, with
+  floodlight stars on the frame tops. Under them sits a full storey of stacked
+  lightboxes (red, yellow and white rows), a tall blue vertical banner on one
+  corner and a tall portrait poster banner on the other. The storeys
+  between have warm lit windows, and the ground floor is a gold-lit shopfront.
+- **QFRONT at night**:
+  - the glass reads dark with a thin white grid;
+  - the inset screen glows with a bright coloured rim (magenta);
+  - lit white capital lettering sits on the crown's lattice;
+  - **floodlights at the crown corners** point down (four star glares);
+  - the podium is fully lit warm (a two-level cafe with people at the glass,
+    white shop lettering over the doors);
+  - tall vertical banners run on the corner fins.
+- **The sign corner at night**:
+  - the rooftop board pair lit blue over green, the blue with vertical light
+    stripes;
+  - a white lightbox with a big round blue-and-red logo;
+  - a blue-framed screen (bright white content), a portrait photo screen
+    under it, a magenta-framed screen beside;
+  - a white vertical board with black characters;
+  - a red vertical drugstore banner running several storeys;
+  - the bookshop board at street level: white with blue characters.
+- **Down the axis**: the 109 drum's crown logo glows magenta-pink over a
+  full-height poster band. Small red-square and white boards sit on the
+  low buildings in front.
+- **Right of QFRONT**: a white-lit ad drum (cylinder) whose crown is a
+  steel frame, and a magenta-framed screen at podium height.
+- **Street lamps**: black poles with old-style globe lanterns at the corners,
+  warm white. Few of them, and they don't dominate.
+- **From above**:
+  - the station's glass-walled **pedestrian deck** crosses the road on one
+    side, lit inside;
+  - the corners are reddish paving with **yellow tactile lines**;
+  - a bus lane and taxi ranks line the approaches;
+  - the green trees in the middle of the view are lit from below by the
+    shopfronts.
+- **Rain**: clear vinyl umbrellas (most) and a few coloured ones. The road
+  turns into a mirror of the screens.
+
+### Night checklist for the game
+
+1. The Shibuhachi screens: two much bigger rooftop screens, CURVED (split
+   the board into vertical strips on an arc, each strip showing its slice of
+   the tile), with a thin seam and floodlight glares on top.
+2. QFRONT: lettering board on the crown, four corner floodlight glares, the
+   screen frame given an emissive rim, vertical banners on the corner.
+3. The ambient light at the crossing comes from the screens: the night light
+   pool near the scramble should use the screen colours (violet, blue, white)
+   at a higher range, so the road reads violet-grey, not black.
+4. The sign corner: a red vertical banner running several storeys, a white
+   vertical board, a magenta-framed screen.
+5. Globe lanterns at the four corners of the scramble.
+6. Rain: umbrellas in the crowd (clear ones most of the time).
+
 ## What this means for the game
 
 1. A **QFRONT-style landmark** on the Tokyo cross node that carries the
