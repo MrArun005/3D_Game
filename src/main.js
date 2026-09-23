@@ -173,7 +173,7 @@ window.__isLite = isLite;
 const quality = resolveQuality({ isLite });
 const Q = quality.preset;
 window.__quality = quality;
-const crowdWanted = new URLSearchParams(location.search).has('crowd') && !RACE_MODE;
+const crowdWanted = !new URLSearchParams(location.search).has('nocrowd') && !RACE_MODE;   // on by default again (2026-09-23): two GPU-posed draws now, see world/figure.js
 console.info(describeQuality(quality.name, `${quality.source}, tier ${isLite ? 'LITE' : 'FULL'}: ${qualityChoice.reason}, gpu ${gpuInfo.gpuDesc || 'unknown'}`, Q, { traffic: RACE_MODE ? 0 : Q.traffic, crowd: crowdWanted ? Q.crowd : 0 }));
 
 // Apply initial render scale for the preset's pixel budget
@@ -1422,10 +1422,17 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
      the spine of the scenic route -- ran through open field beside a blue
      strip. `?noriver` turns it off. */
   if (!params.has('noriver') && !RACE_MODE) buildRiverside(scene, district, DAY, catalogue);
-  if (params.has('crowd') && !RACE_MODE) {
-    crowd = new Crowd(scene, district, Q.crowd);   // preset: 80 / 160 / 320 (was isLite ? 160 : 320); the fleet is sized at construction, so boot-time
+  /* The crowd is ON again (2026-09-23). It went opt-in (`?crowd`) when it was
+     six draws of jointed skittles plus 16 Kenney characters with a mixer each;
+     it is now one sculpted, GPU-posed person mesh in TWO draws (world/figure.js:
+     48 near at 3.4k triangles, the rest at 0.9k). A city with empty pavements
+     is not the brief. `?nocrowd` turns it off. The Kenney near-field layer
+     (People: 72-triangle blocky characters) is now a downgrade on the near
+     mesh, so it only runs when asked for with `?people=N`. */
+  if (crowdWanted) {
+    crowd = new Crowd(scene, district, Q.crowd);   // preset: 80 / 110 / 160 / 320; the fleet is sized at construction, so boot-time
     crowd.onNear = () => chatter?.civilian?.('near');
-    people = new People(scene, +(params.get('people') ?? (isLite ? 8 : 16)));
+    if (params.has('people')) people = new People(scene, +(params.get('people') || 16));
   }
   heli = RACE_MODE ? null : new Helicopter(scene, DAY);
   if (heli) {

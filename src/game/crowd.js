@@ -38,7 +38,7 @@ export class Crowd {
       this.people.push({ live: false, x: 0, z: 0, yaw: 0, speed: 0, phase: 0, down: 0,
                          height: 0.94 + this.rand() * 0.14 });
     }
-    this.fleet.flush(true);
+    this.fleet.flush();
     this.clock = 0;
     // junction nodes (degree >= 3): people gather at their kerbs and cross in waves
     const deg = new Map();
@@ -223,6 +223,7 @@ export class Crowd {
       const lift = this.district?.elevationAt ? this.district.elevationAt(p.x, p.z) : 0;   // bridge pavements
       this.fleet.write(i, p.x, FOOT_DROP * p.height + lift, p.z, p.yaw, p.phase, state, p.height);
     }
+    this.fleet.focus = car;   // the nearest people get the detailed mesh (world/figure.js)
     this.fleet.flush();
   }
 }

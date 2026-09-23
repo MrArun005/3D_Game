@@ -531,7 +531,7 @@ export function buildBeach(scene, district, day = true, catalogue = null) {
   }
   const fleet = new FigureFleet(group, CROWD, { shadows: true });
   people.forEach((_, i) => fleet.colour(i, WEAR[i % WEAR.length], SKIN[(i * 7) % SKIN.length]));
-  fleet.flush(true);
+  fleet.flush();
 
   scene.add(group);
   let clock = 0;
@@ -554,7 +554,7 @@ export function buildBeach(scene, district, day = true, catalogue = null) {
           if (dx * dx + dz * dz > 400) p.heading = Math.atan2(-dz, -dx);
         }
         p.phase += (p.speed || 0.55) * dt * 2.6;
-        fleet.write(i, p.x, p.y + FOOT_DROP, p.z, p.heading, p.phase, p.speed > 0.15 ? 1 : 0, 1);
+        fleet.write(i, p.x, p.y + FOOT_DROP, p.z, -p.heading, p.phase, p.speed > 0.15 ? 1 : 0, 1);   // they walk (cos h, sin h); the fleet faces (cos yaw, -sin yaw)
       }
       fleet.flush();
     },
