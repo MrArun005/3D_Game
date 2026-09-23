@@ -102,6 +102,83 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
 
 ## Current state
 
+- **Assets rebuilt (2026-09-23): people, officers, tank, helicopters.**
+  Owner's ask: "rebuild most of the assets ... GTA level ... Tank,
+  Helicopter, people". All four are authored in code (rule 3's "authored for
+  detail" -- no downloads), every mesh indexed with real UVs, and each has a
+  test that checks outward winding (the first tank track was inside out).
+  - **People** (`world/figure.js`): ONE human mesh posed in the VERTEX stage
+    from per-instance (phase, state, scale, look) -- sculpted skull (jaw
+    narrowing to a chin, flatter face) with nose, ears, eyes, brows, mouth;
+    lathed torso/hips, tapered limbs, hands, shoes. Hair sits ON the skull:
+    every piece is the skull pushed out on the same sphere grid and cut at a
+    hairline (`skullShell`), six styles (short, long, cropped, cap, bun,
+    beard) selected by a bit mask. `look` packs style + top pattern (plain,
+    stripes, chest logo, open jacket over a tee) + shorts + sleeves + build
+    into anim.w (`packLook`/`unpackLook`, tested). Two draws for the whole
+    crowd: 48 within 38 m of `fleet.focus` (main points it at the camera) on
+    the 3.4k-tri near mesh, the rest on the 0.9k far one. Two TSL traps hit
+    and fixed: (1) chaining `p = select(c, f(p), p)` makes TSL inline p in
+    both arms -- the vertex shader was 887 kB and SwiftShader lost the device;
+    pose as ONE statement per joint on `.toVar()` variables (13 kB now);
+    (2) `equal()` on an interpolated varying misses (0.9999999): round the
+    region with `floor(x + 0.5)` first -- it was the speckle on every cloth
+    pixel. The crowd is ON by default again (`?nocrowd`); the Kenney
+    near-field layer (`People`) only runs with `?people=N`. On foot the crowd
+    now lives round the walker (it spawned round the parked car).
+  - **Officers** (`world/officer.js`): the same kit (`headPieces`,
+    `skullCover` exported from figure.js), same seven-mesh contract, 1,484
+    tris either dress. Head, cap and arms are now CHILDREN of the torso (a
+    crouch used to drop the torso 0.42 m under a head left standing); the
+    aiming poses hold the gun arm and head against the torso's rotation
+    (`holdAgainstTorso`). Shots never came from the arm, so nothing moved.
+  - **Tank** (`world/tankModel.js`): Leopard 2A6-mould MBT, ~13.5k tris,
+    FIVE draws (hull, wheels, tracks, turret, barrel), NATO three-tone camo
+    from object-space `mx_noise_float`, mud by height. Tracks are a band
+    fitted round the wheels (convex hull of their circles); links scroll and
+    wheels spin in the vertex stage from per-OBJECT uniforms
+    (`uniform().onObjectUpdate` reading `mesh.userData.trackL/R`, rolled per
+    side from the skid-steer speeds). The old model floated 0.65 m above the
+    road and fired from 6 m ahead of the HULL whatever the turret did; the
+    shell and flash now leave the visible muzzle. Hard-edged lathe
+    (`turned`): LatheGeometry shares the vertex at a face/rim corner and
+    every wheel shaded like a ball.
+  - **Helicopters** (`world/heliModel.js`): one H135-mould model for the
+    police unit AND the one you fly (liveries 'police' / 'civil'), ~7.6k
+    tris, seven draws. Superellipse pod-and-boom loft with the glass cut from
+    the same surface, fenestron with a real duct (the fan spins about Z; the
+    old tail spun about X), T-stab, skids at -1.25 (flight.js's rest height;
+    the old ones sat 15 cm underground), FLIR + Nightsun + POLICE lettering
+    (canvas via `toTex`, conformed to the cabin). Nav lights red LEFT / green
+    right (they were swapped). The old canopy was a TRANSMISSION
+    MeshPhysicalMaterial -- a second opaque-scene render every frame a
+    helicopter was on screen; gone.
+  - **Smoothness, same day**: (1) the boot shader warm-up compiled almost
+    nothing it listed -- `compileAsync` runs the render's visibility pass, so
+    the dummies at the world origin (2.7 km behind the spawn camera) were
+    frustum-culled and hidden groups skipped; every first spark/decal/flash/
+    effect compiled mid-game. Warm-up now turns frustumCulled off on dummies
+    and un-hidden meshes (restored after), shows the police heli's hidden
+    group, and warms one tank + one civil heli. (2) `district.nearestRoad`
+    (under roadDepth: crowd, car, camera, traffic, every frame) built nine
+    template-string grid keys per call -- numeric `gridKey` now, squared
+    distances, no result object; crowd steady state 0.556 -> 0.151 ms/frame
+    (node, real district, 110 people). raceTrack.js wrote the string key
+    itself -- use `gridKey`. (3) crowd spawns from edges near you (it tried
+    random edges over the whole map, 0.3% hit rate), max six a frame.
+    (4) breakables' vehicle sweep: numeric `byCell` twin of `byChunk`.
+    (5) the heli transmission canopy (above). A CPU profile of the game in
+    the container (software GL, `scratchpad/prof.mjs` recipe) put all of
+    `src/` at a few ms a frame: the rest is three's per-object render work
+    for ~1,000+ draws -- the GPU/draw-count levers (presets, DRS) are where
+    the M2 Air's frame goes, not game logic.
+  - **Asset viewer**: `npm run dev`, then `/viewer.html?asset=people|tank|
+    heli|heli-civil|officers` (`&layout=faces`, `&lod1`, `&turret=`, orbit
+    `yaw/pitch/dist/h/tx/tz`, `&t=` freezes time, `&webgl`). Dev only (not in
+    the build). Headless recipe that works in this container: Playwright
+    `channel:'chromium'` + SwiftShader flags + `?webgl` (WebGPU under
+    SwiftShader takes minutes a frame); ~15 s a viewer shot.
+
 - **Little Tokyo boards, Shibuya pass (2026-09-23, `world/tokyoSigns.js`)**:
   Tokyo's boards have their own 2048^2 atlas, material and ONE InstancedMesh
   per chunk (`tokyoBoardMesh`, per-instance `aCell` = u0, v0, du, dv; +1
@@ -224,7 +301,7 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
     `mergeDrive`; mobile forces the lite tier; `body.touch` CSS in style.css;
     no pointer lock on touch, TAP TO START, rotate card in portrait.
 
-- Tests: `npm test` — 20/20 passing. Node's built-in runner, no framework.
+- Tests: `npm test` — 392/392 passing (2026-09-23). Node's built-in runner, no framework.
 - Deploy (2026-09-03): Vercel project `halstead-bay`, public at
   https://halstead-bay.vercel.app. Git-triggered builds never leave UNKNOWN;
   deploy with `vercel --prod --yes` run detached (>6 min upload), then check

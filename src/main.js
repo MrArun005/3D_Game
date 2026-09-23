@@ -2805,7 +2805,12 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
      arrives later: the player saw the car at the grid origin, then it jumped
      to Kingsway when the district resolved. Wait for districtRef unless the
      district load failed, in which case the grid is all there is. */
-  if (boot && !warming && (world.primed ?? true) && (districtRef || districtFailed)) {
+  /* NOT gated on the overlay (2026-09-23): it was `boot && ...`, and the
+     stuck-boot guard (12 s without a reported phase) and the frame-error path
+     both null `boot` -- so a slow boot skipped the warm-up for the whole
+     session and every pipeline compiled mid-game, one hitch at a time. Once
+     the world is ready it warms, overlay or not. */
+  if (!warming && (world.primed ?? true) && (districtRef || districtFailed)) {
     warming = true;
     setBootProgress(95, 'Warming shaders…');
     const dummyGroup = new THREE.Group();
