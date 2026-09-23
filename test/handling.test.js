@@ -73,11 +73,21 @@ test('a car in the air keeps its velocity while it yaws (the body frame is not m
   assert.ok(Math.abs(k) < 0.1, `velocity turned ${k.toFixed(2)} rad per rad of yaw with no tyre on the ground`);
 });
 
-test('the handbrake makes the tail step out further than no handbrake', () => {
+/* This was 'the handbrake makes the tail step out further than no handbrake'
+   on unsigned slip, and sim's tail never steps out: after the 2026-09-23 frame
+   fix its signed slip at 60 km/h is -4 deg (the velocity INSIDE the nose, the
+   kinematic slip of a tighter, slower turn; -17 at 40). The mirrored frame
+   had shown it as +4 / +17, tail out. What sim's lever does is lock the rears
+   and tighten the turn (37.6 vs 32.2 deg of heading, 35 vs 52 km/h left);
+   the tail-out handbrake is gta's, asserted in test/handling-gta.test.js. */
+test('sim: the handbrake locks the rears and tightens the turn -- it never throws the tail out', () => {
   const off = handbrake(0), on = handbrake(1);
+  assert.ok(Math.abs(on.rearW) < 3, `the handbrake should lock the rears, rear wheel at ${on.rearW.toFixed(1)} rad/s`);
   assert.ok(on.maxBetaDeg > off.maxBetaDeg,
     `handbrake body slip ${on.maxBetaDeg.toFixed(0)} deg should exceed ${off.maxBetaDeg.toFixed(0)} deg without`);
-  assert.ok(Math.abs(on.rearW) < 3, `the handbrake should lock the rears, rear wheel at ${on.rearW.toFixed(1)} rad/s`);
+  assert.ok(on.sideDeg <= 0, `sim's handbrake slip is ${on.sideDeg.toFixed(1)} deg: + would be the tail out, which only gta does`);
+  assert.ok(on.yawDeg > off.yawDeg && on.speed < off.speed,
+    `turned ${on.yawDeg.toFixed(1)} deg with the lever vs ${off.yawDeg.toFixed(1)} without, ${on.speed.toFixed(0)} vs ${off.speed.toFixed(0)} km/h`);
 });
 
 test('a glancing wall scrape keeps most of its speed and a head-on still stops', () => {

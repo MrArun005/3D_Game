@@ -7,7 +7,9 @@
  * wall scrape -- plus, since 2026-09-23, the GTA-feel scenarios (steady full
  * lock, power and lift-off oversteer, braking in a turn, a held W + A power
  * turn, the handbrake's release, a key step and a W+A+Space drift entry
- * through main.js's steering ramp, the airborne kinematics).
+ * through main.js's steering ramp, the airborne kinematics) and the fix pass's
+ * (a car left alone coasting / released / braked, a lock let go at a crawl,
+ * the yaw wobble of a long held lock, a jump at full throttle).
  * `test/handling.test.js` (sim) and `test/handling-gta.test.js` (gta) assert
  * bands on the same functions so a tuning change cannot regress the balance
  * silently.
@@ -120,13 +122,18 @@ export function coastLock(kmh = 80, seconds = 2) {
     without (0) the handbrake. Then let go -- wheel straight, a whiff of
     throttle -- and time how long the slip takes to get back under 8 deg (0 if
     it never left). `sideDeg` is the signed slip at its largest: + = moving to
-    the right of the nose, i.e. the tail stepped OUT of the left turn. */
+    the right of the nose, i.e. the tail stepped OUT of the left turn. Slip
+    only counts while the car does over 3 m/s: from 40 km/h the slide stops the
+    car inside the 1.5 s, and the direction of a ~0 velocity is noise (the GT3
+    read '145 deg, a spin' off its last centimetres; it slid at <= 42 deg and
+    turned ~110 deg of heading, a handbrake U-turn, 2026-09-23). `yawDeg` is
+    the heading turned while the lever was held. */
 export function handbrake(hand, kmh = 60) {
   const c = accelerateTo(settled(), kmh);
   c.throttle = 0; c.steerTarget = 1; c.hand = hand;
-  let maxBeta = 0, side = 0;
-  for (let i = 0; i < 180; i++) { stepVehicle(c, H); const b = beta(c); if (Math.abs(b) > maxBeta) { maxBeta = Math.abs(b); side = b; } }
-  const out = { maxBetaDeg: maxBeta * DEG, sideDeg: side * DEG, rearW: c.wheelW[2], speed: c.speed * KMH, recoverS: null };
+  let maxBeta = 0, side = 0; const y0 = c.yaw;
+  for (let i = 0; i < 180; i++) { stepVehicle(c, H); const b = beta(c); if (c.speed > 3 && Math.abs(b) > maxBeta) { maxBeta = Math.abs(b); side = b; } }
+  const out = { maxBetaDeg: maxBeta * DEG, sideDeg: side * DEG, yawDeg: (c.yaw - y0) * DEG, rearW: c.wheelW[2], speed: c.speed * KMH, recoverS: null };
   c.hand = 0; c.steerTarget = 0; c.throttle = 0.25;
   if (Math.abs(beta(c)) < 8 / DEG) out.recoverS = 0;
   for (let i = 0; i < 300; i++) { stepVehicle(c, H); if (out.recoverS === null && Math.abs(beta(c)) < 8 / DEG) out.recoverS = (i + 1) * H; }
@@ -183,6 +190,80 @@ export function steadyLock(kmh, seconds = 4) {
   return { latG: sum / n, maxBetaDeg: maxBeta * DEG, radius: c.speed / Math.max(1e-3, Math.abs(c.yawRate)), speed: c.speed * KMH };
 }
 
+/* A car you have stopped must STAY stopped (2026-09-23 review): gta's first
+   implicit wheel update left the body chattering at the step rate at a crawl,
+   and the chatter drove it -- a coasting GT3 never stopped (5.5 km/h after
+   3 min), a released one crept 82 m a minute. Three ways to leave a car. */
+
+/** Accelerate to `kmh`, lift off (main.js's throttle lag) and coast `seconds`
+    in gear: the speed left and the distance covered in the last 30 s. */
+export function coastToRest(kmh = 40, seconds = 180) {
+  const c = accelerateTo(settled(), kmh);
+  c.wantsForward = false; let x30 = 0, z30 = 0;
+  for (let i = 0; i < 120 * seconds; i++) {
+    c.throttle += (0 - c.throttle) * Math.min(1, H * 11);
+    stepVehicle(c, H);
+    if (i === 120 * (seconds - 30)) { x30 = c.x; z30 = c.z; }
+  }
+  return { kmh: c.speed * KMH, last30: Math.hypot(c.x - x30, c.z - z30) };
+}
+
+/** Brake to a stop from `kmh`, then let go of the pedal (main.js's brake lag)
+    and wait `seconds`: how far the car moves on its own. */
+export function stopAndRelease(kmh = 30, seconds = 60) {
+  const c = accelerateTo(settled(), kmh);
+  c.wantsForward = false; c.throttle = 0; c.brake = 1;
+  for (let n = 0; c.speed > 0.05 && n < 120 * 10; n++) stepVehicle(c, H);
+  const x0 = c.x, z0 = c.z;
+  for (let i = 0; i < 120 * seconds; i++) { c.brake += (0 - c.brake) * Math.min(1, H * 15); stepVehicle(c, H); }
+  return { moved: Math.hypot(c.x - x0, c.z - z0), kmh: c.speed * KMH };
+}
+
+/** Brake to a stop from `kmh` and HOLD the brake (what main.js does on foot,
+    where the empty car keeps stepping) for `seconds`: how far it moves. */
+export function parkedBrake(kmh = 30, seconds = 120) {
+  const c = accelerateTo(settled(), kmh);
+  c.wantsForward = false; c.throttle = 0; c.brake = 1;
+  for (let n = 0; c.speed > 0.05 && n < 120 * 10; n++) stepVehicle(c, H);
+  const x0 = c.x, z0 = c.z;
+  for (let i = 0; i < 120 * seconds; i++) stepVehicle(c, H);
+  return { moved: Math.hypot(c.x - x0, c.z - z0), kmh: c.speed * KMH };
+}
+
+/** Coasting at `kmh`, the fronts' spin zeroed (a lock, brake off): how often
+    their slip speed changes sign over 0.5 s and the step they settle within
+    0.05 m/s of the road. A wheel past its peak is where an implicit step on
+    the TANGENT stiffness (0 there) turns explicit and jumps across the road
+    speed: at 5 km/h 59 sign flips, never settled. */
+export function unlockFront(kmh = 5) {
+  const c = accelerateTo(settled(), kmh);
+  c.throttle = 0; c.wantsForward = false; c.wheelW[0] = 0; c.wheelW[1] = 0;
+  let flips = 0, prev = null, settle = null;
+  for (let i = 0; i < 60; i++) {
+    stepVehicle(c, H);
+    const e = c.wheelW[0] * WHEEL_R - c.fwdSpeed;
+    if (prev !== null && Math.sign(e) !== Math.sign(prev) && Math.abs(e) > 0.02) flips++;
+    if (settle === null && Math.abs(e) < 0.05) settle = i + 1;
+    prev = e;
+  }
+  return { flips, settle };
+}
+
+/** Full lock held at `kmh` (speed held) for `seconds`: the yaw rate's peak to
+    peak over the last 3 s as a share of its mean. A steady turn is ~0; with
+    gta's yaw damping flat at 0.4/s (no yawDampHi) the car pumped round a
+    long bend at ~0.7 Hz, 26 / 53 / 50% at 80 / 120 / 160 km/h (2026-09-23). */
+export function lockWobble(kmh, seconds = 6) {
+  const c = accelerateTo(settled(), kmh);
+  c.steerTarget = 1; let lo = Infinity, hi = -Infinity, sum = 0, n = 0;
+  for (let i = 0; i < 120 * seconds; i++) {
+    c.throttle = Math.max(0, Math.min(1, 0.3 + (kmh / KMH - c.fwdSpeed) * 0.5));
+    stepVehicle(c, H);
+    if (i >= 120 * (seconds - 3)) { lo = Math.min(lo, c.yawRate); hi = Math.max(hi, c.yawRate); sum += c.yawRate; n++; }
+  }
+  return { p2p: (hi - lo) / Math.max(1e-6, Math.abs(sum / n)), meanYaw: sum / n, speed: c.speed * KMH };
+}
+
 /** Airborne (60 m up, springs off the ground), no tyre force, body yawing at
     1 rad/s: how far the velocity turns per radian of heading. Physics: 0.
     Before the 2026-09-23 frame fix, 2.02. */
@@ -190,6 +271,19 @@ export function airRatio() {
   const c = settled(); c.y = 60; c.vx = 20; c.vz = 0; c.yawRate = 1; const y0 = c.yaw;
   for (let i = 0; i < 30; i++) { c.vy = 0; c.y = 60; stepVehicle(c, H); }
   return Math.atan2(-c.vz, c.vx) / (c.yaw - y0);
+}
+
+/** At `kmh`, full throttle, held 3 m up for 0.5 s (a jump), then dropped: the
+    driven wheels' speed before and after the flight, the rpm it reached and
+    the speed 2 s after landing. gta's per-wheel drive cap once held the
+    wheels at road speed in the air (rpm stuck at the launch flare). */
+export function airRev(kmh = 100) {
+  const c = accelerateTo(settled(), kmh);
+  const w0 = c.wheelW[2], y0 = c.y; let rpm = 0;
+  for (let i = 0; i < 60; i++) { c.y = y0 + 3; c.vy = 0; stepVehicle(c, H); rpm = Math.max(rpm, c.rpm); }
+  const w1 = c.wheelW[2];
+  for (let i = 0; i < 240; i++) stepVehicle(c, H);
+  return { wheelGain: w1 / w0, rpm, landedKmh: c.speed * KMH, maxBetaDeg: Math.abs(beta(c)) * DEG };
 }
 
 /** main.js's digital steering ramp (the keyboard path, main.js ~2346): a
@@ -259,9 +353,13 @@ export function scrape(kmh = 60, deg = 6) {
   const wall = [{ x: c.x + 80, z: -2.4, angle: 0, hw: 80, hd: 1.0 }];
   c.buildings = () => wall;
   c.throttle = 1; c.steerTarget = 0;
-  const s0 = c.speed; let peakImpact = 0;
-  for (let i = 0; i < 360; i++) { stepVehicle(c, H); peakImpact = Math.max(peakImpact, c.impact); }
-  return { before: s0 * KMH, after: c.speed * KMH, lostKmh: (s0 - c.speed) * KMH, peakImpact, yawDeg: c.yaw * 180 / Math.PI };
+  const s0 = c.speed; let peakImpact = 0, spin = 0;
+  for (let i = 0; i < 360; i++) {
+    stepVehicle(c, H); peakImpact = Math.max(peakImpact, c.impact);
+    spin = Math.max(spin, Math.max(c.wheelW[2], c.wheelW[3]) * WHEEL_R / Math.max(1, c.fwdSpeed));
+  }
+  // spin: the fastest a rear wheel's surface ran relative to the road (the scrape unloads the one by the wall)
+  return { before: s0 * KMH, after: c.speed * KMH, lostKmh: (s0 - c.speed) * KMH, peakImpact, yawDeg: c.yaw * 180 / Math.PI, spin };
 }
 
 /** Straight into a wall at 60 km/h: speed 0.5 s after contact (must be a stop). */
@@ -298,6 +396,8 @@ export function measureFeel() {
     hb: [40, 60, 100].map((k) => handbrake(1, k)),
     tap: [[70, 0.3], [70, 0.6], [100, 0.6]].map(([k, t]) => tapHandbrake(k, t)),
     key80: keyStep(80), air: airRatio(), powerTurn80: powerTurn(80),
+    wobble: [80, 120, 160].map((k) => lockWobble(k)),
+    coast: coastToRest(), release: stopAndRelease(), parked: parkedBrake(),
   };
 }
 
@@ -319,15 +419,17 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop()
   console.log(`held lock @80     peak lat ${f(m.lock80.peakLatG)} g  max body slip ${f(m.lock80.maxBetaDeg, 0)} deg`);
   console.log(`coast+lock @80    heading ${f(m.coast80.headingDeg, 0)} deg in 2 s  body slip ${f(m.coast80.maxBetaDeg, 0)} deg  speed after ${f(m.coast80.speed, 0)} km/h`);
   console.log(`handbrake @60     body slip off ${f(m.handbrakeOff.maxBetaDeg, 0)} deg / on ${f(m.handbrakeOn.maxBetaDeg, 0)} deg  (rearW on: ${f(m.handbrakeOn.rearW, 1)})`);
-  console.log(`6 deg scrape @60  ${f(m.scrape.before, 0)} -> ${f(m.scrape.after, 0)} km/h after 3 s (lost ${f(m.scrape.lostKmh, 0)})  impact ${f(m.scrape.peakImpact)}  yaw ${f(m.scrape.yawDeg, 1)}`);
+  console.log(`6 deg scrape @60  ${f(m.scrape.before, 0)} -> ${f(m.scrape.after, 0)} km/h after 3 s (lost ${f(m.scrape.lostKmh, 0)})  impact ${f(m.scrape.peakImpact)}  yaw ${f(m.scrape.yawDeg, 1)}  rear wheel up to ${f(m.scrape.spin)}x the road`);
   console.log(`head-on @60       ${f(m.headOn.after, 0)} km/h 0.5 s after contact  impact ${f(m.headOn.peakImpact, 1)}`);
   const g = measureFeel();
   console.log(`steady lock       ${g.steady.map((s, i) => `@${[50, 80, 120][i]} ${f(s.latG)} g slip ${f(s.maxBetaDeg, 1)}`).join('  ')}  circle @50 ${f(g.steady[0].radius, 1)} m / @20 ${f(g.steady20.radius, 1)} m`);
   console.log(`oversteer         WOT+lock @30 ${f(g.power30.maxBetaDeg, 1)} deg  lift-off @100 ${f(g.lift100.maxBetaDeg, 1)} deg`);
   console.log(`brake + lock @80  fronts locked ${f(g.brakeTurn80.frontLockedFrac * 100, 0)}%  heading ${f(g.brakeTurn80.headingDeg1s, 0)} deg in 1 s  stop ${f(g.brakeTurn80.dist, 1)} m  slip ${f(g.brakeTurn80.maxBetaDeg, 0)} deg`);
-  console.log(`handbrake held    ${g.hb.map((h, i) => `@${[40, 60, 100][i]} ${h.sideDeg > 0 ? '+' : ''}${f(h.sideDeg, 0)} deg, <8 deg ${f(h.recoverS)} s after, ${f(h.speedAfter, 0)} km/h`).join('  ')}  (+ = tail out)`);
+  console.log(`handbrake held    ${g.hb.map((h, i) => `@${[40, 60, 100][i]} ${h.sideDeg > 0 ? '+' : ''}${f(h.sideDeg, 0)} deg (yaw ${f(h.yawDeg, 0)}), <8 deg ${f(h.recoverS)} s after, ${f(h.speedAfter, 0)} km/h`).join('  ')}  (+ = tail out)`);
   console.log(`W+A, Space tap    @70 0.3 s ${f(g.tap[0].maxBetaDeg, 0)} deg  @70 0.6 s ${f(g.tap[1].maxBetaDeg, 0)} deg  @100 0.6 s ${f(g.tap[2].maxBetaDeg, 0)} deg`);
   console.log(`W+A held 4 s @80  rear wheel up to ${f(g.powerTurn80.spin)}x the road, smoking ${f(g.powerTurn80.smokeFrac * 100, 0)}% of it, out at ${f(g.powerTurn80.speed, 0)} km/h`);
   console.log(`key step @80      yaw ${f(g.key80.r01)} / ${f(g.key80.r05)} / ${f(g.key80.r10)} rad/s at 0.1 / 0.5 / 1.0 s, peak ${f(g.key80.peak)}`);
   console.log(`airborne          velocity turns ${f(g.air)} rad per rad of yaw (physics: 0)`);
+  console.log(`lock wobble       yaw rate peak to peak ${g.wobble.map((w, i) => `@${[80, 120, 160][i]} ${f(w.p2p * 100, 1)}%`).join('  ')} of its mean, last 3 of 6 s`);
+  console.log(`at rest           coast from 40: ${f(g.coast.kmh)} km/h after 3 min (${f(g.coast.last30)} m in the last 30 s)  stopped + released: ${f(g.release.moved)} m in 60 s  brake held: ${f(g.parked.moved, 3)} m in 120 s`);
 }
