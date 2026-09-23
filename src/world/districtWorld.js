@@ -12,6 +12,7 @@ import { signalState, LAMP_COLOURS } from './signals.js';
 import { BREAK_CLASS } from './breakables.js';
 import { ZEBRA_DEPTH } from '../game/traffic.js';
 import { buildTokyoBuilding, frontRotation, tokyoFacadeMaterial, ensureSurf, buildTokyoStreet, wireMaterial, buildShrine } from './tokyo.js';
+import { buildTokyoLot } from './tokyoTypes.js';
 import { loadTokyoTowers, towerFor } from './tokyoTowers.js';
 import { loadTerraces, terraceFor, TERRACES } from './terraceModels.js';
 import { loadIndustrial, industrialYard, INDUSTRIAL } from './industrialYard.js';
@@ -1870,7 +1871,15 @@ export class DistrictWorld {
             }
           }
 
-          const b = buildTokyoBuilding(Math.floor(hash(wx * 0.71, wz * 0.29) * 1e9), fhw, fhd, h);
+          /* The plot's KIND (world/tokyoTypes.js): the walk-up most often, else a
+             tower, pencil, mansion, car park, machiya or department store where
+             the plot suits one; same record either way. `probe` is tarmac depth
+             at a point in the building's own frame (+X the street), which the
+             corner-seeking types use to find a side street. */
+          const b = buildTokyoLot(Math.floor(hash(wx * 0.71, wz * 0.29) * 1e9), fhw, fhd, h, {
+            block: bl.type,
+            probe: (bx, bz) => this.district.tarmacDepth(...toWorld(bx * Math.cos(rot) + bz * Math.sin(rot), -bx * Math.sin(rot) + bz * Math.cos(rot))),
+          });
           // local (front +X) -> footprint local (turned onto the street side) -> world (the block's frame), same rotation sense as mat4()
           const M = new THREE.Matrix4().makeRotationY(-bl.angle).multiply(new THREE.Matrix4().makeRotationY(rot));
           /* Image 11 shops sit ON the kerb. Footprints are inset in the block,
