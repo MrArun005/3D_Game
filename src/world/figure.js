@@ -79,7 +79,7 @@ function tag(geo, bone, region, hairMask = -1) {
  * Normals averaged over coincident vertices: a lathe or sphere duplicates its
  * seam and its poles, and three's computeVertexNormals leaves a crease there.
  */
-function weldNormals(geo) {
+export function weldNormals(geo) {
   geo.computeVertexNormals();
   const pos = geo.attributes.position, nor = geo.attributes.normal, acc = new Map();
   const key = (i) => `${Math.round(pos.getX(i) * 2e4)},${Math.round(pos.getY(i) * 2e4)},${Math.round(pos.getZ(i) * 2e4)}`;
@@ -253,6 +253,33 @@ export function buildHumanGeometry(lod = 0) {
   merged.computeBoundingSphere();
   return merged;
 }
+
+/**
+ * The head alone, for other characters built from the same skull (world/officer.js):
+ * [{ name, geo, region }] in figure space (the skull centred at J.headY), untagged.
+ * `hair` is 'short' | 'cropped' | 'none'; `cap: true` adds a service-cap shell
+ * that hugs the skull (the crown and peak are the caller's).
+ */
+export function headPieces({ seg = 10, rings = 7, hair = 'short', face = true, featureSeg = 5 } = {}) {
+  const f = featureSeg;
+  const out = [];
+  out.push({ name: 'skull', region: R.skin, geo: skullShell(seg, rings, [1, 1, 1], [0, 0], () => true) });
+  if (face) {
+    const nose = new THREE.ConeGeometry(0.016, 0.034, f);
+    nose.rotateZ(-Math.PI / 2 - 0.18); nose.translate(0.097, J.headY - 0.022, 0);
+    out.push({ name: 'nose', region: R.skin, geo: weldNormals(nose) });
+    for (const z of [0.079, -0.079]) out.push({ name: 'ear', region: R.skin, geo: ball(0.024, -0.002, J.headY - 0.006, z, 0.55, 1.15, 0.45, f) });
+    for (const z of [0.032, -0.032]) out.push({ name: 'eye', region: R.eye, geo: ball(0.011, 0.080, J.headY + 0.006, z, 0.55, 0.8, 1.0, f) });
+    for (const z of [0.034, -0.034]) out.push({ name: 'brow', region: R.brow, geo: ball(0.017, 0.080, J.headY + 0.027, z, 0.35, 0.28, 1.3, f) });
+    out.push({ name: 'mouth', region: R.lip, geo: ball(0.020, 0.086, J.headY - 0.058, 0, 0.30, 0.22, 1.0, f) });
+  }
+  if (hair === 'short') out.push({ name: 'hair', region: R.hair, geo: skullShell(seg, rings, [1.07, 1.05, 1.09], [-0.004, 0.004], (c, uy) => uy > HAIRLINE(c)) });
+  else if (hair === 'cropped') out.push({ name: 'hair', region: R.hair, geo: skullShell(seg, rings, [1.02, 1.016, 1.022], [0, 0.001], (c, uy) => uy > CROPLINE(c)) });
+  return out;
+}
+
+/** The skull pushed out and cut, for hats: `k` scale, `keep(c, uy)` where it covers (see skullShell). */
+export function skullCover(seg, rings, k, off, keep) { return skullShell(seg, rings, k, off, keep); }
 
 /** Merge indexed tagged parts into one indexed geometry (same attribute set on every part). */
 function mergeTagged(parts) {
@@ -596,4 +623,4 @@ export function humanTriangles(lod = 0) {
   return n;
 }
 
-export const _internals = { J, B, R, HAIR_STYLES, WEARS, packLook };
+export const _internals = { J, B, R, HAIR_STYLES, WEARS, packLook, HEAD };

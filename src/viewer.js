@@ -18,6 +18,7 @@ import * as THREE from 'three';
 import { FigureFleet } from './world/figure.js';
 import { buildTankModel, rollTracks, tankTriangles } from './world/tankModel.js';
 import { buildHeliModel, heliTriangles } from './world/heliModel.js';
+import { buildOfficer, poseOfficer } from './world/officer.js';
 
 const q = new URLSearchParams(location.search);
 const asset = q.get('asset') || 'people';
@@ -110,6 +111,23 @@ if (asset === 'heli' || asset === 'heli-civil') {
   scene.add(heli.group);
   update = (t) => { heli.rotor.rotation.y = t * 0.9; heli.tail.rotation.z = t * 3; };
   info.push(`heli ${livery}: ${heliTriangles(livery)} tris`);
+}
+if (asset === 'officers') {
+  // patrol and SWAT in each pose, beside two civilians for scale
+  const poses = ['idle', 'aim', 'walk', 'crouch', 'cuff', 'idle', 'aim'];
+  const officers = poses.map((pose, i) => {
+    const o = buildOfficer(i + 1, { swat: i >= 5 });
+    o.group.position.set(0, 0, (i - 3) * 0.95);
+    scene.add(o.group);
+    return { o, pose };
+  });
+  const fleet = new FigureFleet(scene, 2, { shadows: true });
+  fleet.colour(0, 0xc94a3a, 0xd9a173, 0x2a3550, null, 0); fleet.colour(1, 0x2e7fb8, 0x7a4f33, 0x1d1f24, null, 1);
+  update = (t) => {
+    for (const { o, pose } of officers) poseOfficer(o.joints, pose, t * 5.5);
+    fleet.write(0, -1.4, 0, -1.5, 0, 0, 0, 1); fleet.write(1, -1.4, 0, 1.5, 0, 0, 0, 1); fleet.flush();
+  };
+  info.push('officers: patrol x5, SWAT x2, two civilians behind');
 }
 const t0 = performance.now();
 const tFix = q.has('t') ? +q.get('t') : null;
