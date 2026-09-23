@@ -49,11 +49,14 @@ test('the look packs into one float and decodes exactly, inside the interpolatio
     assert.ok(l.pattern >= 0 && l.pattern < 4);
     assert.ok(l.shorts === 0 || l.shorts === 1);
     assert.ok(l.longSleeve === 0 || l.longSleeve === 1);
+    assert.ok(l.bag === 0 || l.bag === 1);
     if (l.pattern === 3) assert.equal(l.longSleeve, 1, 'an open jacket has sleeves');
     const f = w - Math.floor(w);
     assert.ok(f >= 0.05 - 1e-9 && f <= 0.95 + 1e-9, 'the build fraction stays off the integers');
   }
-  const w = packLook(7, 5, { pattern: 2, shorts: 1, longSleeve: 0, build: 0.5 });
-  assert.deepEqual({ ...unpackLook(w), build: Math.round(unpackLook(w).build * 100) / 100 },
-    { style: 5, pattern: 2, shorts: 1, longSleeve: 0, build: 0.5 });
+  for (const bag of [0, 1]) {
+    const w = packLook(7, 5, { pattern: 2, shorts: 1, longSleeve: 0, bag, build: 0.5 });
+    assert.deepEqual({ ...unpackLook(w), build: Math.round(unpackLook(w).build * 100) / 100 },
+      { style: 5, pattern: 2, shorts: 1, longSleeve: 0, bag, build: 0.5 });
+  }
 });

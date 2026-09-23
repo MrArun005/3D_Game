@@ -55,11 +55,13 @@ const J = {
 /* Bones. Side is part of the id so the shader can pick pivots without a table. */
 const B = { root: 0, spine: 1, head: 2, uArmL: 3, fArmL: 4, uArmR: 5, fArmR: 6, thighL: 7, shinL: 8, thighR: 9, shinR: 10 };
 /* Regions (what colour a vertex takes). */
-const R = { skin: 0, top: 1, bottom: 2, shoe: 3, hair: 4, sleeve: 5, belt: 6, eye: 7, brow: 8, lip: 9 };
+const R = { skin: 0, top: 1, bottom: 2, shoe: 3, hair: 4, sleeve: 5, belt: 6, eye: 7, brow: 8, lip: 9, bag: 10 };
 /* Hair styles, per person: 0 short, 1 long, 2 cropped, 3 cap, 4 bun, 5 short + beard. */
 const HAIR_STYLES = 6;
 /* Which styles wear each hair piece, as a bit set over the style index. */
 const WEARS = { short: 1 | 8 | 16 | 32, long: 2, cropped: 4, cap: 8, bun: 16, beard: 32, all: 63 };
+/* Not a hair piece: the bag in the right hand is worn by the look's bag bit, not the style. */
+const BAG_MASK = 64;
 
 /* ------------------------------------------------------------------ geometry */
 
@@ -234,6 +236,10 @@ export function buildHumanGeometry(lod = 0) {
     parts.push(tag(ball(0.038, 0.004, J.wristY - 0.062, z * 0.985, 0.62, 1.15, 0.95, s), f, R.skin));
     if (near) parts.push(tag(ball(0.015, 0.027, J.wristY - 0.040, z * 0.96, 1, 1.4, 1, 5), f, R.skin));
   }
+  // a bag in the right hand (worn by the look's bag bit): it hangs below the fist, a hand's width outboard of the leg
+  parts.push(tag(new THREE.BoxGeometry(0.30, 0.27, 0.09).translate(0.01, J.wristY - 0.245, -J.shoulderZ - 0.025), B.fArmR, R.bag, BAG_MASK));
+  if (near) parts.push(tag(new THREE.BoxGeometry(0.02, 0.10, 0.02).translate(0.01, J.wristY - 0.07, -J.shoulderZ - 0.02), B.fArmR, R.bag, BAG_MASK));   // the handle, into the fist
+
   // legs: thigh + knee + shin (trousers), shoe
   for (const [side, t, sh] of [[1, B.thighL, B.shinL], [-1, B.thighR, B.shinR]]) {
     const z = J.hipZ * side;
@@ -326,10 +332,10 @@ function peopleMaterial(attrs) {
      the fragment stage never floors to the wrong code); see FigureFleet.colour */
   const code = floor(anim.w), build = fract(anim.w);
   const style = code.mod(6), look = floor(code.div(6));
-  const pattern = look.mod(4), shorts = floor(look.div(4)).mod(2), longSleeve = floor(look.div(8));
+  const pattern = look.mod(4), shorts = floor(look.div(4)).mod(2), longSleeve = floor(look.div(8)).mod(2), bag = floor(look.div(16));
   const girth = float(0.88).add(build.mul(0.34));      // 0.9 slim .. 1.2 heavy, across the body
   // hair pieces this person's style does not wear collapse to the crown, where the worn ones cover them
-  const wornStyle = aHairMask.lessThan(0).or(floor(aHairMask.div(exp2(style))).mod(2).greaterThan(0.5));
+  const wornStyle = aHairMask.lessThan(0).or(select(aHairMask.equal(BAG_MASK), bag.greaterThan(0.5), floor(aHairMask.div(exp2(style))).mod(2).greaterThan(0.5)));
 
   /* The pose, in the order a skeleton applies it: the far end of a chain first.
      Every step is ONE statement on two shader variables (position P, normal N):
@@ -440,6 +446,8 @@ function peopleMaterial(attrs) {
   const trainers = pattern.equal(1).or(shorts.greaterThan(0.5));
   const shoe = select(trainers, vec3(0.72, 0.72, 0.70), vec3(0.035, 0.032, 0.03).add(hair.mul(0.08)));
   const belt = bottom.mul(0.35);
+  // the bag: brown leather, a paper shopping bag, or a black briefcase with the jacket
+  const bagC = select(pattern.lessThan(1.5), vec3(0.24, 0.13, 0.06), select(pattern.lessThan(2.5), vec3(0.74, 0.70, 0.58), vec3(0.03, 0.03, 0.035)));
   const eye = vec3(0.02, 0.02, 0.025);
   const bare = shorts.greaterThan(0.5).and(P.y.lessThan(J.kneeY + 0.07));
   const bottomC = select(bare, skin, bottom);
@@ -457,7 +465,8 @@ function peopleMaterial(attrs) {
             select(r.equal(R.sleeve), sleeve,
               select(r.equal(R.belt), belt,
                 select(r.equal(R.brow), mix(vec3(dot(hair, vec3(0.3, 0.59, 0.11))), hair, 0.35).mul(0.55),     // darker than the hair; a dyed head keeps natural brows
-                  select(r.equal(R.lip), skin.mul(vec3(0.74, 0.56, 0.54)), eye)))))))));
+                  select(r.equal(R.lip), skin.mul(vec3(0.74, 0.56, 0.54)),
+                    select(r.equal(R.bag), bagC, eye))))))))));
   // lower-body occlusion toward the feet, and a touch under the chin
   const ao = clamp(P.y.mul(0.9).add(0.35), 0.55, 1.0);
   m.colorNode = vec4(base.mul(ao), 1);
@@ -467,7 +476,7 @@ function peopleMaterial(attrs) {
      what they CAST is untouched. */
   m.receivedShadowPositionNode = positionWorld.add(normalWorld.mul(0.035));
   m.roughnessNode = select(r.equal(R.skin).or(bare.and(r.equal(R.bottom))), float(0.55),
-    select(r.equal(R.hair), float(0.5), select(r.equal(R.shoe), select(trainers, float(0.6), float(0.32)), select(r.equal(R.eye), float(0.2), float(0.86)))));
+    select(r.equal(R.hair), float(0.5), select(r.equal(R.shoe), select(trainers, float(0.6), float(0.32)), select(r.equal(R.eye), float(0.2), select(r.equal(R.bag), float(0.6), float(0.86))))));
   return m;
 }
 
@@ -599,14 +608,15 @@ function packLook(i, style, look = {}) {
   const pattern = look.pattern ?? (h < 0.52 ? 0 : h < 0.68 ? 1 : h < 0.82 ? 2 : 3);
   const shorts = look.shorts ?? (hash(i * 17 + 1) < 0.18 ? 1 : 0);
   const longSleeve = look.longSleeve ?? (pattern === 3 || hash(i * 19 + 2) < 0.45 ? 1 : 0);   // an open jacket always has sleeves
+  const bag = look.bag ?? (hash(i * 29 + 11) < 0.3 ? 1 : 0);                                    // three in ten carry something
   const build = look.build ?? hash(i * 23 + 7);
-  return st + 6 * (pattern + 4 * (shorts + 2 * longSleeve)) + 0.05 + 0.9 * Math.min(1, Math.max(0, build));
+  return st + 6 * (pattern + 4 * (shorts + 2 * (longSleeve + 2 * bag))) + 0.05 + 0.9 * Math.min(1, Math.max(0, build));
 }
 
 /** Decode a packed look (tests, and anything that wants to know what someone wears). */
 export function unpackLook(w) {
   const code = Math.floor(w), look = Math.floor(code / 6);
-  return { style: code % 6, pattern: look % 4, shorts: Math.floor(look / 4) % 2, longSleeve: Math.floor(look / 8), build: (w - code - 0.05) / 0.9 };
+  return { style: code % 6, pattern: look % 4, shorts: Math.floor(look / 4) % 2, longSleeve: Math.floor(look / 8) % 2, bag: Math.floor(look / 16), build: (w - code - 0.05) / 0.9 };
 }
 
 function hash(n) {
@@ -623,4 +633,4 @@ export function humanTriangles(lod = 0) {
   return n;
 }
 
-export const _internals = { J, B, R, HAIR_STYLES, WEARS, packLook, HEAD };
+export const _internals = { J, B, R, HAIR_STYLES, WEARS, BAG_MASK, packLook, HEAD };
