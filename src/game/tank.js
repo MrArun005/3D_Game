@@ -1,7 +1,13 @@
 import * as THREE from 'three';
 import { Vehicle } from './vehicle.js';
-import { M4, mergeGeos } from '../core/geometry.js';
 import { resolveBoxes } from '../vehicle/collision.js';
+import { buildTankModel, rollTracks, BARREL_AT, MUZZLE_X, HALF_TRACK } from '../world/tankModel.js';
+
+/* One tracer for every shell of every tank: a new geometry + material per shot
+   was an allocation and (for the first) a pipeline compile mid-fight. */
+const TRACER_GEO = new THREE.SphereGeometry(0.22, 8, 6);
+const TRACER_MAT = new THREE.MeshBasicMaterial({ color: 0xffdd44 });
+const _muzzle = new THREE.Vector3();
 
 /**
  * 55-tonne Rhino Heavy Tank.
@@ -66,95 +72,30 @@ export class TankVehicle extends Vehicle {
     this.#buildModel(options.flash);
   }
 
+  /* The model is world/tankModel.js: ~13.5k triangles in five draws (hull,
+     wheels, tracks, turret, barrel), geometry and materials shared by every
+     tank. The hierarchy is the old one -- group > turretGroup > barrelGroup --
+     so the turret aim and the recoil below drive it unchanged. */
   #buildModel(sharedFlash) {
-    const group = new THREE.Group();
-    group.name = 'RhinoTank';
-
-    const armorMat = new THREE.MeshStandardMaterial({
-      color: 0x364032, // Military Olive Drab
-      roughness: 0.8,
-      metalness: 0.22,
-    });
-    const darkSteel = new THREE.MeshStandardMaterial({
-      color: 0x1a1e22,
-      roughness: 0.65,
-      metalness: 0.5,
-    });
-    const treadMat = new THREE.MeshStandardMaterial({
-      color: 0x111417,
-      roughness: 0.9,
-      metalness: 0.2,
-    });
-
-    // Lower & upper hull
-    const hullGeo = createTankHullGeometry();
-    const hullMesh = new THREE.Mesh(hullGeo, armorMat);
-    hullMesh.castShadow = true;
-    hullMesh.receiveShadow = true;
-    group.add(hullMesh);
-
-    // Left and right track assemblies
-    for (const side of [-1, 1]) {
-      const track = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.95, 0.72), treadMat);
-      track.position.set(0, 0.48, side * 1.65);
-      track.castShadow = true;
-      group.add(track);
-
-      // Track skirt armor plates
-      const skirt = new THREE.Mesh(new THREE.BoxGeometry(6.8, 0.55, 0.08), armorMat);
-      skirt.position.set(0, 0.68, side * 2.05);
-      skirt.castShadow = true;
-      group.add(skirt);
-    }
-
-    // Rotating Turret Group
-    const turretGroup = new THREE.Group();
-    turretGroup.position.set(-0.2, 1.35, 0);
-
-    const turretMesh = new THREE.Mesh(createTurretGeometry(), armorMat);
-    turretMesh.castShadow = true;
-    turretGroup.add(turretMesh);
-
-    // Cannon Mantlet and Barrel
-    const mantlet = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.65, 0.95), darkSteel);
-    mantlet.position.set(1.4, 0.15, 0);
-    turretGroup.add(mantlet);
-
-    const barrelGroup = new THREE.Group();
-    barrelGroup.position.set(1.6, 0.15, 0);
-
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 4.4, 10), darkSteel);
-    barrel.rotation.z = -Math.PI / 2;
-    barrel.position.set(2.2, 0, 0);
-    barrel.castShadow = true;
-    barrelGroup.add(barrel);
-
-    // Muzzle brake
-    const brake = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.36, 0.44), darkSteel);
-    brake.position.set(4.35, 0, 0);
-    barrelGroup.add(brake);
-
-    turretGroup.add(barrelGroup);
-    this.barrelGroup = barrelGroup;
-
-    group.add(turretGroup);
-    this.turretGroup = turretGroup;
-
-    // Muzzle flash light
+    const model = buildTankModel();
+    this.model = model;
+    this.turretGroup = model.turretGroup;
+    this.barrelGroup = model.barrelGroup;
+    // Muzzle flash light, at the muzzle: it turns with the turret now (it used to sit 6 m ahead of the HULL)
     // shared with DispatchService when given: a new scene light recompiles every pipeline (see flight.js)
     const flash = sharedFlash || new THREE.PointLight(0xffaa33, 0, 16);
-    flash.position.set(6.0, 1.5, 0);
-    group.add(flash);
+    flash.position.set(MUZZLE_X + 0.4, 0, 0);
+    this.barrelGroup.add(flash);
     this.muzzleFlash = flash;
 
-    group.position.set(this.x, this.y, this.z);
-    this.scene.add(group);
-    this.mesh = group;
+    model.group.position.set(this.x, this.y, this.z);
+    this.scene.add(model.group);
+    this.mesh = model.group;
   }
 
   enter(player) {
     super.enter(player);
-    if (this.muzzleFlash && this.mesh) this.mesh.add(this.muzzleFlash);   // the shared flash rides the tank being driven
+    if (this.muzzleFlash && this.barrelGroup) { this.barrelGroup.add(this.muzzleFlash); this.muzzleFlash.position.set(MUZZLE_X + 0.4, 0, 0); }   // the shared flash rides the tank being driven, at its muzzle
   }
 
   update(input, dt, context = {}) {
@@ -163,7 +104,7 @@ export class TankVehicle extends Vehicle {
     }
     if (this.recoil > 0) {
       this.recoil = Math.max(0, this.recoil - dt * 4.5);
-      if (this.barrelGroup) this.barrelGroup.position.x = 1.6 - this.recoil * 0.45;
+      if (this.barrelGroup) this.barrelGroup.position.x = BARREL_AT.x - this.recoil * 0.45;
     }
     if (this.muzzleFlash && this.muzzleFlash.intensity > 0) {
       this.muzzleFlash.intensity = Math.max(0, this.muzzleFlash.intensity - dt * 2500);
@@ -234,6 +175,11 @@ export class TankVehicle extends Vehicle {
       this.mesh.position.set(this.x, this.y, this.z);
       this.mesh.rotation.set(0, this.yaw, 0);
     }
+    /* The tracks roll with the ground they lie on: each side covers the hull's
+       speed plus or minus the turn (skid steer: yawRate > 0 turns the nose to
+       -Z, the tank's right, so the LEFT track runs the outside of the turn).
+       Wheels and links move on the GPU from these two numbers. */
+    if (this.model) rollTracks(this.model, (this.fwdSpeed + this.yawRate * HALF_TRACK) * dt, (this.fwdSpeed - this.yawRate * HALF_TRACK) * dt);
 
     // 5. Crush Physics (Traffic vehicles & Props)
     this.#applyCrushPhysics(dt);
@@ -250,12 +196,12 @@ export class TankVehicle extends Vehicle {
       this.muzzleFlash.intensity = 500;
     }
 
-    // Cannon muzzle world position and trajectory
+    // Cannon muzzle world position and trajectory: from the barrel itself, so the shell leaves the muzzle you can see
     const totalYaw = this.yaw + this.turretYaw;
     const dirX = Math.cos(totalYaw), dirZ = -Math.sin(totalYaw);
-    const muzzleX = this.x + dirX * 5.8;
-    const muzzleY = this.y + 1.5;
-    const muzzleZ = this.z + dirZ * 5.8;
+    this.mesh.updateMatrixWorld(true);
+    this.barrelGroup.localToWorld(_muzzle.set(MUZZLE_X + 0.1, 0, 0));
+    const muzzleX = _muzzle.x, muzzleY = _muzzle.y, muzzleZ = _muzzle.z;
 
     const shellSpeed = 120.0; // m/s
     const shell = {
@@ -268,11 +214,8 @@ export class TankVehicle extends Vehicle {
       life: 2.5,
     };
 
-    // Create glowing tracer shell mesh
-    const tracer = new THREE.Mesh(
-      new THREE.SphereGeometry(0.22, 8, 6),
-      new THREE.MeshBasicMaterial({ color: 0xffdd44 }),
-    );
+    // Glowing tracer shell (shared geometry and material)
+    const tracer = new THREE.Mesh(TRACER_GEO, TRACER_MAT);
     tracer.position.set(shell.x, shell.y, shell.z);
     this.scene.add(tracer);
     shell.mesh = tracer;
@@ -316,11 +259,7 @@ export class TankVehicle extends Vehicle {
 
       if (hitGround || hitBuilding || p.life <= 0) {
         this.#detonateShell(p.x, p.y, p.z);
-        if (p.mesh) {
-          this.scene.remove(p.mesh);
-          p.mesh.geometry.dispose();
-          p.mesh.material.dispose();
-        }
+        if (p.mesh) this.scene.remove(p.mesh);   // geometry and material are shared: nothing to dispose
         this.projectiles.splice(i, 1);
       }
     }
@@ -398,44 +337,4 @@ export class TankVehicle extends Vehicle {
       icon: 'tank',
     };
   }
-}
-
-function createTankHullGeometry() {
-  const parts = [];
-  // Main lower hull
-  const lower = new THREE.BoxGeometry(6.2, 0.8, 3.2);
-  lower.applyMatrix4(M4(0, 0.5, 0));
-  parts.push(lower);
-
-  // Sloped glacis front
-  const front = new THREE.BoxGeometry(1.6, 0.6, 3.1);
-  front.applyMatrix4(M4(2.6, 0.65, 0, 0, 0, -0.35));
-  parts.push(front);
-
-  // Rear engine deck
-  const rear = new THREE.BoxGeometry(2.0, 0.75, 3.1);
-  rear.applyMatrix4(M4(-2.0, 0.75, 0));
-  parts.push(rear);
-
-  return mergeGeos(parts);
-}
-
-function createTurretGeometry() {
-  const parts = [];
-  // Faceted turret body
-  const base = new THREE.BoxGeometry(2.8, 0.85, 2.4);
-  base.applyMatrix4(M4(0, 0.42, 0));
-  parts.push(base);
-
-  // Sloped turret cheeks
-  const cheek = new THREE.BoxGeometry(1.4, 0.7, 1.8);
-  cheek.applyMatrix4(M4(0.8, 0.45, 0, 0, 0, -0.2));
-  parts.push(cheek);
-
-  // Commander cupola
-  const cupola = new THREE.CylinderGeometry(0.35, 0.35, 0.3, 8);
-  cupola.applyMatrix4(M4(-0.4, 0.95, 0.55));
-  parts.push(cupola);
-
-  return mergeGeos(parts);
 }

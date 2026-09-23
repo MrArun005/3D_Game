@@ -8,12 +8,14 @@
  *   &tx=0&tz=0                          orbit centre in x/z (close-ups)
  *   &layout=faces                       people: styles side by side facing +X
  *   &lod1                               people: force the far mesh
+ *   &turret=30                          tank: turret yaw (degrees)
  *   &sun=38&sunaz=145                   sun elevation / azimuth (degrees)
  *   &t=1.3                              freeze animation time (seconds); omit to run
  *   &webgl                              three's WebGL2 backend
  */
 import * as THREE from 'three';
 import { FigureFleet } from './world/figure.js';
+import { buildTankModel, rollTracks, tankTriangles } from './world/tankModel.js';
 
 const q = new URLSearchParams(location.search);
 const asset = q.get('asset') || 'people';
@@ -89,6 +91,15 @@ if (asset === 'people') {
   if (q.has('norecv')) for (const m of fleet.meshes) m.receiveShadow = false;
   if (q.has('lod1')) fleet.focus = { x: 1e4, z: 1e4 };   // everyone past NEAR_R: the far mesh
   info.push(`people: ${n}`);
+}
+if (asset === 'tank') {
+  const tank = buildTankModel();
+  tank.group.position.y = 0.65;                            // TankVehicle keeps y = ground + 0.65
+  tank.turretGroup.rotation.y = THREE.MathUtils.degToRad(+(q.get('turret') ?? 0));
+  scene.add(tank.group);
+  let last = 0;
+  update = (t) => { const d = (t - last) * 4; last = t; rollTracks(tank, d, d); };
+  info.push(`tank: ${tankTriangles()} tris, 5 draws`);
 }
 const t0 = performance.now();
 const tFix = q.has('t') ? +q.get('t') : null;
