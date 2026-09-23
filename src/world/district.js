@@ -8,6 +8,7 @@
  */
 
 import { fetchCached } from '../core/assetCache.js';
+import { makePlayArea, clipGraph, COMPACT_PLACES, RACEWAY_POLY } from './playArea.js';
 
 const CELL = 96;                       // spatial hash cell, metres
 /* A NUMBER, not the old `${ix},${iz}` string: nearestRoad runs for every
@@ -18,7 +19,11 @@ const key = (ix, iz) => (ix + 4096) * 8192 + (iz + 4096);
 export const gridKey = key;
 
 export class District {
-  constructor(data) {
+  /**
+   * `opts.play`: a polygon ([x, z] vertices) the game is played inside -- the
+   * compact city (world/playArea.js COMPACT_POLY), or null for the whole bay.
+   */
+  constructor(data, opts = {}) {
     this.data = data;
     this.bounds = data.bounds;
     this.grid = new Map();             // hash cell -> segment list
@@ -54,6 +59,29 @@ export class District {
       );
     }
     this.graph = data.graph;
+    /* The compact city (2026-09-23, world/playArea.js). GAMEPLAY reads
+       `graph` -- traffic, the crowd, jobs, the checkpoint run, navigation,
+       autopilot, versus, respawns -- so clipping it here is the one choke
+       point that keeps all of them inside: 1,789 nodes / 2,937 edges -> 328 /
+       511, one connected component. RENDERING (kerbs, markings, signals,
+       gantries, junction decals, prop guards) reads `fullGraph`, or the inside
+       half of every exit edge would lose its kerb. `bounds` stays the whole
+       map (water, surrounds, riverside and versus read it); `playBounds` is
+       the city's box for the map. `play` is the city alone (landmarks and the
+       places filter ask it); `wall` is where a body may stand -- the city plus
+       the raceway island, which /tp track and Shift+T still reach. With no
+       opts none of this exists and the District answers exactly as before. */
+    this.fullGraph = data.graph;
+    this.play = null;
+    this.wall = null;
+    this.playBounds = null;
+    if (opts.play) {
+      this.play = makePlayArea(opts.play);
+      this.wall = makePlayArea([opts.play, RACEWAY_POLY]);
+      this.graph = clipGraph(data.graph, this.play);
+      this.places = this.places.filter((p) => this.play.contains(p.x, p.y)).concat(COMPACT_PLACES);
+      this.playBounds = this.play.bbox;
+    }
 
     // flatten every road into segments once; the hash points at these
     for (const road of data.roads) {
@@ -278,7 +306,7 @@ export class District {
   inWater(x, z) {
     const W = this.data.water;
     for (const br of this.data.bridges) {
-      if (nearPolyline(br.points, x, z) < br.width / 2 + 2.5) return false;
+      if (withinPolyline(br.points, x, z, br.width / 2 + 2.5)) return false;
     }
     return this.inOpenWater(x, z);
   }
@@ -293,7 +321,7 @@ export class District {
     if (this.isRacewayLand && this.isRacewayLand(x, z)) return false;
     const W = this.data.water;
     if (x > this.bounds.w + 20) return true;
-    if (nearPolyline(W.river.points, x, z) < W.river.width / 2) return true;
+    if (withinPolyline(W.river.points, x, z, W.river.width / 2)) return true;
     return pointInPoly(W.bay, x, z);
   }
 
@@ -635,18 +663,26 @@ function spanHeight(s, x, z) {
   return 0;
 }
 
-/** Distance from a point to a polyline. */
-function nearPolyline(pts, x, z) {
-  let best = Infinity;
+/* Is the point within `r` of the polyline? The same answer as the old
+   nearPolyline(...) < r (the least distance over every piece), but each piece
+   is rejected on its bounding box before any square root and the walk stops
+   at the first hit. The river is 99 points, and the drowning test, the
+   placement guards and the compact city's wall dressing (playArea.js) all
+   ask: inOpenWater measured 5.7 -> 2.1 us a call (node, 5,182 samples). */
+function withinPolyline(pts, x, z, r) {
+  const r2 = r * r;
   for (let i = 0; i < pts.length - 1; i++) {
-    const ax = pts[i][0], az = pts[i][1];
-    const vx = pts[i + 1][0] - ax, vz = pts[i + 1][1] - az;
+    const ax = pts[i][0], az = pts[i][1], bx = pts[i + 1][0], bz = pts[i + 1][1];
+    if (x < (ax < bx ? ax : bx) - r || x > (ax > bx ? ax : bx) + r
+     || z < (az < bz ? az : bz) - r || z > (az > bz ? az : bz) + r) continue;
+    const vx = bx - ax, vz = bz - az;
     const l = vx * vx + vz * vz;
     let t = l ? ((x - ax) * vx + (z - az) * vz) / l : 0;
     t = t < 0 ? 0 : t > 1 ? 1 : t;
-    best = Math.min(best, Math.hypot(x - ax - vx * t, z - az - vz * t));
+    const ex = x - ax - vx * t, ez = z - az - vz * t;
+    if (ex * ex + ez * ez < r2) return true;
   }
-  return best;
+  return false;
 }
 
 function pointInPoly(poly, x, z) {
@@ -658,7 +694,7 @@ function pointInPoly(poly, x, z) {
   return inside;
 }
 
-export async function loadDistrict(url = '/halstead-bay.district.json') {
+export async function loadDistrict(url = '/halstead-bay.district.json', opts = {}) {
   const data = await fetchCached(url, 'json');
-  return new District(data);
+  return new District(data, opts);
 }

@@ -95,7 +95,14 @@ export function buildRiverside(scene, district, day = true, catalogue = null) {
     return m;
   };
 
-  const inMap = (x, z) => x > 8 && z > 8 && x < B.w - 8 && z < B.h - 8;
+  /* The compact city (world/playArea.js): only the banks within 300 m of its
+     wall -- the east bank is the city's west edge and the far bank is the
+     view across, but the 3 km of river beyond is never near the car. Measured
+     in node (no catalogue, 9 runs): first call 90 -> 51 ms, warm median ~52 ->
+     ~29 ms, vertices halved. The whole bay keeps the whole river. */
+  const inMap = district.play
+    ? (x, z) => x > 8 && z > 8 && x < B.w - 8 && z < B.h - 8 && district.play.probe(x, z).d < 300
+    : (x, z) => x > 8 && z > 8 && x < B.w - 8 && z < B.h - 8;
 
   /* ---- the wall and its coping, both banks ---- */
   const wallParts = [], copeParts = [];

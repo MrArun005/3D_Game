@@ -13,7 +13,7 @@ import { loadVendorCars, loadHeroSkin, KENNEY_CARS, DEFAULT_BODY } from './world
 import { loadTreeModels } from './world/treeModels.js';
 import { LightPool } from './game/lighting.js';
 import { Jobs, onPavementAtSpeed } from './game/jobs.js';
-import { Garage } from './game/garage.js';
+import { Garage, CHOP_SHOP_COMPACT } from './game/garage.js';
 import { StoryManager } from './game/storyMissions.js';
 import { ReputationSystem } from './game/reputation.js';
 import { IntelScanner } from './game/intel.js';
@@ -36,6 +36,7 @@ import { mergeDrive } from './game/input.js';
 import { City, releaseCell } from './world/city.js';
 import { DistrictWorld } from './world/districtWorld.js';
 import { loadDistrict } from './world/district.js';
+import { pickMapMode, MAP_KEY, COMPACT_POLY, holdInside } from './world/playArea.js';
 import { buildSurrounds } from './world/surrounds.js';
 import { buildWater } from './world/water.js';
 import { buildPlaces } from './world/places.js';
@@ -116,6 +117,12 @@ const DAY = !new URLSearchParams(location.search).has('night');
    there is just nothing in it that is not the track. See DistrictWorld's
    `only` option for the mechanism. */
 const RACE_MODE = new URLSearchParams(location.search).get('mode') === 'race';
+/* The compact city (2026-09-23, world/playArea.js): "make the game smaller".
+   ?fullmap > ?compact > localStorage hb.map > compact. Known here, before the
+   district fetch below, because the District clips its gameplay graph as it
+   parses. The race run has its own `only` streaming and always loads whole. */
+const MAP_MODE = pickMapMode(location.search, (() => { try { return localStorage.getItem(MAP_KEY); } catch { return null; } })());
+const COMPACT = MAP_MODE === 'compact' && !RACE_MODE;
 /* Frame-phase marks are ?perf ONLY (2026-09-22). frameBody() called
    performance.mark() eight times a frame and nothing in src/ ever read them;
    the User Timing buffer for marks is unbounded, so they piled up forever.
@@ -160,6 +167,11 @@ const setBootProgress = (pct, m) => {
 setBootProgress(10, 'Waking the GPU…');
 const renderer = createRenderer(canvas);
 setBootProgress(25, 'Starting the renderer…');
+/* Start the district fetch + parse now: it needs no GPU, and waiting behind
+   renderer.init() and the vendor car loads cost the boot its overlap (commit
+   31510ca put it here; a merge lost it). */
+const districtReady = loadDistrict(undefined, { play: COMPACT ? COMPACT_POLY : null });
+districtReady.catch(() => {});   // handled where it is awaited; this only stops an early 'unhandled rejection' before that
 await renderer.init();
 
 setBootProgress(35, 'Analyzing GPU architecture…');
@@ -374,6 +386,11 @@ async function joinRoom(id) {
   };
   const url = new URL(location.href);
   url.searchParams.set('room', room);
+  /* The invite carries the map: seeded mission and versus courses are laid on
+     the gameplay graph, which the compact city clips -- a peer booting the
+     other map would race a different course. The URL outranks hb.map. */
+  url.searchParams.delete(MAP_MODE === 'full' ? 'compact' : 'fullmap');
+  url.searchParams.set(MAP_MODE === 'full' ? 'fullmap' : 'compact', '');
   hud.setRoom(url.toString());
 }
 let damage = 0;
@@ -477,6 +494,8 @@ const RIVALS = +(new URLSearchParams(location.search).get('rivals') ?? 5);
 
 function startHalsteadMile() {
   if (!districtRef) { hud.flash('THE HALSTEAD MILE · CITY STILL LOADING'); return; }
+  // six of its eight marks (the lift bridge, the bay) are past the compact city's wall (world/playArea.js)
+  if (districtRef.play) { hud.flash('THE HALSTEAD MILE · NEEDS ?fullmap (THE WHOLE BAY)'); return; }
   const start = HALSTEAD_MILE[0];
   resetCar(car);
   car.x = start.x;
@@ -1300,7 +1319,7 @@ const catalogueReady = new Catalogue().load(renderer)
   })
   .catch((e) => { console.warn('catalogue unavailable:', e.message); return null; });
 
-Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search).has('nokit') ? null : loadKitBuildings(assets).catch((e) => console.warn('kit buildings:', e.message))]).then(async ([district, catalogue]) => {
+Promise.all([districtReady, catalogueReady, new URLSearchParams(location.search).has('nokit') ? null : loadKitBuildings(assets).catch((e) => console.warn('kit buildings:', e.message))]).then(async ([district, catalogue]) => {
   registerRaceTrackPhysics(district);
   useDistrict(district);                  // roadDepth() now answers from the file
   traffic.useGraph(district);
@@ -1365,7 +1384,14 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   /* `lite` in DistrictWorld means exactly "radius 1 + propRadius 1" (districtWorld.js:189-192, its only
      three reads) and it overrides `radius`, so the preset's streamRadius drives it: 1 -> the 3x3 ring LITE
      runs today, 2 -> the 5x5 FULL ring. Boot-time: the ring is built once and streamed, never re-sized. */
-  world = new DistrictWorld(scene, assets, district, { day: DAY, catalogue, lite: Q.streamRadius < 2, radius: Q.streamRadius, only: RACE_MODE ? isRacewayArea : null });
+  /* Compact city: build only the cells within 128 m of where a body may stand
+     (the city and the raceway island, district.wall); photo mode lifts it. */
+  world = new DistrictWorld(scene, assets, district, {
+    day: DAY, catalogue, lite: Q.streamRadius < 2, radius: Q.streamRadius, only: RACE_MODE ? isRacewayArea : null,
+    keep: district.wall ? (x, z) => district.wall.probe(x, z).d < 128 : null,
+    liftClip: () => !!photo?.on,
+  });
+  if (district.play) console.info(`map: COMPACT (${district.graph.nodes.length} of ${district.fullGraph.nodes.length} nodes, ${world.keptCells?.size ?? 0} chunk cells, ${district.places.length} places) · ?fullmap for the whole bay`);
   /* Retire the legacy 130 m grid HERE, at the swap, and not a page earlier.
      It used to be cleared before the catalogue pre-warm, whose awaits let the
      frame loop keep ticking world.update() on the City for a few seconds --
@@ -1422,7 +1448,8 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
      The CATALOGUE is passed now too: buildBeach has taken one as its fourth
      argument all along and never received it, so it could not place a single
      authored asset -- which is why the eight Riviera props had nowhere to go. */
-  if (!params.has('nobeach') && !RACE_MODE) beach = buildBeach(scene, district, DAY, catalogue);
+  // not in the compact city: Halstead Sands is on the bay behind Harbour Point, past the wall (?beach brings it anyway)
+  if (!params.has('nobeach') && !RACE_MODE && (!district.play || params.has('beach'))) beach = buildBeach(scene, district, DAY, catalogue);
   /* The river's two banks: wall, coping, plane trees, lamps, benches. Until
      now water.js cut the river out of the ground plate and nothing put an edge
      on it, so THE EMBANKMENT -- 1,281 m of arterial following the river, and
@@ -1453,6 +1480,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   jobs = new Jobs(mission, traffic, hud, district, audio, navigation);
   garage = new Garage(jobs, assets, hero, damageModel, hud, car);
   garage.heat = () => traffic.wanted;
+  if (district.play) garage.chop = CHOP_SHOP_COMPACT;   // Steelgate is outside the compact city: the Harbour Point yard buys instead
   garage.onRepair = () => {   // Pay 'n' Spray: a respray below three stars loses the police; at three or more they know the driver, not the car
     if (traffic.wanted > 0 && traffic.wanted < 3) { traffic.standDown(); chatter?.radio?.('Suspect vehicle lost. Cancel the description.'); return true; }
     return false;
@@ -1462,6 +1490,7 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   if (params.has('metro')) metro = new Metro(scene, district, assets);
   garage.restore();
   story = new StoryManager(mission, traffic, hud, garage, audio, navigation);
+  if (district.play) story.useArea(district.play, district.graph.nodes);   // outside targets move to junctions inside (world/playArea.js remapMission)
   dispatch = new DispatchService(scene, world, garage, traffic, debris, hud, audio, navigation);
   window._dispatch = dispatch;
   if (params.has('debug')) window.addCash = (amount = 50000) => {
@@ -1740,6 +1769,21 @@ window.__buyWeapon = (kind, price) => {
   return true;
 };
 const warpTo = (x, z, yaw = 0) => {
+  /* The compact city (world/playArea.js): a warp past the wall -- a phone card,
+     a debug __warp, a tour recorded for the whole bay -- lands on the nearest
+     junction inside and says why; the soft wall would only push it back from
+     a spot with nothing built round it. The raceway island is inside
+     district.wall; photo mode moves only its own camera. */
+  const wallA = districtRef?.wall;
+  if (wallA && !photo?.on && !wallA.contains(x, z)) {
+    let best = null, bd = Infinity;
+    for (const n of districtRef.graph.nodes) {
+      if (n.kind !== 'cross' && n.kind !== 'tee') continue;
+      const d = Math.hypot(n.x - x, n.y - z);
+      if (d < bd) { bd = d; best = n; }
+    }
+    if (best) { x = best.x; z = best.y; hud.flash('OUTSIDE THE COMPACT CITY · ?fullmap'); }
+  }
   resetCar(car);
   car.x = x;
   car.z = z;
@@ -2258,6 +2302,13 @@ function frameBody() {
   lastTime = now;
   if (wastedAnim === 1) dt *= 0.35;   // wasted: the fall plays at a third speed, GTA's beat
 
+  /* The compact city's soft wall (world/playArea.js holdInside), whatever you
+     are in: pushed back to the inset, the outward speed taken off, no damage,
+     no shake, no star. district.wall is the city plus the raceway island and
+     null under ?fullmap; a circuit race suspends it. Frame scope: the on-foot,
+     tank and helicopter branches below and the car's physics steps read it. */
+  const wall = districtRef?.wall && (raceCircuit?.state ?? 'idle') === 'idle' ? districtRef.wall : null;
+
   // ---- controls ----
   let c = null;   // this frame's input snapshot; null in film mode (the camera block below reads it)
   if (film) {
@@ -2294,12 +2345,20 @@ function frameBody() {
   if (!started && (c.throttle > 0.08 || c.brake > 0.25 || Math.abs(c.steer) > 0.3)) start();
   if (activeVehicle && activeVehicle.type === 'helicopter') {
     activeVehicle.update(c, dt, { keys: input.keys });
+    // the helicopter may hover up to 150 m past the wall (over the river), no further
+    if (wall && holdInside(activeVehicle, wall, -150)) hud.roadClosed('RESTRICTED AIRSPACE · ?fullmap FOR THE WHOLE BAY');
     car.throttle = 0; car.brake = 1; car.steerTarget = 0; car.vx = 0; car.vz = 0;
   } else if (activeVehicle && activeVehicle.type === 'tank') {
     activeVehicle.update(c, dt, { firing: firing || c.fire, chase });
+    if (wall && holdInside(activeVehicle, wall, 4)) {   // 4 m: the tank's own solid() is a 3.5 m circle
+      const tk = activeVehicle;
+      tk.fwdSpeed = tk.vx * Math.cos(tk.yaw) - tk.vz * Math.sin(tk.yaw);   // back onto the tracks, as tank.js does after a building
+      hud.roadClosed();
+    }
     car.throttle = 0; car.brake = 1; car.steerTarget = 0; car.vx = 0; car.vz = 0;
   } else if (onFoot.active) {
     onFoot.update(c, dt, camera, walkSolid, (x, z) => Math.max(world.district?.elevationAt?.(x, z) ?? 0, groundHeightAt(x, z)));
+    if (wall && holdInside(onFoot, wall, 0.5)) hud.roadClosed();
     car.throttle = 0; car.brake = 1; car.steerTarget = 0;
     // on foot too: stand still for twenty seconds and the camera circles you; any input, aiming or firing ends it
     idleCam = idleT > 20 && (onFoot.speed || 0) < 0.2 && !photo.on && !aiming && !firing;
@@ -2376,10 +2435,16 @@ function frameBody() {
        death spiral, and stepVehicle costs 1.8 us (measured, 120k steps), so
        eight of them is 14 us a frame -- the spiral it was guarding against
        does not exist. */
+    let walled = false;
     while (physicsAccumulator >= STEP && guard++ < 8) {
       stepVehicle(car, STEP);
+      /* Every step, not every frame: at 80 m/s a frame is 1.3 m. Inset 2.6 m:
+         the hull's nose probe sits at +2.25 m (collision.js), so the bumper
+         stops ~0.35 m short of the line and ~1 m short of the barriers. */
+      if (wall && holdInside(car, wall, 2.6)) walled = true;
       physicsAccumulator -= STEP;
     }
+    if (walled) hud.roadClosed();
     car.odo = (car.odo || 0) + Math.abs(car.fwdSpeed ?? car.speed ?? 0) * dt;   // trip odometer (metres) for the HUD
   } else {
     physicsAccumulator = 0;

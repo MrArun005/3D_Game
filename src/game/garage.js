@@ -1,5 +1,6 @@
 import { loadHeroSkin, DEFAULT_BODY } from '../world/vendorCars.js';
 import { getVehicleProfile } from '../vehicle/config.js';
+import { COMPACT_CHOP } from '../world/playArea.js';
 
 /* The chop shop (2026-09-09). Drive a car you do not OWN -- a carjack or a
    break-in fits the victim's body without buying it -- to the Steelgate
@@ -9,6 +10,11 @@ import { getVehicleProfile } from '../vehicle/config.js';
    the heist_2 weapons stash, so the map's one criminal address stays one
    address. The AR scanner (intel.js) quotes the same number over traffic. */
 export const CHOP_SHOP = { x: 3662, z: 1221, r: 60, name: 'STEELGATE CHOP SHOP' };
+/* Steelgate is outside the compact city (world/playArea.js), so there the
+   chop shop is a Harbour Point yard on the south edge -- a pavement spot, its
+   totem in COMPACT_PLACES, and still the heist_2 stash (the story remap sends
+   that step here too). main sets `garage.chop` to this when the city is compact. */
+export const CHOP_SHOP_COMPACT = { x: COMPACT_CHOP.x, z: COMPACT_CHOP.z, r: 60, name: 'HARBOUR CHOP SHOP' };
 export function chopValue(file, outlaw = false) {
   const c = CATALOGUE.find((k) => k.file === file);
   const base = Math.max(200, Math.round((c?.price ?? 600) * 0.35));
@@ -142,11 +148,12 @@ export class Garage {
       // a stolen body: the only thing N does with it is sell it, and only at the chop shop
       if (!this.owned.has(this.fitted)) {
         const at = this.where?.();
-        const d = at ? Math.hypot(at.x - CHOP_SHOP.x, at.z - CHOP_SHOP.z) : Infinity;
+        const chop = this.chop ?? CHOP_SHOP;   // the compact city's own, when main set one
+        const d = at ? Math.hypot(at.x - chop.x, at.z - chop.z) : Infinity;
         const rep = (typeof window !== 'undefined') ? window._reputation : null;
         const pay = chopValue(this.fitted, (rep?.score ?? 0) <= -80);
         const name = CATALOGUE.find((k) => k.file === this.fitted)?.name ?? this.fitted.toUpperCase();
-        if (d > CHOP_SHOP.r) { this.hud.flash(`STOLEN ${name} · CHOP $${pay} AT ${CHOP_SHOP.name} (${Math.round(d)} m)`); return; }
+        if (d > chop.r) { this.hud.flash(`STOLEN ${name} · CHOP $${pay} AT ${chop.name} (${Math.round(d)} m)`); return; }
         this.addCash(pay, `CHOP SHOP · ${name}`);
         rep?.adjust(-40, 'CHOP SHOP SALE');
         await this.wear(this.lastOwned);
