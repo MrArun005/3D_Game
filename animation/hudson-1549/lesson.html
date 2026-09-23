@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Why Everyone Survived</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="lesson.css">
+<script type="importmap">{ "imports": { "three": "./node_modules/three/build/three.module.js" } }</script>
+</head>
+<body>
+<div id="stage">
+  <div id="vignette"></div>
+  <div id="dim"></div>
+  <div id="labels"></div>
+
+  <div id="title"><div class="eyebrow">A SPARK EXPLAINS</div><div class="big">Why everyone survived<br>Flight 1549</div></div>
+
+  <svg id="d-glide" class="panel" viewBox="0 0 460 270" width="460" height="270">
+    <rect x="0" y="0" width="460" height="270" rx="14" class="card"/>
+    <text x="24" y="38" class="h">Gliding: height becomes distance</text>
+    <line x1="40" y1="70" x2="40" y2="220" class="guide"/>
+    <line x1="40" y1="220" x2="430" y2="220" class="ground"/>
+    <path d="M 40 70 L 430 220" class="glide" data-draw="418"/>
+    <text x="52" y="150" class="v">≈ 930 m</text>
+    <text x="52" y="170" class="s">(3,000 ft)</text>
+    <text x="300" y="248" class="v">≈ 15 km</text>
+    <text x="250" y="130" class="big">17 : 1</text>
+    <g transform="translate(40,70) rotate(21) scale(0.9)"><path d="M -18 0 L 16 -2 Q 22 0 16 2 L -18 2 Z M -2 -1 L -10 -12 L -6 -12 L 6 -1 Z M -2 1 L -10 12 L -6 12 L 6 1 Z M -16 0 L -20 -7 L -17 -7 L -12 0 Z" class="plane"/></g>
+  </svg>
+
+  <svg id="d-attitude" class="panel" viewBox="0 0 460 270" width="460" height="270">
+    <rect x="0" y="0" width="460" height="270" rx="14" class="card"/>
+    <text x="24" y="38" class="h">Ditching attitude</text>
+    <path d="M 20 190 Q 60 184 100 190 T 180 190 T 260 190 T 340 190 T 440 190" class="water"/>
+    <g transform="translate(230,168) rotate(-9.5)">
+      <path d="M -150 -2 L 120 -2 Q 150 -2 158 8 Q 150 16 120 16 L -130 16 Q -150 12 -155 4 Z" class="sil"/>
+      <path d="M -130 -2 L -160 -52 L -140 -52 L -100 -2 Z" class="sil"/>
+      <path d="M -20 12 L -60 22 L -30 22 L 20 12 Z" class="sil dark"/>
+      <line x1="-200" y1="10" x2="200" y2="10" class="axis"/>
+    </g>
+    <line x1="60" y1="178" x2="425" y2="178" class="guide"/>
+    <path d="M 351.6 177.9 A 120 120 0 0 0 350 158.1" class="arc" data-draw="22"/>
+    <text x="362" y="176" class="v">9.5°</text>
+    <text x="24" y="232" class="s">nose up · wings level · ≈ 125 knots · slowest safe speed</text>
+    <text x="24" y="254" class="s">tail touches first</text>
+  </svg>
+
+  <div id="d-lessons" class="panel lessons">
+    <div class="h">Three lessons from Flight 1549</div>
+    <ol>
+      <li><b>Fly the aircraft first.</b> Keep it under control, then solve the problem.</li>
+      <li><b>Teamwork and checklists</b>, even with seconds to spare.</li>
+      <li><b>Pick the best option you have</b>, not the one you wish you had.</li>
+    </ol>
+  </div>
+
+  <div id="bubbles"></div>
+  <svg id="spark" viewBox="-100 -100 200 200" width="220" height="220">
+    <g id="rays"></g>
+    <circle r="44" fill="#fbf1e6"/>
+    <circle r="44" fill="none" stroke="#e07a52" stroke-width="5"/>
+    <g id="eyes"><ellipse cx="-15" cy="-8" rx="6" ry="9" fill="#2a2320"/><ellipse cx="15" cy="-8" rx="6" ry="9" fill="#2a2320"/>
+      <circle cx="-13" cy="-11" r="2.2" fill="#fff"/><circle cx="17" cy="-11" r="2.2" fill="#fff"/></g>
+    <ellipse cx="-27" cy="10" rx="7" ry="4" fill="#f2a88a" opacity="0.8"/><ellipse cx="27" cy="10" rx="7" ry="4" fill="#f2a88a" opacity="0.8"/>
+    <path id="mouth" d="M -16 14 Q 0 24 16 14 Q 0 20 -16 14 Z" fill="#2a2320"/>
+  </svg>
+
+  <div id="outro"><div class="big">Stay curious.</div><div class="sub">Reconstruction after NTSB report AAR-10/03 · every model, texture and sound generated in code</div></div>
+  <div id="fade"></div>
+</div>
+<script type="module" src="src/lessonMain.js"></script>
+</body>
+</html>

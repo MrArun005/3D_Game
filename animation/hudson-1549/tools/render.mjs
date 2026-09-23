@@ -18,6 +18,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf(`--${k}`); return i < 0 ? d : args[i + 1]; };
 const OUT = path.join(ROOT, 'out');
+const TAG = opt('page', 'index.html') === 'index.html' ? 'flight1549' : path.basename(opt('page'), '.html');
 fs.mkdirSync(OUT, { recursive: true });
 
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
@@ -28,7 +29,8 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(p).pipe(res);
 });
 await new Promise((r) => server.listen(0, r));
-const url = `http://127.0.0.1:${server.address().port}/index.html?render`;
+const PAGE = opt('page', 'index.html');
+const url = `http://127.0.0.1:${server.address().port}/${PAGE}?render`;
 
 const exe = ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find((p) => fs.existsSync(p));
 const browser = await chromium.launch({
@@ -49,14 +51,14 @@ if (stills) {
   for (const s of stills.split(',').map(Number)) {
     const i = Math.round(s * FPS);
     const info = await page.evaluate((i) => window.renderFrame(i), i);
-    const f = path.join(OUT, `still-${String(s).replace('.', '_')}.png`);
+    const f = path.join(OUT, `still-${TAG === 'flight1549' ? '' : TAG + '-'}${String(s).replace('.', '_')}.png`);
     await page.screenshot({ path: f });
     console.log(`still ${s}s (${info.shot}, ft ${info.ft.toFixed(1)}) -> ${path.relative(ROOT, f)}`);
   }
 } else {
   const from = Math.round(parseFloat(opt('from', '0')) * FPS);
   const to = Math.round(parseFloat(opt('to', String(DURATION))) * FPS);
-  const file = path.join(OUT, opt('out', from === 0 && to === Math.round(DURATION * FPS) ? 'flight1549-video.mp4' : `slice-${from}-${to}.mp4`));
+  const file = path.join(OUT, opt('out', from === 0 && to === Math.round(DURATION * FPS) ? `${TAG}-video.mp4` : `slice-${TAG}-${from}-${to}.mp4`));
   const ff = spawn(ffmpegPath, ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(FPS), '-c:v', 'mjpeg', '-i', '-',
     '-c:v', 'libx264', '-preset', 'slow', '-crf', opt('crf', '19'), '-pix_fmt', 'yuv420p', '-movflags', '+faststart', file], { stdio: ['pipe', 'inherit', 'inherit'] });
   const tStart = Date.now();

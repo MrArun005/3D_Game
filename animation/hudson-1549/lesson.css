@@ -1,0 +1,38 @@
+#dim { position: absolute; inset: 0; background: rgba(12,10,20,1); opacity: 0; pointer-events: none; }
+#spark { position: absolute; left: 0; top: 0; transform-origin: 110px 110px; margin: -110px 0 0 -110px; overflow: visible;
+  filter: drop-shadow(0 6px 14px rgba(0,0,0,0.45)); }
+#bubbles .bubble { position: absolute; left: 245px; bottom: 120px; max-width: 720px; box-sizing: border-box;
+  padding: 16px 22px; background: #fffaf3; color: #2a2320; border-radius: 20px; font-size: 27px; line-height: 1.34;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.35); min-height: 58px; }
+#bubbles .bubble::before { content: ""; position: absolute; left: -16px; bottom: 26px; border: 12px solid transparent; border-right: 18px solid #fffaf3; border-left: 0; }
+#bubbles .bubble.center { left: 50%; bottom: 96px; transform: translateX(-50%); text-align: center; width: 820px; max-width: none; }
+#bubbles .bubble.center::before { left: 50%; top: -24px; bottom: auto; margin-left: -12px; border: 12px solid transparent; border-bottom: 18px solid #fffaf3; border-top: 0; }
+#title { position: absolute; left: 0; right: 0; top: 34px; text-align: center; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+#title .eyebrow { font: 700 18px "Liberation Mono", monospace; letter-spacing: 5px; color: #f2b08f; }
+#title .big { font-size: 44px; font-weight: 700; line-height: 1.12; margin-top: 10px; }
+.panel { position: absolute; right: 48px; top: 40px; }
+.panel .card { fill: rgba(255,250,243,0.95); }
+.panel text { font-family: "Liberation Sans", Arial, sans-serif; fill: #2a2320; }
+.panel .h { font-size: 21px; font-weight: 700; }
+.panel .v { font-size: 22px; font-weight: 700; fill: #c4573a; }
+.panel .s { font-size: 15px; fill: #5a4d44; }
+.panel .big { font-size: 40px; font-weight: 700; fill: #c4573a; }
+.panel .guide { stroke: #9a8d82; stroke-width: 2; stroke-dasharray: 5 5; }
+.panel .ground { stroke: #5a4d44; stroke-width: 3; }
+.panel .glide { stroke: #e07a52; stroke-width: 4; fill: none; stroke-linecap: round; }
+.panel .plane, .panel .sil { fill: #3a4a66; }
+.panel .sil.dark { fill: #25324a; }
+.panel .water { stroke: #3d7ab8; stroke-width: 4; fill: none; }
+.panel .axis { stroke: #e07a52; stroke-width: 2; stroke-dasharray: 8 6; }
+.panel .arc { stroke: #e07a52; stroke-width: 3; fill: none; }
+.lessons { right: auto; left: 50%; top: auto; bottom: 70px; transform: translateX(-50%); width: 760px; box-sizing: border-box;
+  background: rgba(255,250,243,0.96); color: #2a2320; border-radius: 18px; padding: 22px 30px 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
+.lessons .h { font-size: 26px; font-weight: 700; color: #c4573a; margin-bottom: 8px; }
+.lessons ol { margin: 0; padding-left: 30px; font-size: 23px; line-height: 1.45; }
+.lessons li { margin-bottom: 8px; }
+.label.opt { border-left: 4px solid; }
+.label.opt span { display: block; font: 600 14px "Liberation Mono", monospace; opacity: 0.85; }
+.label.callout { background: #e07a52; }
+#outro { position: absolute; left: 0; right: 0; top: 110px; text-align: center; opacity: 0; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+#outro .big { font-size: 46px; font-weight: 700; }
+#outro .sub { font-size: 16px; margin-top: 10px; opacity: 0.85; }

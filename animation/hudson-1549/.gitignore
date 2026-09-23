@@ -2,4 +2,6 @@ node_modules/
 out/*.wav
 out/still-*
 out/slice-*
-out/flight1549-video.mp4
+out/*-video.mp4
+out/flight1549.mp4
+out/lesson.mp4

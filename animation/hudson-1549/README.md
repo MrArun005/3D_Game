@@ -1,6 +1,13 @@
 # Flight 1549 — a 3D reconstruction
 
-A 100-second animated film of US Airways Flight 1549, 15 January 2009: takeoff
+Two films share one procedural world:
+
+1. **Flight 1549** (`index.html`, 100 s): the event, shot by shot.
+2. **Why everyone survived** (`lesson.html`, 82 s): Spark, a friendly loading
+   spark, explains the glide, the choice of the Hudson, the APU and the
+   ditching attitude, with diagrams and speech bubbles.
+
+Film 1 is a 100-second animated film of US Airways Flight 1549, 15 January 2009: takeoff
 from LaGuardia, the Canada geese at 2,800 ft, the loss of both engines, the glide
 over the George Washington Bridge and down the Hudson, the ditching, and the
 rescue. All 155 people on board survived.
@@ -17,6 +24,7 @@ encode.
 ```sh
 npm install
 npm run film        # audio + every frame + mux -> out/flight1549.mp4
+npm run lesson      # film 2 -> out/lesson.mp4
 ```
 
 Or step by step:
@@ -43,9 +51,14 @@ Rendering uses SwiftShader (software WebGL), so it needs no GPU but is slow.
 | `src/city.js` | Water, land, buildings batched into 3 km tiles, the Empire State and Chrysler buildings, the GWB, the Palisades, LaGuardia |
 | `src/effects.js` | Geese, engine flame and smoke, spray, mist, foam, the evacuation, the ferries |
 | `src/textures.js` | Every texture, painted on a canvas at load time |
-| `src/main.js` | Cameras for each shot, the overlay, and `window.renderFrame(i)` |
+| `src/world.js` | Renderer, sky, light and a `draw(ft, camera)` that poses the whole world, shared by both films |
+| `src/cams.js` | The camera move for each shot |
+| `src/main.js` | Film 1: the overlay and `window.renderFrame(i)` |
+| `src/lesson.js`, `src/lessonMain.js`, `lesson.html` | Film 2: shots, Spark's lines, the diagrams, and the Spark mascot (SVG, animated per frame) |
 | `tools/render.mjs` | Headless Chromium, frame by frame, piped into ffmpeg |
 | `tools/audio.mjs` | The soundtrack: engines, wind, bird-strike bangs, radio squelch, the splash, water, a ferry horn, a pad |
+| `tools/audio-lesson.mjs` | Film 2's soundtrack, including Spark's chirpy synthesised voice |
+| `tools/mux.mjs` | Joins picture and sound |
 
 Each frame is a pure function of its index, so any slice renders exactly as it
 does in the full film.
@@ -59,3 +72,8 @@ The cockpit lines on screen are the captain's well-known transmissions. The
 controllers' offers of LaGuardia and Teterboro are summarised rather than
 quoted. The livery is a generic white and navy scheme, not the airline's
 trademarked design.
+
+Film 2's figures are rounded for teaching: an A320's best glide is roughly
+17:1, and the NTSB put the touchdown at about 125 knots with 9.5° nose up. Its
+point about the simulator trials (a return to LaGuardia worked only with an
+immediate turn) is also from the NTSB report. Spark is an original character.

@@ -6,7 +6,8 @@
     "audio": "node tools/audio.mjs",
     "render": "node tools/render.mjs",
     "mux": "node tools/mux.mjs",
-    "film": "node tools/audio.mjs && node tools/render.mjs && node tools/mux.mjs"
+    "film": "node tools/audio.mjs && node tools/render.mjs && node tools/mux.mjs",
+    "lesson": "node tools/audio-lesson.mjs && node tools/render.mjs --page lesson.html && node tools/mux.mjs lesson"
   },
   "license": "ISC",
   "dependencies": {
