@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Umbrellas } from './umbrellas.js';
+import { Umbrellas, umbrellaOpen, UMBRELLA_BIT } from './umbrellas.js';
 import {
   Fn, attribute, instancedBufferAttribute, positionGeometry, normalGeometry, normalLocal, positionWorld, normalWorld,
   vec3, vec4, float, sin, cos, abs, max, mix, select, step, smoothstep, fract, floor, exp2, dot, clamp,
@@ -333,7 +333,10 @@ function peopleMaterial(attrs) {
      the fragment stage never floors to the wrong code); see FigureFleet.colour */
   const code = floor(anim.w), build = fract(anim.w);
   const style = code.mod(6), look = floor(code.div(6));
-  const pattern = look.mod(4), shorts = floor(look.div(4)).mod(2), longSleeve = floor(look.div(8)).mod(2), bag = floor(look.div(16));
+  const pattern = look.mod(4), shorts = floor(look.div(4)).mod(2), longSleeve = floor(look.div(8)).mod(2);
+  /* bag is bit 4 of the look; bit 5 (+192 on the code, FigureFleet.flush) is
+     "has an umbrella up" -- set per frame from the rain, never by colour() */
+  const umb = floor(look.div(32)), bag = floor(look.div(16)).mod(2).mul(float(1).sub(umb));   // the umbrella hand drops its bag
   const girth = float(0.88).add(build.mul(0.34));      // 0.9 slim .. 1.2 heavy, across the body
   // hair pieces this person's style does not wear collapse to the crown, where the worn ones cover them
   const wornStyle = aHairMask.lessThan(0).or(select(aHairMask.equal(BAG_MASK), bag.greaterThan(0.5), floor(aHairMask.div(exp2(style))).mod(2).greaterThan(0.5)));
@@ -400,10 +403,14 @@ function peopleMaterial(attrs) {
     turn('z', J.hipY, hipZ, select(leg, thigh, float(0)));
     // elbow, then shoulder: swing counter to the same-side leg, and a little spread off the body
     const elbow = mix(0.22, 1.35, run).mul(walk).add(idle.mul(0.10)).add(breathe).add(down.mul(0.2));
-    turn('z', J.elbowY, shZ, select(fore, elbow, float(0)));
+    /* An umbrella up (the look's bit 5): the RIGHT arm holds it -- shoulder a
+       little forward, elbow bent so the fist sits at (0.30, 1.27) in front of
+       the shoulder, no swing (world/umbrellas.js puts the grip there). */
+    const umbR = umb.mul(select(left, float(0), float(1))).mul(float(1).sub(down)).toVar();
+    turn('z', J.elbowY, shZ, select(fore, mix(elbow, float(1.9), umbR), float(0)));
     const armA = thigh.negate().mul(armK).add(down.mul(select(left, float(2.7), float(2.4))));
     const armOut = float(0.06).add(idle.mul(0.02)).add(down.mul(0.5));
-    turn('z', J.shoulderY, shZ, select(arm, armA, float(0)));
+    turn('z', J.shoulderY, shZ, select(arm, mix(armA, float(0.25), umbR), float(0)));
     turn('x', J.shoulderY, shZ, select(arm, armOut.mul(side), float(0)));
     // head nods on the neck
     const nod = sin(ph.mul(2)).mul(0.03).mul(walk).add(breathe.mul(0.5));
@@ -588,7 +595,8 @@ export class FigureFleet {
     const A = L.attrs, o4 = i * 4, o12 = i * 12, s4 = slot * 4, r = this.root, a = this.anim, c = this.col;
     const ra = A.root.array, aa = A.anim.array;
     ra[s4] = r[o4]; ra[s4 + 1] = r[o4 + 1]; ra[s4 + 2] = r[o4 + 2]; ra[s4 + 3] = r[o4 + 3];
-    aa[s4] = a[o4]; aa[s4 + 1] = a[o4 + 1]; aa[s4 + 2] = a[o4 + 2]; aa[s4 + 3] = a[o4 + 3];
+    aa[s4] = a[o4]; aa[s4 + 1] = a[o4 + 1]; aa[s4 + 2] = a[o4 + 2];
+    aa[s4 + 3] = a[o4 + 3] + (this.umbrellas && a[o4 + 1] < 2.5 && umbrellaOpen(i, this.rain) ? UMBRELLA_BIT : 0);   // the arm goes up with the umbrella
     // the 12 colour floats are already in c0 | c1 | c2 order
     A.c0.array.set(c.subarray(o12, o12 + 4), s4);
     A.c1.array.set(c.subarray(o12 + 4, o12 + 8), s4);
@@ -624,7 +632,7 @@ function packLook(i, style, look = {}) {
 /** Decode a packed look (tests, and anything that wants to know what someone wears). */
 export function unpackLook(w) {
   const code = Math.floor(w), look = Math.floor(code / 6);
-  return { style: code % 6, pattern: look % 4, shorts: Math.floor(look / 4) % 2, longSleeve: Math.floor(look / 8) % 2, bag: Math.floor(look / 16), build: (w - code - 0.05) / 0.9 };
+  return { style: code % 6, pattern: look % 4, shorts: Math.floor(look / 4) % 2, longSleeve: Math.floor(look / 8) % 2, bag: Math.floor(look / 16) % 2, umbrella: Math.floor(look / 32), build: (w - code - 0.05) / 0.9 };
 }
 
 function hash(n) {

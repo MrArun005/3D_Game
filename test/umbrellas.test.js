@@ -24,7 +24,7 @@ test('the umbrella is indexed, carries real UVs, and every triangle winds the wa
   assert.equal(wrong, 0);
   g.computeBoundingBox();
   assert.ok(g.boundingBox.max.y > 2.1 && g.boundingBox.max.y < 2.3, 'the canopy clears a 1.76 m head');
-  assert.ok(g.boundingBox.min.y > 0.7, "nothing drags on the ground");
+  assert.ok(g.boundingBox.min.y > 1.0, "nothing drags on the ground");
 });
 
 test('who opens an umbrella: nobody in a drizzle, most people in a downpour, the same people first', () => {
@@ -59,7 +59,7 @@ test('the layer: one zero-scaled instance when dry, one per open umbrella in the
     if (i === 3 || i === 5 || !umbrellaOpen(i, 1)) continue;
     u.mesh.getMatrixAt(k, m);
     const p = new THREE.Vector3().setFromMatrixPosition(m);
-    assert.ok(Math.hypot(p.x - i * 2, p.z - 5) < 0.3, `slot ${k} sits with person ${i}`);
+    assert.ok(Math.hypot(p.x - i * 2, p.z - 5) < 0.45, `slot ${k} sits with person ${i}`);
     assert.deepEqual([...col.slice(k * 3, k * 3 + 3)], [...u.palette.slice(i * 3, i * 3 + 3)]);
     k++;
   }

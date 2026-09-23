@@ -57,6 +57,9 @@ test('the look packs into one float and decodes exactly, inside the interpolatio
   for (const bag of [0, 1]) {
     const w = packLook(7, 5, { pattern: 2, shorts: 1, longSleeve: 0, bag, build: 0.5 });
     assert.deepEqual({ ...unpackLook(w), build: Math.round(unpackLook(w).build * 100) / 100 },
-      { style: 5, pattern: 2, shorts: 1, longSleeve: 0, bag, build: 0.5 });
+      { style: 5, pattern: 2, shorts: 1, longSleeve: 0, bag, umbrella: 0, build: 0.5 });
+    // the umbrella bit rides on top of the colour()-time look (FigureFleet.flush adds it with the rain) and leaves the rest alone
+    const u = unpackLook(w + 192);
+    assert.deepEqual({ ...u, build: Math.round(u.build * 100) / 100 }, { style: 5, pattern: 2, shorts: 1, longSleeve: 0, bag, umbrella: 1, build: 0.5 });
   }
 });

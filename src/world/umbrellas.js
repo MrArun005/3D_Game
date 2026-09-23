@@ -9,18 +9,22 @@ import * as THREE from 'three';
  * same per-person root it already packs: an umbrella over the head of each
  * person whose seeded share falls under the rain (so the same people open
  * theirs first, and nobody's flickers as the rain wavers), held in the right
- * hand, tipped forward a little with the walk. Dry, the mesh keeps ONE
+ * hand (the person's right arm is raised for it: figure.js reads UMBRELLA_BIT),
+ * tipped forward a little with the walk. Dry, the mesh keeps ONE
  * zero-scaled instance instead of count 0 -- a zero-count mesh is never drawn,
  * so the boot warm-up would never compile it and the first shower would hitch.
  *
  * Model space as the people: forward +X, up +Y, left +Z; the canopy top sits
- * at y = 2.18 for a person of scale 1 (1.76 m; the grip at the hand, 0.9 m). ~90 triangles,
+ * at y = 2.18 for a person of scale 1 (1.76 m; the grip in the raised fist, 1.27 m). ~90 triangles,
  * every face indexed with real UVs (rule 4), wound out (tested).
  */
 
 export const UMBRELLA_SEGMENTS = 8;
+/** What FigureFleet adds to a person's packed look while their umbrella is up: bit 5 of the look (x6 on the code). */
+export const UMBRELLA_BIT = 192;
 const NodeMaterial = THREE.MeshStandardNodeMaterial || THREE.MeshStandardMaterial;   // plain three in node --test
-const R_CANOPY = 0.52, TOP = 2.18, DROP = 0.2, RIB_DROP = 0.05, SHAFT_R = 0.012, HAND_Y = 0.9;   // the grip at the hanging right hand (figure.js wristY 0.86)
+const R_CANOPY = 0.52, TOP = 2.18, DROP = 0.2, RIB_DROP = 0.05, SHAFT_R = 0.012, HAND_Y = 1.27;   // the grip in the raised right fist (figure.js umbR pose)
+const HAND_X = 0.3, HAND_Z = -0.21;                                                             // that fist: forward of the chest, at the right shoulder
 
 /** The umbrella geometry, pure. Canopy outside and inside (the inside darker: `aShade`), shaft, handle. */
 export function buildUmbrellaGeometry() {
@@ -104,6 +108,7 @@ export class Umbrellas {
     this.palette = new Float32Array(Math.max(1, count) * 3);
     for (let i = 0; i < Math.max(1, count); i++) { c.setHex(CANOPY[Math.floor(hash(i * 5 + 1) * CANOPY.length) % CANOPY.length]); this.palette.set([c.r, c.g, c.b], i * 3); this.mesh.setColorAt(i, c); }
     this.mesh.instanceColor.needsUpdate = true;
+    this._g = new THREE.Matrix4().makeTranslation(0, -HAND_Y, 0);
     this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._e = new THREE.Euler(0, 0, 0, 'YXZ'); this._p = new THREE.Vector3(); this._s = new THREE.Vector3();
     this.dry();
     scene.add(this.mesh);
@@ -128,12 +133,15 @@ export class Umbrellas {
         const sc = anim[i * 4 + 2], st = anim[i * 4 + 1];
         if (sc <= 0 || st >= 3 || !umbrellaOpen(i, k)) continue;
         const x = root[i * 4], y = root[i * 4 + 1], z = root[i * 4 + 2], yaw = root[i * 4 + 3];
-        // held in the right hand (-Z in model space), in front of the shoulder; tipped forward into the walk
+        /* In the raised right fist (figure.js holds that arm still while the
+           umbrella is up), tipped forward into the walk about the grip. The
+           geometry's grip sits on its own axis at HAND_Y, so: move the grip to
+           the origin, tip and turn, scale, then out to the fist. */
         const fx = Math.cos(yaw), fz = -Math.sin(yaw), lx = Math.sin(yaw), lz = Math.cos(yaw);
-        this._p.set(x + (fx * 0.05 - lx * 0.25) * sc, y, z + (fz * 0.05 - lz * 0.25) * sc);   // over the right hand, the canopy still over the head
+        this._p.set(x + (fx * HAND_X + lx * HAND_Z) * sc, y + HAND_Y * sc, z + (fz * HAND_X + lz * HAND_Z) * sc);
         this._e.set(0, yaw, -(st === 2 ? 0.2 : st === 1 ? 0.09 : 0.03));
         this._q.setFromEuler(this._e);
-        M.compose(this._p, this._q, this._s.set(sc, sc, sc));
+        M.compose(this._p, this._q, this._s.set(sc, sc, sc)).multiply(this._g);
         this.mesh.setMatrixAt(n, M);
         if (col) { const o = n * 3, s = (i % this.cap) * 3, a = col.array, P = this.palette; a[o] = P[s]; a[o + 1] = P[s + 1]; a[o + 2] = P[s + 2]; }
         n++;
