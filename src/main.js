@@ -1517,8 +1517,14 @@ Promise.all([loadDistrict(), catalogueReady, new URLSearchParams(location.search
   chase.snap(car);
   }
   {
-    // Place person safely on the pedestrian sidewalk
-    person.place(spawnX - 7.5, spawnZ, spawnYaw + Math.PI / 2);
+    /* Place the person on the pavement beside wherever the car ended up. This
+       read spawnX/spawnZ/spawnYaw, which are block-scoped to the Tokyo spawn
+       branch above since race mode split it: outside that block they do not
+       exist, the ReferenceError landed in this promise's catch, and every
+       boot fell back to the legacy grid ('district not loaded, staying on the
+       grid: spawnX is not defined', 2026-09-23). The car is the spawn in both
+       branches, so read it. */
+    person.place(car.x - 7.5, car.z, car.yaw + Math.PI / 2);
   }
   // now the car is on its spawn node, lay the film route from where it stands
   ROUTE = buildRoute(null, car.x, car.z);

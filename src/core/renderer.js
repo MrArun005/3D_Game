@@ -77,8 +77,12 @@ export function createRenderer(canvas, lite = false) {
      It picks a WebGPU device where one exists and a WebGL2 backend where one
      does not, so this is not a hardware requirement -- it is the node-based
      material system, which is what Tier 1's post stack needs. */
+  /* ?webgl forces three's WebGL2 backend: the path every browser without WebGPU
+     already takes, on demand, for A/B and for the headless screenshot harness
+     (software WebGPU there is minutes per frame; ANGLE's GL path is not). */
+  const forceWebGL = typeof location !== 'undefined' && new URLSearchParams(location.search).has('webgl');
   const renderer = new THREE.WebGPURenderer({
-    canvas, antialias: true, powerPreference: 'high-performance',
+    canvas, antialias: true, powerPreference: 'high-performance', forceWebGL,
   });
   /* Render-scale cap (2026-09-11). The 60 fps floor is defined at 1440x860 =
      1.24 MP (or 1152x680 = 0.78 MP in LITE mode on integrated GPUs).
