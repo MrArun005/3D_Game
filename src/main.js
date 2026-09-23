@@ -78,7 +78,7 @@ import { Grenades, BLAST_R, KILL_R, HURT_R, blastFalloff } from './game/grenade.
 import { Crosshair, DecalPool, ADS, ADS_BLEND_S, spreadToPixels, spreadFor, recoilFor, firstBuildingHit, swayFor, swayPhaseStep, reloadPose, movementSpread, aimAssist } from './game/shooting.js';
 import { Tracers } from './game/tracers.js';
 import { Puffs } from './world/puffs.js';
-import { tokyoMaterial, setTokyoNight } from './world/tokyo.js';
+import { tokyoMaterial, tokyoFacadeMaterial, tokyoWarmGeometry, setTokyoNight } from './world/tokyo.js';
 import { tokyoBoardMesh } from './world/tokyoSigns.js';
 import { setGlareNight } from './world/glare.js';
 import { setWindowNight, setSignNight } from './world/signs.js';
@@ -199,7 +199,7 @@ window.scene = scene;
    same viewpoint: far 8000 top-quarter mean RGB (43,51,56) -- black -- against
    (53,65,69) with 14000. Depth precision is bought at the NEAR plane, not here. */
 const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.5, 14000);
-const { sun, hemi } = createLights(scene, DAY, { lite: isLite, shadows: Q.shadows });   // boot-time: castShadow never changes after the first frame (WebGPU pipeline trap)
+const { sun, hemi } = createLights(scene, DAY, { lite: isLite, shadows: Q.shadows, webgl: !!renderer.backend?.isWebGLBackend });   // boot-time: castShadow never changes after the first frame (WebGPU pipeline trap)
 const { dome, stars, sunSprite, sunRaySprite } = createSky(scene, renderer, DAY);
 
 setBootProgress(60, 'Initializing TSL post-processing pipeline…');
@@ -2610,7 +2610,12 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   sinceShot += dt; if (sinceShot > 0.4) burst = 0;
   const adsCfg = ADS[weapon.kind] ?? ADS.pistol;
   onFoot.ads = ads; onFoot.adsFov = adsCfg.fov; onFoot.adsBack = adsCfg.back; onFoot.adsSpeed = adsCfg.speed;
-  crosshair.show(started && !flying && !photo.on);
+  /* GTA's rule: in a car the gun HUD is not there until you use it. A
+     crosshair over the bonnet and PISTOL 12 / 48 in the corner while you drive
+     read as clutter in the 2026-09-23 recording. Aim or fire and both come up;
+     they go 2.5 s after the last shot. On foot they stay, as before. */
+  const gunHud = onFoot.active || aiming || firing || !!c?.fire || !!c?.aim || sinceShot < 2.5;
+  crosshair.show(started && !flying && !photo.on && gunHud);
   if (!onFoot.active) crosshair.update(spreadToPixels(spreadFor(weapon.kind, weapon.heat) * 1.3, camera.fov ?? 60, innerHeight), weapon.reloading ? 1 - weapon.reloadT / weapon.spec.reload : -1, dt);
   if (onFoot.active) {
     const cone = spreadFor(weapon.kind, weapon.heat) * (1 - ads * (1 - adsCfg.spread));
@@ -2618,7 +2623,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     swayPhase += swayPhaseStep(onFoot.speed ?? 0, dt);
   }
   placeHeldGun();
-  if (held === 'fists') hud.setAmmo('FISTS', '', '', false, armour); else if (held === 'grenade') hud.setAmmo('GRENADE', grenades.count, '-', false, armour); else hud.setAmmo(weapon.spec.name, weapon.ammo, weapon.reserveNow, weapon.reloading, armour, weapon.magSize);
+  if (held === 'fists') hud.setAmmo('FISTS', '', '', false, armour, 12, gunHud); else if (held === 'grenade') hud.setAmmo('GRENADE', grenades.count, '-', false, armour, 12, gunHud); else hud.setAmmo(weapon.spec.name, weapon.ammo, weapon.reserveNow, weapon.reloading, armour, weapon.magSize, gunHud);
   const arsKey = onFoot.active ? `${held}|${weapon.kind}|${weapon.ammo}|${weapon.reserveNow}|${grenades.count}` : 'car';
   if (arsKey !== lastArsKey && onFoot.active) hud.setArsenal?.([
     { key: 0, name: 'FISTS', mag: '', reserve: '', current: held === 'fists' },
@@ -2853,6 +2858,12 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     compileMats.add(grenades.ball.material); compileMats.add(grenades.mat);
     for (const m of policeMaterials()) compileMats.add(m);
     compileMats.add(tokyoMaterial());
+    /* The Tokyo buildings' own material reads `surf`, `emit`, `flick` and the
+       colour attribute: warmed on the test box it would compile a variant the
+       chunk mesh never draws (the road-wear trap below), so it gets a painted
+       box that carries all of them. */
+    const tokyoWarm = new THREE.Mesh(tokyoWarmGeometry(), tokyoFacadeMaterial());
+    tokyoWarm.position.set(0, -50, 0); dummyGroup.add(tokyoWarm);
     /* Road wear (world/decals.js) is warmed by hand below, not through
        compileMats: its colorNode reads aTile/aFade and getAttributes SKIPS an
        attribute the geometry lacks, so warming it on the test box compiles a
@@ -2913,6 +2924,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
       for (const m of [warmHeli.disc, warmHeli.beacon, warmHeli.tailStrobe]) { m.geometry.dispose(); m.material.dispose(); }   // its own parts; the rest is the shared kit
       scene.remove(dummyGroup);
       testBox.dispose();
+      tokyoWarm.geometry.dispose();
       if (boot) { boot.remove(); boot = null; }
       if (window._startBackgroundAssetStream) window._startBackgroundAssetStream();
     };

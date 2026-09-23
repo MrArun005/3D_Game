@@ -184,8 +184,7 @@ export class GameClock {
   constructor({ startHour = 19.5, speed = 1.0 } = {}) {
     this.hour = startHour; // 0.0 - 24.0
     this.timeScale = speed; // 1 real min = 1 game hr (1 sec = 1 game min)
-    this.weather = 'CLEAR'; // CLEAR, OVERCAST, RAIN, STORM
-    this.weatherTimer = 0;
+    this.weather = 'CLEAR'; // CLEAR, RAIN, STORM: follows the rain (update); OVERCAST stays a grade profile nothing sets
 
     this.sunPosition = new THREE.Vector3();
     this.sunColor = new THREE.Color();
@@ -257,8 +256,14 @@ export class GameClock {
          permanent overcast while the sun was warm. At this hour the whole sky
          dome IS the amber the sun is, so the fill is warm and the shadow side
          goes amber-brown rather than blue. */
-      this.hemiSky.setRGB(1.00 - t * 0.04, 0.78 - t * 0.16, 0.56 - t * 0.16);
-      this.hemiGround.setRGB(0.50 - t * 0.10, 0.38 - t * 0.10, 0.28 - t * 0.08);
+      /* ...but amber FROM THE SKY TOO made the whole frame one beige (the
+         2026-09-23 recording: sky, road and shade all the same sand). A low
+         sun's shade is lit by the sky that is still blue overhead, bounced
+         warm off the ground: the warm key against a cooler fill is the
+         contrast GTA's evenings run on. Neutral-lavender from above, the
+         warm bounce from below. */
+      this.hemiSky.setRGB(0.80 - t * 0.06, 0.76 - t * 0.10, 0.80 - t * 0.12);
+      this.hemiGround.setRGB(0.52 - t * 0.10, 0.40 - t * 0.10, 0.30 - t * 0.08);
       /* setHex, not setRGB. setRGB takes LINEAR, so the old (0.44, 0.36, 0.40)
          displayed as ~#b0a1a8 -- a pale mauve. The range sits 3.4 km out and
          linear fog far is 3800, so the mountains resolve to EXACTLY the fog
@@ -320,6 +325,15 @@ export class GameClock {
     // Phase 2 ownership: synchronize sky dome rotation & tint and stars visibility
     if (dome) {
       dome.rotation.y = sunAngle;
+      /* The horizon band (sky.js): white = no effect. Warm through golden hour
+         and dusk, a cooler rose at dawn. */
+      const hz = dome.userData?.horizon?.value;
+      if (hz) {
+        if (isGolden) { const t = (this.hour - 16.0) / 2.0; hz.setRGB(1.0, 0.80 - t * 0.14, 0.56 - t * 0.20); }
+        else if (isDusk) { const t = (this.hour - 18.0) / 2.5; hz.setRGB(1.0, 0.66 + t * 0.2, 0.36 + t * 0.4); }
+        else if (isDawn) { const t = (this.hour - 5.2) / 2.0; hz.setRGB(1.0, 0.82 + t * 0.18, 0.74 + t * 0.26); }
+        else hz.setRGB(1, 1, 1);
+      }
       if (dome.material) {
         if (isDay) dome.material.color.setRGB(1.0, 1.0, 1.0);
         /* GOLDEN HOUR HAD NO BRANCH. 16:00-18:00 fell through every else-if to
@@ -332,8 +346,12 @@ export class GameClock {
            evening is broken". Tint stays a multiplier on the day sky texture
            (linear, like isDay's white), warming and dropping as the sun sets. */
         else if (isGolden) {
+          /* The whole dome at (1, 0.8, 0.58) turned the zenith grey-beige: a
+             multiplier on the blue half of the texture is mud. The sky stays
+             blue overhead now and the amber lives where it belongs, in a band
+             along the horizon (sky.js `horizon`), deepening as the sun drops. */
           const t = (this.hour - 16.0) / 2.0;
-          dome.material.color.setRGB(1.0 - t * 0.02, 0.80 - t * 0.26, 0.58 - t * 0.30);   // amber, not a cream-tinted noon sky
+          dome.material.color.setRGB(1.0, 0.97 - t * 0.10, 0.93 - t * 0.18);
         }
         else if (isDusk) {
           const t = (this.hour - 18.0) / 2.5;
@@ -439,13 +457,14 @@ export class GameClock {
     // the one writer of the grade's look uniforms; grade.setNight() delegates back here
     grade?.setGradeProfile?.(interpolateGradeProfile(this.hour, this.weather));
 
-    // Dynamic weather cycle (Task 2.6)
-    this.weatherTimer += dt;
-    if (this.weatherTimer > 360) {
-      this.weatherTimer = 0;
-      const weathers = ['CLEAR', 'OVERCAST', 'RAIN', 'STORM'];
-      this.weather = weathers[Math.floor(Math.random() * weathers.length)];
-    }
+    /* The grade's weather is the weather you can SEE (2026-09-23). It used to
+       re-roll every six minutes with Math.random() -- unseeded, and three
+       chances in four of OVERCAST / RAIN / STORM -- while the sky stayed clear
+       and dry, so a sunny street would drop 12-14% saturation and gain a
+       storm vignette for no visible reason. Now: raining hard is STORM, any
+       rain is RAIN, otherwise CLEAR. */
+    const rain = weatherSystem?.enabled ? (weatherSystem.amount ?? 0) : 0;
+    this.weather = rain > 0.7 ? 'STORM' : rain > 0.02 ? 'RAIN' : 'CLEAR';
   }
 
   get formattedTime() {

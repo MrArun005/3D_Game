@@ -512,7 +512,8 @@ export class Hud {
       + `<div>${r.key}</div><div style="font-size:12px">${r.name}</div><div style="opacity:.75">${r.reserve === '' ? (r.mag === '' ? '&nbsp;' : r.mag) : `${r.mag}/${r.reserve}`}</div></div>`).join('');
   }
 
-  setAmmo(name, ammo, reserve, reloading, armour = 0, magSize = 12) {
+  /** `visible` false hides it (in a car, until you use the gun). Rebuilt only when the text changes: this runs every frame. */
+  setAmmo(name, ammo, reserve, reloading, armour = 0, magSize = 12, visible = true) {
     const mag = reserve;   // the second number is now the reserve, not the magazine size
     if (!this.ammoEl) {
       const el = document.createElement('div');
@@ -523,15 +524,18 @@ export class Hud {
       this.ammoEl = el;
     }
     const el = this.ammoEl;
-    el.style.display = 'block';
+    const display = visible ? 'block' : 'none';
+    if (el.style.display !== display) el.style.display = display;
+    if (!visible) return;
     const low = ammo === 0 ? '#ff5f5f' : ammo <= Math.ceil(magSize / 3) ? '#ffc23c' : '#eaf1fb';
     const arm = armour > 0 ? `<br><span style="font-size:11px;color:#6fb1ff">ARMOUR ${Math.round(armour * 100)}%</span>` : '';
-    if (ammo === '' || ammo === null) { el.innerHTML = `<span style="font-size:20px">${name}</span>` + arm; return; }
-    el.innerHTML = (reloading
-      ? `<span style="opacity:.65">${name}</span><br><span style="font-size:20px;color:#ffc23c">RELOADING</span>`
-      : `<span style="opacity:.65">${name}</span><br>`
-        + `<span style="font-size:24px;color:${low}">${ammo}</span>`
-        + `<span style="opacity:.5"> / ${mag}</span>`) + arm;
+    const html = (ammo === '' || ammo === null) ? `<span style="font-size:20px">${name}</span>` + arm
+      : (reloading
+        ? `<span style="opacity:.65">${name}</span><br><span style="font-size:20px;color:#ffc23c">RELOADING</span>`
+        : `<span style="opacity:.65">${name}</span><br>`
+          + `<span style="font-size:24px;color:${low}">${ammo}</span>`
+          + `<span style="opacity:.5"> / ${mag}</span>`) + arm;
+    if (html !== this._ammoHtml) { el.innerHTML = html; this._ammoHtml = html; }
   }
 
   setHealth(v) {

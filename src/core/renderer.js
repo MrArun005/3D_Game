@@ -271,7 +271,7 @@ export function autoResolution(renderer, grade = null, lite = false, opts = {}) 
  * hemisphere for the ambient, and no warm fill -- daylight bounce is neutral
  * and adding a coloured fill is what makes a "day" scene look like a lit set.
  */
-function createDayLights(scene, lite = false, shadows = 'full') {
+function createDayLights(scene, lite = false, shadows = 'full', webgl = false) {
   /* Less fill, more sun. At 1.05 the hemisphere lit every face the same and
      the 2.6 sun never produced light-and-shade -- a facade turned away from
      the sun was the same tone as one facing it, which is most of why day read
@@ -306,7 +306,25 @@ function createDayLights(scene, lite = false, shadows = 'full') {
   const csmCascades = near ? 1 : lite ? 2 : 3;
   const csmFar = near ? 160 : lite ? 320 : 520;
   let csm = null;
-  if (sun.castShadow) {   // 'off': no caster, so no cascade node to fit either
+  if (sun.castShadow && webgl) {
+    /* WebGL2 backend: NO cascades (2026-09-23). On three r185's WebGL backend
+       CSMShadowNode's maps come out as if drawn from the MAIN camera: every
+       caster threw a streak straight to the vanishing point -- the region it
+       hides from the camera -- and nothing else, so the city rendered without
+       a single shadow under a car, a person or a lamp. Reproduced in a
+       two-object scene (scratch test: plain map correct, CSM 1 or 3 cascades
+       wrong, fade on or off). A plain map on the same backend is correct, so
+       here the sun gets one: clock.js already parks sun.target on the player
+       every frame, so the ortho box rides along with you. The sun stands
+       ~420 m off, hence the far plane; bias is in that depth range's units
+       (1e-4 of 700 m is 7 cm). WebGPU keeps the cascades. */
+    const R = near ? 75 : lite ? 95 : 120;
+    Object.assign(sun.shadow.camera, { left: -R, right: R, top: R, bottom: -R, near: 1, far: 700 });
+    sun.shadow.camera.updateProjectionMatrix();
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.bias = -0.0001;
+    sun.shadow.normalBias = 0.04;
+  } else if (sun.castShadow) {   // 'off': no caster, so no cascade node to fit either
     csm = new GatedCSM(sun, { cascades: csmCascades, maxFar: csmFar, mode: 'custom', lightMargin: lite || near ? 200 : 300 });
     csm.customSplitsCallback = (n, _near, _far, target) => {
       if (csmCascades === 1) {
@@ -347,7 +365,7 @@ export function createLights(scene, day = false, liteOrOpts = false) {
   // third argument: the old `lite` boolean, or { lite, shadows: 'off' | 'near' | 'full' } from core/quality.js
   const opts = typeof liteOrOpts === 'object' && liteOrOpts !== null ? liteOrOpts : { lite: !!liteOrOpts };
   const lite = !!opts.lite, shadows = opts.shadows ?? 'full';
-  if (day) return createDayLights(scene, lite, shadows);
+  if (day) return createDayLights(scene, lite, shadows, !!opts.webgl);
   // the ground half is warm on purpose: sodium bouncing off wet tarmac is what
   // separates a lit street from a scene that merely has lamps in it
   const hemi = new THREE.HemisphereLight(0x55699c, 0x33241a, 0.98);

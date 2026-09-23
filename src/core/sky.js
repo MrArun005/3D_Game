@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { uniform, materialColor, mix, vec3, smoothstep, positionLocal } from 'three/tsl';
 import { texSky, cv, toTex } from '../world/textures.js';
 import { glow } from './additive.js';
 import { DAY_SUN } from './renderer.js';
@@ -70,12 +71,21 @@ export function createSky(scene, renderer, day = false) {
   skyTex.minFilter = THREE.LinearMipmapLinearFilter;
   skyTex.needsUpdate = true;
 
+  /* A horizon band (2026-09-23): golden hour and dusk tinted the WHOLE dome
+     through material.color, and a warm multiplier on the blue half of the
+     texture is grey-beige mud -- the recording's sky. clock.js now keeps
+     `color` near white and sets this band instead: full strength at the
+     horizon, gone by ~20 degrees up, so the sky stays blue overhead and goes
+     amber where the sun is. White is no effect (every other hour).
+     materialColor is color x map: no second texture sample. */
+  const horizon = uniform(new THREE.Color(1, 1, 1));
+  const domeMat = new THREE.MeshBasicNodeMaterial({ map: skyTex, side: THREE.BackSide, fog: false, depthWrite: false });
+  domeMat.colorNode = materialColor.mul(mix(horizon, vec3(1), smoothstep(0.0, 0.34, positionLocal.normalize().y)));
   const dome = new THREE.Mesh(
     new THREE.SphereGeometry(9000, 64, 32),   // must contain the mountain ring; 24 segments banded the sun glare
-    new THREE.MeshBasicMaterial({
-      map: skyTex, side: THREE.BackSide, fog: false, depthWrite: false,
-    }),
+    domeMat,
   );
+  dome.userData.horizon = horizon;
   dome.renderOrder = -1;
   scene.add(dome);
 

@@ -110,12 +110,19 @@ export function createAssets() {
       orm.channel = 0;
       return m;
     })(),
-    // road paint, drawn as geometry a hair above the tarmac
-    paint: new THREE.MeshBasicMaterial({
-      color: 0xd6d8d2, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+    /* Road paint, drawn as geometry a hair above the tarmac. LIT since
+       2026-09-23: as MeshBasicMaterial every stop line and zebra glowed at full
+       white in the shade of a tower, took no shadow (a car's shadow stopped at
+       the stripe) and shone at night like a light source -- one of the loudest
+       "not GTA" tells in the recording. Now it is worn paint on the road:
+       shadowed, dark at night outside the lamp pools. */
+    paint: new THREE.MeshStandardMaterial({
+      color: 0xcfd1ca, roughness: 0.62, metalness: 0, envMapIntensity: 0.4,
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
     }),
-    paintWarm: new THREE.MeshBasicMaterial({
-      color: 0xd8c24a, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+    paintWarm: new THREE.MeshStandardMaterial({
+      color: 0xd8c24a, roughness: 0.62, metalness: 0, envMapIntensity: 0.4,
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
     }),
     kerbFace: new THREE.MeshLambertMaterial({ color: 0x9a9a94 }),
     intersection: new THREE.MeshStandardMaterial({

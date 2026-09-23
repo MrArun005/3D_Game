@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { attribute, materialReference, time, sin, step, mix, float } from 'three/tsl';
+import { attribute, materialReference, time, sin, step, mix, float, uv, texture, vec2, vec3, floor, fract, min, max, abs, smoothstep, select, normalMap, normalView, positionWorld } from 'three/tsl';
 import { mulberry32 } from '../core/rng.js';
 import { setTokyoSignNight } from './tokyoSigns.js';
+import { cv, toTex, normalFromCanvas } from './textures.js';
 
 /**
  * Little Tokyo's buildings, built here -- not the kit, not Kenney.
@@ -63,11 +64,24 @@ const NEON = [MAGENTA, CYAN, MAGENTA, CYAN, MAGENTA, CYAN, [1.0, 0.85, 0.2], [0.
 const WARM = [1.0, 0.82, 0.55], COOL = [0.72, 0.85, 1.0];
 const _c = new THREE.Color();
 
-/** Add `color`, `emit` and `flick` attributes to a geometry, flat. `flick` > 0 marks a part whose glow buzzes (the phase is the value). */
-function paint(geo, hex, emit = null, k = 1, flick = 0) {
+/* Surface kinds for tokyoFacadeMaterial (2026-09-23, the owner's "GTA level
+   visualization"). The street read as untextured boxes: one vertex colour per
+   part, the same roughness on a wall, a window and an air-con unit, and
+   windows that were flat navy squares. One float per vertex, constant over a
+   part: the integer is the kind, the fraction a variant, kept inside
+   0.05..0.85 so floor() cannot straddle an integer after interpolation.
+     0 LEGACY  no attribute (the kit towers merged into the same mesh): as before
+     1 WALL    tile or plaster detail at METRE UVs, the building picks which
+     2 GLASS   normalised UVs: frame, transom, curtains or blinds; smooth enough
+               to hold the sky, which is most of what a GTA window is
+     3 PAINT   metal, plastic, sign boxes: smooth, no detail texture */
+export const SURF = { LEGACY: 0, WALL: 1, GLASS: 2, PAINT: 3 };
+
+/** Add `color`, `emit`, `flick` and `surf` attributes to a geometry, flat. `flick` > 0 marks a part whose glow buzzes (the phase is the value). */
+function paint(geo, hex, emit = null, k = 1, flick = 0, surf = SURF.PAINT + 0.05) {
   _c.setHex(hex);
   const n = geo.attributes.position.count;
-  const col = new Float32Array(n * 3), em = new Float32Array(n * 3), fl = new Float32Array(n);
+  const col = new Float32Array(n * 3), em = new Float32Array(n * 3), fl = new Float32Array(n), sf = new Float32Array(n).fill(surf);
   for (let i = 0; i < n; i++) {
     col[i * 3] = _c.r; col[i * 3 + 1] = _c.g; col[i * 3 + 2] = _c.b;
     if (emit) { em[i * 3] = emit[0] * k; em[i * 3 + 1] = emit[1] * k; em[i * 3 + 2] = emit[2] * k; }
@@ -76,14 +90,48 @@ function paint(geo, hex, emit = null, k = 1, flick = 0) {
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   geo.setAttribute('emit', new THREE.BufferAttribute(em, 3));
   geo.setAttribute('flick', new THREE.BufferAttribute(fl, 1));
+  geo.setAttribute('surf', new THREE.BufferAttribute(sf, 1));
+  return geo;
+}
+/* Metre UVs. BoxGeometry spans 0..1 on each of its six faces whatever its
+   size, so a detail texture would stretch one tile across a 30 m wall. Face
+   order px nx py ny pz nz, four vertices each: +-X faces run u along depth,
+   +-Y along width (v along depth), +-Z along width; v is height on the sides. */
+function metreBox(geo, w, h, d) {
+  const uv = geo.attributes.uv, per = uv.count / 6;
+  const S = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+  for (let i = 0; i < uv.count; i++) { const s = S[Math.floor(i / per)]; uv.setXY(i, uv.getX(i) * s[0], uv.getY(i) * s[1]); }
+  return geo;
+}
+function metrePlane(geo, w, h) {
+  const uv = geo.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w, uv.getY(i) * h);
   return geo;
 }
 /** A flicker phase for a part, or 0: about one glowing part in seven buzzes. */
 const flickerOf = (rnd) => (rnd() < 0.15 ? 0.5 + rnd() * 6 : 0);
-const box = (w, h, d, hex, emit, k, flick) => paint(new THREE.BoxGeometry(w, h, d), hex, emit, k, flick);
+/** A box: WALL (detail texture) unless it glows or `surf` says otherwise -- a lightbox is plastic, not plaster. */
+const box = (w, h, d, hex, emit, k, flick, surf = emit ? SURF.PAINT : SURF.WALL) => paint(metreBox(new THREE.BoxGeometry(w, h, d), w, h, d), hex, emit, k, flick, surf + 0.05);
+/** Painted metal: air-con units, rails, brackets, frames. */
+const metal = (w, h, d, hex) => box(w, h, d, hex, null, 1, 0, SURF.PAINT);
 const cyl = (r, h, hex, seg = 10) => paint(new THREE.CylinderGeometry(r, r, h, seg), hex);
 /** A quad facing +Z in its own frame, then turned to face `ry` about Y and moved. */
-const quad = (w, h, hex, emit, k, flick) => paint(new THREE.PlaneGeometry(w, h), hex, emit, k, flick);
+const quad = (w, h, hex, emit, k, flick, surf = SURF.WALL) => paint(metrePlane(new THREE.PlaneGeometry(w, h), w, h), hex, emit, k, flick, surf + 0.05);
+/** A pane of glass: normalised UVs for the frame, `r` (0..1, seeded per window) picks curtains, blinds or clear. */
+const glass = (w, h, hex, emit, k, r) => paint(new THREE.PlaneGeometry(w, h), hex, emit, k, 0, SURF.GLASS + 0.05 + 0.8 * r);
+/** One finish per building: every upright WALL face takes `variant` (< 0.45 plaster, >= 0.45 tile); tops take plaster. */
+function wallFinish(geo, variant) {
+  const s = geo.attributes.surf, n = geo.attributes.normal;
+  for (let i = 0; i < s.count; i++) {
+    if (Math.floor(s.getX(i)) !== SURF.WALL) continue;
+    s.setX(i, SURF.WALL + (Math.abs(n.getY(i)) > 0.5 ? 0.1 : variant));
+  }
+}
+/** Give a geometry built elsewhere (the kit towers) the attribute the Tokyo mesh merges on: LEGACY, drawn as it always was. */
+export function ensureSurf(geo) {
+  if (!geo.attributes.surf) geo.setAttribute('surf', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count), 1));
+  return geo;
+}
 const _m = new THREE.Matrix4(), _e = new THREE.Euler();
 function at(geo, x, y, z, ry = 0) {
   if (ry) geo.applyMatrix4(_m.makeRotationFromEuler(_e.set(0, ry, 0)));
@@ -121,6 +169,7 @@ function onFace(f, s, out) {
    be what the sign is bright AGAINST. */
 export function buildTokyoBuilding(seed, hw, hd, h) {
   const rnd = mulberry32((seed * 2654435761) >>> 0);
+  const grnd = mulberry32((seed * 2246822519 + 0x27d4eb2f) >>> 0);   // the glass's own stream: curtains, blinds (rnd's sequence, i.e. the layout, is untouched)
   const pick = (a) => a[Math.floor(rnd() * a.length)];
   const wide = Math.max(hw, hd) > 15;
   const cap = wide ? 13 : h > 50 ? 26 : 20;
@@ -170,19 +219,19 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
         const em = lit ? (rnd() < 0.7 ? WARM : COOL) : null;
         const [x, z] = onFace(f, along, 0.035);
         const band3 = ribbon && f.name === 'front';   // a bay of the glass band: the bays touch, so the storey reads as one strip
-        parts.push(at(quad(band3 ? pitch * 0.97 : Math.min(1.4, pitch * 0.55), band3 ? 1.8 : 1.5, band3 ? 0x22384a : 0x0c121a, em, 0.16), x, floorY(s) + 1.55, z, f.yaw));
+        parts.push(at(glass(band3 ? pitch * 0.97 : Math.min(1.4, pitch * 0.55), band3 ? 1.8 : 1.5, band3 ? 0x22384a : 0x0c121a, em, 0.16, band3 ? 0.9 : grnd()), x, floorY(s) + 1.55, z, f.yaw));
         // balconies: residential backs and sides, one storey in two
         if (residential && f.name !== 'front' && s >= 2 && rnd() < 0.5) {
           const [bx, bz] = onFace(f, along, 0.5);
           const slabW = Math.min(1.8, pitch * 0.8);
           parts.push(at(box(1.0, 0.12, slabW, band), bx, floorY(s) + 0.06, bz, f.yaw));
           const [rx, rz] = onFace(f, along, 0.98);
-          parts.push(at(box(0.05, 0.95, slabW, 0x5b5f66), rx, floorY(s) + 0.6, rz, f.yaw));
+          parts.push(at(metal(0.05, 0.95, slabW, 0x5b5f66), rx, floorY(s) + 0.6, rz, f.yaw));
         }
         // air-con units, bolted under windows on the sides and back
         if (f.name !== 'front' && s >= 1 && rnd() < 0.3) {
           const [ax, az] = onFace(f, along + pitch * 0.3, 0.2);
-          parts.push(at(box(0.32, 0.55, 0.7, 0xc9ccd1), ax, floorY(s) + 0.6, az, f.yaw));
+          parts.push(at(metal(0.32, 0.55, 0.7, 0xc9ccd1), ax, floorY(s) + 0.6, az, f.yaw));
         }
       }
     }
@@ -192,12 +241,12 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
   if (rnd() < 0.3 && floors >= 3) {
     const back = F[1], s0 = -back.w / 2 + 1.4;
     const [sx, sz] = onFace(back, s0 - 0.7, 1.35);
-    parts.push(at(box(0.08, H - 1.0, 0.08, 0x3a3d42), sx, (H - 1.0) / 2 + 0.5, sz));   // the stringer
+    parts.push(at(metal(0.08, H - 1.0, 0.08, 0x3a3d42), sx, (H - 1.0) / 2 + 0.5, sz));   // the stringer
     for (let s = 1; s < floors; s++) {
       const [lx, lz] = onFace(back, s0, 0.7);
-      parts.push(at(box(1.4, 0.08, 1.4, 0x4a4d52), lx, floorY(s) + 0.05, lz, back.yaw));
+      parts.push(at(metal(1.4, 0.08, 1.4, 0x4a4d52), lx, floorY(s) + 0.05, lz, back.yaw));
       const [rx, rz] = onFace(back, s0, 1.38);
-      parts.push(at(box(0.04, 0.9, 1.4, 0x3a3d42), rx, floorY(s) + 0.5, rz, back.yaw));
+      parts.push(at(metal(0.04, 0.9, 1.4, 0x3a3d42), rx, floorY(s) + 0.5, rz, back.yaw));
     }
   }
 
@@ -207,8 +256,8 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
   let konbiniFront = false;   // the awning below needs to know which shop this is
   if (rnd() < 0.18) {
     // shuttered: ribbed grey roller door tucked under colonnade
-    parts.push(at(quad(front.w - 0.6, 2.7, 0x8d9096), shopX, 1.65, 0, front.yaw));
-    for (let r = 0; r < 6; r++) { parts.push(at(box(0.02, 0.04, front.w - 0.7, 0x6f7378), shopX + 0.02, 0.5 + r * 0.42, 0)); }
+    parts.push(at(quad(front.w - 0.6, 2.7, 0x8d9096, null, 1, 0, SURF.PAINT), shopX, 1.65, 0, front.yaw));
+    for (let r = 0; r < 6; r++) { parts.push(at(metal(0.02, 0.04, front.w - 0.7, 0x6f7378), shopX + 0.02, 0.5 + r * 0.42, 0)); }
   } else {
     // OPEN SHOP: a room you can see into (image 11), not a glowing glass sticker.
     const konbini = rnd() < 0.35;
@@ -219,8 +268,8 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
     parts.push(at(box(0.08, 2.55, roomW, konbini ? 0x3a3830 : 0x3a2e24, shop, 0.85), shopX - roomD, 1.4, 0));
     parts.push(at(box(roomD, 0.05, roomW, 0x2a241c, shop, 0.22), shopX - roomD / 2, 0.04, 0));
     parts.push(at(box(roomD, 0.08, roomW, 0x2a2618, shop, 0.55), shopX - roomD / 2, GROUND_H - 0.2, 0));
-    parts.push(at(box(0.08, 2.55, 0.08, 0x2a2a28), shopX - 0.02, 1.4, roomW / 2 - 0.04));
-    parts.push(at(box(0.08, 2.55, 0.08, 0x2a2a28), shopX - 0.02, 1.4, -roomW / 2 + 0.04));
+    parts.push(at(metal(0.08, 2.55, 0.08, 0x2a2a28), shopX - 0.02, 1.4, roomW / 2 - 0.04));
+    parts.push(at(metal(0.08, 2.55, 0.08, 0x2a2a28), shopX - 0.02, 1.4, -roomW / 2 + 0.04));
     parts.push(at(box(0.45, 0.95, Math.min(3.4, roomW * 0.45), 0x4a4038, shop, 0.4), shopX - 0.4, 0.5, 0));
     if (konbini) {
       for (const z of [-roomW * 0.28, roomW * 0.28]) {
@@ -236,8 +285,8 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
   // Store entrance door
   {
     const ds = (rnd() < 0.5 ? -1 : 1) * (front.w / 2 - 1.3);
-    parts.push(at(box(0.06, 2.5, 1.25, 0x2a2d33), shopX + 0.03, 1.25, ds));
-    parts.push(at(quad(1.0, 2.2, 0x3c4a5a, [0.95, 0.9, 0.8], 0.22), shopX + 0.06, 1.15, ds, front.yaw));
+    parts.push(at(metal(0.06, 2.5, 1.25, 0x2a2d33), shopX + 0.03, 1.25, ds));
+    parts.push(at(glass(1.0, 2.2, 0x3c4a5a, [0.95, 0.9, 0.8], 0.22, 0.95), shopX + 0.06, 1.15, ds, front.yaw));
   }
 
   /* 4. THE STREET FACE'S SIGNS, zoned (2026-09-23). Four kinds used to go up
@@ -265,9 +314,9 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
       y0 += signH + 0.9;
       if (i > 0 && rnd() < 0.3) continue;
       const c = i === 0 ? signColor : pick(NEON);
-      parts.push(at(box(proj, signH, 0.2, 0x181a1f), px, y, pz));                                                 // the lightbox
+      parts.push(at(metal(proj, signH, 0.2, 0x181a1f), px, y, pz));                                               // the lightbox
       parts.push(at(box(0.07, signH + 0.1, 0.24, 0x111115, c, 2.4, flickerOf(rnd)), px + proj / 2, y, pz));       // a tube down its leading edge
-      for (const dy of [signH / 2 - 0.3, 0.3 - signH / 2]) parts.push(at(box(0.3, 0.08, 0.1, 0x2b2e34), hw + 0.1, y + dy, pz));   // brackets
+      for (const dy of [signH / 2 - 0.3, 0.3 - signH / 2]) parts.push(at(metal(0.3, 0.08, 0.1, 0x2b2e34), hw + 0.1, y + dy, pz));   // brackets
       /* A face on each side, each facing AWAY from the lightbox (normal =
          (sin yaw, 0, cos yaw)). The blade boards this replaces had it the wrong
          way round -- yaw front.yaw + side*PI/2 gave the +Z face a -Z normal --
@@ -317,7 +366,7 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
     const sb = Math.max(2, Math.floor(floors * 0.45));
     if (want && bw >= 4.5 && floorY(sb) + bh + 0.8 < H) {
       const by = floorY(sb) + 0.3 + bh / 2;
-      parts.push(at(box(0.25, bh + 0.36, bw + 0.36, 0x0d0e11), hw + 0.125, by, 0));   // the bezel
+      parts.push(at(metal(0.25, bh + 0.36, bw + 0.36, 0x0d0e11), hw + 0.125, by, 0));   // the bezel
       boards.push({ x: hw + 0.26, y: by, z: 0, yaw: front.yaw, w: bw, h: bh, kind: 's' });
       lamps.push({ x: hw + 2.0, y: by - bh / 2, z: 0, colour: 0xd6e6ff, neon: true, intensity: 70, range: 28, glare: 2.0 });
       screenFloor = sb;
@@ -332,7 +381,7 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
       for (let st = 1; st <= last; st++) {
         if (rnd() < 0.2) continue;
         const y = floorY(st) + 2.78;
-        parts.push(at(box(0.12, 0.7, tw + 0.1, 0x1a1b20), hw + 0.1, y, tz));
+        parts.push(at(metal(0.12, 0.7, tw + 0.1, 0x1a1b20), hw + 0.1, y, tz));
         boards.push({ x: hw + 0.17, y, z: tz, yaw: front.yaw, w: tw, h: 0.62, kind: 'h' });
       }
     }
@@ -343,17 +392,17 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
      (green / orange / red over white), not a flat colour: it is the single most
      recognisable thing on a Japanese street at this scale. */
   const awningCol = konbiniFront ? 0xecf0f1 : pick([0xc0392b, 0x2e86de, 0xf1c40f, 0xecf0f1, 0x27ae60]);
-  parts.push(at(box(1.5, 0.08, front.w * 0.88, awningCol), hw - recess + 0.75, 3.25, 0));
+  parts.push(at(metal(1.5, 0.08, front.w * 0.88, awningCol), hw - recess + 0.75, 3.25, 0));
   if (konbiniFront) {
     const sw = front.w * 0.88 / 3;
     const cols = [0x1f8a4c, 0xe8762a, 0xd5312a];
     for (let i = 0; i < 3; i++) {
-      parts.push(at(box(1.52, 0.05, sw * 0.92, cols[i]), hw - recess + 0.75, 3.30, -front.w * 0.44 + sw * (i + 0.5)));
+      parts.push(at(metal(1.52, 0.05, sw * 0.92, cols[i]), hw - recess + 0.75, 3.30, -front.w * 0.44 + sw * (i + 0.5)));
     }
   }
   if (rnd() < 0.5) {
     const stripes = Math.max(2, Math.floor(front.w * 0.88 / 0.9));
-    for (let i = 0; i < stripes; i += 2) parts.push(at(box(1.51, 0.02, 0.42, 0xf4f4f0), hw - recess + 0.75, 3.30, -front.w * 0.44 + 0.45 + i * 0.9));
+    for (let i = 0; i < stripes; i += 2) parts.push(at(metal(1.51, 0.02, 0.42, 0xf4f4f0), hw - recess + 0.75, 3.30, -front.w * 0.44 + 0.45 + i * 0.9));
   }
   // string lights under colonnade
   if (rnd() < 0.33) {
@@ -374,8 +423,8 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
   // Vending machine on the sidewalk
   {
     const vz = -(hd - 0.9);
-    parts.push(at(box(0.85, 1.85, 1.0, 0xf4f4f6), hw - recess + 0.55, 0.925, vz));
-    parts.push(at(quad(0.78, 1.25, 0x9fb7d8, [0.55, 0.75, 1.0], 0.9), hw - recess + 0.98, 1.15, vz, front.yaw));
+    parts.push(at(metal(0.85, 1.85, 1.0, 0xf4f4f6), hw - recess + 0.55, 0.925, vz));
+    parts.push(at(glass(0.78, 1.25, 0x9fb7d8, [0.55, 0.75, 1.0], 0.9, 0.95), hw - recess + 0.98, 1.15, vz, front.yaw));
   }
   // Izakaya red paper lanterns
   if (rnd() < 0.35) {
@@ -392,7 +441,7 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
     const shop = rnd() < 0.4 ? [1.0, 0.9, 0.65] : WARM;
     const [gx, gz] = onFace(f, 0, 0.08);
     if (rnd() < 0.18) {
-      parts.push(at(quad(f.w - 0.7, 2.7, 0x8d9096), gx, 1.5, gz, f.yaw));
+      parts.push(at(quad(f.w - 0.7, 2.7, 0x8d9096, null, 1, 0, SURF.PAINT), gx, 1.5, gz, f.yaw));
     } else {
       /* ON the wall, not inside the solid mass -- a quad 40 cm in is buried.
          But BAYS, not one panel (2026-09-14). A single emissive quad the full
@@ -409,7 +458,7 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
       for (let i = 0; i < bays; i++) {
         const along = -(f.w - 0.8) / 2 + bayW / 2 + i * (bayW + pier);
         const [bx2, bz2] = onFace(f, along, 0.08);
-        parts.push(at(quad(bayW, 1.95, 0x3a2a1c, shop, 0.62), bx2, 1.72, bz2, f.yaw));   // the glazing
+        parts.push(at(glass(bayW, 1.95, 0x3a2a1c, shop, 0.62, 0.95), bx2, 1.72, bz2, f.yaw));   // the glazing
         parts.push(at(quad(bayW, 0.55, 0x24201c), bx2, 0.42, bz2, f.yaw));               // stallriser, dark
       }
       const [lx, lz] = onFace(f, 0, 1.1);
@@ -443,12 +492,12 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
   parts.push(at(box(pw, 0.5, 2 * hd + 0.1, band), hw, H + 0.25, 0), at(box(pw, 0.5, 2 * hd + 0.1, band), -hw, H + 0.25, 0));
   const tx = -hw * 0.45, tz = hd * 0.4;
   // Water cooling tank
-  parts.push(at(cyl(0.85, 1.5, 0x9fa4aa), tx, H + 1.35, tz), at(box(1.9, 0.6, 1.9, 0x484d54), tx, H + 0.3, tz));
+  parts.push(at(cyl(0.85, 1.5, 0x9fa4aa), tx, H + 1.35, tz), at(metal(1.9, 0.6, 1.9, 0x484d54), tx, H + 0.3, tz));
   // Rooftop HVAC unit
-  parts.push(at(box(2.0, 1.1, 1.3, 0x42464c), hw * 0.2, H + 0.55, hd * 0.25));
-  parts.push(at(box(1.6, 0.35, 0.05, 0x16181b), hw * 0.2, H + 0.55, hd * 0.25 + 0.67));
+  parts.push(at(metal(2.0, 1.1, 1.3, 0x42464c), hw * 0.2, H + 0.55, hd * 0.25));
+  parts.push(at(metal(1.6, 0.35, 0.05, 0x16181b), hw * 0.2, H + 0.55, hd * 0.25 + 0.67));
   // Communications tower with pulsing red aviation warning beacon
-  parts.push(at(box(0.08, 4.8, 0.08, 0x3a3d42), hw * 0.55, H + 2.4, -hd * 0.5));
+  parts.push(at(metal(0.08, 4.8, 0.08, 0x3a3d42), hw * 0.55, H + 2.4, -hd * 0.5));
   parts.push(at(box(0.2, 0.2, 0.2, 0xff2030, [1.0, 0.1, 0.15], 2.8, 0.85), hw * 0.55, H + 4.9, -hd * 0.5));
   // Elevator motor room bulkhead
   parts.push(at(box(2.2, 2.4, 2.4, wall), -hw * 0.3, H + 1.2, -hd * 0.45));
@@ -458,13 +507,14 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
     const bw = Math.min(2 * hd - 1.2, landmark ? 14 : 9), by = H + (landmark ? 3.0 : 2.2);
     if (landmark) { const nc = pick(NEON); parts.push(at(box(0.1, 0.12, bw + 0.4, 0x222222, nc, 1.3), -hw + 0.34, by + 1.55, 0), at(box(0.1, 0.12, bw + 0.4, 0x222222, nc, 1.3), -hw + 0.34, by - 1.55, 0)); }
     const bh = Math.min(2.4, bw * 0.92 / 3.0);   // at least 3:1, or a narrow roof squashes the 4:1 tile's lettering
-    parts.push(at(box(0.12, bh + 0.4, bw, 0x2b2e33), -hw + 0.3, by, 0));
-    parts.push(at(box(0.08, 3.2, 0.08, 0x2b2e33), -hw + 0.3, H + 1.6, -bw / 2 + 0.2), at(box(0.08, 3.2, 0.08, 0x2b2e33), -hw + 0.3, H + 1.6, bw / 2 - 0.2));
+    parts.push(at(metal(0.12, bh + 0.4, bw, 0x2b2e33), -hw + 0.3, by, 0));
+    parts.push(at(metal(0.08, 3.2, 0.08, 0x2b2e33), -hw + 0.3, H + 1.6, -bw / 2 + 0.2), at(metal(0.08, 3.2, 0.08, 0x2b2e33), -hw + 0.3, H + 1.6, bw / 2 - 0.2));
     boards.push({ x: -hw + 0.38, y: by, z: 0, yaw: front.yaw, w: bw * 0.92, h: bh, kind: 'h' });
   }
 
   const geo = mergeGeometries(parts, false);
   for (const p of parts) p.dispose();
+  wallFinish(geo, grnd() < 0.55 ? 0.45 + grnd() * 0.4 : 0.05 + grnd() * 0.38);   // glazed tile on a little over half, plaster and board-marked concrete on the rest
   geo.computeBoundingSphere();
   return { geo, boards, lamps, height: H, floors, tris: geo.index ? geo.index.count / 3 : geo.attributes.position.count / 3 };
 }
@@ -610,8 +660,133 @@ export function tokyoMaterial() {
   return m;
 }
 
+/* The walls' detail, painted once (2026-09-23): a 4 m square at 128 px/m, DATA
+   around 0.5 (the shader doubles it) so each building keeps its palette value.
+     R  glazed nisho tile, 0.25 x 0.0625 m in running bond with 8 mm (1 px)
+        grout, a tone per tile -- the commonest Tokyo mid-rise finish
+     G  plaster / board-marked concrete: slow mottling, a joint every 2 m,
+        form-tie holes on a 0.5 m grid in one panel in three
+     B  weathering: rain streaks running down from random points, strongest
+        where the water leaves the sill, fading down the wall
+   Plus a normal map per finish from the same heights. ~1.5 MB of VRAM. */
+let DETAIL = null;
+function tokyoDetail() {
+  if (DETAIL) return DETAIL;
+  const N = 512, rnd = mulberry32(0x7c3a91);
+  const lattice = (p, sd) => { const r = mulberry32(sd); const a = new Float32Array(p * p); for (let i = 0; i < a.length; i++) a[i] = r(); return a; };
+  const vnoise = (a, p, x, y) => {   // smooth value noise, periodic in p lattice cells -- so the texture tiles
+    const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0;
+    const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+    const g = (i, j) => a[(((j % p) + p) % p) * p + (((i % p) + p) % p)];
+    return (g(x0, y0) * (1 - sx) + g(x0 + 1, y0) * sx) * (1 - sy) + (g(x0, y0 + 1) * (1 - sx) + g(x0 + 1, y0 + 1) * sx) * sy;
+  };
+  const L8 = lattice(8, 11), L32 = lattice(32, 12), L128 = lattice(128, 13), tone = lattice(64, 14);
+  const R = new Float32Array(N * N), G = new Float32Array(N * N), B = new Float32Array(N * N);
+  const tileH = new Float32Array(N * N), plasH = new Float32Array(N * N);
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const i = y * N + x, u = x / N, v = y / N;
+      const mott = vnoise(L8, 8, u * 8, v * 8) * 0.6 + vnoise(L32, 32, u * 32, v * 32) * 0.3 + vnoise(L128, 128, u * 128, v * 128) * 0.1;
+      const row = y >> 3, xx = (x + (row & 1) * 16) % N, col = xx >> 5;
+      const grout = (xx & 31) === 0 || (y & 7) === 0;
+      R[i] = grout ? 0.3 : 0.5 * (0.86 + tone[(row & 63) * 64 + (col & 63)] * 0.26) * (0.96 + mott * 0.08);
+      tileH[i] = grout ? 0 : 1;
+      const joint = (x & 255) < 2 || (y & 255) < 2;
+      const tie = ((x >> 8) + (y >> 8)) % 3 === 0 && Math.hypot((x & 63) - 32, (y & 63) - 32) < 2.4;
+      G[i] = joint ? 0.36 : tie ? 0.28 : 0.5 * (0.88 + mott * 0.24);
+      plasH[i] = joint || tie ? 0.15 : 0.6 + mott * 0.2;
+      B[i] = Math.max(0, mott - 0.55) * 0.5;   // a faint general dirt
+    }
+  }
+  // rain streaks: canvas y grows DOWN the wall (CanvasTexture flips, so row 0 lands at the top of each 4 m band)
+  for (let k = 0; k < 110; k++) {
+    const x0 = rnd() * N, y0 = Math.floor(rnd() * N), len = 50 + rnd() * 280, w = 1 + rnd() * 3.5, a = 0.25 + rnd() * 0.55;
+    for (let d = 0; d < len; d++) {
+      const y = (y0 + d) % N, fall = 1 - d / len, cx = x0 + Math.sin((y0 + d) * 0.045 + k) * 0.9;
+      for (let dx = -Math.ceil(w); dx <= Math.ceil(w); dx++) {
+        const x = ((Math.round(cx) + dx) % N + N) % N, i = y * N + x;
+        B[i] = Math.max(B[i], a * fall * Math.max(0, 1 - Math.abs(dx) / w));
+      }
+    }
+  }
+  const out = (fill) => {
+    const c = cv(N, N), g = c.getContext('2d'), img = g.createImageData(N, N);
+    for (let i = 0; i < N * N; i++) fill(img.data, i);
+    g.putImageData(img, 0, 0);
+    return c;
+  };
+  const b8 = (v) => Math.max(0, Math.min(255, Math.round(v * 255)));
+  const col = toTex(out((D, i) => { D[i * 4] = b8(R[i]); D[i * 4 + 1] = b8(G[i]); D[i * 4 + 2] = b8(B[i]); D[i * 4 + 3] = 255; }), false);
+  const grey = (H) => out((D, i) => { const g = b8(H[i]); D[i * 4] = D[i * 4 + 1] = D[i * 4 + 2] = g; D[i * 4 + 3] = 255; });
+  DETAIL = { col, tileN: normalFromCanvas(grey(tileH), 0.3), plasN: normalFromCanvas(grey(plasH), 0.6) };
+  return DETAIL;
+}
+
+/**
+ * The Tokyo buildings' own material (2026-09-23): the same vertex colour and
+ * `emit` night as tokyoMaterial, now shaded by what each part IS (the `surf`
+ * attribute, see SURF). Walls take the tile or plaster detail with its relief
+ * and weathering and a darker kerb splash zone; glass is smooth (roughness
+ * 0.05, so it carries the sky and the low sun -- most of what reads as "real"
+ * on a GTA street), with an aluminium frame, a transom and seeded curtains or
+ * blinds; metal and sign boxes are smooth paint; LEGACY parts (no attribute)
+ * shade exactly as tokyoMaterial did. One draw per chunk still; walls pay three
+ * texture samples a pixel. vertexColors is OFF on purpose: the colour attribute
+ * is read here, because a frame or a curtain must REPLACE the glass's navy,
+ * not be multiplied by it.
+ */
+let FACADE = null;
+export function tokyoFacadeMaterial() {
+  if (FACADE) return FACADE;
+  const T = tokyoDetail();
+  const m = new THREE.MeshStandardNodeMaterial({ roughness: 0.8, metalness: 0, emissive: 0xffffff, emissiveIntensity: 1.0 });
+  m.name = 'tokyo_facade_detail';
+  m.envMapIntensity = 1.15;
+  const surf = attribute('surf', 'float'), kind = floor(surf), vari = fract(surf);
+  const wall = step(0.5, kind).mul(step(kind, 1.5)), isGlass = step(1.5, kind).mul(step(kind, 2.5));
+  const isPaint = step(2.5, kind), legacy = step(kind, 0.5);
+  const base = attribute('color', 'vec3');
+
+  // walls: the building's finish, shifted per building so no two show the same streaks
+  const wuv = uv().mul(0.25).add(vec2(vari.mul(7.31), vari.mul(3.17)));
+  const d = texture(T.col, wuv), tile = step(0.45, vari);
+  const splash = mix(float(0.8), float(1), smoothstep(0.3, 1.6, positionWorld.y));
+  const wallCol = base.mul(mix(d.g, d.r, tile).mul(2.0)).mul(d.b.mul(-0.45).add(1)).mul(splash);
+
+  // glass: frame and transom in aluminium, a curtain on one side, blinds, or clear
+  const g = uv();
+  const edge = min(min(g.x, g.x.oneMinus()), min(g.y, g.y.oneMinus()));
+  const frame = max(step(edge, 0.055), step(abs(g.y.sub(0.7)), 0.018));
+  const curtain = max(step(vari, 0.22).mul(step(g.x, 0.42)), step(0.22, vari).mul(step(vari, 0.34)).mul(step(0.6, g.x)));
+  const blind = step(0.34, vari).mul(step(vari, 0.46)).mul(step(0.42, g.y));
+  const slat = step(0.5, fract(g.y.mul(22))).mul(0.18).add(0.82);
+  const glassCol = mix(mix(mix(base, vec3(0.40, 0.34, 0.27), curtain), vec3(0.55, 0.55, 0.52).mul(slat), blind), vec3(0.30, 0.31, 0.33), frame);
+
+  m.colorNode = wallCol.mul(wall).add(glassCol.mul(isGlass)).add(base.mul(isPaint.add(legacy)));
+  m.roughnessNode = mix(float(0.9), float(0.55), tile).mul(wall)
+    .add(mix(float(0.05), float(0.42), frame).mul(isGlass))
+    .add(float(0.45).mul(isPaint)).add(float(0.48).mul(legacy));
+  m.metalnessNode = float(0.22).mul(legacy);
+  /* Relief on the walls only. Y is negated: the heights were painted with
+     canvas y running DOWN the wall and the derivative frame's +v runs up, so
+     unflipped the grout would read raised, lit from below. */
+  const nm = normalMap(mix(texture(T.plasN, wuv), texture(T.tileN, wuv), tile).xyz, vec2(0.9, -0.9));
+  m.normalNode = select(wall.greaterThan(0.5), nm, normalView);
+
+  const ph = attribute('flick', 'float');
+  const buzz = mix(float(1), float(0.45).add(float(0.55).mul(step(float(0.35), sin(time.mul(23).add(ph.mul(7)))))), step(float(0.01), ph));
+  m.emissiveNode = attribute('emit', 'vec3').mul(materialReference('emissiveIntensity', 'float', m)).mul(buzz).mul(frame.mul(isGlass).oneMinus());   // a lit room glows, its window frame does not
+  FACADE = m;
+  return m;
+}
+
+/** A painted box carrying every attribute the Tokyo mesh has: what the boot warm-up compiles tokyoFacadeMaterial on. */
+export function tokyoWarmGeometry() { return box(1, 1, 1, 0x808080); }
+
 /** 0 by day, 1 at night: the windows, neon and kanban faces come up with it. */
 export function setTokyoNight(k) {
   setTokyoSignNight(k);   // the boards (world/tokyoSigns.js) light up with the street
-  if (MAT) MAT.emissiveIntensity = 0.05 + 1.45 * Math.max(0, Math.min(1, k));   // windows stay a texture (emit 0.16); neon at 2.4x blooms
+  const e = 0.05 + 1.45 * Math.max(0, Math.min(1, k));   // windows stay a texture (emit 0.16); neon at 2.4x blooms
+  if (MAT) MAT.emissiveIntensity = e;
+  if (FACADE) FACADE.emissiveIntensity = e;
 }

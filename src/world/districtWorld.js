@@ -11,7 +11,7 @@ import { PAINT_COLOURS, BODY_KEYS } from '../vehicle/config.js';
 import { signalState, LAMP_COLOURS } from './signals.js';
 import { BREAK_CLASS } from './breakables.js';
 import { ZEBRA_DEPTH } from '../game/traffic.js';
-import { buildTokyoBuilding, frontRotation, tokyoMaterial, buildTokyoStreet, wireMaterial, buildShrine } from './tokyo.js';
+import { buildTokyoBuilding, frontRotation, tokyoFacadeMaterial, ensureSurf, buildTokyoStreet, wireMaterial, buildShrine } from './tokyo.js';
 import { loadTokyoTowers, towerFor } from './tokyoTowers.js';
 import { loadTerraces, terraceFor, TERRACES } from './terraceModels.js';
 import { loadIndustrial, industrialYard, INDUSTRIAL } from './industrialYard.js';
@@ -1026,8 +1026,10 @@ export class DistrictWorld {
       m.receiveShadow = !!shadow;
       group.add(m);
     };
-    emit(white, A.mat.paint);              // basic material, normals unused
-    emit(warm, A.mat.paintWarm);
+    // lit paint (assets.js): straight up, and it takes the shadows falling across the road
+    const up = (arr) => { const n = new Float32Array(arr.length); for (let i = 1; i < n.length; i += 3) n[i] = 1; return n; };
+    emit(white, A.mat.paint, up(white), null, true);
+    emit(warm, A.mat.paintWarm, up(warm), null, true);
     emit(kerb, A.mat.kerbFace, kerbN);
     emit(walk, A.mat.walkDistrict ?? A.mat.walk, walkN, walkUv, true);
   }
@@ -1318,8 +1320,11 @@ export class DistrictWorld {
       const pg = new THREE.BufferGeometry();
       pg.userData.owned = true;
       pg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(jpaint), 3));
+      { const n = new Float32Array(jpaint.length); for (let i = 1; i < n.length; i += 3) n[i] = 1; pg.setAttribute('normal', new THREE.BufferAttribute(n, 3)); }   // lit paint needs an up normal
       pg.computeBoundingSphere();
-      group.add(new THREE.Mesh(pg, A.mat.paint));
+      const jm = new THREE.Mesh(pg, A.mat.paint);
+      jm.receiveShadow = true;
+      group.add(jm);
     }
     if (sigBatch) sigBatch.emit(group, { shadow: false, lod: 1 }).then(() => { group.traverse((o) => { if (o.isMesh) o.frustumCulled = false; }); group.needsUpdate = true; })   // late-landing signal masts join the bundle too
       .catch((e) => console.warn('signals failed:', e.message));
@@ -1327,6 +1332,7 @@ export class DistrictWorld {
     inst(arms, A.mat.pole);
     if (zebra.length) {
       const zm = new THREE.InstancedMesh(A.geo.plane, A.mat.paint, zebra.length);
+      zm.receiveShadow = true;
       zebra.forEach((mm, i) => zm.setMatrixAt(i, mm));
       zm.instanceMatrix.needsUpdate = true;
       zm.computeBoundingSphere();
@@ -2096,12 +2102,13 @@ export class DistrictWorld {
         wires.frustumCulled = false;
         group.add(wires);
       }
+      for (const g of tokyoParts) ensureSurf(g);   // the kit towers come without `surf`; mergeGeometries needs one attribute set
       const merged = mergeGeometries(tokyoParts, false);
       for (const g of tokyoParts) g.dispose();
       if (merged) {
         merged.userData.owned = true;
         merged.computeBoundingSphere();
-        const tm = new THREE.Mesh(merged, tokyoMaterial());
+        const tm = new THREE.Mesh(merged, tokyoFacadeMaterial());
         tm.castShadow = true; tm.receiveShadow = true;
         tm.userData.shell = true;
         tm.layers.enable(SHADOW_FAR_LAYER);
