@@ -102,6 +102,52 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
 
 ## Current state
 
+- **"Smaller, and drive like GTA" (2026-09-23, branches drive/handling,
+  drive/controls, drive/compact, drive/boot merged as drive/integrate).**
+  Owner: "Make the game smaller and can drive like GTA for now bro". Four
+  workstreams from a read-only survey (scratchpad survey-result.json), each
+  reviewed; all node-verified only -- nobody has driven it in a browser yet.
+  - **Handling** (`vehicle/config.js HANDLING`, `pickHandling`): the GTA assist
+    profile is the default (`car.assist`; `?sim` or hb.handling = 'sim' is the
+    raw model). Default car (muscle), open tarmac, sim -> gta: 0-100 6.24 ->
+    5.23 s, 100-0 36.6 -> 33.6 m (fronts locked 25% -> 0%), full-lock grip
+    0.65 -> 1.2 g, circle @50 34 -> 18 m, handbrake @60 4 -> 46 deg tail-out,
+    back under 8 deg 0.45 s after release, W+A wheelspin 3.6x -> 1.03x. The
+    body frame was MIRRORED for both profiles (sideways velocity written to
+    the world's right while integrated as left; kin.mjs ratio 2.00 -> 0.08):
+    handbrake turns went nose-out, kerbs lifted the wrong side. Harness:
+    `node tools/sim/handling.mjs gta --profile=muscle --open` (the legacy-grid
+    table's "spin at full lock @50" was the car hitting the building line at
+    13.2 m, not a spin). Car-to-car yaw kick sign fixed; autopilot shares
+    `steerLimit`.
+  - **Steering + camera**: ChaseCamera stored its look-ahead in `this.look`,
+    which replaced the look() METHOD after the first update -- mouse and touch
+    free-look did nothing in the car, the pad right stick froze the game (the
+    throw sent every frame to frame()'s catch), the tank turret could not aim.
+    Keyboard steering is `input.js keyboardSteer` (constant rate, exact zero
+    on release; a 0.1 s tap at 120 km/h 8.0 -> 1.8 deg). Camera 5.9-6.6 m
+    behind at every speed (was 5.9 -> 8.1), yaw lag on the default rigs so
+    the flank shows, smoothed roll inputs, GTA free-look recentre, look-back
+    is a cut, calmer shake. Its numbers were tuned on the sim dynamics.
+  - **Compact city** (`world/playArea.js`): COMPACT_POLY (1.48 km^2,
+    Kingsway + Little Tokyo, the river as the west edge) is the default;
+    `?fullmap` / hb.map = 'full' restores the bay, race mode loads whole.
+    district.graph is the clipped gameplay graph (328 nodes), district.fullGraph
+    feeds rendering; a soft wall (holdInside, no damage) with jersey barriers
+    and hoarding from the catalogue; streaming clipped to the city + 128 m;
+    hospital, precinct, chop shop, story targets remapped inside.
+  - **Boot + just drive**: boot download 143 -> 41 MB (no Sketchfab body
+    pre-cache, `?precache`; landmark props by distance, `?landmarks=eager`;
+    statues `?statues`; unplaced hero asset and unused library materials
+    skipped, `?allmats`; commercial kit skipped; static person `?person`).
+    Easy mode no longer runs the police theatre (patrol calls, far sirens and
+    gunfire, pedestrian voices, crash reports without a cruiser, officers
+    firing below 3 stars); `?city`, `?hard` or a non-free title card bring it
+    back. First-K-press invisible hero fixed.
+  - Play-test list: drive the north edge at 150 km/h, the Steel Mile bridge
+    barrier, handbrake turns, a keyboard lane change at 120, pad right stick
+    free-look in the car, crash shake.
+
 - **Assets rebuilt (2026-09-23): people, officers, tank, helicopters.**
   Owner's ask: "rebuild most of the assets ... GTA level ... Tank,
   Helicopter, people". All four are authored in code (rule 3's "authored for
@@ -320,7 +366,7 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
     `mergeDrive`; mobile forces the lite tier; `body.touch` CSS in style.css;
     no pointer lock on touch, TAP TO START, rotate card in portrait.
 
-- Tests: `npm test` — 392/392 passing (2026-09-23). Node's built-in runner, no framework.
+- Tests: `npm test` — 486/486 passing (2026-09-23, after the drive/* merge). Node's built-in runner, no framework.
 - Deploy (2026-09-03): Vercel project `halstead-bay`, public at
   https://halstead-bay.vercel.app. Git-triggered builds never leave UNKNOWN;
   deploy with `vercel --prod --yes` run detached (>6 min upload), then check
