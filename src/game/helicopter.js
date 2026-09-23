@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { additive } from '../core/additive.js';
-import { M4, mergeGeos } from '../core/geometry.js';
+import { buildHeliModel } from '../world/heliModel.js';
 import { hasLineOfSight } from './policeAi.js';
 
 /**
@@ -41,130 +41,21 @@ export class Helicopter {
     this.pos = new THREE.Vector3(0, ALTITUDE, 0);
     this.vel = new THREE.Vector3();
 
-    const group = new THREE.Group();
-
-    // ── Materials ──
-    const dark = new THREE.MeshStandardMaterial({ color: 0x14202f, roughness: 0.42, metalness: 0.38 });
-    const trim = new THREE.MeshStandardMaterial({ color: 0xe6eaf0, roughness: 0.5 });
-    const chromeMat = new THREE.MeshStandardMaterial({ color: 0xc0c8d4, roughness: 0.15, metalness: 0.92 });
-    const rotorMat = new THREE.MeshStandardMaterial({ color: 0x0f151c, roughness: 0.3, metalness: 0.6 });
-    const hazardMat = new THREE.MeshStandardMaterial({ color: 0xf0a818, roughness: 0.4, metalness: 0.2 });
-    const canopyMat = new THREE.MeshPhysicalMaterial({
-      color: 0x1a3a5c, roughness: 0.05, metalness: 0.1,
-      transmission: 0.6, thickness: 0.3, ior: 1.5,
-      transparent: true, opacity: 0.72, side: THREE.DoubleSide,
-    });
-
-    // ── Fuselage ──
-    group.add(new THREE.Mesh(hullGeometry(), dark));
-
-    // ── Cockpit canopy glass ──
-    const canopyGeo = new THREE.SphereGeometry(1.25, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55);
-    canopyGeo.applyMatrix4(M4(1.1, 0.28, 0, 0, 0, 0, 1.35, 0.88, 1.06));
-    group.add(new THREE.Mesh(canopyGeo, canopyMat));
-
-    // ── Side stripes ──
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.34, 0.06), trim);
-    stripe.position.set(-0.2, 0.1, 1.06);
-    group.add(stripe);
-    const stripe2 = stripe.clone(); stripe2.position.z = -1.06;
-    group.add(stripe2);
-
-    // ── Twin turboshaft nacelles ──
-    for (const side of [-1, 1]) {
-      const nacelle = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 1.6, 10), dark);
-      nacelle.rotation.z = Math.PI / 2;
-      nacelle.position.set(-0.8, 1.08, side * 0.52);
-      group.add(nacelle);
-      const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.19, 0.28, 8), chromeMat);
-      exhaust.rotation.z = Math.PI / 2;
-      exhaust.position.set(-1.65, 1.08, side * 0.52);
-      group.add(exhaust);
-    }
-
-    // ── FLIR pod ──
-    const flir = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6), chromeMat);
-    flir.position.set(2.15, -0.78, 0);
-    group.add(flir);
-
-    // ── Chrome landing skids ──
-    for (const side of [-1, 1]) {
-      const skid = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 4.2, 6), chromeMat);
-      skid.rotation.z = Math.PI / 2;
-      skid.position.set(-0.1, -1.4, side * 0.9);
-      group.add(skid);
-      const toe = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.06, 6, 6, Math.PI * 0.5), chromeMat);
-      toe.position.set(2.0, -1.08, side * 0.9);
-      toe.rotation.z = Math.PI * 0.5;
-      group.add(toe);
-      for (const at of [-0.9, 0.85]) {
-        const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.8, 6), chromeMat);
-        strut.position.set(at, -1.0, side * 0.9);
-        group.add(strut);
-      }
-    }
-
-    // ── Main rotor with hub & yellow tips ──
-    const rotor = new THREE.Group();
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.35, 0.18, 12), chromeMat);
-    rotor.add(hub);
-    for (let i = 0; i < 4; i++) {
-      const bg = new THREE.Group();
-      bg.rotation.y = (i / 4) * Math.PI * 2;
-      const blade = new THREE.Mesh(new THREE.BoxGeometry(10.4, 0.07, 0.44), rotorMat);
-      bg.add(blade);
-      const tipA = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.08, 0.45), hazardMat);
-      tipA.position.x = 5.55;
-      bg.add(tipA);
-      const tipB = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.08, 0.45), hazardMat);
-      tipB.position.x = -5.55;
-      bg.add(tipB);
-      rotor.add(bg);
-    }
-    const disc = new THREE.Mesh(
-      new THREE.CircleGeometry(6.1, 28),
-      new THREE.MeshBasicMaterial({ color: 0x8fa0b4, transparent: true, opacity: 0.12,
-        side: THREE.DoubleSide, depthWrite: false }),
-    );
-    disc.rotation.x = -Math.PI / 2;
-    rotor.add(disc);
-    rotor.position.set(-0.1, 1.55, 0);
-    group.add(rotor);
-    this.rotor = rotor;
-
-    // ── Tail rotor with fenestron ring ──
-    const tail = new THREE.Group();
-    const fenestron = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.1, 8, 16), dark);
-    fenestron.rotation.y = Math.PI / 2;
-    tail.add(fenestron);
-    for (let i = 0; i < 4; i++) {
-      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.05, 0.2), rotorMat);
-      blade.rotation.x = (i / 4) * Math.PI * 2;
-      tail.add(blade);
-    }
-    tail.position.set(-5.35, 0.55, 0.24);
-    group.add(tail);
-    this.tail = tail;
-
-    // ── Navigation lights ──
-    const navRedMat = new THREE.MeshStandardMaterial({ color: 0xff2020, emissive: 0xff2020, emissiveIntensity: 2.0 });
-    const navGreenMat = new THREE.MeshStandardMaterial({ color: 0x20ff40, emissive: 0x20ff40, emissiveIntensity: 2.0 });
-    const navRed = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.08), navRedMat);
-    navRed.position.set(0.5, 0.0, -1.12);
-    group.add(navRed);
-    const navGreen = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.08), navGreenMat);
-    navGreen.position.set(0.5, 0.0, 1.12);
-    group.add(navGreen);
-    const beaconMat = new THREE.MeshStandardMaterial({ color: 0xff3030, emissive: 0xff3030, emissiveIntensity: 3.0 });
-    const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 4), beaconMat);
-    beacon.position.set(-0.1, 1.72, 0);
-    group.add(beacon);
+    /* The machine is world/heliModel.js -- an H135-mould light twin in police
+       livery, shared with the one you fly (game/flight.js). It replaced ~30
+       sphere-and-box meshes whose canopy was a transmission MeshPhysicalMaterial:
+       a second render of the opaque scene every frame it was on screen. */
+    const model = buildHeliModel({ livery: 'police' });
+    const group = model.group;
+    this.rotor = model.rotor;
+    this.tail = model.tail;          // the fenestron fan: spins about Z (lateral)
+    this.beacon = model.beacon;
 
     /* The searchlight is two things: a real spot so the beam actually lands on
        geometry, and an additive cone so the shaft is visible in the air. In
        daylight the cone is nearly invisible, which is correct. */
     const spot = new THREE.SpotLight(0xf2f6ff, day ? 120 : 900, 190, 0.20, 0.55, 1.3);
-    spot.position.set(0, -1.2, 0);
+    spot.position.set(1.66, -1.0, -0.78);   // from the Nightsun's lens
     group.add(spot, spot.target);
     this.spot = spot;
 
@@ -285,14 +176,14 @@ export class Helicopter {
         this.pos.y += (14 - this.pos.y) * Math.min(1, dt * 0.7);
       } else {
         this.vel.multiplyScalar(Math.max(0, 1 - dt * 3.2));
-        this.pos.y += (1.15 - this.pos.y) * Math.min(1, dt * 0.9);
+        this.pos.y += (1.25 - this.pos.y) * Math.min(1, dt * 0.9);   // skids on the pad (heliModel SKID_Y)
       }
       this.pos.x += this.vel.x * dt;
       this.pos.z += this.vel.z * dt;
       this.group.position.copy(this.pos);
       this.group.rotation.set(0, this.group.rotation.y, 0);
       this.rotor.rotation.y += dt * (this.pos.y < 2 ? 10 : 26);
-      this.tail.rotation.x += dt * (this.pos.y < 2 ? 14 : 40);
+      this.tail.rotation.z += dt * (this.pos.y < 2 ? 14 : 40);
       this.cone.visible = false;
       this.pool.visible = false;
       this.spot.intensity = 0;
@@ -358,7 +249,9 @@ export class Helicopter {
     this.group.rotateX(-Math.min(0.16, this.vel.length() * 0.003));
 
     this.rotor.rotation.y += dt * 34;
-    this.tail.rotation.x += dt * 52;
+    this.tail.rotation.z += dt * 52;
+    // the anti-collision beacon: a short red flash about once a second
+    this.beacon.material.emissiveIntensity = (this.t * 1.1) % 1 < 0.12 ? 6 : 0.25;
 
     // searchlight, held on the car
     this.spot.target.position.set(car.x - this.pos.x, -this.pos.y, car.z - this.pos.z);
@@ -373,35 +266,4 @@ export class Helicopter {
     const s = 4 + beam * 0.05;
     this.pool.scale.set(s, s, 1);
   }
-}
-
-/** Premium fuselage: sculpted cabin, aerodynamic nose, chin fairing,
- *  tapering tail boom, vertical & horizontal stabilizers, engine deck, mast. */
-function hullGeometry() {
-  const parts = [];
-  const cabin = new THREE.SphereGeometry(1.55, 14, 10);
-  cabin.applyMatrix4(M4(0, 0, 0, 0, 0, 0, 1.6, 0.98, 1.08));
-  parts.push(cabin);
-  const nose = new THREE.SphereGeometry(1.1, 12, 10);
-  nose.applyMatrix4(M4(2.0, -0.18, 0, 0, 0, 0, 1.3, 0.78, 0.92));
-  parts.push(nose);
-  const chin = new THREE.SphereGeometry(0.48, 8, 6);
-  chin.applyMatrix4(M4(1.4, -0.65, 0, 0, 0, 0, 0.9, 0.5, 0.7));
-  parts.push(chin);
-  const boom = new THREE.CylinderGeometry(0.2, 0.46, 5.0, 8);
-  boom.applyMatrix4(M4(-3.5, 0.48, 0, 0, 0, Math.PI / 2));
-  parts.push(boom);
-  const fin = new THREE.BoxGeometry(1.2, 1.8, 0.14);
-  fin.applyMatrix4(M4(-5.4, 1.15, 0));
-  parts.push(fin);
-  const hstab = new THREE.BoxGeometry(0.6, 0.1, 2.2);
-  hstab.applyMatrix4(M4(-5.0, 0.72, 0));
-  parts.push(hstab);
-  const mast = new THREE.CylinderGeometry(0.18, 0.24, 0.95, 8);
-  mast.applyMatrix4(M4(-0.1, 1.14, 0));
-  parts.push(mast);
-  const deck = new THREE.BoxGeometry(1.8, 0.22, 1.0);
-  deck.applyMatrix4(M4(-0.6, 0.98, 0));
-  parts.push(deck);
-  return mergeGeos(parts);
 }

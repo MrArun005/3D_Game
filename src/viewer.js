@@ -9,6 +9,7 @@
  *   &layout=faces                       people: styles side by side facing +X
  *   &lod1                               people: force the far mesh
  *   &turret=30                          tank: turret yaw (degrees)
+ *   &alt=0                              heli: height above the pad
  *   &sun=38&sunaz=145                   sun elevation / azimuth (degrees)
  *   &t=1.3                              freeze animation time (seconds); omit to run
  *   &webgl                              three's WebGL2 backend
@@ -16,6 +17,7 @@
 import * as THREE from 'three';
 import { FigureFleet } from './world/figure.js';
 import { buildTankModel, rollTracks, tankTriangles } from './world/tankModel.js';
+import { buildHeliModel, heliTriangles } from './world/heliModel.js';
 
 const q = new URLSearchParams(location.search);
 const asset = q.get('asset') || 'people';
@@ -100,6 +102,14 @@ if (asset === 'tank') {
   let last = 0;
   update = (t) => { const d = (t - last) * 4; last = t; rollTracks(tank, d, d); };
   info.push(`tank: ${tankTriangles()} tris, 5 draws`);
+}
+if (asset === 'heli' || asset === 'heli-civil') {
+  const livery = asset === 'heli' ? 'police' : 'civil';
+  const heli = buildHeliModel({ livery });
+  heli.group.position.y = 1.25 + +(q.get('alt') ?? 0);   // skids on the ground (flight.js rests at ground + 1.25)
+  scene.add(heli.group);
+  update = (t) => { heli.rotor.rotation.y = t * 0.9; heli.tail.rotation.z = t * 3; };
+  info.push(`heli ${livery}: ${heliTriangles(livery)} tris`);
 }
 const t0 = performance.now();
 const tFix = q.has('t') ? +q.get('t') : null;
