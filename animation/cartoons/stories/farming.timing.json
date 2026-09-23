@@ -1,0 +1,77 @@
+{
+ "duration": 96.838,
+ "lines": [
+  {
+   "id": "hook",
+   "text": "Hi, I'm Clawd! Twelve thousand years ago, nobody on Earth was a farmer. So how did we start growing our food?",
+   "t0": 1.0,
+   "dur": 6.853
+  },
+  {
+   "id": "ana",
+   "text": "Meet Ana. She lives in the Fertile Crescent, in the Middle East, where wild wheat and barley grow on the hills.",
+   "t0": 8.753,
+   "dur": 6.295
+  },
+  {
+   "id": "nomads",
+   "text": "Like everyone back then, Ana's family moves with the seasons. They hunt gazelle, and gather nuts, berries and wild grain.",
+   "t0": 15.748,
+   "dur": 7.702
+  },
+  {
+   "id": "shatter",
+   "text": "But wild wheat has a trick. When it's ripe, the seeds shatter, and fall to the ground. You have to be quick.",
+   "t0": 24.25,
+   "dur": 6.102
+  },
+  {
+   "id": "sticky",
+   "text": "A few rare plants are different. Their seeds stay stuck on the stalk. They're the easiest to harvest, so those are the ones that go home in the basket.",
+   "t0": 30.952,
+   "dur": 8.754
+  },
+  {
+   "id": "sprout",
+   "text": "Some of those seeds get dropped, or planted, near camp. Next spring, they come up again, right where people live.",
+   "t0": 40.506,
+   "dur": 6.483
+  },
+  {
+   "id": "select",
+   "text": "Generation after generation, people keep sowing seed from the best plants. Slowly, the wheat changes. Its seeds stay on, and grow bigger. It's becoming a crop.",
+   "t0": 47.789,
+   "dur": 10.849
+  },
+  {
+   "id": "village",
+   "text": "Fields need looking after, so people stay put. Tents become mud-brick houses, and houses become villages, like Jericho.",
+   "t0": 59.437,
+   "dur": 7.811
+  },
+  {
+   "id": "animals",
+   "text": "Sheep and goats are tamed too. Now there's food to store, and more mouths to feed.",
+   "t0": 67.849,
+   "dur": 4.811
+  },
+  {
+   "id": "world",
+   "text": "And it didn't happen just once. People invented farming again and again: rice and millet in China, maize in Mexico, potatoes in the Andes, sorghum in Africa.",
+   "t0": 73.56,
+   "dur": 10.791
+  },
+  {
+   "id": "change",
+   "text": "Farming changed everything. Towns, trade, writing, cities. It all started with a few seeds that didn't fall.",
+   "t0": 85.151,
+   "dur": 7.068
+  },
+  {
+   "id": "bye",
+   "text": "See you in the next story!",
+   "t0": 93.019,
+   "dur": 1.319
+  }
+ ]
+}

@@ -1,0 +1,18 @@
+{
+  "voice": "af_heart",
+  "speed": 0.95,
+  "lines": [
+    { "id": "hook",     "gap": 1.0, "text": "Hi, I'm Clawd! Twelve thousand years ago, nobody on Earth was a farmer. So how did we start growing our food?" },
+    { "id": "ana",      "gap": 0.9, "text": "Meet Ana. She lives in the Fertile Crescent, in the Middle East, where wild wheat and barley grow on the hills." },
+    { "id": "nomads",   "gap": 0.7, "text": "Like everyone back then, Ana's family moves with the seasons. They hunt gazelle, and gather nuts, berries and wild grain." },
+    { "id": "shatter",  "gap": 0.8, "text": "But wild wheat has a trick. When it's ripe, the seeds shatter, and fall to the ground. You have to be quick." },
+    { "id": "sticky",   "gap": 0.6, "text": "A few rare plants are different. Their seeds stay stuck on the stalk. They're the easiest to harvest, so those are the ones that go home in the basket." },
+    { "id": "sprout",   "gap": 0.8, "text": "Some of those seeds get dropped, or planted, near camp. Next spring, they come up again, right where people live." },
+    { "id": "select",   "gap": 0.8, "text": "Generation after generation, people keep sowing seed from the best plants. Slowly, the wheat changes. Its seeds stay on, and grow bigger. It's becoming a crop." },
+    { "id": "village",  "gap": 0.8, "text": "Fields need looking after, so people stay put. Tents become mud-brick houses, and houses become villages, like Jericho." },
+    { "id": "animals",  "gap": 0.6, "text": "Sheep and goats are tamed too. Now there's food to store, and more mouths to feed." },
+    { "id": "world",    "gap": 0.9, "text": "And it didn't happen just once. People invented farming again and again: rice and millet in China, maize in Mexico, potatoes in the Andes, sorghum in Africa." },
+    { "id": "change",   "gap": 0.8, "text": "Farming changed everything. Towns, trade, writing, cities. It all started with a few seeds that didn't fall." },
+    { "id": "bye",      "gap": 0.8, "text": "See you in the next story!" }
+  ]
+}
