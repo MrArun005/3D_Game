@@ -1,0 +1,12 @@
+{
+  "duration": 46.0,
+  "scenes": [["hook", 0], ["chase", 3.2], ["planA", 8.0], ["planB", 15.4], ["dusk", 22.4], ["night", 26.6], ["morning", 34.6], ["end", 40.6]],
+  "raise": 0.15, "snatch": 0.85, "chomp": 1.05, "title": 2.25,
+  "turn": 4.3, "under": 4.8, "plant": 5.3, "wag": 5.6, "lift": 6.7, "trot": 7.2,
+  "capA": 8.05, "pupIn": 9.8, "sniff": 11.0, "pull": 11.6, "slam": 11.75, "run": 12.0, "peek": 12.8, "look": 13.4, "gulp": 14.2, "lunge": 14.7,
+  "capB": 15.45, "dig0": 15.6, "dig1": 17.0, "leaves": 17.8, "meat": 17.9, "pupB": 18.8, "see": 19.0, "charge": 19.15, "fall": 19.5, "land": 19.9, "arm": 20.5, "steal": 21.0, "yip": 21.6,
+  "toss": 23.8, "catch": 24.3, "glance": 24.8, "smile": 25.5, "lie": 26.0,
+  "eyes": 27.3, "ear": 28.2, "creep": 28.8, "rise": 29.5, "guard": 29.8, "loom": 30.6, "whimper": 31.0, "woof": 31.5, "wake": 31.8, "torch": 32.2, "barks": [32.7, 33.05, 33.4], "flinch": 33.0, "flee": 33.4,
+  "break": 36.2, "give": 36.5, "take": 36.9, "pat": 37.9, "lick": 39.0, "heart": 39.3,
+  "cap1": 41.2, "cap2": 43.2, "endTitle": 44.2
+}

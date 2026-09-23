@@ -55,13 +55,23 @@ export function human(g, x, y, look, pose = {}, dir = 1) {
   else if (eyes === 'x') { g.beginPath(); g.moveTo(5, -5); g.lineTo(11, 1); g.moveTo(11, -5); g.lineTo(5, 1); g.stroke(); }
   else if (eyes === 'wide') { g.fillStyle = '#fff'; g.beginPath(); g.arc(8, -2, 4.4, 0, 7); g.fill(); g.fillStyle = '#181210'; g.beginPath(); g.arc(9, -2, 2.2, 0, 7); g.fill(); }
   else if (eyes === 'up') { g.beginPath(); g.arc(9, -5, 2.5, 0, 7); g.fill(); }
+  else if (eyes === 'angry') { g.beginPath(); g.arc(8, -1, 2.5, 0, 7); g.fill(); }
   else { g.beginPath(); g.arc(8, -2, 2.5, 0, 7); g.fill(); }
+  // Optional features (only looks that ask for them): a heavy brow and a big nose.
+  if (look.brow) {
+    g.lineWidth = 4; g.beginPath();
+    if (eyes === 'angry') { g.moveTo(1, -12); g.lineTo(14, -6); } else if (eyes === 'wide' || eyes === 'up') { g.moveTo(1, -12); g.lineTo(14, -13); } else { g.moveTo(1, -9); g.lineTo(14, -9); }
+    g.stroke(); g.lineWidth = 2.2;
+  }
+  if (look.nose) { g.fillStyle = shade(look.skin, -12); g.beginPath(); g.ellipse(17, 1, 5, 4.5, 0.3, 0, 7); g.fill(); g.fillStyle = '#181210'; }
   const m = pose.mouth || 'smile';
   if (m === 'smile') { g.beginPath(); g.arc(8, 5, 5, 0.2, 1.4); g.stroke(); }
   else if (m === 'grin') { g.fillStyle = '#5a1f1a'; g.beginPath(); g.arc(8, 5, 6, 0, Math.PI); g.fill(); }
   else if (m === 'o') { g.beginPath(); g.ellipse(10, 8, 3, 4, 0, 0, 7); g.fill(); }
   else if (m === 'grit') { g.fillStyle = '#fff'; g.fillRect(5, 5, 9, 4); g.strokeRect(5, 5, 9, 4); }
   else if (m === 'flat') { g.beginPath(); g.moveTo(5, 8); g.lineTo(12, 7); g.stroke(); }
+  else if (m === 'frown') { g.beginPath(); g.arc(8, 11, 5, Math.PI * 1.2, Math.PI * 1.8); g.stroke(); }
+  else if (m === 'chomp') { g.fillStyle = '#fff'; g.fillRect(4, 4, 11, 3); g.strokeRect(4, 4, 11, 3); }
   g.restore();
   // Front arm last.
   const hrh = limb([sh[0] + 2, sh[1] + 6], pose.ra || [0.2, 0.2], UA, FA, 9, look.skin);

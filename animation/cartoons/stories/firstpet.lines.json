@@ -1,0 +1,16 @@
+{
+  "voice": "am_fenrir",
+  "speed": 0.95,
+  "duration": 46.0,
+  "lines": [
+    { "id": "hey",     "at": 1.30,  "text": "Hey!" },
+    { "id": "back",    "at": 3.55,  "text": "Come back here!" },
+    { "id": "heh",     "at": 8.90,  "text": "Heh heh heh." },
+    { "id": "huh",     "at": 13.70, "text": "Huh?" },
+    { "id": "perfect", "at": 18.30, "text": "Perfect." },
+    { "id": "whoa",    "at": 19.40, "text": "Whoa!" },
+    { "id": "hmm",     "at": 25.10, "text": "Hmm." },
+    { "id": "saved",   "at": 35.00, "text": "You saved me." },
+    { "id": "good",    "at": 37.40, "text": "Good boy." }
+  ]
+}
