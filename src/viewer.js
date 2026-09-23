@@ -13,12 +13,16 @@
  *   &sun=38&sunaz=145                   sun elevation / azimuth (degrees)
  *   &t=1.3                              freeze animation time (seconds); omit to run
  *   &webgl                              three's WebGL2 backend
+ *   ?asset=tokyo&types=tower,pencil     Little Tokyo building types in a row along Z, fronts to +X
+ *                                       (&seed=7; the shadow box grows to fit a 100 m tower)
  */
 import * as THREE from 'three';
 import { FigureFleet } from './world/figure.js';
 import { buildTankModel, rollTracks, tankTriangles } from './world/tankModel.js';
 import { buildHeliModel, heliTriangles } from './world/heliModel.js';
 import { buildOfficer, poseOfficer } from './world/officer.js';
+import { TOKYO_TYPES } from './world/tokyoTypes.js';
+import { tokyoFacadeMaterial, setTokyoNight } from './world/tokyo.js';
 
 const q = new URLSearchParams(location.search);
 const asset = q.get('asset') || 'people';
@@ -69,6 +73,28 @@ scene.add(new THREE.HemisphereLight(0xbcd3ee, 0x4a4238, 0.55));
 
 let update = () => {};
 const info = [];
+if (asset === 'tokyo') {
+  /* One plot of each type side by side, as a street would put them: sizes are
+     typical of the plots pickTokyoType gives each type (tokyoTypes.js). */
+  const SIZE = { walkup: [8, 7, 26], tower: [14, 14, 96], pencil: [3.4, 6, 30], mansion: [10, 9, 42], carpark: [17, 17, 18], machiya: [4.5, 6, 9], depato: [18, 13, 38] };
+  const types = (q.get('types') || 'walkup,tower,pencil,mansion,carpark,machiya,depato').split(',');
+  const seed = +(q.get('seed') ?? 7), mat = tokyoFacadeMaterial();
+  setTokyoNight(+(q.get('night') ?? 0));
+  let z = 0, tris = 0;
+  for (const t of types) {
+    const [hw, hd, h] = SIZE[t];
+    const b = TOKYO_TYPES[t].build(seed, hw, hd, h, {});
+    const m = new THREE.Mesh(b.geo, mat);
+    m.castShadow = m.receiveShadow = true;
+    m.position.set(0, 0, z + hd); z += 2 * hd + 4;
+    scene.add(m); tris += b.tris;
+    info.push(`${t}: ${Math.round(b.tris)} tris, ${b.floors} floors, ${b.height.toFixed(1)} m`);
+  }
+  info.push(`row: ${Math.round(tris)} tris, 1 draw`);
+  Object.assign(sun.shadow.camera, { left: -140, right: 140, top: 140, bottom: -140, near: 1, far: 700 });
+  sun.position.multiplyScalar(5); sun.target.position.set(0, 0, z / 2);
+  scene.fog.near = 400; scene.fog.far = 1600;
+}
 if (asset === 'people') {
   const n = 12;
   const fleet = new FigureFleet(scene, n, { shadows: true });
