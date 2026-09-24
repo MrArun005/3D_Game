@@ -13,8 +13,24 @@ export function cv(w, h) {
   return c;
 }
 
+/* Phones (2026-09-24): Safari killed the tab for memory ("A problem
+   repeatedly occurred"). Every generated canvas >= 512 px is uploaded at
+   `texScale` of its size -- a quarter of the VRAM at 0.5. Painting code is
+   untouched (it still draws at full size); only the upload shrinks, and
+   atlas UVs are fractions, so nothing downstream moves. */
+let texScale = 1;
+export const setTexScale = (k) => { texScale = k; };
+function shrink(canvas) {
+  if (texScale >= 1 || !canvas?.getContext || Math.max(canvas.width, canvas.height) < 512) return canvas;
+  const c = cv(Math.max(1, Math.round(canvas.width * texScale)), Math.max(1, Math.round(canvas.height * texScale)));
+  const g = c.getContext('2d');
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(canvas, 0, 0, c.width, c.height);
+  return c;
+}
+
 export function toTex(canvas, srgb = true) {
-  const t = new THREE.CanvasTexture(canvas);
+  const t = new THREE.CanvasTexture(shrink(canvas));
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = anisotropy;
   t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;

@@ -7,9 +7,9 @@ import { detectGpuInfo, resolveQualityMode } from './core/gpu.js';
 import { createSky } from './core/sky.js';
 import { createGrade } from './core/grade.js';
 import { resolveQuality, describeQuality, nextLower, limitTraffic, limitFarTraffic, DENSITY_STEPS, QUALITY_NAMES, STORAGE_KEY as QUALITY_KEY } from './core/quality.js';
-import { setAnisotropy, wetTarmacLook } from './world/textures.js';
+import { setAnisotropy, setTexScale, wetTarmacLook } from './world/textures.js';
 import { createAssets } from './world/assets.js';
-import { loadVendorCars, loadHeroSkin, KENNEY_CARS, DEFAULT_BODY } from './world/vendorCars.js';
+import { loadVendorCars, loadHeroSkin, KENNEY_CARS, DEFAULT_BODY, tooHeavy } from './world/vendorCars.js';
 import { loadTreeModels } from './world/treeModels.js';
 import { LightPool } from './game/lighting.js';
 import { Jobs, onPavementAtSpeed } from './game/jobs.js';
@@ -211,7 +211,8 @@ renderer.setPixelRatio(renderScale(innerWidth, innerHeight, isLite, Q.pixelBudge
 renderer.setSize(innerWidth, innerHeight, false);
 
 setBootProgress(45, 'Building the scene & lights…');
-setAnisotropy(renderer.capabilities?.getMaxAnisotropy?.() ?? 16);
+setAnisotropy(TOUCH ? 4 : (renderer.capabilities?.getMaxAnisotropy?.() ?? 16));
+if (TOUCH) setTexScale(0.5);   // world/textures.js: phones upload generated textures at half size (Safari's tab memory limit)
 
 const scene = createScene(DAY);
 window.scene = scene;
@@ -1638,7 +1639,7 @@ scene.add(hero);
    `EXT_CALIPER`), so none of them is actually a blue car.
    A saved choice still wins: if you have ever picked a body in the garage,
    localStorage 'hb.body' holds it and this default never applies. */
-const initialBody = localStorage.getItem('hb.body') || DEFAULT_BODY;
+const initialBody = (() => { const b = localStorage.getItem('hb.body'); return b && !tooHeavy(b) ? b : DEFAULT_BODY; })();
 await loadHeroSkin(assets, hero, initialBody).catch((e) => console.warn('hero skin:', e.message));
 damageModel.attach(hero);
 car.profile = getVehicleProfile(initialBody);
@@ -2977,6 +2978,12 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
      the world is ready it warms, overlay or not. */
   if (!warming && (world.primed ?? true) && (districtRef || districtFailed)) {
     warming = true;
+    /* Phones skip the warm-up (2026-09-24): it builds a tank and a helicopter
+       and compiles ~1,350 pipelines up front -- on an iPhone that is the heat
+       and a good share of the memory that got the tab killed. Pipelines
+       compile when first drawn instead: a hitch, not a crash. */
+    if (TOUCH) { setBootProgress(100, 'Ready!'); if (boot) { boot.remove(); boot = null; } }
+    else {
     setBootProgress(95, 'Warming shaders…');
     const dummyGroup = new THREE.Group();
     const testBox = new THREE.BoxGeometry(0.1, 0.1, 0.1);
@@ -3084,6 +3091,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     };
     Promise.race([renderer.compileAsync(scene, camera), new Promise((r) => setTimeout(r, 1500))])
       .catch((e) => console.warn('warm-up:', e.message)).then(drop);
+    }
   }
   stats.sample(renderer);
   /* drawCalls, not calls: `render.calls` counts render-pass INVOCATIONS since

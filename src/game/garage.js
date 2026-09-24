@@ -1,4 +1,4 @@
-import { loadHeroSkin, DEFAULT_BODY, bodyNeedsDownload } from '../world/vendorCars.js';
+import { loadHeroSkin, DEFAULT_BODY, bodyNeedsDownload, tooHeavy } from '../world/vendorCars.js';
 import { getVehicleProfile } from '../vehicle/config.js';
 import { COMPACT_CHOP } from '../world/playArea.js';
 
@@ -65,7 +65,7 @@ export class Garage {
     try { const v = JSON.parse(localStorage.getItem('hb.garage') || 'null'); if (Array.isArray(v)) owned = v; } catch { /* corrupt or private mode */ }
     this.owned = new Set(owned);
     this.fitted = localStorage.getItem('hb.body') || DEFAULT_BODY;   // ONE default: vendorCars.DEFAULT_BODY
-    if (!CATALOGUE.some((c) => c.file === this.fitted)) this.fitted = DEFAULT_BODY;
+    if (!CATALOGUE.some((c) => c.file === this.fitted) || tooHeavy(this.fitted)) this.fitted = DEFAULT_BODY;
     this.cursor = CATALOGUE.findIndex((c) => c.file === this.fitted);
     this.browsing = false;
     this.lastOwned = this.owned.has(this.fitted) ? this.fitted : 'q-sports';   // what the chop shop hands you back

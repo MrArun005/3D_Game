@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { isTouchDevice } from '../core/device.js';
+const PHONE = (() => { try { return isTouchDevice(); } catch { return false; } })();
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -196,7 +198,17 @@ export class Catalogue {
     const texJobs = [];
     const tex = (url, srgb) => {
       const t = loader.load(url,
-        () => {}, undefined,
+        (tx) => {
+          /* Phones (2026-09-24): 119 library PNGs at 512^2 were ~165 MB of
+             VRAM with mips; the iPhone tab was killed for memory. Uploaded
+             at 256^2 on a touch device -- a quarter of it. */
+          if (PHONE && tx.image?.width >= 512) {
+            const c = document.createElement('canvas');
+            c.width = tx.image.width >> 1; c.height = tx.image.height >> 1;
+            c.getContext('2d').drawImage(tx.image, 0, 0, c.width, c.height);
+            tx.image = c; tx.needsUpdate = true;
+          }
+        }, undefined,
         (e) => console.warn('texture', url, e?.message ?? 'failed'));
       texJobs.push(new Promise((res) => {
         const img = t.image;

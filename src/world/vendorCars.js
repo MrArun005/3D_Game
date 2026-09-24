@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { BODY_TYPES, BODY_KEYS } from '../vehicle/config.js';
 import { toTex } from './textures.js';
+import { isTouchDevice } from '../core/device.js';
 import { londonKitFor, londonEnabled, LONDON_SPECS } from './londonVehicles.js';
 
 /**
@@ -503,7 +504,12 @@ export async function fetchKit(id, spec, assets, opts = {}) {
    before load, and it read 's-corvette-zr1' again 24 s later.
    camaro-350 is the deep blue one: `CarPaint` #001b8a, the only shipped body
    whose most-saturated material is paint rather than lights or calipers. */
-export const DEFAULT_BODY = 's-camaro-350';
+/* A phone wears the light Quaternius coupe (2026-09-24): the Camaro is a
+   7.5 MB textured GLB, and the iPhone tab was being killed for memory. */
+export const PHONE = (() => { try { return isTouchDevice(); } catch { return false; } })();
+export const DEFAULT_BODY = PHONE ? 'q-sports' : 's-camaro-350';
+/** A saved body a phone should not load (the heavy Sketchfab GLBs). */
+export const tooHeavy = (file) => PHONE && /^s-/.test(file || '');
 
 /** Wear body `file` on the hero. Resolves true when it is on, false when it failed (the old body stays), null when a newer fit superseded it. */
 export async function loadHeroSkin(assets, hero, file = DEFAULT_BODY) {
