@@ -30,6 +30,8 @@ export const PRESETS = {
     traffic: 14,
     crowd: 80,
     farTraffic: 60,
+    lights: 2,              // real night point lights (game/lighting.js LightPool); the rest glow as sprites
+    bloomScale: 0.5,          // bloom mip chain resolution (1 = full)
   },
   /* Balanced (2026-09-22): Auto's pick on an integrated GPU. Medium was sized
      on the M2 Air and the owner still called it "very sad" there -- a fanless
@@ -38,6 +40,9 @@ export const PRESETS = {
      and lamps, the night bloom), drops SMAA, renders 0.55 MP (-30% pixels vs
      medium), and runs lighter traffic and crowds (the submit is 74-95% of
      frame CPU). Explicit Medium / High are unchanged. */
+  /* 2026-09-24 (Arun: "remove them"): Balanced also runs 3 real night lights
+     (was 6) and bloom at a QUARTER resolution (was a half: the glow softens a
+     little, its mip chain costs a quarter). */
   balanced: {
     shadows: 'near',
     bloom: true,
@@ -48,6 +53,8 @@ export const PRESETS = {
     traffic: 18,
     crowd: 110,
     farTraffic: 80,
+    lights: 3,              // real night point lights (game/lighting.js LightPool); the rest glow as sprites
+    bloomScale: 0.25,          // bloom mip chain resolution (1 = full)
   },
   medium: {
     shadows: 'near',          // 1 cascade, 1024 map, 160 m: the near ring only (cascade 0 is 0-52 m today; 160 m keeps street shadows under the car and lamps)
@@ -63,6 +70,8 @@ export const PRESETS = {
     traffic: 26,
     crowd: 160,
     farTraffic: 120,
+    lights: 4,              // real night point lights (game/lighting.js LightPool); the rest glow as sprites
+    bloomScale: 0.5,          // bloom mip chain resolution (1 = full)
   },
   high: {
     shadows: 'full',          // whatever the GPU tier already runs: 2x1024/320 m LITE, 3x2048/520 m FULL
@@ -75,6 +84,8 @@ export const PRESETS = {
     trafficNight: 40,         // main.js: DAY ? 36 : 40, kept
     crowd: 320,
     farTraffic: 220,
+    lights: 6,              // real night point lights (game/lighting.js LightPool); the rest glow as sprites
+    bloomScale: 0.5,          // bloom mip chain resolution (1 = full)
   },
 };
 

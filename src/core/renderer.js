@@ -209,10 +209,14 @@ export function autoResolution(renderer, grade = null, lite = false, opts = {}) 
       const now = performance.now();
 
       // Cooldown of at least 2.5 seconds between adjustments to avoid thrashing
-      if (lastAdjustTime !== 0 && now - lastAdjustTime < 2500) return;
+      /* A frame this slow (under ~36 fps) is felt at once (2026-09-24, Arun:
+         "slow and laggy"): 6% steps with 2.5 s between them took ~30 s to reach
+         half resolution. Far over budget it steps 15% every second instead. */
+      const way = avgMs > 28;
+      if (lastAdjustTime !== 0 && now - lastAdjustTime < (way ? 1000 : 2500)) return;
 
       // two consecutive windows agree, or nothing moves
-      badRun = avgMs > 19.5 ? badRun + 1 : 0;
+      badRun = avgMs > 19.5 ? badRun + (way ? 2 : 1) : 0;   // far over: one window is enough
       goodRun = avgMs < 13.0 ? goodRun + 1 : 0;
       if (avgMs >= 13.0) stableSince = now; else if (!stableSince) stableSince = now;
 
@@ -233,7 +237,7 @@ export function autoResolution(renderer, grade = null, lite = false, opts = {}) 
         if (lastDir === 1) reversals++;
         lastDir = -1;
         // Step down by 6%
-        currentScale = Math.max(MIN_SCALE, currentScale * 0.94);
+        currentScale = Math.max(MIN_SCALE, currentScale * (way ? 0.85 : 0.94));
         lastAdjustTime = now;
         renderer.setPixelRatio(currentScale);
         renderer.setSize(window.innerWidth, window.innerHeight, false);

@@ -72,12 +72,17 @@ test('autoResolution steps density before pixels, restores after 20 s stable, fi
     const base = renderScale(1280, 832, true, PRESETS.medium.pixelBudget);
     assert.ok(base > 0.5 && base < 1, `base ${base}`);
     const windows = (n, ms) => { for (let k = 0; k < n; k++) { now += 3000; for (let i = 0; i < 60; i++) update(ms); } };
-    windows(2, 0.030);
+    // mildly over (22 ms): two windows running before anything moves
+    windows(1, 0.022);
+    assert.deepEqual(densityCalls, []);
+    windows(1, 0.022);
     assert.deepEqual(densityCalls, [1]); assert.equal(ratio, 1, 'pixels moved before density');
-    windows(2, 0.030);
+    // far over (30 ms, under ~36 fps; 2026-09-24): ONE window a step, felt at once
+    windows(1, 0.030);
     assert.deepEqual(densityCalls, [1, 2]); assert.equal(ratio, 1);
-    windows(2, 0.030);
+    windows(1, 0.030);
     assert.ok(ratio < base, 'resolution steps only once density is spent');
+    assert.ok(Math.abs(ratio - base * 0.85) < 1e-9, 'a 15% step when far over');
     // grind to MIN_SCALE and hold >22 ms: the sustained hook fires exactly once (after 12 s since 2026-09-22)
     windows(60, 0.030);
     assert.ok(Math.abs(ratio - 0.5) < 1e-6);

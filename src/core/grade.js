@@ -251,7 +251,7 @@ const hableToneMapNode = Fn(([color, exposure]) =>
   hableCurve(color.mul(exposure).mul(HABLE.BIAS)).div(hableCurve(HABLE.W)).clamp());
 
 export function createGrade(renderer, scene, camera, {
-  ao: withAO = true, bloom: withBloom = true, aa: withAA = true, post: withPost = true, blur: withBlur = true,
+  bloomScale = 0.5, ao: withAO = true, bloom: withBloom = true, aa: withAA = true, post: withPost = true, blur: withBlur = true,
   ssr: withSSR = false,
 } = {}) {
   /* ?nopost: no pipeline, no MRT, no grade — the pre-Tier-1.1 render path.
@@ -359,6 +359,7 @@ export function createGrade(renderer, scene, camera, {
   let hdr = lit;
   if (withBloom) {
     bloomPass = bloom(emissiveTex, BLOOM_STRENGTH, 0.35, 0.25);
+    bloomPass.setResolutionScale?.(bloomScale);   // the preset's (core/quality.js): 0.25 on Balanced
     bloomPass.smoothWidth.value = bloomKnee(0.25);   // before the first profile lands
     hdr = lit.add(bloomPass);
   }

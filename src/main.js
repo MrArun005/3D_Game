@@ -231,6 +231,7 @@ const grade = createGrade(renderer, scene, camera, {
   ao: new URLSearchParams(location.search).has('ao'),
   // bloom (~12 passes) and SMAA (3) are pipeline topology: the preset decides them at boot, the flags still force them off
   bloom: Q.bloom && !new URLSearchParams(location.search).has('nobloom'),
+  bloomScale: Q.bloomScale,
   aa: Q.aa && !new URLSearchParams(location.search).has('noaa'),
   blur: (new URLSearchParams(location.search).has('blur') || (!new URLSearchParams(location.search).has('noblur') && Q.blur)),   // high-speed radial blur: 7-tap full-screen pass; high preset only (was !isLite)
   post: !new URLSearchParams(location.search).has('nopost'),
@@ -1443,7 +1444,7 @@ Promise.all([districtReady, catalogueReady, moduleReady, new URLSearchParams(loc
      the slots have to exist from boot; clock.js fades them with nightFactor,
      the same curve that already staggers lamps, signs and windows. */
   {
-    const n = +(new URLSearchParams(location.search).get('lights') ?? (isLite ? 4 : 6));
+    const n = +(new URLSearchParams(location.search).get('lights') ?? Q.lights ?? (isLite ? 4 : 6));   // ?lights > the preset (core/quality.js) > the tier
     lightPool = new LightPool(scene, world, { count: n });
   }
   farTraffic = RACE_MODE ? null : new FarTraffic(scene, district, { count: Q.farTraffic });   // preset: 60 / 120 / 220 (was isLite ? 120 : 220); buffers sized here, the ladder only lowers .n   // GTA's distant headlights: phantom cars on the far road graph, one draw, count 0 by day
