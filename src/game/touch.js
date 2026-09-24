@@ -146,7 +146,7 @@ const MARKUP = `
     ${BTN('camera', 'CAM', 'drive')}${BTN('use', 'EXIT', 'drive exit')}${BTN('use', 'ENTER', 'foot exit')}
   </div>
   <div class="t-drawer" hidden>
-    ${BTN('phone', 'PHONE')}${BTN('horn', 'HORN', 'drive')}${BTN('lights', 'LIGHTS', 'drive')}${BTN('radio', 'RADIO', 'drive')}
+    ${BTN('phone', 'PHONE')}${BTN('offline', 'SAVE OFFLINE', 'offline')}${BTN('horn', 'HORN', 'drive')}${BTN('lights', 'LIGHTS', 'drive')}${BTN('radio', 'RADIO', 'drive')}
     ${BTN('weaponNext', 'WEAPON', 'foot')}${BTN('reload', 'RELOAD', 'foot')}${BTN('crouch', 'CROUCH', 'foot')}
   </div>
   <div class="t-stick foot drive" data-zone="stick"><span class="t-stick-hint drive">JOYSTICK · UP GAS · DOWN BRAKE</span><div class="t-stick-base"><div class="t-stick-knob"></div></div></div>

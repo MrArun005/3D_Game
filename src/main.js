@@ -1983,13 +1983,30 @@ let started = false;
    SAVE OFFLINE fills the rest from /offline.json (tools/offline-list.mjs
    writes it at build time), so the whole city plays with no connection.
    Not under the dev server: vite's module graph is not a cacheable site. */
+let saveOffline = () => {};
 {
-  const line = document.querySelector('#hud .offline');
-  const show = (t) => { const b = line?.querySelector('b'); if (b) b.textContent = t; };
+  /* No title card any more (2026-09-24): SAVE OFFLINE is a drawer button on a
+     phone and a small chip bottom-left on desktop that goes once saved. */
+  let chip = null;
+  const show = (t, done = false) => {
+    const tb = document.querySelector('#touch .tb.offline');
+    if (tb) tb.innerHTML = done ? 'SAVED ✓' : `OFFLINE<small>${t}</small>`;
+    if (!TOUCH) {
+      if (!chip) {
+        chip = document.createElement('div');
+        chip.style.cssText = 'position:fixed;left:24px;bottom:250px;z-index:21;font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.14em;color:#9fb0c6;background:rgba(8,11,18,.6);border:1px solid rgba(120,140,170,.3);border-radius:6px;padding:5px 9px;cursor:pointer';
+        chip.addEventListener('click', (e) => { e.stopPropagation(); saveOffline(); });
+        document.body.appendChild(chip);
+      }
+      chip.textContent = done ? 'SAVED OFFLINE ✓' : `SAVE OFFLINE · ${t}`;
+      if (done) setTimeout(() => chip?.remove(), 4000);
+    }
+  };
   const ok = 'serviceWorker' in navigator && typeof caches !== 'undefined' && !import.meta.env.DEV;
-  if (!ok) line?.remove();
+  const hide = () => { document.querySelector('#touch .tb.offline')?.remove(); chip?.remove(); };
+  if (!ok) setTimeout(hide, 0);
   else {
-    navigator.serviceWorker.register('/sw.js').catch((e) => { console.warn('sw:', e.message); line?.remove(); });
+    navigator.serviceWorker.register('/sw.js').catch((e) => { console.warn('sw:', e.message); hide(); });
     let list = null, busy = false;
     const count = async () => {
       try {
@@ -2000,11 +2017,11 @@ let started = false;
       } catch { return -1; }
     };
     count().then((have) => {
-      if (have < 0) { line?.remove(); return; }
-      show(have >= list.files.length ? 'SAVED ✓' : `${(list.bytes / 1e6).toFixed(0)} MB · tap to save`);
+      if (have < 0) { hide(); return; }
+      if (have >= list.files.length) { show('', true); return; }
+      show(`${(list.bytes / 1e6).toFixed(0)} MB`);
     });
-    line?.addEventListener('click', async (ev) => {
-      ev.stopPropagation();   // the overlay click is the start button
+    saveOffline = async () => {
       if (busy || !list) return;
       busy = true;
       const cache = await caches.open('hb-offline-v1');
@@ -2015,14 +2032,15 @@ let started = false;
           const f = todo.shift();
           try { if (!(await cache.match(f))) { const r = await fetch(f); if (r.ok) await cache.put(f, r); else failed++; } } catch { failed++; }
           done++;
-          show(`${Math.round((done / list.files.length) * 100)}% · ${done}/${list.files.length} files`);
+          show(`${Math.round((done / list.files.length) * 100)}%`);
         }
       };
+      hud.flash('SAVING THE CITY FOR OFFLINE…');
       await Promise.all(Array.from({ length: 6 }, worker));
       try { await navigator.storage?.persist?.(); } catch { /* best effort: ask the browser not to evict it */ }
-      show(failed ? `${failed} failed · tap to retry` : 'SAVED ✓ plays offline');
+      if (failed) show(`${failed} failed · retry`); else { show('', true); hud.flash('SAVED · PLAYS OFFLINE'); }
       busy = false;
-    });
+    };
   }
 }
 const qualityLine = document.querySelector('#hud .quality');
@@ -2332,6 +2350,7 @@ const onInputAction = (action) => {
     muted = !muted; audio.mute(muted); hud.flash(muted ? 'MUTED' : 'SOUND ON');
     try { localStorage.setItem('hb.muted', muted ? '1' : '0'); } catch { /* private mode */ }
   }
+  if (action === 'offline') saveOffline();
   if (action === 'use') useVehicle();
   if (action === 'room') joinRoom(roomFromUrl());
   if (action === 'fire') pullTrigger();
@@ -3388,4 +3407,5 @@ if (new URLSearchParams(location.search).has('film')) {
   addEventListener('load', () => { started = true; hud.dismiss(); startFilm(); });
 }
 
+hud.dismiss();   // no title card (2026-09-24, Arun): the game is the first screen; the first input starts it
 moduleDone();   // everything above is declared: the district callback may run (see moduleReady)

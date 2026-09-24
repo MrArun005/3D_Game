@@ -137,6 +137,8 @@ export class Hud {
       else if (vehicleType === 'tank') tag = 'M1 ABRAMS · 120MM';
       else if (typeof localStorage !== 'undefined') {
         const body = localStorage.getItem('hb.body');
+        // a phone wears the coupe unless a light body is saved (vendorCars.tooHeavy)
+        if (document.body.classList.contains('touch') && (!body || body.startsWith('s-'))) tag = 'SPORTS COUPE · RWD';
         if (body === 's-corvette-zr1') tag = 'CORVETTE C8 ZR1 · RWD';
         else if (body === 's-monza') tag = 'FERRARI MONZA SP1 · RWD';
         else if (body === 's-corvette-c6r') tag = 'CORVETTE C6.R · GT2';
