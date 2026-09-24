@@ -201,7 +201,17 @@ export function planRegent(district, opts = {}) {
   const play = makePlayArea(opts.poly ?? COMPACT_POLY);
   let bx0 = Infinity, bz0 = Infinity, bx1 = -Infinity, bz1 = -Infinity;
   for (const [x, z] of region) { bx0 = Math.min(bx0, x); bx1 = Math.max(bx1, x); bz0 = Math.min(bz0, z); bz1 = Math.max(bz1, z); }
-  const box = [bx0 - 40, bz0 - 40, bx1 + 40, bz1 + 40];
+  /* Regent Street's far side (district.js #regentStreet): the land south of
+     the Kingsway boundary road is no district's, so the street would have
+     London on one side only. A 60 m strip along it is planned as Kingsway. */
+  const RS = district.regentStreet;
+  const rsU = RS ? [(RS.b[0] - RS.a[0]), (RS.b[1] - RS.a[1])] : null, rsL = RS ? Math.hypot(rsU[0], rsU[1]) : 0;
+  const inRS = (x, z) => {
+    if (!RS) return false;
+    const rx = x - RS.a[0], rz = z - RS.a[1], t = (rx * rsU[0] + rz * rsU[1]) / rsL, s = (rx * rsU[1] - rz * rsU[0]) / rsL;
+    return t > 0 && t < rsL && s < 0 && s > -60;   // s < 0: the south side
+  };
+  const box = [bx0 - 40, bz0 - 40, bx1 + 40, bz1 + 40 + (RS ? 60 : 0)];
   const { clear, roadNear, inBlock } = makeProbe(district, box);
   const places = (district.places ?? []).filter((p) => inPoly(region, p.x, p.y) && clear(p.x, p.y) > 1);
   const nearPlace = (x, z) => { for (const p of places) if ((p.x - x) ** 2 + (p.y - z) ** 2 < PLACE_R * PLACE_R) return true; return false; };
@@ -224,7 +234,7 @@ export function planRegent(district, opts = {}) {
      sample: inOpenWater walks the river's 99 points and was a third of the
      plan's time, for a district with no water in it. */
   const why = (x, z) => {
-    if (!inPoly(region, x, z) || inBlock(x, z) || !inPlay(x, z) || nearPlace(x, z)) return 2;
+    if (!(inPoly(region, x, z) || inRS(x, z)) || inBlock(x, z) || !inPlay(x, z) || nearPlace(x, z)) return 2;
     return roadNear(x, z, FRONT - TOL) ? 1 : 0;
   };
   const hazard = (x, z) => !!district.inOpenWater?.(x, z) || (district.elevationAt?.(x, z) ?? 0) > 0.05;
@@ -394,6 +404,12 @@ export function planRegent(district, opts = {}) {
   /* A run's storeys: one cornice line (each plot may go a storey either way). */
   const runStyle = (r) => {
     if (r.st) return r.st;
+    /* Regent Street: ONE cornice line down its whole length, both sides --
+       the 1920s rebuilding's rule (five storeys and an attic behind a
+       continuous cornice, Portland stone). Ground 5.2 m of shop, a 3.0 m
+       mezzanine, three 3.6 m storeys: the cornice at 19.3 m over the kerb, the
+       mansard to ~23.5 m. */
+    if (RS && r.road === RS.road) return (r.st = { ground: 5.2, mezz: 3.0, upper: 3.6, floors: 3, depth: 20, attic: 'mansard', regent: true });
     const rnd = mulberry32(seedOf(r.road, r.side, Math.round(r.s0 / 50)));
     return (r.st = {
       ground: 4.7 + rnd() * 0.7, mezz: rnd() < 0.7 ? 2.8 + rnd() * 0.4 : 0, upper: 3.45 + rnd() * 0.35,
@@ -510,7 +526,7 @@ export function planRegent(district, opts = {}) {
       }
       if (!ring) { prev = null; continue; }
       const prnd = mulberry32(seedOf(F0[0], F0[1], F1[0], F1[1]));
-      const bump = prnd() < 0.14 ? 1 : prnd() < 0.14 ? -1 : 0;
+      const bump = st.regent ? 0 : prnd() < 0.14 ? 1 : prnd() < 0.14 ? -1 : 0;   // Regent Street keeps its one cornice
       const pst = { ...st, floors: Math.max(3, Math.min(4, st.floors + bump)) };
       const ux = (F1[0] - F0[0]) / cl, uz = (F1[1] - F0[1]) / cl;
       /* A RETURN: the run's first or last plot, where the run was stopped by a

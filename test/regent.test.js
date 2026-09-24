@@ -88,6 +88,14 @@ test('the plan lines Kingsway: 200+ buildings on 6 km of frontage, corners with 
   for (const [k, list] of plan.byChunk) for (const b of list) assert.equal(k, `${Math.floor(b.cx / 256)},${Math.floor(b.cz / 256)}`);
 });
 
+/* Regent Street's far side (district.js #regentStreet): a 60 m strip south of the road is planned as Kingsway. */
+const onRegentSouth = (x, z) => {
+  const RS = city.regentStreet; if (!RS) return false;
+  const ux = RS.b[0] - RS.a[0], uz = RS.b[1] - RS.a[1], L = Math.hypot(ux, uz), rx = x - RS.a[0], rz = z - RS.a[1];
+  const t = (rx * ux + rz * uz) / L, sd = (rx * uz - rz * ux) / L;
+  return t > 0 && t < L && sd < 0 && sd > -60;
+};
+
 test('nothing stands on a road or its pavement, outside the compact city or Kingsway, on water or a deck, or at the hospital and precinct doors', () => {
   const doors = city.places.filter((p) => inPoly(KW, p.x, p.y) && city.tarmacDepth(p.x, p.y) > 1);
   assert.ok(doors.length >= 2, 'the hospital and the precinct stand off the road in Kingsway');
@@ -99,7 +107,7 @@ test('nothing stands on a road or its pavement, outside the compact city or King
         const d = city.tarmacDepth(x, z);   // SIGNED: negative on the carriageway
         if (d < FRONT - 0.36) assert.fail(`${b.kind} at (${x.toFixed(1)}, ${z.toFixed(1)}) is ${d.toFixed(2)} m from a kerb: on the pavement or the road`);
         if (!(play.probe(x, z).d < -5.9)) assert.fail(`(${x.toFixed(1)}, ${z.toFixed(1)}) is within 6 m of the compact city's wall, or outside it`);
-        if (!inPoly(KW, x, z)) assert.fail(`(${x.toFixed(1)}, ${z.toFixed(1)}) is outside Kingsway`);
+        if (!inPoly(KW, x, z) && !onRegentSouth(x, z)) assert.fail(`(${x.toFixed(1)}, ${z.toFixed(1)}) is outside Kingsway`);
         if (city.inOpenWater(x, z) || city.elevationAt(x, z) > 0.05) assert.fail(`(${x.toFixed(1)}, ${z.toFixed(1)}) is on water or a deck`);
         for (const p of doors) if (Math.hypot(p.x - x, p.y - z) < 10) assert.fail(`(${x.toFixed(1)}, ${z.toFixed(1)}) stands on ${p.name}'s doorstep`);
       }
@@ -229,7 +237,10 @@ test('the triangle budget: per building, per chunk, the whole street wall (and +
      relies on. */
   let tot = 0, n = 0, worst = 0;
   for (const c of chunks) { tot += c.tris; n += c.count; worst = Math.max(worst, c.tris); assert.ok(c.geo.index.count / 3 === c.tris); }
-  assert.ok(tot < 520000, `${tot} triangles`);
+  /* 520k -> 580k (2026-09-24): Regent Street's south side is ~25 NEW
+     buildings (538k measured), not heavier ones. The frame pays per resident
+     ring, which the per-chunk ceiling below still holds unchanged. */
+  assert.ok(tot < 580000, `${tot} triangles`);
   assert.ok(worst < 62000, `worst chunk ${worst}`);
   assert.ok(tot / n < 2100, `mean ${Math.round(tot / n)} a building`);
   for (const b of plan.buildings.slice(0, 60)) { const g = regentGeometry([b]); assert.ok(g.tris < 5200, `${b.kind} ${g.tris} triangles`); g.geo.dispose(); }

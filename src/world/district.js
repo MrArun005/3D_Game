@@ -18,6 +18,9 @@ const CELL = 96;                       // spatial hash cell, metres
 const key = (ix, iz) => (ix + 4096) * 8192 + (iz + 4096);
 export const gridKey = key;
 
+/** Regent Street's carriageway, m (District #regentStreet). */
+export const REGENT_STREET_W = 18;
+
 export class District {
   /**
    * `opts.play`: a polygon ([x, z] vertices) the game is played inside -- the
@@ -83,6 +86,7 @@ export class District {
       this.playBounds = this.play.bbox;
     }
 
+    this.regentStreet = this.#regentStreet(data);
     // flatten every road into segments once; the hash points at these
     for (const road of data.roads) {
       const half = road.width / 2;
@@ -149,6 +153,35 @@ export class District {
    * the square), so QFRONT stands on the corner and not 40 m back in the
    * middle of a podium. Pure data; deterministic. `?noshibuya` skips it.
    */
+  /**
+   * REGENT STREET (2026-09-24, Arun: "make it exactly how long Regent Street
+   * London is ... width, length, height"). The compact city's longest straight
+   * London road is the Kingsway boundary road, 973 m from (1907, 1769) to
+   * (2880, 1763) -- Oxford Circus to Piccadilly Circus on the real street is
+   * about 830 m of it, so the length is right to within a block. It shipped
+   * 26 m of carriageway; Regent Street's is two lanes each way plus a bus
+   * lane, ~18 m, which with our 4.75 m building line each side puts the
+   * facades 27.5 m apart (measured on the real street: ~27-30 m). So the road
+   * is narrowed here, in the data every consumer derives from (segments,
+   * graph edges, markings, traffic lanes), and named. world/regent.js lines
+   * BOTH sides with one cornice line. Returns { road, a, b, width } or null
+   * when the file does not carry that road.
+   */
+  #regentStreet(data) {
+    const near = (p, x, z) => Math.abs(p[0] - x) < 3 && Math.abs(p[1] - z) < 3;
+    const i = (data.roads ?? []).findIndex((r) => r.points?.length === 2 && near(r.points[0], 1906.7, 1768.7) && near(r.points[1], 2879.9, 1763.4));
+    if (i < 0) return null;
+    const r = data.roads[i], [A, B] = r.points, L = Math.hypot(B[0] - A[0], B[1] - A[1]);
+    const off = (p) => Math.abs(((p[0] - A[0]) * (B[1] - A[1]) - (p[1] - A[1]) * (B[0] - A[0])) / L);
+    /* ...and any stub drawn along it (the file lays a 26 m street over its
+       first 100 m): a road whose every point sits within 6 m of the line. */
+    const along = new Set([i]);
+    data.roads.forEach((q, k) => { if (k !== i && q.points?.length >= 2 && q.points.every((p) => off(p) < 6)) along.add(k); });
+    for (const k of along) { data.roads[k].width = REGENT_STREET_W; data.roads[k].name = 'REGENT STREET'; }
+    for (const e of data.graph?.edges ?? []) if (along.has(e.road)) e.width = REGENT_STREET_W;
+    return { road: i, a: r.points[0], b: r.points[1], width: REGENT_STREET_W };
+  }
+
   #carveShibuya(data) {
     if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('noshibuya')) return null;
     const BUILT = new Set(['row', 'mid', 'tower']);
