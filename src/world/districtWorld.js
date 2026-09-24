@@ -131,6 +131,7 @@ const leafTint = (A, sp, fallback) => A?.geo?.species?.[sp]?.authored
   ? (A.geo.species[sp].leaf ?? fallback)
   : fallback;
 
+const GANTRIES = typeof location !== 'undefined' && new URLSearchParams(location.search).has('gantries');
 /* Scratch for the gantry's non-uniform placement matrix. Module scope so the
    signals pass does not allocate four objects per junction. */
 const _gv = new THREE.Vector3(), _gq = new THREE.Quaternion();
@@ -1447,7 +1448,11 @@ export class DistrictWorld {
              next to each other, of no use" means.
              `gantryArm` is chosen once per NODE, so exactly one approach can
              carry it and the choice is stable per city seed. */
-          if (e.width > 26 && ei === this.#gantryArm(end)) {
+          /* OFF by default (2026-09-24, Arun: "remove that board ... red or
+             orange top"): stretched to span a 30-44 m road, the kit's 9.1 m
+             gantry read as a red-and-cream bridge closing the end of every
+             wide street. ?gantries brings it back. */
+          if (GANTRIES && e.width > 26 && ei === this.#gantryArm(end)) {
             /* STRETCHED ACROSS ITS ROAD, not scaled up (2026-09-14).
                props/sign_gantry is 9.1 m wide and 6.8 m tall, and the gate
                above only ever offers it roads WIDER than 26 m -- so at native
