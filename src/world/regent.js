@@ -1240,7 +1240,7 @@ export function boxesOf(b, height) {
     };
     const a = span(s0 + 0.05), c = span(s1 - 0.05);
     const rect = Math.abs(a[0] - c[0]) < 0.4 && Math.abs(a[1] - c[1]) < 0.4;
-    const n = rect ? 1 : Math.max(2, Math.ceil((s1 - s0) / 5));
+    const n = rect ? 1 : Math.max(2, Math.ceil((s1 - s0) / 1.5));   // a corner wing narrows to a point at the corner: 5 m strips left a ~5 x 5 m hole there (review, HULL_PROBES replay)
     for (let k = 0; k < n; k++) {
       const sa = s0 + ((s1 - s0) * k) / n, sb = s0 + ((s1 - s0) * (k + 1)) / n;
       const A = span(sa + 0.02), Bs = span(sb - 0.02);

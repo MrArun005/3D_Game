@@ -561,6 +561,22 @@ function archLiner(ax, ay, r, yCut, za, zb) {
   });
 }
 
+/**
+ * The flat inner wall that closes a wheel well at z (review: the liner's inner
+ * end was open, and past it the body is a shell of front faces, so broadside
+ * rays through the crescent between tyre and arch came out the far side --
+ * 24 of 24 on both vehicles). Covers the arch opening down to the cut line,
+ * facing out along z (s = the side's sign).
+ */
+function archWall(ax, ay, r, yCut, z, s) {
+  const a0 = Math.asin(Math.max(-1, Math.min(1, (yCut - ay) / r)));
+  const n = 10;
+  return grid(n, 1, (i, j) => {
+    const a = a0 + (PI - 2 * a0) * (i / n), x = ax + Math.cos(a) * r;
+    return { p: [x, j === 0 ? yCut : ay + Math.sin(a) * r, z], n: [0, 0, s] };
+  });
+}
+
 /** The trim round an arch opening on the body side (z, facing s): r0..r1, down to yCut. */
 function archTrim(ax, ay, r0, r1, yCut, z, s) {
   const a0 = Math.asin(Math.max(-1, Math.min(1, (yCut - ay) / r0)));
@@ -832,6 +848,7 @@ function busDetail(lod) {
       P.add(archTrim(ax, BUS.archY, BUS.archR, BUS.archR + 0.045, BUS.y0, s * (b + 0.010), s), K.rubber);
       // the liner meets the panel's own edge: 1.5 cm inside it left a sliver of sky between the two
       P.add(archLiner(ax, BUS.archY, BUS.archR - 0.004, BUS.y0, s * (b - 0.48), s * (b + 0.002)), K.liner);
+      P.add(archWall(ax, BUS.archY, BUS.archR - 0.004, BUS.y0, s * (b - 0.48), s), K.liner);
     }
   }
   P.add(grid(1, 1, (i, j) => ({ p: [i ? 5.05 : -5.05, BUS.y0 + 0.004, j ? 1.2 : -1.2], n: [0, -1, 0] })), K.liner);
@@ -1051,6 +1068,7 @@ function cabDetail(lod, wheels = true) {
   // arch liners and wheels
   for (const ax of [CAB.axleF, CAB.axleR]) for (const s of [1, -1]) {
     P.add(archLiner(ax, CAB.archY, CAB.archR - 0.025, CAB.sill, s * 0.46, s * 0.86), K.liner);
+    P.add(archWall(ax, CAB.archY, CAB.archR - 0.025, CAB.sill, s * 0.46, s), K.liner);
     if (wheels) addWheel(P, ax, CAB.wheelR, s * CAB.wheelZ, s, CAB.wheelR, CAB.wheelW, 12, K.rimDark);
   }
   return P;
