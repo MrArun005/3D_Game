@@ -128,7 +128,10 @@ export function resolveQuality({ isLite = false, mobile = false, search = null, 
   let source = 'url';
   if (!QUALITY_NAMES.includes(name)) {
     name = '';
-    try {
+    /* A phone always boots on the mobile preset (2026-09-24): a desktop preset
+       saved in hb.quality (or picked once from the menu) must never land a
+       phone on High. Only ?quality= overrides it. */
+    if (!mobile) try {
       const store = storage ?? (typeof localStorage !== 'undefined' ? localStorage : null);
       const saved = (store?.getItem(STORAGE_KEY) || '').toLowerCase();
       if (PRESETS[saved]) { name = saved; source = 'saved'; }

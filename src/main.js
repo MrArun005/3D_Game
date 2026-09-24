@@ -1385,7 +1385,10 @@ Promise.all([districtReady, catalogueReady, moduleReady, new URLSearchParams(loc
         }
       }
     };
-    await Promise.all(Array.from({ length: POOL }, worker));
+    /* Boot in ~5 s (2026-09-24): the essentials get a fixed window, then the
+       game starts and the rest lands on demand (fetchAsset caches, the chunk
+       emit awaits the same promise). A phone gets the shorter window. */
+    await Promise.race([Promise.all(Array.from({ length: POOL }, worker)), new Promise((r) => setTimeout(r, TOUCH ? 2000 : 3000))]);
     console.info(`catalogue tier 1 fast-warm: ${tier1Names.length} assets in ${Math.round(performance.now() - t0)} ms`);
 
     // Tier 2 background streaming disabled: on-demand chunk loading via InstanceBatch.emit
@@ -1395,7 +1398,7 @@ Promise.all([districtReady, catalogueReady, moduleReady, new URLSearchParams(loc
     /* And the textures. Do not block boot indefinitely on textures: give them up to 1.5s max */
     if (catalogue.texturesReady) {
       setBootProgress(68, 'Preparing graphics…');
-      await Promise.race([catalogue.texturesReady, new Promise((r) => setTimeout(r, 1500))]);
+      await Promise.race([catalogue.texturesReady, new Promise((r) => setTimeout(r, TOUCH ? 800 : 1500))]);
     }
   }
 
