@@ -78,7 +78,8 @@ const info = [];
 if (asset === 'tokyo') {
   /* One plot of each type side by side, as a street would put them: sizes are
      typical of the plots pickTokyoType gives each type (tokyoTypes.js). */
-  const SIZE = { walkup: [8, 7, 26], tower: [14, 14, 96], pencil: [3.4, 6, 30], mansion: [10, 9, 42], carpark: [17, 17, 18], machiya: [4.5, 6, 9], depato: [18, 13, 38], qfront: [8.7, 8.7, 70], signstack: [5.1, 12.5, 34], screens: [8.6, 8.6, 34] };
+  const SIZE = { walkup: [8, 7, 26], tower: [14, 14, 96], pencil: [3.4, 6, 30], mansion: [10, 9, 42], carpark: [17, 17, 18], machiya: [4.5, 6, 9], depato: [18, 13, 38], qfront: [13, 13, 46], signstack: [8, 5.1, 30], screens: [12.5, 12.5, 30], addrum: [4.25, 4.8, 44], drum: [4.65, 5.25, 47], street: [8, 6, 30] };
+  const SET_PIECES = new Set(['qfront', 'signstack', 'screens', 'addrum', 'drum']);   // told the crossing is off their +X+Z corner, toward the camera
   const boards = [];   // the atlas boards too, as districtWorld lays them (pushTokyoBoard): a sign tower is mostly boards
   const types = (q.get('types') || 'walkup,tower,pencil,mansion,carpark,machiya,depato').split(',');
   const seed = +(q.get('seed') ?? 7), mat = tokyoFacadeMaterial();
@@ -86,7 +87,7 @@ if (asset === 'tokyo') {
   let z = 0, tris = 0;
   for (const t of types) {
     const [hw, hd, h] = SIZE[t];
-    const b = TOKYO_TYPES[t].build(seed, hw, hd, h, {});
+    const b = TOKYO_TYPES[t].build(seed, hw, hd, h, SET_PIECES.has(t) ? { toward: [0.7, 0.7] } : {});
     const m = new THREE.Mesh(b.geo, mat);
     m.castShadow = m.receiveShadow = true;
     m.position.set(0, 0, z + hd);

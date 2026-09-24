@@ -1405,7 +1405,13 @@ export function buildTokyoSignStack(seed, hw, hd, h, ctx = {}) {
   const rnd = stream(seed, 0x5157), grnd = stream(seed, 0x5158);
   const pick = (a) => a[Math.floor(rnd() * a.length)];
   const parts = [], boards = [], lamps = [];
-  const H = 8 * 3.4 + 1.8, wall = 0xe8e8e6;
+  /* `street`: the same stack for the streets off the crossing (Arun: the new
+     corners were right but the old walk-ups and towers round them "pull it
+     down"). Its own wall, canopy, fascia and roof -- the corner's blue-over-
+     green board and bookshop are the corner's. */
+  const street = ctx.variant === 'street';
+  const H = 8 * 3.4 + 1.8, wall = street ? pick([0xe8e8e6, 0xd9d6cf, 0xcfd3d6, 0xe2ddd2, 0xbfc3c6]) : 0xe8e8e6;
+  const canopy = street ? pick([[0x2a57c8, [0.12, 0.3, 1.0]], [0xc8283c, [1.0, 0.2, 0.25]], [0x1f7a4a, [0.2, 0.9, 0.45]], [0x202226, [1.0, 0.8, 0.4]], [0xd8a018, [1.0, 0.75, 0.2]]]) : [0x2a57c8, [0.12, 0.3, 1.0]];
   const [sx, sz] = crossingCorner(ctx, hd, rnd);
   const F = faces(hw, hd), [fa, fb] = streetFaces(F, sx, sz, ctx);
   parts.push(at(box(2 * hw, H, 2 * hd, wall), 0, H / 2, 0));
@@ -1414,9 +1420,9 @@ export function buildTokyoSignStack(seed, hw, hd, h, ctx = {}) {
   // ---- the crossing face (fa)
   const W = fa.w - 0.4;
   pane(parts, fa, 0, 1.8, W - 0.6, 3.2, 0x3a2a1c, WARM, 0.65, 0.95);                          // the bookshop, open to the pavement
-  proud(parts, box(fa.w, 0.4, 0.8, 0x2a57c8, [0.12, 0.3, 1.0], 0.35), fa, 0, 3.4, 0, 0.8);      // the flat blue canopy
+  proud(parts, box(fa.w, 0.4, 0.8, canopy[0], canopy[1], 0.35), fa, 0, 3.4, 0, 0.8);      // the flat canopy (blue on the corner)
   proud(parts, box(W, 2.0, 0.3, 0xf2f2ee, [1, 1, 1], 0.35), fa, 0, 5.1, 0, 0.3);                  // the white fascia box
-  { const bw = Math.min(W - 0.4, 7.6), [x, z] = on(fa, 0, 0.32); boards.push({ x, y: 5.1, z, yaw: fa.yaw, w: bw, h: clamp(bw / 4.2, 0.8, 1.8), kind: 'h', tile: H_TILE.books }); }
+  { const bw = Math.min(W - 0.4, 7.6), [x, z] = on(fa, 0, 0.32); boards.push({ x, y: 5.1, z, yaw: fa.yaw, w: bw, h: clamp(bw / 4.2, 0.8, 1.8), kind: 'h', tile: street ? undefined : H_TILE.books }); }
   {
     // the poster zone: a dark panel, then a portrait poster in a grey frame (the centre of a screen ad, printed)
     const pw = Math.min(7.0, W - 2.9), ph = Math.min(6.8, pw * 0.97), px = W / 2 - pw / 2 - 0.2, y = 6.5 + ph / 2;
@@ -1451,9 +1457,14 @@ export function buildTokyoSignStack(seed, hw, hd, h, ctx = {}) {
   }
 
   // ---- the roof board: blue over green, 9.5 x 10.5, on a steel frame a metre over the parapet, facing the crossing
-  {
+  //      (a street stack rolls its own pair, one billboard, or a bare roof)
+  const roof = street ? rnd() : 0;
+  const PAIRS = [[0x0a53b5, H_TILE.blue, [0.15, 0.35, 1.0], 0x00964b, H_TILE.green, [0.1, 0.9, 0.4]], [0xd7141f, H_TILE.red, [1.0, 0.15, 0.12], 0xffd200, H_TILE.yellow, [1.0, 0.85, 0.2]],
+    [0xf5f3ec, H_TILE.white, [1, 1, 1], 0xd7141f, H_TILE.red, [1.0, 0.15, 0.12]], [0xe5007e, H_TILE.magenta, [1.0, 0.2, 0.7], 0xf5f3ec, H_TILE.white, [1, 1, 1]]];
+  const pr = street ? pick(PAIRS) : PAIRS[0];
+  if (roof < 0.45) {
     const bw = Math.min(fa.w * 0.95, 9.5), ph = bw * 0.55, [x, z] = on(fa, 0, -1.2), y1 = H + 1.6 + ph / 2, y2 = y1 + ph + 0.1;
-    for (const [yy, hex, em, tile] of [[y1, 0x00964b, [0.1, 0.9, 0.4], H_TILE.green], [y2, 0x0a53b5, [0.15, 0.35, 1.0], H_TILE.blue]]) {
+    for (const [yy, hex, em, tile] of [[y1, pr[3], pr[5], pr[4]], [y2, pr[0], pr[2], pr[1]]]) {
       parts.push(at(box(bw, ph, 0.45, hex, em, 0.55), x, yy, z, fa.yaw));
       const [bx, bz] = on(fa, 0, -1.2 + 0.24), tw = bw * 0.9;
       boards.push({ x: bx, y: yy, z: bz, yaw: fa.yaw, w: tw, h: tw / 4.2, kind: 'h', tile });
@@ -1461,8 +1472,16 @@ export function buildTokyoSignStack(seed, hw, hd, h, ctx = {}) {
     for (const e of [-1, -1 / 3, 1 / 3, 1]) { const [px, pz] = on(fa, e * (bw / 2 - 0.2), -1.6); parts.push(at(metal(0.3, y2 + ph / 2 - H, 0.3, 0x2b2e33), px, H + (y2 + ph / 2 - H) / 2, pz)); }
     const [lx, lz] = on(fa, 0, 3);
     lamps.push(lampAt(lx, y1 - ph / 2 - 0.3, lz, [0.3, 0.6, 1.0], 90, 40, 2.4));   // under the green board
+  } else if (roof < 0.75) {
+    // one billboard on a frame (a 2:1 screen or a lightbox), as most roofs off the crossing carry
+    const bw = Math.min(fa.w * 0.9, 12), bh = bw / 2, [x, z] = on(fa, 0, -1.4), y = H + 1.5 + bh / 2;
+    parts.push(at(metal(bw + 0.4, bh + 0.4, 0.4, 0x141619), x, y, z, fa.yaw));
+    const [bx, bz] = on(fa, 0, -1.4 + 0.22);
+    boards.push({ x: bx, y, z: bz, yaw: fa.yaw, w: bw, h: bh, kind: 's' });
+    for (const e of [-1, 1]) { const [px, pz] = on(fa, e * (bw / 2 - 0.4), -1.7); parts.push(at(metal(0.3, 1.6, 0.3, 0x2b2e33), px, H + 0.8, pz)); }
   }
-  return finish(parts, finishOf(grnd, 0.3), { boards, lamps, height: H + 1.6 + 2 * Math.min(fa.w * 0.95, 9.5) * 0.55 + 0.1, floors: 9 });
+  const roofTop = roof < 0.45 ? 1.6 + 2 * Math.min(fa.w * 0.95, 9.5) * 0.55 + 0.1 : roof < 0.75 ? 1.7 + Math.min(fa.w * 0.9, 12) / 2 : 0.6;
+  return finish(parts, finishOf(grnd, 0.3), { boards, lamps, height: H + roofTop, floors: 9 });
 }
 
 /**
@@ -1677,6 +1696,8 @@ export const TOKYO_TYPES = {
   signstack: { build: buildTokyoSignStack, min: [7, 7], budget: 2500 },
   screens:   { build: (s, hw, hd, h, ctx = {}) => buildTokyoSignStack(s, hw, hd, h, { ...ctx, variant: 'screens' }), min: [7, 7], budget: 3500 },
   addrum:    { build: buildTokyoAdDrum, min: [7, 7], budget: 3500 },
+  // the sign-covered mid-rise of the streets round the crossing: rolled only near it (ctx.near, pickTokyoType)
+  street:    { build: (s, hw, hd, h, ctx = {}) => buildTokyoSignStack(s, hw, hd, h, { ...ctx, variant: 'street' }), min: [7, 7], budget: 2500 },
   drum:      { build: buildTokyoVistaDrum, min: [9, 9], budget: 2500 },
 };
 
@@ -1703,6 +1724,19 @@ export function pickTokyoType(seed, hw, hd, h, ctx = {}) {
   const fits = (t) => TOKYO_TYPES[t] && 2 * hd >= TOKYO_TYPES[t].min[0] && 2 * hw >= TOKYO_TYPES[t].min[1];
   if (force && TOKYO_TYPES[force]) return fits(force) ? force : 'walkup';
   const F = 2 * hd, D = 2 * hw, small = Math.min(F, D);
+  /* Within 160 m of the Shibuya crossing (ctx.near, districtWorld) the street
+     is the photos': sign-covered mid-rises, pencils, the odd walk-up or store
+     -- no office tower, mansion, car park or machiya. Its own stream. */
+  if (ctx.near != null && ctx.near < 160) {
+    const wn = { street: 1.4, walkup: small >= 40 ? 0 : 0.5 };
+    if (F <= 12) wn.pencil = 0.9;
+    if (F >= 22 && D >= 16) wn.depato = 0.3;
+    const names = Object.keys(wn).filter(fits);
+    let sum = 0; for (const k of names) sum += wn[k];
+    let r = stream(seed, 0x5b1a)() * sum;
+    for (const k of names) { r -= wn[k]; if (r < 0) return k; }
+    return fits('street') ? 'street' : 'walkup';
+  }
   let corner = false;
   if (ctx.probe) corner = ctx.probe(0, hd + 4) < 3 || ctx.probe(0, -hd - 4) < 3;
   /* A walk-up stretched over a 99 m plot is 17,788 triangles of one window

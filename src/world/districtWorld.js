@@ -81,7 +81,7 @@ export function roofsNear(district, x, z, radius, n = 6) {
     const ca = Math.cos(bl.angle), sa = Math.sin(bl.angle);
     for (const g of district.buildingsOf(bl.id)) {
       if (g.hero) continue;   // a Shibuya set piece is not the formula height, and its roof is taken (screens, boards)
-      const h = (range[0] + hash(g.x + bl.x, g.y + bl.y) * (range[1] - range[0])) * scale;
+      const h = Math.min(g.capH ?? Infinity, (range[0] + hash(g.x + bl.x, g.y + bl.y) * (range[1] - range[0])) * scale);
       const lx = g.x + g.w / 2, lz = g.y + g.d / 2;
       out.push({ x: bl.x + lx * ca - lz * sa, z: bl.y + lx * sa + lz * ca, h, w: g.w, d: g.d, angle: bl.angle });
     }
@@ -416,7 +416,7 @@ export class DistrictWorld {
       const tileW = spec.wide, tileH = spec.floors * spec.storey;
       for (const g of D.buildingsOf(bl.id)) {
         // a Shibuya set piece's stand-in is its own height (district.js heroH), not the formula's 100 m tower
-        const h = g.heroH ?? (range[0] + hash(g.x + bl.x, g.y + bl.y) * (range[1] - range[0])) * scale;
+        const h = g.heroH ?? Math.min(g.capH ?? Infinity, (range[0] + hash(g.x + bl.x, g.y + bl.y) * (range[1] - range[0])) * scale);
         const lx = g.x + g.w / 2, lz = g.y + g.d / 2;
         const w = Math.max(1, g.w - 0.3), hh = Math.max(1, h - 0.4);
         solids.push(mat4(bl.x + lx * ca - lz * sa, KERB_H,
@@ -1817,7 +1817,7 @@ export class DistrictWorld {
       for (const g of this.district.buildingsOf(bl.id)) {
         yield* tick('massing/art/tokyo');
         const scale = DISTRICT_SCALE[bl.district] ?? 1;
-        const h = g.heroH ?? (range[0] + hash(g.x + bl.x, g.y + bl.y) * (range[1] - range[0])) * scale;   // a set piece builds its own height
+        const h = g.heroH ?? Math.min(g.capH ?? Infinity, (range[0] + hash(g.x + bl.x, g.y + bl.y) * (range[1] - range[0])) * scale);   // a set piece builds its own height
         // local footprint -> world, through the block's own transform
         const ca = Math.cos(bl.angle), sa = Math.sin(bl.angle);
         const lx = g.x + g.w / 2, lz = g.y + g.d / 2;
@@ -1893,12 +1893,13 @@ export class DistrictWorld {
              street face), so its screens and its curved corner face the
              crossing whichever road its front was turned to. */
           const hero = g.hero ?? null;
+          const nd0 = this.district.shibuya?.node, near = nd0 ? Math.hypot(nd0.x - wx, nd0.y - wz) : null;   // the streets off the crossing build the photos' street (pickTokyoType)
           let toward = null;
           if (hero && this.district.shibuya?.node) {
             const nd = this.district.shibuya.node, vx = nd.x - wx, vz = nd.y - wz, vl = Math.hypot(vx, vz) || 1, ph = bl.angle - rot;
             toward = [(vx * Math.cos(ph) + vz * Math.sin(ph)) / vl, (-vx * Math.sin(ph) + vz * Math.cos(ph)) / vl];
           }
-          if (this.towers && !hero && hash(wx * 0.19, wz * 0.83) < 0.08) {
+          if (this.towers && !hero && !(near < 160) && hash(wx * 0.19, wz * 0.83) < 0.08) {
             // the plot's own world position is the seed, so the choice is stable per building
             const tw = towerFor(this.towers, wx * 7.31 + wz * 3.17, fhw, fhd, h);
             if (tw) {
@@ -1920,6 +1921,7 @@ export class DistrictWorld {
             block: bl.type,
             hero,
             toward,
+            near,
             probe: (bx, bz) => this.district.tarmacDepth(...toWorld(bx * Math.cos(rot) + bz * Math.sin(rot), -bx * Math.sin(rot) + bz * Math.cos(rot))),
           });
           // local (front +X) -> footprint local (turned onto the street side) -> world (the block's frame), same rotation sense as mat4()

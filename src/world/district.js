@@ -181,6 +181,16 @@ export class District {
     if (rest[0]) rest[0].type = 'signstack';   // the slimmest: the sign corner is a narrow slab
     if (rest[1]) rest[1].type = 'addrum';
     const out = { node, plots: [] };
+    /* The streets off the crossing are 8-12 storeys in every photo: cap every
+       Little Tokyo footprint within 160 m of the node at 40 m (g.capH), read by
+       the chunk builder, the far stand-ins and roofsNear alike. */
+    for (const bl of tokyo) {
+      const ca = Math.cos(bl.angle), sa = Math.sin(bl.angle);
+      for (const g of this.buildingsOf(bl.id)) {
+        const lx = g.x + g.w / 2, lz = g.y + g.d / 2;
+        if (Math.hypot(bl.x + lx * ca - lz * sa - node.x, bl.y + lx * sa + lz * ca - node.y) < 160) g.capH = 40;
+      }
+    }
     const GAP = 1.0;
     /* A corner square of side S out of footprint g at the corner nearest the
        node (nx, nz, block-local). The tower keeps the full depth beyond the

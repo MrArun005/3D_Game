@@ -12,7 +12,7 @@ import { styleFor } from '../src/world/artBuildings.js';
 
 const NEW = ['tower', 'pencil', 'mansion', 'carpark', 'machiya', 'depato'];
 /* The Shibuya set pieces: never rolled (the census below is NEW only), but held to every geometry rule the others are. */
-const LANDMARK = ['qfront', 'signstack', 'screens', 'addrum', 'drum'];
+const LANDMARK = ['qfront', 'signstack', 'screens', 'addrum', 'drum', 'street'];
 const ALL = [...NEW, ...LANDMARK];
 /* A plot in each type's niche (see pickTokyoType), varied per seed: [hw, hd, h].
    hw is half the DEPTH back from the street, hd half the FRONTAGE. */
@@ -28,6 +28,7 @@ const NICHE = {
   screens: (r) => [8 + r() * 5, 8 + r() * 5, 22 + r() * 50],
   addrum: (r) => [4 + r() * 3, 4 + r() * 3, 30 + r() * 20],
   drum: (r) => [4.7 + r() * 2, 4.7 + r() * 2, 40 + r() * 20],
+  street: (r) => [4.5 + r() * 8, 4 + r() * 9, 22 + r() * 20],
 };
 /* A side street on +Z for half the seeds: the corner-seeking types (mansion corridor, depato atrium) read it. */
 const probeFor = (seed, hd) => (seed % 2 ? (x, z) => (z > hd + 1 ? -2 : 25) : undefined);
