@@ -171,6 +171,14 @@ setBootProgress(25, 'Starting the renderer…');
    renderer.init() and the vendor car loads cost the boot its overlap (commit
    31510ca put it here; a merge lost it). */
 const districtReady = loadDistrict(undefined, { play: COMPACT ? COMPACT_POLY : null });
+/* The district callback below (Promise.all) touches traffic, jobs, garage and
+   more, declared further down this module -- past the top-level await for the
+   hero skin. A district that landed during that await ran the callback into
+   their temporal dead zone ("Cannot access 'traffic' before initialization":
+   the city never loaded; caught by tools/smoke-boot.mjs, 2026-09-24). It waits
+   for the module's last line now. */
+let moduleDone;
+const moduleReady = new Promise((r) => { moduleDone = r; });
 districtReady.catch(() => {});   // handled where it is awaited; this only stops an early 'unhandled rejection' before that
 await renderer.init();
 
@@ -1325,7 +1333,7 @@ const catalogueReady = new Catalogue().load(renderer)
   })
   .catch((e) => { console.warn('catalogue unavailable:', e.message); return null; });
 
-Promise.all([districtReady, catalogueReady, new URLSearchParams(location.search).has('nokit') ? null : loadKitBuildings(assets).catch((e) => console.warn('kit buildings:', e.message))]).then(async ([district, catalogue]) => {
+Promise.all([districtReady, catalogueReady, moduleReady, new URLSearchParams(location.search).has('nokit') ? null : loadKitBuildings(assets).catch((e) => console.warn('kit buildings:', e.message))]).then(async ([district, catalogue]) => {
   registerRaceTrackPhysics(district);
   useDistrict(district);                  // roadDepth() now answers from the file
   traffic.useGraph(district);
@@ -3258,3 +3266,5 @@ if (roomFromUrl()) joinRoom(roomFromUrl());
 if (new URLSearchParams(location.search).has('film')) {
   addEventListener('load', () => { started = true; hud.dismiss(); startFilm(); });
 }
+
+moduleDone();   // everything above is declared: the district callback may run (see moduleReady)

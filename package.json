@@ -17,7 +17,8 @@
     "gentex": "node tools/materials.mjs",
     "genchar": "node tools/characters.mjs",
     "genchar:cage": "node tools/characters.mjs --cage",
-    "genchar:blender": "python3 tools/blender/build.py"
+    "genchar:blender": "python3 tools/blender/build.py",
+    "smoke": "vite build && (vite preview --port 4173 --strictPort & sleep 3; node tools/smoke-boot.mjs; s=$?; kill %1; exit $s)"
   },
   "dependencies": {
     "three": "^0.185.1",
