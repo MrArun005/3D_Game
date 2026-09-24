@@ -118,40 +118,59 @@ body.touch #hud .go .tap{display:inline}
   padding:var(--sa-t) var(--sa-r) var(--sa-b) var(--sa-l)}
 #touch[hidden]{display:none}
 #touch .tb,#touch [data-zone]{pointer-events:auto}
-#touch .drive,#touch .foot{display:none}
-#touch.mode-drive .drive{display:flex}
-#touch.mode-foot .foot{display:flex}
-#touch .t-top{position:absolute;top:calc(10px + var(--sa-t));left:50%;transform:translateX(-50%);display:flex;gap:8px;pointer-events:none}
-#touch .tb{appearance:none;border:1px solid rgba(160,180,210,.28);border-radius:12px;background:rgba(8,11,18,.55);
-  color:#dbe4f0;font:600 12px/1.15 inherit;letter-spacing:.12em;padding:0 12px;min-width:56px;height:38px;
-  backdrop-filter:blur(3px);box-shadow:0 4px 14px rgba(0,0,0,.35);touch-action:none}
-#touch .tb.on{background:rgba(57,255,176,.28);border-color:rgba(57,255,176,.7);color:#fff}
+/* One mode's controls at a time, whatever else sets display (2026-09-24): the
+   later '#touch .tb{display:flex}' had the same specificity and won, so on an
+   iPhone the car's EXIT and the foot set's USE / WEAPON / RELOAD all showed
+   together -- and in the car there was no GAS to press. */
+#touch .drive,#touch .foot{display:none !important}
+#touch.mode-drive .drive:not(.fire){display:flex !important}
+#touch.mode-drive.armed .drive.fire{display:flex !important}
+#touch.mode-foot .foot{display:flex !important}
+#touch .t-pads.drive,#touch .t-pads.foot{display:none !important}
+#touch.mode-drive .t-pads.drive,#touch.mode-foot .t-pads.foot{display:grid !important}
+#touch .t-top{position:absolute;top:calc(8px + var(--sa-t));display:flex;gap:8px;pointer-events:none}
+#touch .t-top-l{left:calc(10px + var(--sa-l))}
+#touch .t-top-r{right:calc(10px + var(--sa-r))}
+#touch .tb{appearance:none;border:1px solid rgba(160,180,210,.30);border-radius:14px;background:rgba(8,11,18,.58);
+  color:#e6edf6;font:700 12px/1.1 inherit;letter-spacing:.08em;min-width:56px;height:44px;padding:0 10px;
+  -webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);box-shadow:0 4px 14px rgba(0,0,0,.35);touch-action:none}
+#touch .tb.on{background:rgba(57,255,176,.30);border-color:rgba(57,255,176,.75);color:#fff}
 #touch .tb.on-toggle{border-color:#e6c489;color:#e6c489}
-#touch .tb small{display:block;font-size:9px;opacity:.7;letter-spacing:.1em}
-/* steering strip: the lower-left third of the screen, above the minimap */
-#touch .t-steer{position:absolute;left:calc(8px + var(--sa-l));right:55%;bottom:calc(150px + var(--sa-b));height:110px;
-  align-items:center;justify-content:center;flex-direction:column;gap:6px;border-radius:16px;
-  background:rgba(8,11,18,.18);border:1px dashed rgba(160,180,210,.18)}
-#touch .t-steer.on{background:rgba(8,11,18,.32);border-style:solid}
-#touch .t-steer span{font-size:10px;letter-spacing:.3em;color:#7d8a9c}
-#touch .t-steer-track{width:260px;max-width:90%;height:6px;border-radius:3px;background:rgba(150,170,200,.25);position:relative}
-#touch .t-steer-knob{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;
-  background:rgba(57,255,176,.55);border:2px solid rgba(255,255,255,.7);box-shadow:0 0 18px rgba(57,255,176,.5)}
-/* on foot: stick zone left half, look zone right half (buttons sit on top of it) */
-#touch .t-stick{position:absolute;left:0;right:55%;top:25%;bottom:0}
-#touch .t-stick-base{position:absolute;left:30%;top:60%;width:120px;height:120px;margin:-60px 0 0 -60px;border-radius:50%;
-  border:2px solid rgba(160,180,210,.35);background:rgba(8,11,18,.35);opacity:.6}
+#touch .tb small{display:block;font-size:9px;opacity:.7;letter-spacing:.1em;margin-top:2px}
+#touch .tb.exit{min-width:78px;background:rgba(230,196,137,.22);border-color:rgba(230,196,137,.7);color:#f3dcae}
+#touch .t-drawer{position:absolute;top:calc(60px + var(--sa-t));left:calc(10px + var(--sa-l));display:grid;grid-template-columns:repeat(2,auto);gap:8px;pointer-events:auto}
+#touch .t-drawer[hidden]{display:none}
+#touch .t-drawer .tb{min-width:88px;height:48px}
+/* the wheel: the whole lower-left, touch anywhere and drag */
+#touch .t-steer{position:absolute;left:0;width:46%;top:22%;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+  padding-bottom:calc(26px + var(--sa-b));border:none;background:none}
+#touch .t-steer.on{background:radial-gradient(ellipse at 50% 85%,rgba(120,160,220,.10),transparent 70%)}
+#touch .t-steer span{font-size:10px;letter-spacing:.3em;color:rgba(200,215,235,.55);margin-top:10px}
+#touch .t-steer-track{width:200px;max-width:80%;height:6px;border-radius:3px;background:rgba(150,170,200,.28);position:relative}
+#touch .t-steer-knob{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;
+  background:rgba(220,232,248,.22);border:2px solid rgba(220,232,248,.6)}
+#touch .t-stick{position:absolute;left:0;width:46%;top:22%;bottom:0}
+#touch .t-stick-base{position:absolute;left:35%;top:65%;width:128px;height:128px;margin:-64px 0 0 -64px;border-radius:50%;
+  border:2px solid rgba(200,215,235,.35);background:rgba(8,11,18,.25);opacity:.55}
 #touch .t-stick.on .t-stick-base{opacity:1}
-#touch .t-stick-knob{position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;
-  background:rgba(63,210,255,.55);border:2px solid rgba(255,255,255,.7)}
-#touch .t-look{position:absolute;left:45%;right:0;top:15%;bottom:0}
-/* right-hand button column: pedals biggest, nearest the thumb */
-#touch .t-right{position:absolute;right:calc(10px + var(--sa-r));bottom:calc(14px + var(--sa-b));flex-direction:column-reverse;align-items:flex-end;gap:10px}
-#touch .t-right .tb{min-width:84px;height:54px;font-size:13px}
-#touch .t-right .tb.pedal{min-width:120px;height:74px;font-size:15px}
-#touch .t-right .tb.big{width:84px;height:84px;border-radius:50%;background:rgba(255,80,80,.28);border-color:rgba(255,120,120,.6)}
+#touch .t-stick-knob{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;background:rgba(220,232,248,.35)}
+#touch .t-look{position:absolute;left:46%;right:0;top:18%;bottom:0}
+/* pedals and action buttons under the right thumb, side by side */
+#touch .t-pads{position:absolute;right:calc(14px + var(--sa-r));bottom:calc(14px + var(--sa-b));display:grid;
+  grid-template-columns:auto auto;grid-template-rows:auto auto;gap:12px;align-items:end;justify-items:end}
+#touch .t-pads.drive .hand{grid-column:1;grid-row:1;width:76px;height:76px;border-radius:50%}
+#touch .t-pads.drive .fire{grid-column:2;grid-row:1}
+#touch .t-pads.drive .brake{grid-column:1;grid-row:2;width:92px;height:108px;border-radius:18px}
+#touch .t-pads.drive .gas{grid-column:2;grid-row:2;width:104px;height:150px;border-radius:20px;font-size:16px;
+  background:rgba(57,255,176,.14);border-color:rgba(57,255,176,.5)}
+#touch .t-pads.foot .tb{width:76px;height:64px}
+#touch .t-pads.foot .fire{width:92px;height:92px}
+#touch .tb.big{border-radius:50%;width:84px;height:84px;background:rgba(255,80,80,.28);border-color:rgba(255,120,120,.6)}
 #touch.mode-drive .tb.fire{display:none}
 #touch.mode-drive.armed .tb.fire{display:flex}
+/* the minimap moves out from under the steering thumb: top-left, under MAP */
+body.touch #minimap{transform:scale(.5);transform-origin:top left;left:calc(10px + var(--sa-l));top:calc(60px + var(--sa-t));bottom:auto}
+body.touch #cluster{left:50%;transform:translateX(-50%);bottom:calc(10px + var(--sa-b))}
 #touch .tb{display:flex;align-items:center;justify-content:center;text-align:center}
 /* portrait: the game is landscape */
 #rotate{display:none}

@@ -32,7 +32,7 @@
  */
 
 export const GEOMETRY = {
-  steerLock: 120,   // px of drag for full lock
+  steerLock: 90,    // px of drag for full lock (120 was most of a phone's half-width)
   steerDead: 6,     // px before the wheel moves
   stickR: 60,       // px, full deflection
   stickDead: 12,    // px, no movement
@@ -127,28 +127,37 @@ export function mapTouches(state, g = GEOMETRY, dt = 1 / 60, prev = { throttle: 
 
 const BTN = (id, label, cls = '') => `<button class="tb ${cls}" data-id="${id}" type="button">${label}</button>`;
 
+/* Layout v2 (2026-09-24, Arun on an iPhone 15: "very difficult to navigate").
+   The old overlay had a 110 px steering strip floating mid-screen, nine small
+   buttons in one top row and the pedals stacked in a column. Now, as on GTA /
+   Asphalt mobile: the WHOLE lower-left is the wheel (touch anywhere, drag),
+   the pedals sit side by side under the right thumb, the top keeps four
+   buttons (EXIT/USE, CAM, MAP, MORE) and MORE opens a drawer with the rest. */
 const MARKUP = `
-  <div class="t-top">
-    ${BTN('camera', 'CAM', 'drive')}${BTN('horn', 'HORN', 'drive')}${BTN('lights', 'LIGHTS', 'drive')}
-    ${BTN('use', 'EXIT', 'drive')}${BTN('use', 'USE', 'foot')}
-    ${BTN('phone', 'PHONE')}${BTN('map', 'MAP')}${BTN('radio', 'RADIO', 'drive')}
-    ${BTN('weaponNext', 'WEAPON', 'foot')}${BTN('reload', 'RELOAD', 'foot')}
+  <div class="t-top t-top-l">
+    ${BTN('map', 'MAP')}${BTN('more', '&#9776;', 'more')}
   </div>
-  <div class="t-steer drive" data-zone="steer"><div class="t-steer-track"><div class="t-steer-knob"></div></div><span>STEER</span></div>
+  <div class="t-top t-top-r">
+    ${BTN('camera', 'CAM', 'drive')}${BTN('use', 'EXIT', 'drive exit')}${BTN('use', 'ENTER', 'foot exit')}
+  </div>
+  <div class="t-drawer" hidden>
+    ${BTN('phone', 'PHONE')}${BTN('horn', 'HORN', 'drive')}${BTN('lights', 'LIGHTS', 'drive')}${BTN('radio', 'RADIO', 'drive')}
+    ${BTN('weaponNext', 'WEAPON', 'foot')}${BTN('reload', 'RELOAD', 'foot')}${BTN('crouch', 'CROUCH', 'foot')}
+  </div>
+  <div class="t-steer drive" data-zone="steer"><div class="t-steer-track"><div class="t-steer-knob"></div></div><span>DRAG TO STEER</span></div>
   <div class="t-stick foot" data-zone="stick"><div class="t-stick-base"><div class="t-stick-knob"></div></div></div>
   <div class="t-look foot" data-zone="look"></div>
-  <div class="t-right drive">
+  <div class="t-pads drive">
+    ${BTN('handbrake', 'DRIFT', 'hand hold')}
     ${BTN('fire', 'FIRE', 'big fire hold')}
-    ${BTN('handbrake', 'HAND<br>BRAKE', 'hold')}
-    ${BTN('brake', 'BRAKE<br><small>REVERSE</small>', 'pedal hold')}
-    ${BTN('gas', 'GAS', 'pedal hold')}
+    ${BTN('brake', 'BRAKE<small>REV</small>', 'pedal brake hold')}
+    ${BTN('gas', 'GAS', 'pedal gas hold')}
   </div>
-  <div class="t-right foot">
-    ${BTN('fire', 'FIRE', 'big fire hold')}
+  <div class="t-pads foot">
     ${BTN('aim', 'AIM', 'toggle')}
-    ${BTN('jump', 'JUMP', 'hold')}
-    ${BTN('crouch', 'CROUCH')}
     ${BTN('run', 'RUN', 'toggle')}
+    ${BTN('jump', 'JUMP', 'hold')}
+    ${BTN('fire', 'FIRE', 'big fire hold')}
   </div>
 `;
 
@@ -202,13 +211,15 @@ export function createTouch(onAction, opts = {}) {
       }
       case 'fire': opts.onFire?.(true); onAction('fire'); return;
       case 'crouch': onAction('camera'); return;          // main.js: 'camera' on foot is the crouch toggle
+      case 'more': { const d = el.querySelector('.t-drawer'); d.hidden = !d.hidden; setPressed(btn, !d.hidden); return; }
       case 'weaponNext': weaponIdx = (weaponIdx + 1) % 7; onAction(`weapon${weaponIdx}`); return;
       default: onAction(id);
     }
   }
   function buttonUp(btn) {
     const id = btn.dataset.id;
-    if (id === 'run' || id === 'aim') return;            // toggles keep their own light
+    if (id === 'run' || id === 'aim' || id === 'more') return;   // toggles keep their own light
+    if (btn.closest('.t-drawer')) { el.querySelector('.t-drawer').hidden = true; el.querySelector('.tb.more')?.classList.remove('on'); }   // a drawer button closes the drawer
     setPressed(btn, false);
     switch (id) {
       case 'gas': state.gas = false; break;
