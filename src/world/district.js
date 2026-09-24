@@ -20,6 +20,8 @@ export const gridKey = key;
 
 /** Regent Street's carriageway, m (District #regentStreet). */
 export const REGENT_STREET_W = 18;
+/** Its side streets' first block, m (District #regentSideStreets). */
+export const SIDE_W = 11;
 
 export class District {
   /**
@@ -61,6 +63,7 @@ export class District {
         { type: 'pub', name: 'Shibuya Izakaya Alley · 居酒屋', district: 'LITTLE TOKYO', x: 2560, y: 1410 }
       );
     }
+    this.regentStreet = this.#regentStreet(data);   // before the graph is clipped: it narrows, splits and cuts roads and edges
     this.graph = data.graph;
     /* The compact city (2026-09-23, world/playArea.js). GAMEPLAY reads
        `graph` -- traffic, the crowd, jobs, the checkpoint run, navigation,
@@ -86,7 +89,6 @@ export class District {
       this.playBounds = this.play.bbox;
     }
 
-    this.regentStreet = this.#regentStreet(data);
     // flatten every road into segments once; the hash points at these
     for (const road of data.roads) {
       const half = road.width / 2;
@@ -179,7 +181,106 @@ export class District {
     data.roads.forEach((q, k) => { if (k !== i && q.points?.length >= 2 && q.points.every((p) => off(p) < 6)) along.add(k); });
     for (const k of along) { data.roads[k].width = REGENT_STREET_W; data.roads[k].name = 'REGENT STREET'; }
     for (const e of data.graph?.edges ?? []) if (along.has(e.road)) e.width = REGENT_STREET_W;
+    if (data.graph) this.#regentSideStreets(data, along, A, B, L, off);
     return { road: i, a: r.points[0], b: r.points[1], width: REGENT_STREET_W };
+  }
+
+  /**
+   * The streets that meet Regent Street (2026-09-24, Arun's go-ahead on
+   * "cut the diagonals back" and "narrow the side streets"):
+   *   1. A road meeting it at under 40 degrees (three Harbour Point streets
+   *      at ~24 deg) peeled a 60-100 m wedge of tarmac off its south side,
+   *      where no frontage could stand. Every edge of such a road with both
+   *      ends within 70 m of the line is dropped, and the road now begins at
+   *      its first junction beyond (a road left with no edges is dropped whole).
+   *   2. Every other non-arterial road meeting it is narrowed to SIDE_W over
+   *      its first block (the edge touching Regent Street): the real street's
+   *      side streets -- Conduit, Maddox, New Burlington -- are ~10-12 m
+   *      across, the file's were 26-30 m. The arterial crossing (Halstead
+   *      Avenue, as Oxford Street at Oxford Circus) keeps its width.
+   * Roads are split so the segments (tarmac), the graph edges and every
+   * consumer agree. Node kinds are re-derived from the new degrees (the
+   * signals and crossings read 'cross' / 'tee').
+   */
+  #regentSideStreets(data, along, A, B, L, off) {
+    const G = data.graph, N = new Map(G.nodes.map((n) => [n.id, n]));
+    const ux = (B[0] - A[0]) / L, uz = (B[1] - A[1]) / L;
+    const onLine = (n) => off([n.x, n.y]) < 3 && (n.x - A[0]) * ux + (n.y - A[1]) * uz > -3 && (n.x - A[0]) * ux + (n.y - A[1]) * uz < L + 3;
+    const regentNodes = new Set(G.nodes.filter(onLine).map((n) => n.id));
+    const touched = new Set();
+    // 1. the shallow roads
+    const shallow = new Set();
+    for (const e of G.edges) {
+      if (along.has(e.road) || !(regentNodes.has(e.a) || regentNodes.has(e.b))) continue;
+      const na = N.get(e.a), nb = N.get(e.b), dx = nb.x - na.x, dz = nb.y - na.y, l = Math.hypot(dx, dz) || 1;
+      if (Math.abs(dx * ux + dz * uz) / l > Math.cos(40 * Math.PI / 180)) shallow.add(e.road);
+    }
+    const drop = new Set();
+    for (const e of G.edges) if (shallow.has(e.road) && off([N.get(e.a).x, N.get(e.a).y]) < 70 && off([N.get(e.b).x, N.get(e.b).y]) < 70) drop.add(e);
+    G.edges = G.edges.filter((e) => { if (!drop.has(e)) return true; touched.add(e.a); touched.add(e.b); return false; });
+    for (const k of shallow) {
+      const left = G.edges.filter((e) => e.road === k);
+      const road = data.roads[k];
+      if (!left.length) { road.points = []; continue; }
+      // the road now runs over its kept edges only: their node chain, in the road's own direction
+      const ends = new Map();
+      for (const e of left) for (const id of [e.a, e.b]) ends.set(id, (ends.get(id) ?? 0) + 1);
+      const tips = [...ends].filter(([, c]) => c === 1).map(([id]) => N.get(id));
+      if (tips.length === 2) {
+        const p0 = road.points[0], d = (n) => Math.hypot(n.x - p0[0], n.y - p0[1]);
+        const [t0, t1] = d(tips[0]) < d(tips[1]) ? tips : [tips[1], tips[0]];
+        road.points = [[t0.x, t0.y], [t1.x, t1.y]];
+      }
+    }
+    // 2. the side streets' first block
+    for (const e of G.edges) {
+      if (along.has(e.road) || !(regentNodes.has(e.a) || regentNodes.has(e.b))) continue;
+      const road = data.roads[e.road];
+      if (!road || road.class === 'arterial' || road.class === 'freeway' || e.width <= SIDE_W) continue;
+      const na = N.get(e.a), nb = N.get(e.b);
+      if (Math.abs((nb.x - na.x) * ux + (nb.y - na.y) * uz) / (Math.hypot(nb.x - na.x, nb.y - na.y) || 1) > Math.cos(40 * Math.PI / 180)) continue;   // running along it: not a side street
+      this.#splitRoadAt(data, e, SIDE_W);
+    }
+    // node kinds from the new degrees
+    const deg = new Map();
+    for (const e of G.edges) for (const id of [e.a, e.b]) deg.set(id, (deg.get(id) ?? 0) + 1);
+    for (const id of touched) {
+      const n = N.get(id), k = deg.get(id) ?? 0;
+      if (n.kind === 'cross' || n.kind === 'tee' || n.kind === 'end') n.kind = k >= 4 ? 'cross' : k === 3 ? 'tee' : k === 2 ? 'bend' : 'end';
+    }
+    // an end node nothing reaches any more goes too
+    G.nodes = G.nodes.filter((n) => deg.has(n.id) || !touched.has(n.id));
+  }
+
+  /** Give edge `e` its own road of width `w` (its points), cutting that stretch out of the road it belonged to. */
+  #splitRoadAt(data, e, w) {
+    const src = data.roads[e.road], P = src.points;
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]));
+    const proj = (q) => {
+      let best = [Infinity, 0];
+      for (let i = 0; i < P.length - 1; i++) {
+        const vx = P[i + 1][0] - P[i][0], vz = P[i + 1][1] - P[i][1], l2 = vx * vx + vz * vz || 1;
+        let t = ((q[0] - P[i][0]) * vx + (q[1] - P[i][1]) * vz) / l2; t = Math.max(0, Math.min(1, t));
+        const d = Math.hypot(q[0] - P[i][0] - vx * t, q[1] - P[i][1] - vz * t);
+        if (d < best[0]) best = [d, cum[i] + t * (cum[i + 1] - cum[i])];
+      }
+      return best[1];
+    };
+    const at = (s) => {
+      for (let i = 0; i < P.length - 1; i++) if (s <= cum[i + 1] + 1e-9) { const t = (s - cum[i]) / ((cum[i + 1] - cum[i]) || 1); return [P[i][0] + (P[i + 1][0] - P[i][0]) * t, P[i][1] + (P[i + 1][1] - P[i][1]) * t]; }
+      return P[P.length - 1];
+    };
+    const piece = (s0, s1) => { const pts = [at(s0)]; for (let i = 1; i < P.length - 1; i++) if (cum[i] > s0 && cum[i] < s1) pts.push(P[i]); pts.push(at(s1)); return pts; };
+    const sa = proj(e.points[0]), sb = proj(e.points[e.points.length - 1]), lo = Math.min(sa, sb), hi = Math.max(sa, sb), total = cum[cum.length - 1];
+    const oldIdx = e.road, rest = data.graph.edges.filter((q) => q !== e && q.road === oldIdx);
+    const before = lo > 1 ? piece(0, lo) : null, after = hi < total - 1 ? piece(hi, total) : null;
+    src.points = before ?? after ?? [];
+    let afterIdx = oldIdx;
+    if (before && after) { afterIdx = data.roads.push({ ...src, points: after }) - 1; }
+    for (const q of rest) { const m = (proj(q.points[0]) + proj(q.points[q.points.length - 1])) / 2; if (m > hi && afterIdx !== oldIdx) q.road = afterIdx; }
+    e.road = data.roads.push({ ...src, width: w, points: e.points.map((p) => [p[0], p[1]]) }) - 1;
+    e.width = w;
   }
 
   #carveShibuya(data) {

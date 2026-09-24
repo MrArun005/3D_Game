@@ -61,7 +61,7 @@ test('every stretch of road is built by exactly one chunk, and inside the city b
       if (city.play.contains(x, z)) { inside += 8; assert.ok(K.has(b[0]), `road inside the city at (${x.toFixed(0)},${z.toFixed(0)}) is never built`); }
     }
   });
-  assert.equal(split, 49);
+  assert.equal(split, 48);   // 2026-09-24: Regent Street's side streets (district.js #regentSideStreets) cut three shallow diagonals back
   assert.ok(inside > 30000, `${inside} m of road inside sampled`);
 });
 

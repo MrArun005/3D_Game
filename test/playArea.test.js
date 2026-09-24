@@ -35,8 +35,8 @@ const edgeDist = (x, z) => A.probe(x, z).d;
 const cellOf = (x, z) => `${Math.floor(x / 256)},${Math.floor(z / 256)}`;
 
 test('a District with no opts is the whole bay, as before', () => {
-  assert.equal(full.graph.nodes.length, 1789);
-  assert.equal(full.graph.edges.length, 2937);
+  assert.equal(full.graph.nodes.length, 1785);   // 2026-09-24: Regent Street's side streets (district.js #regentSideStreets) cut three shallow diagonals back: 4 stub ends and 17 edges fewer than the file
+  assert.equal(full.graph.edges.length, 2920);
   assert.equal(full.places.length, 105);
   assert.equal(full.fullGraph, full.graph, 'one graph');
   assert.equal(full.play, null);
@@ -47,8 +47,8 @@ test('a District with no opts is the whole bay, as before', () => {
 test('the compact gameplay graph is ONE component, wholly inside, the rendering graph whole', () => {
   const g = city.graph;
   assert.ok(g.nodes.length >= 300 && g.nodes.length <= 360, `${g.nodes.length} nodes`);
-  assert.equal(g.nodes.length, 328);
-  assert.equal(g.edges.length, 511);
+  assert.equal(g.nodes.length, 324);   // 2026-09-24: Regent Street's side streets (district.js #regentSideStreets) cut three shallow diagonals back (328 / 511 before)
+  assert.equal(g.edges.length, 502);
   for (const n of g.nodes) assert.ok(A.contains(n.x, n.y), `node ${n.id} outside`);
   for (const e of g.edges) for (const [x, z] of e.points) assert.ok(A.contains(x, z), `edge ${e.id} leaves`);
   // connected: a BFS from any node reaches every node
@@ -57,7 +57,7 @@ test('the compact gameplay graph is ONE component, wholly inside, the rendering 
   const seen = new Set([g.nodes[0].id]), q = [g.nodes[0].id];
   while (q.length) for (const nb of adj.get(q.pop())) if (!seen.has(nb)) { seen.add(nb); q.push(nb); }
   assert.equal(seen.size, g.nodes.length, 'one component');
-  assert.equal(city.fullGraph.nodes.length, 1789, 'kerbs and signals still see every junction');
+  assert.equal(city.fullGraph.nodes.length, 1785, 'kerbs and signals still see every junction');
   assert.deepEqual(city.bounds, full.bounds, 'bounds stay the whole map (water, surrounds, riverside read them)');
   assert.deepEqual(city.playBounds, { x0: 1509, z0: 878.7, x1: 2955, z1: 2362.5 });
 });
@@ -367,7 +367,7 @@ test('segmentSplit: long streets that run into the city are built there, in piec
       if (kept.has(cellOf(x, z))) assert.ok(own || Math.min(Math.abs(t - sp.lo), Math.abs(t - sp.hi)) < 4, 'every stretch in a kept cell is built by the kept owner');
     }
   });
-  assert.equal(split, 49, `${split} segments split`);
+  assert.equal(split, 48, `${split} segments split`);   // 2026-09-24: Regent Street's side streets (district.js #regentSideStreets) cut three shallow diagonals back: one fewer runs into the city
   assert.ok(recovered > 1300, `${recovered} m of road inside the city built near-detail again (was none)`);
   assert.equal(pieceHas(null, 5), true);
   assert.equal(pieceHas([[0, 4], [9, 12]], 5), false);
