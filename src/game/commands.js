@@ -6,7 +6,7 @@
  * economy cheats behind ?debug.
  */
 
-const LANDMARKS = {
+export const LANDMARKS = {
   downtown: { x: 2350, z: 1350, yaw: 0, name: 'Downtown Kingsway' },
   harbour:  { x: 1850, z: 2150, yaw: Math.PI / 2, name: 'Harbour Point' },
   bridge:   { x: 2600, z: 800, yaw: -Math.PI / 4, name: 'Halstead Suspension Bridge' },
@@ -15,7 +15,10 @@ const LANDMARKS = {
   marrow:   { x: 499, z: 1391, yaw: 0, name: 'Marrow Hill' },              // the suburb: gable roofs (photo preset marrow-hill)
   steelgate: { x: 3662, z: 1221, yaw: 0, name: 'Steelgate Chop Shop' },
   tokyo:    { x: 2160, z: 1540, yaw: Math.PI / 2, name: 'Little Tokyo Neon Boulevard' },
-  track:    { x: 3560, z: 2457, yaw: 0, name: 'Halstead International Raceway' }
+  track:    { x: 3560, z: 2457, yaw: 0, name: 'Halstead International Raceway' },
+  // London (2026-09-24): in the kerb lane (traffic keeps right: +Z heading east, -Z heading west)
+  regent:   { x: 2300, z: 1770.5, yaw: 0, name: 'Regent Street' },                 // heading east down its 973 m
+  quadrant: { x: 2150, z: 1762.5, yaw: Math.PI, name: 'Regent Street · The Quadrant' }, // heading west into the curve
 };
 
 export class CommandEngine {
@@ -46,7 +49,7 @@ export class CommandEngine {
         chat.post('SYSTEM', '· /wanted <0-5> or /clearheat — Police pursuit level');
         chat.post('SYSTEM', '· /nos — Equip & refill Nitrous Oxide');
         chat.post('SYSTEM', '· /repair — Fix all bodywork & damage');
-        chat.post('SYSTEM', '· /tp <downtown|harbour|bridge|airport|track> — Teleport');
+        chat.post('SYSTEM', '· /tp <downtown|tokyo|regent|quadrant|track> — Teleport');
         chat.post('SYSTEM', '· /time <0-23|day|night|dusk> — Set city clock');
         chat.post('SYSTEM', '· /weather <clear|rain> — Set road precipitation');
         chat.post('SYSTEM', '· /car <gt3|c6r|f40|zr1|patrol> — Spawn vehicle');

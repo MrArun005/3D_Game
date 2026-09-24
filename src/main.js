@@ -93,7 +93,7 @@ import { Damage } from './game/damage.js';
 import { signalState } from './world/signals.js';
 import { Hud } from './ui/hud.js';
 import { Chat } from './ui/chat.js';
-import { CommandEngine } from './game/commands.js';
+import { CommandEngine, LANDMARKS } from './game/commands.js';
 import { ChatterEngine } from './game/chatter.js';
 import { Stats } from './ui/stats.js';
 import { Photo } from './game/photo.js';
@@ -1591,6 +1591,17 @@ Promise.all([districtReady, catalogueReady, new URLSearchParams(location.search)
   }
   // now the car is on its spawn node, lay the film route from where it stands
   ROUTE = buildRoute(null, car.x, car.z);
+  /* ?spawn=regent | quadrant | tokyo | downtown | track (game/commands.js
+     LANDMARKS, the /tp list): start there instead of the Little Tokyo spawn.
+     warpTo is defined further down this module, so it is reached through
+     window.__warp once it exists. */
+  {
+    const want = (new URLSearchParams(location.search).get('spawn') || '').toLowerCase(), spot = LANDMARKS[want];
+    if (spot && (!world.district?.wall || world.district.wall.contains(spot.x, spot.z))) {
+      const go = (n = 0) => (window.__warp ? window.__warp(spot.x, spot.z, spot.yaw) : n < 50 && setTimeout(() => go(n + 1), 100));
+      go();
+    }
+  }
   console.info(`Halstead Bay loaded — spawn at Little Tokyo (${car.x}, ${car.z})`);
   /* spawn is the city. No toast. */
 }).catch((e) => { districtFailed = true; console.warn('district not loaded, staying on the grid:', e.message); });
