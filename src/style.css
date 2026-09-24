@@ -179,3 +179,5 @@ body.touch #rotate{position:fixed;inset:0;z-index:98;display:none;align-items:ce
 @media (orientation: portrait){body.touch #rotate{display:flex}}
 /* photo / film / idle hide the overlay too */
 body.photo #touch,body.filming #touch,body.idlecam #touch{opacity:0;pointer-events:none}
+/* the desktop weapon slots (keys 0-6) mean nothing on a phone: the drawer's WEAPON button cycles */
+body.touch #arsenal{display:none!important}

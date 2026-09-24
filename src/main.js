@@ -697,7 +697,7 @@ const bloodDecals = new DecalPool(scene, { color: 0x4a0709, radius: 0.32, roughn
 const grenades = new Grenades(scene, weapon.light);   // shares the muzzle-flash light
 /* What is in your hands: 'fists' | 'gun' | 'grenade'. One value, so the
    three cannot disagree the way two booleans could after a pickup or a buy. */
-let held = 'gun', punchCool = 0;
+let held = TOUCH ? 'fists' : 'gun', punchCool = 0;   // a phone starts unarmed: FIRE and the ammo readout appear once you pick a gun
 let wasReloading = false;
 let lastArsKey = '';
 let wastedTimer = 0;  // the clip's respawn timer, so a bust or a second death cannot double it

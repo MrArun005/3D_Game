@@ -554,6 +554,7 @@ export class Hud {
   setArsenal(rows) {
     if (!this.arsEl) {
       const el = document.createElement('div');
+      el.id = 'arsenal';
       el.style.cssText = 'position:fixed;right:26px;bottom:262px;z-index:40;display:flex;gap:6px;pointer-events:none';
       document.body.appendChild(el);
       this.arsEl = el;
