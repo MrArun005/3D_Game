@@ -30,7 +30,7 @@ export const PRESETS = {
     bloom: true,
     aa: false,
     blur: false,
-    pixelBudget: 780 * 450,   // ~0.35 MP
+    pixelBudget: 1200 * 554,  // ~0.66 MP (was 0.35: the car read as a smear on a 3 MP iPhone panel); DRS walks it down if the frame runs over
     streamRadius: 1,
     traffic: 8,
     crowd: 30,

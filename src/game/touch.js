@@ -297,7 +297,12 @@ export function createTouch(onAction, opts = {}) {
   };
   el.addEventListener('pointerup', release, { passive: false });
   el.addEventListener('pointercancel', release, { passive: false });
-  el.addEventListener('lostpointercapture', release);
+  /* Only OUR capture ending counts. A touch is implicitly captured by the
+     button it lands on; setPointerCapture(el) above moves it to the overlay,
+     which fires lostpointercapture on the BUTTON -- it bubbles here, and it
+     used to release GAS/BRAKE the instant they were pressed (iOS Safari).
+     Taps (horn, fire, phone) act on pointerdown, so only held pedals died. */
+  el.addEventListener('lostpointercapture', (e) => { if (e.target === el) release(e); });
   el.addEventListener('contextmenu', prevent);
 
   function setMode(mode) {
