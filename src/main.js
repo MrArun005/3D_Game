@@ -181,6 +181,25 @@ let moduleDone;
 const moduleReady = new Promise((r) => { moduleDone = r; });
 districtReady.catch(() => {});   // handled where it is awaited; this only stops an early 'unhandled rejection' before that
 await renderer.init();
+/* Safari's WebGPU throws "Range consisting of offset and length are out of
+   bounds" from getMappedRange on a zero-byte buffer (Chrome allows it), and
+   three maps every vertex buffer at creation -- so ONE empty attribute
+   anywhere killed every frame on an iPhone: buttons worked, the car never
+   moved (2026-09-24, Arun's screenshot). An empty attribute gets one zeroed
+   element instead: under three vertices it can never draw a triangle. */
+{
+  const au = renderer.backend?.attributeUtils;
+  if (au?.createAttribute) {
+    const create = au.createAttribute.bind(au);
+    au.createAttribute = (attribute, usage) => {
+      const a = attribute?.isInterleavedBufferAttribute ? attribute.data : attribute;
+      if (a?.array && a.array.byteLength === 0) {
+        a.array = new a.array.constructor(Math.max(1, a.itemSize || a.stride || 1));
+      }
+      return create(attribute, usage);
+    };
+  }
+}
 
 setBootProgress(35, 'Analyzing GPU architecture…');
 const gpuInfo = await detectGpuInfo(renderer);
