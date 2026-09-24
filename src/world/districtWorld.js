@@ -66,6 +66,10 @@ const hash = (x, z) => {
   return n - Math.floor(n);
 };
 
+let REGENT_PROXY = null;
+/** The Regent shadow proxies' material: they are only ever drawn by the far shadow cascades (layer SHADOW_FAR_LAYER alone). */
+const regentProxyMaterial = () => (REGENT_PROXY ??= new THREE.MeshBasicNodeMaterial({ color: 0x808080 }));
+
 /**
  * The tallest roofs within `radius` of a point, in world space, from the same
  * formula the massing uses -- so a sign placed here lands on a roof that exists.
@@ -209,6 +213,7 @@ export class DistrictWorld {
     this.gantryArmByNode = new Map();   // node id -> the edge index that carries its gantry
     this.nodeDegreeById = new Map();    // node id -> how many roads meet there   // chunk key -> [{x,y,z,colour,intensity,range}] block hero lights (game/lighting.js)     // chunk key -> [{x,y,z}] lamp heads (night light pool)
     this.facadeGroups = new Map();
+    this.regentMeshes = new Map();     // chunk key -> { mesh, proxy }: the Regent street wall, OUTSIDE the chunk bundle so three culls it by frustum (see the build step)
     this.parkedLod = new Map();        // chunk key -> { near, far, byBody } parked-car LOD sets (#cullFar swaps them; #buildSteps sets, releaseChunk deletes). Dropped by the lite/radius constructor edit in 22c1c0c and every chunk build died on .set -- keep it.
     this.isLite = !!opts.lite;
     this.propRadius = opts.lite ? 1 : (opts.propRadius ?? 2);
@@ -702,6 +707,11 @@ export class DistrictWorld {
         g.visible = _frustum.intersectsBox(_box);
       }
     }
+    // the Regent street wall casts its detailed shadow from the chunk you stand in only (the box proxies cast the far ones)
+    for (const [key, r] of this.regentMeshes) {
+      const [a, b] = key.split(',').map(Number);
+      r.mesh.castShadow = Math.max(Math.abs(a - ix), Math.abs(b - iz)) === 0;
+    }
     for (const [key, g] of this.propGroups) {
       const [a, b] = key.split(',').map(Number);
       const d = Math.max(Math.abs(a - ix), Math.abs(b - iz));
@@ -769,6 +779,11 @@ export class DistrictWorld {
         this.propGroups.delete(k);
         this.facadeGroups.delete(k);
         this.parkedLod.delete(k);
+        const rgm = this.regentMeshes.get(k);
+        if (rgm) {
+          for (const m of [rgm.mesh, rgm.proxy]) if (m) { this.scene.remove(m); m.geometry.dispose(); }
+          this.regentMeshes.delete(k);
+        }
         g.traverse((o) => {
           if (o.userData?.batched) this.catalogue.releaseBatched(o.userData.batched);   // city-wide batches: free the ids
           if (!o.isMesh) return;
@@ -2032,13 +2047,21 @@ export class DistrictWorld {
       const rg = yield* regentChunk(this.district, k, tick);
       if (rg) {
         rg.geo.userData.owned = true;
+        /* NOT in the chunk's bundle (review: the 3x3 ring's 295k regent
+           triangles drew in the main pass whatever way you faced, and cast into
+           all three cascades -- +1.2M a frame at kingsway-corner against the
+           4.0M budget). Out here three culls it by its sphere per camera, it
+           casts into cascade 0 only from the chunk you stand in (update), and a
+           box a building on SHADOW_FAR_LAYER alone (~12 triangles each, never
+           drawn in the main pass) throws the long shadows across the street. */
         const rm = new THREE.Mesh(rg.geo, tokyoFacadeMaterial());
         rm.name = 'regent';
-        rm.castShadow = true; rm.receiveShadow = true;
-        rm.frustumCulled = false;                       // bundle contents are culled at record time (see the header)
-        rm.userData.shell = true;                       // casts into the far cascades like a shell
-        rm.layers.enable(SHADOW_FAR_LAYER);
-        group.add(rm);
+        rm.castShadow = false; rm.receiveShadow = true;
+        rm.frustumCulled = true;
+        const pg = rg.boxes.length ? mergeGeometries(rg.boxes.map((b) => new THREE.BoxGeometry(2 * b.hw, b.height, 2 * b.hd).applyMatrix4(mat4(b.x, KERB_H + b.height / 2, b.z, b.angle, 1, 1, 1))), false) : null;
+        const proxy = pg ? new THREE.Mesh(pg, regentProxyMaterial()) : null;
+        if (proxy) { pg.userData.owned = true; proxy.name = 'regentShadow'; proxy.castShadow = true; proxy.layers.set(SHADOW_FAR_LAYER); }
+        this.regentMeshes.set(k, { mesh: rm, proxy });
         for (const b of rg.boxes) boxes.push(b);
         for (const l of rg.lamps) tokyoHeads.push(l);
       }
@@ -2552,6 +2575,8 @@ export class DistrictWorld {
     this.parkedByChunk.set(k, solidParked);
     this.solidsByChunk.set(k, boxes);
     this.scene.add(group);   // the last step: the chunk appears whole
+    const rgm = this.regentMeshes.get(k);
+    if (rgm) { this.scene.add(rgm.mesh); if (rgm.proxy) this.scene.add(rgm.proxy); }
   }
 
   /**

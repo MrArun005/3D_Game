@@ -405,6 +405,7 @@ test('generation is sliced per building and each slice is cheap', () => {
   assert.equal(yields, plan.byChunk.get(plan.buildings[0].chunk).length, 'one tick a building');
 });
 
+const solidsOf = (w, key) => w.solidsByChunk.get(key).filter((b) => b.regent).length;
 test('districtWorld builds it: one regent mesh on the Tokyo material, its boxes in the chunk solids; ?noregent takes both away', async () => {
   const { DistrictWorld } = await import('../src/world/districtWorld.js');
   const { SHADOW_FAR_LAYER } = await import('../src/core/renderer.js');
@@ -428,12 +429,20 @@ test('districtWorld builds it: one regent mesh on the Tokyo material, its boxes 
   const w = build();
   const g = w.chunks.get(key);
   assert.ok(g, 'the chunk built');
-  const meshes = [];
-  g.traverse((o) => { if (o.isMesh && o.name === 'regent') meshes.push(o); });
-  assert.equal(meshes.length, 1, 'one regent mesh: one draw');
-  const rm = meshes[0];
+  /* The street wall stands OUTSIDE the chunk's bundle (the budget fix): one
+     frustum-culled mesh, casting only from the chunk you stand in, and a box
+     proxy that only the far cascades draw. */
+  const inBundle = [];
+  g.traverse((o) => { if (o.isMesh && o.name === 'regent') inBundle.push(o); });
+  assert.equal(inBundle.length, 0, 'not recorded into the bundle');
+  const r = w.regentMeshes.get(key);
+  assert.ok(r && r.mesh.parent, 'one regent mesh in the scene: one draw');
+  const rm = r.mesh;
   assert.equal(rm.material.name, 'tokyo_facade_detail');
-  assert.ok(rm.castShadow && rm.receiveShadow && rm.userData.shell && rm.layers.isEnabled(SHADOW_FAR_LAYER) && rm.frustumCulled === false);
+  assert.ok(rm.receiveShadow && rm.frustumCulled === true && !rm.layers.isEnabled(SHADOW_FAR_LAYER));
+  assert.equal(rm.castShadow, true, 'the chunk it stands in casts its detailed shadow');
+  assert.ok(r.proxy && r.proxy.castShadow && r.proxy.layers.isEnabled(SHADOW_FAR_LAYER) && !r.proxy.layers.isEnabled(0), 'the shadow proxy: far cascades only');
+  assert.ok(r.proxy.geometry.index.count / 3 <= 12 * solidsOf(w, key), 'about 12 triangles a box');
   assert.ok(rm.geometry.userData.owned, 'the release sweep frees it');
   const solids = w.solidsByChunk.get(key).filter((b) => b.regent);
   assert.ok(solids.length >= expect.length, `${solids.length} regent boxes in the chunk's solids`);
@@ -444,6 +453,7 @@ test('districtWorld builds it: one regent mesh on the Tokyo material, its boxes 
     const w2 = build(), g2 = w2.chunks.get(key);
     let any = 0;
     g2.traverse((o) => { if (o.name === 'regent') any++; });
+    any += w2.regentMeshes.size;
     assert.equal(any, 0, 'no regent mesh');
     assert.equal(w2.solidsByChunk.get(key).filter((b) => b.regent).length, 0, 'no regent boxes');
   } finally { delete globalThis.location; }
