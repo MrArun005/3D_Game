@@ -86,7 +86,7 @@ if (asset === 'tokyo') {
   setTokyoNight(+(q.get('night') ?? 0));
   let z = 0, tris = 0;
   for (const t of types) {
-    const [hw, hd, h] = SIZE[t];
+    const [hw, hd, h0] = SIZE[t], h = +(q.get('h' + t) ?? h0);   // &hstreet=60: one type at another plot height
     const b = TOKYO_TYPES[t].build(seed, hw, hd, h, SET_PIECES.has(t) ? { toward: [0.7, 0.7] } : {});
     const m = new THREE.Mesh(b.geo, mat);
     m.castShadow = m.receiveShadow = true;

@@ -110,7 +110,7 @@ export const ART_CAP = { warehouse: [22, 20], glassTower: [20, 20], officeMidris
    4.5 m (median +2.3). Both are brickRow's clamps; if the skyline reads wrong,
    widen them there rather than dropping 'mid' from the hero block. */
 const MAP = {
-  'OLD QUARTER':   { row: ['brickRow', 0.86], mid: ['brickRow', 0.86] },
+  'OLD QUARTER':   { row: ['brickRow', 1.0], mid: ['brickRow', 1.0] },   // 0.86 until 2026-09-24: the one plot in seven left as a massing box was the "old building" in the compact city
   'MARROW HILL':   { row: ['brickRow', 0.04], yard: ['warehouse', 0.7] },
   ASHMOOR:         { row: ['brickRow', 0.03], yard: ['warehouse', 0.7] },
   'VELLERY ROW':   { row: ['loft', 0.03], mid: ['loft', 0.03] },

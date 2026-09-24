@@ -1410,7 +1410,10 @@ export function buildTokyoSignStack(seed, hw, hd, h, ctx = {}) {
      down"). Its own wall, canopy, fascia and roof -- the corner's blue-over-
      green board and bookshop are the corner's. */
   const street = ctx.variant === 'street';
-  const H = 8 * 3.4 + 1.8, wall = street ? pick([0xe8e8e6, 0xd9d6cf, 0xcfd3d6, 0xe2ddd2, 0xbfc3c6]) : 0xe8e8e6;
+  /* A street stack takes the plot's height (6-13 storeys) so the district is
+     not one 29 m cornice line; the corner is the photo's eight. */
+  const n = street ? clamp(Math.round((h - 1.8) / 3.4), 6, 13) : 8;
+  const H = n * 3.4 + 1.8, wall = street ? pick([0xe8e8e6, 0xd9d6cf, 0xcfd3d6, 0xe2ddd2, 0xbfc3c6]) : 0xe8e8e6;
   const canopy = street ? pick([[0x2a57c8, [0.12, 0.3, 1.0]], [0xc8283c, [1.0, 0.2, 0.25]], [0x1f7a4a, [0.2, 0.9, 0.45]], [0x202226, [1.0, 0.8, 0.4]], [0xd8a018, [1.0, 0.75, 0.2]]]) : [0x2a57c8, [0.12, 0.3, 1.0]];
   const [sx, sz] = crossingCorner(ctx, hd, rnd);
   const F = faces(hw, hd), [fa, fb] = streetFaces(F, sx, sz, ctx);
@@ -1423,6 +1426,8 @@ export function buildTokyoSignStack(seed, hw, hd, h, ctx = {}) {
   proud(parts, box(fa.w, 0.4, 0.8, canopy[0], canopy[1], 0.35), fa, 0, 3.4, 0, 0.8);      // the flat canopy (blue on the corner)
   proud(parts, box(W, 2.0, 0.3, 0xf2f2ee, [1, 1, 1], 0.35), fa, 0, 5.1, 0, 0.3);                  // the white fascia box
   { const bw = Math.min(W - 0.4, 7.6), [x, z] = on(fa, 0, 0.32); boards.push({ x, y: 5.1, z, yaw: fa.yaw, w: bw, h: clamp(bw / 4.2, 0.8, 1.8), kind: 'h', tile: street ? undefined : H_TILE.books }); }
+  if (n < 8) lightboxRows(parts, boards, lamps, rnd, pick, fa, 0, W, 6.5, H - 1.2);   // too low for the screen: signs to the parapet
+  else {
   {
     // the poster zone: a dark panel, then a portrait poster in a grey frame (the centre of a screen ad, printed)
     const pw = Math.min(7.0, W - 2.9), ph = Math.min(6.8, pw * 0.97), px = W / 2 - pw / 2 - 0.2, y = 6.5 + ph / 2;
@@ -1443,6 +1448,8 @@ export function buildTokyoSignStack(seed, hw, hd, h, ctx = {}) {
     lamps.push(lampAt(lx, 15.2, lz, [0.84, 0.9, 1.0], 100, 36, 2.2));   // at the foot band, not on the picture
   }
   for (let k = 0; k < 5; k++) pane(parts, fa, -2 + k, 25.5, 0.6, 0.6, 0x27313a, grnd() < 0.5 ? COOL : null, 0.2, 0.9);   // the crown's small windows
+  for (let st = 8; st < n; st++) pane(parts, fa, 0, st * 3.4 + 1.7, W - 1.2, 1.4, 0x27313a, grnd() < 0.4 ? COOL : null, 0.16, grnd());   // a taller stack's upper storeys
+  }
 
   // ---- the other street face: rows of lightboxes round the corner, the shop at its foot
   const Wb = fb.w - 1.2, sb = -(fb.t[0] * sx + fb.t[1] * sz) * 0.2;
@@ -1453,7 +1460,7 @@ export function buildTokyoSignStack(seed, hw, hd, h, ctx = {}) {
   // ---- the plain faces: a window strip a storey
   for (const f of F) {
     if (f === fa || f === fb) continue;
-    for (let st = 1; st < 8; st++) pane(parts, f, 0, st * 3.4 + 1.7, f.w - 1.6, 1.4, 0x27313a, grnd() < 0.4 ? COOL : null, 0.16, grnd());
+    for (let st = 1; st < n; st++) pane(parts, f, 0, st * 3.4 + 1.7, f.w - 1.6, 1.4, 0x27313a, grnd() < 0.4 ? COOL : null, 0.16, grnd());
   }
 
   // ---- the roof board: blue over green, 9.5 x 10.5, on a steel frame a metre over the parapet, facing the crossing
@@ -1481,7 +1488,7 @@ export function buildTokyoSignStack(seed, hw, hd, h, ctx = {}) {
     for (const e of [-1, 1]) { const [px, pz] = on(fa, e * (bw / 2 - 0.4), -1.7); parts.push(at(metal(0.3, 1.6, 0.3, 0x2b2e33), px, H + 0.8, pz)); }
   }
   const roofTop = roof < 0.45 ? 1.6 + 2 * Math.min(fa.w * 0.95, 9.5) * 0.55 + 0.1 : roof < 0.75 ? 1.7 + Math.min(fa.w * 0.9, 12) / 2 : 0.6;
-  return finish(parts, finishOf(grnd, 0.3), { boards, lamps, height: H + roofTop, floors: 9 });
+  return finish(parts, finishOf(grnd, 0.3), { boards, lamps, height: H + roofTop, floors: n + 1 });
 }
 
 /**
@@ -1727,10 +1734,19 @@ export function pickTokyoType(seed, hw, hd, h, ctx = {}) {
   /* Within 160 m of the Shibuya crossing (ctx.near, districtWorld) the street
      is the photos': sign-covered mid-rises, pencils, the odd walk-up or store
      -- no office tower, mansion, car park or machiya. Its own stream. */
-  if (ctx.near != null && ctx.near < 160) {
+  if (ctx.near != null) {
     const wn = { street: 1.4, walkup: small >= 40 ? 0 : 0.5 };
     if (F <= 12) wn.pencil = 0.9;
     if (F >= 22 && D >= 16) wn.depato = 0.3;
+    /* Past the crossing's own streets (Arun, 2026-09-24: "new builds are great
+       but again we have old buildings which's pulling down") the same stream
+       runs the whole district, with the skyline kept: office towers on the
+       tallest plots, the odd mansion block among the mid-rises. */
+    if (ctx.near >= 160) {
+      if (wn.walkup) wn.walkup = 0.35;
+      if (h >= 70 && small >= 12) wn.tower = ctx.block === 'tower' ? 1.4 : 1.0;
+      if (F >= 11 && h >= 40 && h < 70) wn.mansion = 0.25;
+    }
     const names = Object.keys(wn).filter(fits);
     let sum = 0; for (const k of names) sum += wn[k];
     let r = stream(seed, 0x5b1a)() * sum;

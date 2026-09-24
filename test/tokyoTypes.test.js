@@ -451,3 +451,28 @@ test('the scramble corners get their set piece whatever the plot would roll, and
   // the set pieces are only ever handed out: no roll lands on one
   for (let s = 1; s <= 400; s++) assert.ok(!LANDMARK.includes(pickTokyoType(s * 97, 4 + (s % 11), 4 + (s % 13), 10 + (s % 17) * 8)));
 });
+
+test('past the crossing the whole district is the photo street, with towers kept on the tall plots', () => {
+  const tally = {};
+  for (let i = 0; i < 400; i++) {
+    const h = 20 + (i % 9) * 8, t = pickTokyoType(1000 + i * 7919, 8, 7 + (i % 5), h, { near: 400, block: h >= 70 ? 'tower' : 'mid' });
+    tally[t] = (tally[t] ?? 0) + 1;
+  }
+  assert.ok(tally.street > 400 * 0.45, `street ${tally.street}`);
+  assert.ok((tally.walkup ?? 0) < 400 * 0.2, `walkup ${tally.walkup}`);
+  assert.ok(tally.tower > 0, 'the skyline keeps its towers');
+  for (const t of ['carpark', 'machiya']) assert.equal(tally[t] ?? 0, 0, t);
+});
+
+test('a street stack follows its plot height, 6 to 13 storeys, and stays in bounds', () => {
+  const heights = [];
+  for (const h of [18, 29, 40, 60]) {
+    const b = TOKYO_TYPES.street.build(42, 8, 6, h, { toward: [0.7, 0.7] });
+    heights.push(b.floors);
+    b.geo.computeBoundingBox();
+    const bb = b.geo.boundingBox;
+    assert.ok(bb.max.x <= 8 + 2.5 && bb.min.x >= -8 - 2.5, `h ${h}: x ${bb.min.x}..${bb.max.x}`);
+    assert.ok(b.boards.length > 4, `h ${h}: ${b.boards.length} boards`);
+  }
+  assert.deepEqual(heights, [7, 9, 12, 14]);   // floors = storeys + the roof: 6, 8, 11, 13 (the cap)
+});

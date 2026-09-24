@@ -108,6 +108,24 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
 
 ## Current state
 
+- **"Old buildings pulling it down" (2026-09-24).** Census of the compact
+  city (`scratchpad/route-census.mjs` recipe: replay the chunk builder's
+  route per footprint in node): it holds NO Kingsway footprints (the Regent
+  wall fills that grid), 201 Little Tokyo plots, 98 Old Quarter plots. So the
+  old look was (1) Tokyo walk-ups, mansions, car parks and machiya off the
+  crossing and (2) the Old Quarter's one-in-seven massing boxes. Fixes:
+  `pickTokyoType`'s photo-street stream (street 1.4 / pencil / depato /
+  walk-up) now runs the WHOLE district; past 160 m walk-ups drop to 0.35,
+  office towers stay on h >= 70 plots and a 0.25 mansion stays among 40-70 m
+  mid-rises (skyline). The `street` stack follows the plot's height, 6-13
+  storeys (below 8, lightboxes replace the screen). District census: walkup
+  105 -> 40, street 28 -> 103, triangles 543k -> 297k. OLD QUARTER brickRow
+  share 0.86 -> 1.0 (14 plots under 6 m stay boxes). Tests for both.
+  Regent buildings stand beside roads x~2484 (z 1676-1766) and z~1364
+  (x 2771-2882); the render harness must set `photo.yaw/pitch` itself
+  (photo mode re-aims the camera from them every frame, so lookAt alone
+  shot six frames of the same street).
+
 - **Shibuya scramble + night pass (2026-09-23, from Arun's photos --
   `docs/REF-SHIBUYA.md`, `docs/REF-REGENT-STREET.md` say line by line what
   each photo shows).** The Little Tokyo crossroads nearest the spawn (node
