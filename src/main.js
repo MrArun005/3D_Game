@@ -2359,6 +2359,15 @@ function frame() {
       if (bootMsg) bootMsg.textContent = 'frame error: ' + String(e && e.message || e).slice(0, 120);
       setTimeout(() => { if (boot) { boot.remove(); boot = null; } }, 2500);
       try { hud?.flash?.('FRAME ERROR · ' + String(e && e.message || e).slice(0, 60)); } catch { /* the HUD may be what broke */ }
+      /* ...and it STAYS on screen (2026-09-24): a phone has no console, and a
+         throw before the physics step leaves every button working while the
+         car never moves -- the flash was gone before anyone could read it. */
+      try {
+        const d = document.createElement('div');
+        d.style.cssText = 'position:fixed;left:50%;top:6px;transform:translateX(-50%);z-index:99;max-width:92vw;padding:4px 10px;border-radius:6px;background:rgba(160,20,30,.85);color:#fff;font:600 10px ui-monospace,Menlo,monospace;pointer-events:none';
+        d.textContent = 'ERROR: ' + String(e && e.message || e).slice(0, 140) + ' @ ' + String(e?.stack || '').split('\n').slice(1, 3).join(' ').replace(/https?:\/\/[^/]+/g, '').slice(0, 160);
+        document.body.appendChild(d);
+      } catch { /* nothing left to report with */ }
     }
     /* The render sits at the END of frameBody, so a throw anywhere before it
        used to mean no render at all: a black screen every frame while the
