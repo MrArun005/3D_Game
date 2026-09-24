@@ -273,7 +273,8 @@ test('Traffic: the quota lands two buses in an 18-car pool, with the London spec
 });
 
 test('Traffic: buses spawn with room on a whole edge, keep their length in the queue, stop their NOSE at the line, and swap to the LOD', async (tc) => {
-  const { t, district } = await fleet(18, '?london=all');   // a bus in three, the rest cabs: every interaction happens
+  /* 24 cars (was 18, 2026-09-24): with the Quadrant's road changes 18 cars never queued behind a bus in 90 s, so the gap below went unchecked -- and at 24-30 it FAILED (0.75 m, then -1.65 m into a bus: a leader round a bend was unseen, traffic.js #leaderLimit). 24 makes the meetings happen. */
+  const { t, district } = await fleet(24, '?london=all');   // a bus in three, the rest cabs: every interaction happens
   const player = { x: 2354, z: 1408, speed: 0, yaw: 0, fwdSpeed: 0 };
   const wasLive = new Map();
   let spawns = 0, followers = 0, minFollow = Infinity, atLine = 0, minNose = Infinity, lodSwaps = 0;

@@ -1889,7 +1889,31 @@ export class Traffic {
       const along = dx * fx + dz * fz;
       if (along <= 0 || along >= look || along >= nearest) continue;
       const side = Math.abs(dx * -fz + dz * fx);
-      if (side < 2.2) { nearest = along; leaderSpeed = other.speed ?? 0; leaderExtra = other.spec.long ? other.spec.L * 0.5 - 2.31 : 0; }
+      if (side < 2.2) { nearest = along; leaderSpeed = other.speed ?? 0; leaderExtra = other.spec.long ? other.spec.L * 0.5 - 2.31 : 0; continue; }
+      /* ...or ahead ROUND A BEND (2026-09-24). The straight corridor above
+         is the car's own heading, and a stopped bus 18 m on past a 7 degree
+         kink in the road stands 2.2 m off it: unseen, so the cab behind sped
+         BACK UP (6.5 -> 10 m/s at 15 m) and ran into its tail (the -1.65 m in
+         the bus scenario). So ask the car's own path: the leader is ahead if
+         it stands within 2.2 m of the path over the next `look` metres, at
+         that path distance. Only for cars already inside the reach gate and
+         heading the same way, so the corridor test still settles most pairs. */
+      const oy = Math.cos(other.yaw) * fx - Math.sin(other.yaw) * fz;
+      if (oy < 0.8) continue;
+      const P = car.path;
+      for (let k = 1; k < P.length; k++) {
+        const a0 = P[k - 1], a1 = P[k];
+        if (a1[2] < car.s) continue;
+        if (a0[2] > car.s + look) break;
+        const vx = a1[0] - a0[0], vz = a1[1] - a0[1], l2 = vx * vx + vz * vz || 1;
+        const u = Math.max(0, Math.min(1, ((other.x - a0[0]) * vx + (other.z - a0[1]) * vz) / l2));
+        const qx = a0[0] + vx * u - other.x, qz = a0[1] + vz * u - other.z;
+        if (qx * qx + qz * qz < 2.2 * 2.2) {
+          const ps = a0[2] + (a1[2] - a0[2]) * u - car.s;
+          if (ps > 0 && ps < look && ps < nearest) { nearest = ps; leaderSpeed = other.speed ?? 0; leaderExtra = other.spec.long ? other.spec.L * 0.5 - 2.31 : 0; }
+          break;
+        }
+      }
     }
     {
       const dx = player.x - cx, dz = player.z - cz;
