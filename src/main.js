@@ -151,7 +151,21 @@ let bootStall = null;
 const armBootStall = () => {
   clearTimeout(bootStall);
   bootStall = setTimeout(() => {
-    if (boot) { console.warn('boot: no progress for 12 s, dropping the loading screen'); boot.remove(); boot = null; }
+    if (!boot) return;
+    /* Never drop it before the car is at its spawn (2026-09-24, Arun: "it
+       lands at the map's corner bottom left, then takes me somewhere else").
+       A slow phone spends >12 s parsing the district: the guard tore the
+       screen away with the car still at the origin, and the spawn jumped it
+       across the map a moment later. Until the district lands it only says
+       so and waits again. */
+    let waiting = true;   // a `let` read before its line runs (a top-level await still pending) throws: that is 'not landed yet'
+    try { waiting = !districtRef && !districtFailed; } catch { /* TDZ */ }
+    if (waiting) {
+      if (bootMsg) bootMsg.textContent = 'Still loading the city…';
+      armBootStall();
+      return;
+    }
+    console.warn('boot: no progress for 12 s, dropping the loading screen'); boot.remove(); boot = null;
   }, 12000);
 };
 armBootStall();
