@@ -305,8 +305,14 @@ export class GameClock {
          lit FROM the street (Regent Street's floodlit stone, Shibuya's signs);
          the moon is a rim, not a key. Measured side by side in the headless
          render before committing. */
-      sunIntensity = 0.10;
-      hemiIntensity = 0.06;
+      /* 0.10 / 0.06 -> 0.15 / 0.10 (2026-09-24, Arun: "night lighting should
+         be a little better"): at the floor the roads and every wall above the
+         shops went to black, so a street read as signs floating in nothing.
+         Half-way back, with a warmer ground bounce (the city's own light off the
+         pavement) so walls separate from the sky without going day-for-night. */
+      this.hemiGround.setRGB(0.055, 0.05, 0.05);
+      sunIntensity = 0.15;
+      hemiIntensity = 0.10;
     }
 
     // Apply to scene lights if provided

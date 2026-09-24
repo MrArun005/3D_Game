@@ -1275,7 +1275,7 @@ export function buildTokyoQFront(seed, hw, hd, h, ctx = {}) {
   loopWall(store, pts, 0, L1, 0, true);
   loopWall(cafe, pts, L2, POD - 0.8, 0, true);
   for (let f = 0; f < N; f++) { const r = grnd(); loopWall(r < 0.45 ? off : r < 0.85 ? cool : warm, pts, POD + f * OH, POD + (f + 1) * OH, 0, true); }
-  parts.push(shaped(store, TINT, WARM, 0.6, 0, gs), shaped(cafe, 0x3a2a1c, WARM, 0.75, 0, gs));
+  parts.push(shaped(store, TINT, WARM, 0.5, 0, gs), shaped(cafe, 0x3a2a1c, WARM, 0.55, 0, gs));   // 0.6/0.75 read as one peach sheet at night
   for (const [sh, em, k] of [[off, null, 1], [cool, COOL, 0.2], [warm, WARM, 0.22]]) if (!sh.empty) parts.push(shaped(sh, TINT, em, k, 0, gs));
 
   // white: the canopy slab over the store, the fascia band, the band over the cafe, the glass top
@@ -1321,8 +1321,12 @@ export function buildTokyoQFront(seed, hw, hd, h, ctx = {}) {
       const a = half - (2 * half * (i + 0.5)) / 8, rx = dx * Math.cos(a) - (Math.cos(yaw)) * Math.sin(a), rz = dz * Math.cos(a) - (-Math.sin(yaw)) * Math.sin(a);
       parts.push(at(box(0.08, 0.12, (arc / 8) + 0.02, 0x16161a, MAGENTA, 1.8), arcX + rx * (Rs + 0.02), yy, arcZ + rz * (Rs + 0.02), Math.atan2(-rz, rx)));
     }
-    lamps.push(lampAt(arcX + dx * (Rs + 4), y0, arcZ + dz * (Rs + 4), [0.84, 0.9, 1.0], 110, 40, 2.4));
-    lamps.push(lampAt(arcX + dx * (Rs + 12), 11, arcZ + dz * (Rs + 12), [0.62, 0.48, 1.0], 170, 55, 0));   // the violet spill on the crossing
+    /* The screen's light belongs on the CROSSING, not on the building: 4 m
+       out at 110 it floodlit the white fins lilac-white and the night photos'
+       "glass dark with a thin white grid" went (2026-09-24). Both pushed out
+       over the road and down. */
+    lamps.push(lampAt(arcX + dx * (Rs + 11), y0 - 4, arcZ + dz * (Rs + 11), [0.84, 0.9, 1.0], 55, 34, 2.4));
+    lamps.push(lampAt(arcX + dx * (Rs + 18), 7, arcZ + dz * (Rs + 18), [0.62, 0.48, 1.0], 120, 50, 0));   // the violet spill on the crossing
   }
 
   // poster banners: one tall one on each street face, at its far end, proud of the fins
@@ -1339,13 +1343,13 @@ export function buildTokyoQFront(seed, hw, hd, h, ctx = {}) {
     const r = Rb + 0.32, bw = 3.6, bh = 0.8;
     parts.push(at(metal(0.12, bh + 0.2, bw + 0.2, 0x141619), arcX + dx * r, L1 + 0.25 + (L2 - L1 - 0.25) / 2, arcZ + dz * r, Math.atan2(-dz, dx)));
     boards.push({ x: arcX + dx * (r + 0.07), y: L1 + 0.25 + (L2 - L1 - 0.25) / 2, z: arcZ + dz * (r + 0.07), yaw: Math.atan2(dx, dz), w: bw, h: bh, kind: 'h', tile: H_TILE.white });
-    lamps.push(lampAt(arcX + dx * (Rb + 2.5), 2.6, arcZ + dz * (Rb + 2.5), WARM, 120, 32, 2.0));
+    lamps.push(lampAt(arcX + dx * (Rb + 4), 2.6, arcZ + dz * (Rb + 4), WARM, 60, 24, 2.0));   // the pavement, not the podium glass
   }
   // floodlights along the crown rim over the big curve, and on the two far corners
   for (const a of [-0.6, 0.6]) {
     const ca = Math.cos(a), sa = Math.sin(a), rx = dx * ca - dz * sa, rz = dz * ca + dx * sa;
     parts.push(at(metal(0.5, 0.35, 0.5, 0x2b2e33), arcX + rx * (Rb + 0.5), H + 0.2, arcZ + rz * (Rb + 0.5)));
-    lamps.push(lampAt(arcX + rx * (Rb + 0.5), H + 0.1, arcZ + rz * (Rb + 0.5), [1.0, 0.95, 0.86], 50, 24, 3.4));
+    lamps.push(lampAt(arcX + rx * (Rb + 0.5), H + 0.1, arcZ + rz * (Rb + 0.5), [1.0, 0.95, 0.86], 28, 20, 3.4));   // the four star glares; the light itself kept off the fins
   }
   return finish(parts, finishOf(grnd, 0.1), { boards, lamps, height: H, floors: N + 3 });
 }

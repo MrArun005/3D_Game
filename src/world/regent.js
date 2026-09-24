@@ -535,6 +535,7 @@ export function regentPlan(district) {
    ========================================================================= */
 
 const { SURF } = TOKYO_KIT;
+const FLOOD_BASE = 0.11, FLOOD_TOP = 0.035, FLOOD_FALL = 8;   // the floodlit stone's emit: over the shops, high up, fall-off (m)
 const S_WALL = (v) => SURF.WALL + v;                    // v < 0.45: the plaster/stone finish, v shifts the streaks per building
 const S_TOP = SURF.WALL + 0.1;                          // tops take plaster (tokyo.js wallFinish's rule)
 const S_PAINT = SURF.PAINT + PAINT_VARIANT.PLAIN, S_RIBS = SURF.PAINT + PAINT_VARIANT.RIBS;
@@ -609,6 +610,7 @@ class Mesher {
     const flat = Math.abs(nrm[1]) > 0.7, rl = Math.hypot(nrm[2], nrm[0]) || 1, rx = nrm[2] / rl, rz = -nrm[0] / rl;
     const vx = nrm[1] * rz, vy = nrm[2] * rx - nrm[0] * rz, vz = -nrm[1] * rx;
     const { P, N, U, C, E, S } = this;
+    const lit = surf >= SURF.WALL && surf < SURF.WALL + 1 && Math.abs(nrm[1]) < 0.3;   // an upright stone face
     for (let i = 0; i < m; i++) {
       const p = c[i], v = k + i, x = p[0] - this.ox, z = p[2] - this.oz;
       P[v * 3] = p[0]; P[v * 3 + 1] = p[1]; P[v * 3 + 2] = p[2];
@@ -617,8 +619,19 @@ class Mesher {
       else if (flat) { U[v * 2] = x; U[v * 2 + 1] = nrm[1] > 0 ? -z : z; }
       else { U[v * 2] = x * rx + z * rz; U[v * 2 + 1] = x * vx + p[1] * vy + z * vz; }
       C[v * 3] = rgb[0]; C[v * 3 + 1] = rgb[1]; C[v * 3 + 2] = rgb[2];
-      const e = emit ? (per ? emit[i] : emit) : Z3;
-      E[v * 3] = e[0]; E[v * 3 + 1] = e[1]; E[v * 3 + 2] = e[2];
+      if (!emit && lit) {
+        /* Floodlit stone (Arun, 2026-09-24: "night lighting should be a little
+           better"; the photos: Regent Street's Portland stone glows warm from
+           the shop light below and the cornice floods above). A faint warm emit
+           on every upright stone face, strongest over the shopfronts and fading
+           up the wall. The Tokyo material scales emit by its night intensity
+           (0.05 by day: nothing), so this costs no light and no draw. */
+        const f = FLOOD_TOP + FLOOD_BASE * Math.exp(-Math.max(0, p[1]) / FLOOD_FALL);
+        E[v * 3] = rgb[0] * f; E[v * 3 + 1] = rgb[1] * f * 0.86; E[v * 3 + 2] = rgb[2] * f * 0.66;
+      } else {
+        const e = emit ? (per ? emit[i] : emit) : Z3;
+        E[v * 3] = e[0]; E[v * 3 + 1] = e[1]; E[v * 3 + 2] = e[2];
+      }
       S[v] = surf;
     }
     const I = this.I;
