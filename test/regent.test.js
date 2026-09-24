@@ -91,7 +91,8 @@ test('the plan lines Kingsway: 200+ buildings on 6 km of frontage, corners with 
 /* Regent Street's far side (district.js #regentStreet): a 60 m strip south of the road is planned as Kingsway. */
 const onRegentSouth = (x, z) => {
   const RS = city.regentStreet; if (!RS) return false;
-  const ux = RS.b[0] - RS.a[0], uz = RS.b[1] - RS.a[1], L = Math.hypot(ux, uz), rx = x - RS.a[0], rz = z - RS.a[1];
+  const [SA, SB] = RS.strip ?? [RS.a, RS.b];
+  const ux = SB[0] - SA[0], uz = SB[1] - SA[1], L = Math.hypot(ux, uz), rx = x - SA[0], rz = z - SA[1];
   const t = (rx * ux + rz * uz) / L, sd = (rx * uz - rz * ux) / L;
   return t > 0 && t < L && sd < 0 && sd > -60;
 };

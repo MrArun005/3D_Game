@@ -182,7 +182,9 @@ export class District {
     for (const k of along) { data.roads[k].width = REGENT_STREET_W; data.roads[k].name = 'REGENT STREET'; }
     for (const e of data.graph?.edges ?? []) if (along.has(e.road)) e.width = REGENT_STREET_W;
     if (data.graph) this.#regentSideStreets(data, along, A, B, L, off);
-    return { road: i, a: r.points[0], b: r.points[1], width: REGENT_STREET_W };
+    const quadrant = data.graph ? this.#quadrant(data, along, off) : null;
+    // `strip`: the line as the file drew it, which the planner's far-side strip is measured along
+    return { road: i, a: r.points[0], b: r.points[r.points.length - 1], strip: [A, B], width: REGENT_STREET_W, quadrant };
   }
 
   /**
@@ -250,6 +252,87 @@ export class District {
     }
     // an end node nothing reaches any more goes too
     G.nodes = G.nodes.filter((n) => deg.has(n.id) || !touched.has(n.id));
+  }
+
+  /**
+   * THE QUADRANT (2026-09-24, Arun's three photos: the curve of Regent Street
+   * into Piccadilly Circus -- one sweep, stone both sides, one cornice). The
+   * compact grid has no curve, so one is laid: a circular arc TANGENT to
+   * Regent Street at its junction (2056, 1768), across the empty block north
+   * of it, to the junction at (1934, 1659) -- radius ~123 m, ~190 m of arc
+   * (the real Quadrant runs ~200-250 m). Regent Street's width, its own road
+   * and graph edge; world/regent.js lines both sides and the wedge it cuts
+   * off the corner becomes the building between the two curving roads.
+   * Returns { road, edge } or null when the file lacks either junction.
+   */
+  #quadrant(data, along, off) {
+    const G = data.graph, find = (x, z) => G.nodes.find((n) => Math.hypot(n.x - x, n.y - z) < 4);
+    const a = find(2056, 1768), b = find(1934, 1659);
+    if (!a || !b) return null;
+    // tangent to Regent Street (heading -X) at a: the centre is straight off it, R from |b - c| = R
+    const dx = b.x - a.x, dz = b.y - a.y, R = (dx * dx + dz * dz) / (2 * -dz);   // c = (a.x, a.y - R)
+    const cx = a.x, cz = a.y - R, t0 = Math.atan2(a.y - cz, a.x - cx), t1 = Math.atan2(b.y - cz, b.x - cx);
+    let dt = t1 - t0; while (dt > Math.PI) dt -= 2 * Math.PI; while (dt < -Math.PI) dt += 2 * Math.PI;
+    const n = Math.max(8, Math.round((Math.abs(dt) * R) / 8)), pts = [];
+    for (let i = 0; i <= n; i++) { const t = t0 + (dt * i) / n; pts.push([cx + Math.cos(t) * R, cz + Math.sin(t) * R]); }
+    pts[0] = [a.x, a.y]; pts[n] = [b.x, b.y];
+    const road = data.roads.push({ class: 'street', name: 'REGENT STREET', width: REGENT_STREET_W, points: pts }) - 1;
+    const id = G.edges.reduce((m, e) => Math.max(m, e.id), -1) + 1;
+    const edge = { road, a: a.id, b: b.id, points: pts.map((p) => [p[0], p[1]]), class: 'street', width: REGENT_STREET_W, lanes: 2, oneway: false, length: Math.abs(dt) * R, id };
+    G.edges.push(edge);
+    /* The curve REPLACES the corner, as the real street does: Regent
+       Street's straight run west of a, the corner node's other arms (the
+       cross street's block from b down to it and the stub south of it) and
+       the stubs laid along the line out there all go, so the land inside the
+       sweep is building land. The western boundary roads still meet at the
+       far end, so nothing is cut off; the compact graph stays one component. */
+    const corner = G.nodes.find((nd) => Math.hypot(nd.x - b.x, nd.y - a.y) < 6);
+    const dropped = new Set(G.edges.filter((e) => {
+      if (e === edge) return false;
+      if (corner && (e.a === corner.id || e.b === corner.id)) return true;
+      if (!along.has(e.road)) return false;
+      const na = G.nodes.find((nd) => nd.id === e.a), nb = G.nodes.find((nd) => nd.id === e.b);
+      return na.x < a.x + 1 && nb.x < a.x + 1 && off([na.x, na.y]) < 8 && off([nb.x, nb.y]) < 8;   // west of a, a itself included
+    }));
+    const roads = new Set([...dropped].map((e) => e.road)), ends = new Set([...dropped].flatMap((e) => [e.a, e.b]));
+    G.edges = G.edges.filter((e) => !dropped.has(e));
+    for (const k of roads) this.#rebuildRoad(data, k);
+    const deg = new Map();
+    for (const e of G.edges) for (const nid of [e.a, e.b]) deg.set(nid, (deg.get(nid) ?? 0) + 1);
+    for (const nd of G.nodes) if (ends.has(nd.id) || nd === a || nd === b) { const k = deg.get(nd.id) ?? 0; nd.kind = k >= 4 ? 'cross' : k === 3 ? 'tee' : k === 2 ? 'bend' : 'end'; }
+    G.nodes = G.nodes.filter((nd) => deg.has(nd.id));
+    return { road, edge: id, R, length: edge.length, start: [a.x, a.y], dropped: dropped.size };
+  }
+
+  /** A road's polyline from the graph edges it still has: the chain of their points, in order (empty when none are left). */
+  #rebuildRoad(data, k) {
+    const es = data.graph.edges.filter((e) => e.road === k), road = data.roads[k];
+    if (!es.length) { road.points = []; return; }
+    const at = new Map();
+    for (const e of es) for (const nid of [e.a, e.b]) (at.get(nid) ?? at.set(nid, []).get(nid)).push(e);
+    // start at an end of the chain nearest the road's old first point
+    const tips = [...at].filter(([, l]) => l.length === 1).map(([nid]) => nid);
+    const p0 = road.points[0] ?? [0, 0], first = (e, nid) => (e.a === nid ? e.points : e.points.slice().reverse());
+    const nodeXY = (nid) => { const e = at.get(nid)[0], pts = e.a === nid ? e.points : e.points.slice().reverse(); return pts[0]; };
+    let cur = tips.length ? tips.reduce((m, t) => (Math.hypot(nodeXY(t)[0] - p0[0], nodeXY(t)[1] - p0[1]) < Math.hypot(nodeXY(m)[0] - p0[0], nodeXY(m)[1] - p0[1]) ? t : m)) : es[0].a;
+    const used = new Set(), out = [];
+    for (;;) {
+      const e = (at.get(cur) ?? []).find((q) => !used.has(q));
+      if (!e) break;
+      used.add(e);
+      const pts = first(e, cur);
+      for (let i = out.length ? 1 : 0; i < pts.length; i++) out.push([pts[i][0], pts[i][1]]);
+      cur = e.a === cur ? e.b : e.a;
+    }
+    // an edge's points may stop short of its junctions: run the road into the nodes at both ends
+    const xy = (nid) => { const nd = data.graph.nodes.find((q) => q.id === nid); return nd ? [nd.x, nd.y] : null; };
+    if (out.length >= 2) {
+      const startId = [...at.keys()].find((nid) => at.get(nid).length === 1 && Math.hypot(nodeXY(nid)[0] - out[0][0], nodeXY(nid)[1] - out[0][1]) < 0.5);
+      const n0 = startId !== undefined ? xy(startId) : null, n1 = xy(cur);
+      if (n0 && Math.hypot(n0[0] - out[0][0], n0[1] - out[0][1]) > 0.5) out.unshift(n0);
+      if (n1 && Math.hypot(n1[0] - out[out.length - 1][0], n1[1] - out[out.length - 1][1]) > 0.5) out.push(n1);
+    }
+    road.points = out.length >= 2 ? out : [];
   }
 
   /** Give edge `e` its own road of width `w` (its points), cutting that stretch out of the road it belonged to. */

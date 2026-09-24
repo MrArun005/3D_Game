@@ -205,10 +205,11 @@ export function planRegent(district, opts = {}) {
      the Kingsway boundary road is no district's, so the street would have
      London on one side only. A 60 m strip along it is planned as Kingsway. */
   const RS = district.regentStreet;
-  const rsU = RS ? [(RS.b[0] - RS.a[0]), (RS.b[1] - RS.a[1])] : null, rsL = RS ? Math.hypot(rsU[0], rsU[1]) : 0;
+  const [SA, SB] = RS ? RS.strip ?? [RS.a, RS.b] : [null, null];
+  const rsU = RS ? [(SB[0] - SA[0]), (SB[1] - SA[1])] : null, rsL = RS ? Math.hypot(rsU[0], rsU[1]) : 0;
   const inRS = (x, z) => {
     if (!RS) return false;
-    const rx = x - RS.a[0], rz = z - RS.a[1], t = (rx * rsU[0] + rz * rsU[1]) / rsL, s = (rx * rsU[1] - rz * rsU[0]) / rsL;
+    const rx = x - SA[0], rz = z - SA[1], t = (rx * rsU[0] + rz * rsU[1]) / rsL, s = (rx * rsU[1] - rz * rsU[0]) / rsL;
     return t > 0 && t < rsL && s < 0 && s > -60;   // s < 0: the south side
   };
   const box = [bx0 - 40, bz0 - 40, bx1 + 40, bz1 + 40 + (RS ? 60 : 0)];
@@ -409,7 +410,7 @@ export function planRegent(district, opts = {}) {
        continuous cornice, Portland stone). Ground 5.2 m of shop, a 3.0 m
        mezzanine, three 3.6 m storeys: the cornice at 19.3 m over the kerb, the
        mansard to ~23.5 m. */
-    if (RS && r.road === RS.road) return (r.st = { ground: 5.2, mezz: 3.0, upper: 3.6, floors: 3, depth: 20, attic: 'mansard', regent: true });
+    if (RS && (r.road === RS.road || r.road === RS.quadrant?.road)) return (r.st = { ground: 5.2, mezz: 3.0, upper: 3.6, floors: 3, depth: 20, attic: 'mansard', regent: true });
     const rnd = mulberry32(seedOf(r.road, r.side, Math.round(r.s0 / 50)));
     return (r.st = {
       ground: 4.7 + rnd() * 0.7, mezz: rnd() < 0.7 ? 2.8 + rnd() * 0.4 : 0, upper: 3.45 + rnd() * 0.35,
@@ -489,8 +490,13 @@ export function planRegent(district, opts = {}) {
     const rnd = mulberry32(seedOf(r.road, r.side, Math.round(r.s0), 11));
     // plot widths along the run: mostly 13-26 m, one in four 26-40 m; a short remainder widens the last
     const cuts = [r.s0];
+    /* On the Quadrant's curve a plot is a CHORD: 37 m of it on the 123 m
+       radius stood 1.4 m off the arc at its middle, the facade no longer on
+       the building line. Short plots there (sagitta <= ~0.3 m), so the flat
+       fronts step round the curve as the real ones do, one bay each. */
+    const curved = RS?.quadrant && r.road === RS.quadrant.road;
     for (let s = r.s0; ;) {
-      const w = rnd() < 0.25 ? 26 + rnd() * 14 : 13 + rnd() * 13;
+      const w = curved ? 12 + rnd() * 4 : rnd() < 0.25 ? 26 + rnd() * 14 : 13 + rnd() * 13;
       if (r.s1 - (s + w) < MIN_PLOT) break;
       s += w; cuts.push(s);
     }
@@ -844,6 +850,7 @@ export function circusArc(C, ua, ub, J, wa, wb, depth) {
  * triangles a metre plus the line.
  */
 const PENNANT = [0xc8102e, 0xf2f2f0, 0x012169];
+const STRAND = [1.2, 1.05, 0.8];   // the lit cord's emit (x the night intensity: ~0.06 by day, 1.5 at night)
 function bunting(M, b, y, rnd) {
   const mx = (b.F0[0] + b.F1[0]) / 2, mz = (b.F0[1] + b.F1[1]) / 2, ox = -b.away[0], oz = -b.away[1];
   const L = b.bunting - 0.6, sag = 1.1 + rnd() * 0.5, tx = b.u[0], tz = b.u[1];
@@ -852,8 +859,11 @@ function bunting(M, b, y, rnd) {
   for (let i = 0; i < n; i++) {
     const a = P((L * i) / n), c = P((L * (i + 1)) / n);
     // the cord: a thin vertical ribbon, both sides
-    const q = [a, c, [c[0], c[1] - 0.03, c[2]], [a[0], a[1] - 0.03, a[2]]];
-    M.poly(q, [tx, 0, tz], line, S_PAINT); M.poly(q.slice().reverse(), [-tx, 0, -tz], line, S_PAINT);
+    /* The cord carries the winter lights (the night photo: warm-white strands
+       arched across the street): emit on it, which the facade material scales
+       by its night intensity -- nothing by day, a lit strand after dark. */
+    const q = [a, c, [c[0], c[1] - 0.05, c[2]], [a[0], a[1] - 0.05, a[2]]];
+    M.poly(q, [tx, 0, tz], line, S_PAINT, STRAND); M.poly(q.slice().reverse(), [-tx, 0, -tz], line, S_PAINT, STRAND);
     // the pennant under the middle of this span
     const m = P((L * (i + 0.5)) / n), w = 0.24, h = 0.5 + rnd() * 0.08, col = lin(PENNANT[i % 3]);
     const tri = [[m[0] - ox * w, m[1] - 0.02, m[2] - oz * w], [m[0] + ox * w, m[1] - 0.02, m[2] + oz * w], [m[0], m[1] - h, m[2]]];
