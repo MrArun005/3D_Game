@@ -157,10 +157,13 @@ export function texPool() {
   /* Hotter core, softer skirt. Tuned for the old direct-to-canvas rig, the
      0.62 peak barely registered once the frame went through the post stack:
      at night the street under a lamp read as tarmac with a faint stain. */
-  gr.addColorStop(0, 'rgba(255,205,140,0.98)');
-  gr.addColorStop(0.22, 'rgba(255,184,104,0.46)');
-  gr.addColorStop(0.55, 'rgba(255,160,70,0.12)');
-  gr.addColorStop(1, 'rgba(255,150,50,0)');
+  /* Warm WHITE and soft (2026-09-24): the orange 0.98 core read as a painted
+     disc on the road in every night shot. The photos' lamps are warm white,
+     few, and do not dominate; the screens light the street. */
+  gr.addColorStop(0, 'rgba(255,228,190,0.80)');
+  gr.addColorStop(0.3, 'rgba(255,214,168,0.34)');
+  gr.addColorStop(0.65, 'rgba(255,200,150,0.09)');
+  gr.addColorStop(1, 'rgba(255,190,140,0)');
   g.fillStyle = gr; g.fillRect(0, 0, S, S);
   return toTex(c);
 }

@@ -296,7 +296,7 @@ export class GameClock {
     } else {
       // Deep Night (Moonlight)
       this.sunColor.setRGB(0.16, 0.24, 0.42);
-      this.hemiSky.setRGB(0.06, 0.09, 0.16);
+      this.hemiSky.setRGB(0.075, 0.07, 0.15);   // a violet city glow, not moon-blue (the photos: the street reads grey-violet)
       this.hemiGround.setRGB(0.03, 0.045, 0.07);
       /* 0.30 / 0.17 -> 0.10 / 0.06 (2026-09-23). At the old levels the moon and
          the sky fill lit every wall and the whole road to one even blue-grey --
@@ -381,7 +381,7 @@ export class GameClock {
           const t = (this.hour - 5.2) / 2.0;
           dome.material.color.setRGB(0.55 + t * 0.45, 0.45 + t * 0.55, 0.60 + t * 0.40);
         } else {
-          dome.material.color.setRGB(0.03, 0.035, 0.075);   // ink; the day dome tinted to 0.12 read as mid-blue, 0.045 still as evening
+          dome.material.color.setRGB(0.011, 0.013, 0.03);   // ink. 0.03/0.035/0.075 still displayed as a bright navy (~(25,30,90) on screen); Arun's Shibuya night photos are flat black-navy (2026-09-24)
         }
       }
     }
@@ -437,7 +437,7 @@ export class GameClock {
     if (assets) {
       // Stagger 1: Street lamps & sodium pools turn on at 35% dusk
       const lampOn = nightFactor > 0.35;
-      if (assets.mat?.pool) assets.mat.pool.opacity = lampOn ? 0.88 * Math.min(1, (nightFactor - 0.35) / 0.3) : 0;
+      if (assets.mat?.pool) assets.mat.pool.opacity = lampOn ? 0.6 * Math.min(1, (nightFactor - 0.35) / 0.3) : 0;
       if (assets.mat?.lampCone) assets.mat.lampCone.opacity = lampOn ? 0.12 * Math.min(1, (nightFactor - 0.35) / 0.3) : 0;
       if (assets.mat?.lampGlow) assets.mat.lampGlow.emissiveIntensity = lampOn ? 0.15 + 2.0 * nightFactor : 0.15;
 

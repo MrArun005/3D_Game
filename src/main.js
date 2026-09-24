@@ -2894,6 +2894,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
       tm.roughness = look.roughness;
       tm.envMapIntensity = look.envMapIntensity;
       tm.normalScale.setScalar(look.normalScale);
+      grade.setWet?.(Math.max(car.wet, nk > 0.65 && tokyoHere ? 0.7 : 0));   // ?ssr: Tokyo's street is wet after dark, so it mirrors the signs too, not only in rain
     }
     if (stars && car.wet > 0.05) stars.visible = false;   // no stars through cloud (the clock re-decides every frame)
   }
