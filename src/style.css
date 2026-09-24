@@ -185,3 +185,4 @@ body.touch #arsenal{display:none!important}
 #touch.mode-drive .t-stick .t-stick-base{opacity:.75}
 #touch .t-stick-hint{position:absolute;left:35%;top:65%;transform:translate(-50%,78px);white-space:nowrap;font-size:9px;letter-spacing:.22em;color:rgba(200,215,235,.55);pointer-events:none}
 #touch.mode-foot .t-stick-hint{display:none !important}
+body:has(#hud:not(.gone)) #touch{display:none}   /* the title card owns the screen until you enter */

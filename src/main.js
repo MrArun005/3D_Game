@@ -157,11 +157,41 @@ const armBootStall = () => {
 armBootStall();
 let bootPhaseName = '';        // the lag logger names the phase a boot-time spike fell in
 let catalogueRef = null;       // set once the catalogue resolves; the lag logger reads pendingLoads
+/* The loader (2026-09-24): says exactly what is loading. Every phase is a
+   line with its own time (a tick when done, a pulse while running), the bar
+   never goes backwards, and the bytes are the real transfer total from the
+   Resource Timing entries -- not an estimate. */
+const bootSteps = document.getElementById('bootsteps');
+const bootBytes = document.getElementById('bootbytes');
+const bootTime = document.getElementById('boottime');
+const bootT0 = performance.now();
+let bootPct = 0, bootLi = null, bootLiT = 0, bootLiKey = '';
+const bootTick = () => {
+  if (!document.getElementById('boot')) return;
+  let bytes = 0;
+  try { for (const e of performance.getEntriesByType('resource')) bytes += e.transferSize || e.encodedBodySize || 0; } catch { /* no resource timing */ }
+  if (bootBytes) bootBytes.textContent = `${(bytes / 1e6).toFixed(1)} MB downloaded`;
+  if (bootTime) bootTime.textContent = `${((performance.now() - bootT0) / 1000).toFixed(1)} s`;
+  setTimeout(bootTick, 200);
+};
+bootTick();
 const setBootProgress = (pct, m) => {
   bootPhaseName = m;
+  bootPct = Math.max(bootPct, pct);
   if (bootMsg) bootMsg.textContent = m;
-  if (bootProgress) bootProgress.style.width = `${pct}%`;
-  if (bootPercent) bootPercent.textContent = `${pct}%`;
+  if (bootProgress) bootProgress.style.width = `${bootPct}%`;
+  if (bootPercent) bootPercent.textContent = `${bootPct}%`;
+  // one line per phase; a counter ("3/12") updates its line instead of adding one
+  const key = String(m).replace(/[\d/]+\s*$/, '').replace(/…$/, '');
+  if (bootSteps && key !== bootLiKey) {
+    const now = performance.now();
+    if (bootLi) { bootLi.classList.remove('run'); bootLi.querySelector('b').textContent = `✓ ${((now - bootLiT) / 1000).toFixed(1)}s`; }
+    bootLi = document.createElement('li'); bootLi.className = 'run';
+    bootLi.innerHTML = '<span></span><b>…</b>';
+    bootSteps.prepend(bootLi);
+    bootLiT = now; bootLiKey = key;
+  }
+  if (bootLi) bootLi.firstChild.textContent = m;
   armBootStall();
 };
 setBootProgress(10, 'Waking the GPU…');
@@ -1949,6 +1979,52 @@ let started = false;
    renderer, lights, post stack and ring are already built by the time the card
    is clickable), so a change that differs from what booted reloads on ENTER
    and the card says so. stopPropagation: the overlay click IS the start button. */
+/* Offline play (2026-09-24): public/sw.js caches whatever the game fetches;
+   SAVE OFFLINE fills the rest from /offline.json (tools/offline-list.mjs
+   writes it at build time), so the whole city plays with no connection.
+   Not under the dev server: vite's module graph is not a cacheable site. */
+{
+  const line = document.querySelector('#hud .offline');
+  const show = (t) => { const b = line?.querySelector('b'); if (b) b.textContent = t; };
+  const ok = 'serviceWorker' in navigator && typeof caches !== 'undefined' && !import.meta.env.DEV;
+  if (!ok) line?.remove();
+  else {
+    navigator.serviceWorker.register('/sw.js').catch((e) => { console.warn('sw:', e.message); line?.remove(); });
+    let list = null, busy = false;
+    const count = async () => {
+      try {
+        list = list || await (await fetch('/offline.json', { cache: 'no-store' })).json();
+        const cache = await caches.open('hb-offline-v1');
+        const keys = new Set((await cache.keys()).map((r) => new URL(r.url).pathname));
+        return list.files.filter((f) => keys.has(f)).length;
+      } catch { return -1; }
+    };
+    count().then((have) => {
+      if (have < 0) { line?.remove(); return; }
+      show(have >= list.files.length ? 'SAVED ✓' : `${(list.bytes / 1e6).toFixed(0)} MB · tap to save`);
+    });
+    line?.addEventListener('click', async (ev) => {
+      ev.stopPropagation();   // the overlay click is the start button
+      if (busy || !list) return;
+      busy = true;
+      const cache = await caches.open('hb-offline-v1');
+      let done = 0, failed = 0;
+      const todo = [...list.files];
+      const worker = async () => {
+        while (todo.length) {
+          const f = todo.shift();
+          try { if (!(await cache.match(f))) { const r = await fetch(f); if (r.ok) await cache.put(f, r); else failed++; } } catch { failed++; }
+          done++;
+          show(`${Math.round((done / list.files.length) * 100)}% · ${done}/${list.files.length} files`);
+        }
+      };
+      await Promise.all(Array.from({ length: 6 }, worker));
+      try { await navigator.storage?.persist?.(); } catch { /* best effort: ask the browser not to evict it */ }
+      show(failed ? `${failed} failed · tap to retry` : 'SAVED ✓ plays offline');
+      busy = false;
+    });
+  }
+}
 const qualityLine = document.querySelector('#hud .quality');
 let qualityChosen = (() => { try { const s = localStorage.getItem(QUALITY_KEY); return QUALITY_NAMES.includes(s) ? s : 'auto'; } catch { return 'auto'; } })();
 // ?quality= in the URL outranks the toggle (dev flag), so picking AUTO under it is not pending: it would reload forever
@@ -2995,6 +3071,10 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
      both null `boot` -- so a slow boot skipped the warm-up for the whole
      session and every pipeline compiled mid-game, one hitch at a time. Once
      the world is ready it warms, overlay or not. */
+  if (boot && !warming && districtRef && world.chunks) {   // the loader's last phase: the first ring of city blocks, counted
+    const ring = (2 * (Q.streamRadius ?? 1) + 1) ** 2, n = Math.min(ring, world.chunks.size);
+    if (n !== frame.bootChunks) { frame.bootChunks = n; setBootProgress(70 + Math.round((n / ring) * 25), `Building city blocks… ${n}/${ring}`); }
+  }
   if (!warming && (world.primed ?? true) && (districtRef || districtFailed)) {
     warming = true;
     /* Phones skip the warm-up (2026-09-24): it builds a tank and a helicopter

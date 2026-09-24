@@ -16,6 +16,8 @@ body.photo #minimap, body.photo #cluster, body.photo #readout, body.photo #dials
 body.photo #mission, body.photo #place, body.photo #gta-chat, body.photo #phone-btn,
 body.photo #gameplay-prompt-bar, body.photo #wanted, body.photo #ammo, body.photo #arsenal, body.photo #health, body.photo #flight-banner, body.photo #area-toast, body.photo #touch { display: none !important; }
 /* title-card quality toggle (style.css is another agent's file today) */
+#hud .offline{margin:8px auto 0;font-size:11px;letter-spacing:.24em;color:#78859a;cursor:pointer;user-select:none}
+#hud .offline b{color:#3fe8ff;font-weight:600}
 #hud .quality{margin:14px auto 0;font-size:11px;letter-spacing:.24em;color:#78859a;cursor:pointer;user-select:none}
 #hud .quality b{color:#e6c489;font-weight:600}
 #hud .quality small{display:block;margin-top:4px;font-size:10px;letter-spacing:.14em;color:#5f6c80}
@@ -30,16 +32,37 @@ body.photo #gameplay-prompt-bar, body.photo #wanted, body.photo #ammo, body.phot
        pinned by shader compilation. main.js updates #bootmsg per phase and
        removes the whole thing on the first rendered frame. -->
   <!-- Boot overlay with 0%-100% progress bar -->
-  <div id="boot" style="position:fixed;inset:0;z-index:99;background:#080b11;
-       display:flex;flex-direction:column;align-items:center;justify-content:center;
-       gap:22px;color:#cfe0f5;font:14px/1.5 system-ui,sans-serif;letter-spacing:.22em">
-    <div style="font-size:28px;font-weight:300;letter-spacing:.5em;color:#ffffff;text-shadow:0 0 20px rgba(57,255,176,0.3)">HALSTEAD&nbsp;BAY</div>
-    <div style="width:320px;height:6px;background:#151c28;border-radius:3px;overflow:hidden;position:relative;box-shadow:inset 0 1px 3px rgba(0,0,0,0.6)">
-      <div id="bootprogress" style="width:0%;height:100%;background:linear-gradient(90deg, #39ffb0, #3fd2ff);border-radius:3px;transition:width 0.2s ease-out"></div>
-    </div>
-    <div style="display:flex;align-items:center;gap:12px">
-      <span id="bootmsg" style="color:#94a3b8;font-size:12px">Waking the GPU…</span>
-      <span id="bootpercent" style="color:#39ffb0;font-weight:600;font-size:13px">0%</span>
+  <div id="boot">
+    <style>
+      #boot{position:fixed;inset:0;z-index:99;background:#05070c url(/boot/splash.jpg) center/cover no-repeat;color:#dbe6f5;
+        font:13px/1.5 system-ui,-apple-system,sans-serif;overflow:hidden}
+      @media (max-width:900px){#boot{background-image:url(/boot/splash-phone.jpg)}}
+      #boot::before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(4,6,12,.92) 0%,rgba(4,6,12,.62) 42%,rgba(4,6,12,.08) 75%),
+        linear-gradient(0deg,rgba(4,6,12,.85) 0%,rgba(4,6,12,0) 45%)}
+      #boot .bp{position:absolute;left:max(24px,env(safe-area-inset-left));bottom:max(22px,env(safe-area-inset-bottom));width:min(440px,calc(100vw - 48px))}
+      #boot h1{font-size:clamp(26px,4.2vw,44px);font-weight:200;letter-spacing:.34em;color:#fff;margin:0 0 4px;text-shadow:0 0 28px rgba(255,60,180,.35)}
+      #boot .sub{font-size:10px;letter-spacing:.42em;color:#ff5fc8;margin-bottom:18px}
+      #boot .now{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:8px}
+      #bootmsg{font-size:14px;letter-spacing:.06em;color:#fff}
+      #bootpercent{font:600 20px ui-monospace,Menlo,monospace;color:#3fe8ff}
+      #boot .bar{height:4px;border-radius:2px;background:rgba(255,255,255,.1);overflow:hidden}
+      #bootprogress{width:0;height:100%;background:linear-gradient(90deg,#ff3fb4,#3fe8ff);box-shadow:0 0 12px #3fe8ff;transition:width .25s ease-out}
+      #boot .meta{display:flex;justify-content:space-between;margin-top:8px;font:11px ui-monospace,Menlo,monospace;color:#8fa0b8}
+      #bootsteps{list-style:none;margin:12px 0 0;padding:0;font:11px/1.9 ui-monospace,Menlo,monospace;color:#7d8ba0;max-height:7.6em;overflow:hidden}
+      #bootsteps li{display:flex;justify-content:space-between;gap:10px}
+      #bootsteps li b{color:#39ffb0;font-weight:400}
+      #bootsteps li.run{color:#dbe6f5}
+      #bootsteps li.run b{color:#3fe8ff;animation:bpulse 1s infinite}
+      @keyframes bpulse{50%{opacity:.35}}
+      @media (max-height:430px){#bootsteps{max-height:3.8em}#boot .sub{margin-bottom:10px}}
+    </style>
+    <div class="bp">
+      <h1>HALSTEAD&nbsp;BAY</h1>
+      <div class="sub">OPEN CITY</div>
+      <div class="now"><span id="bootmsg">Waking the GPU…</span><span id="bootpercent">0%</span></div>
+      <div class="bar"><div id="bootprogress"></div></div>
+      <div class="meta"><span id="bootbytes">0.0 MB downloaded</span><span id="boottime">0.0 s</span></div>
+      <ul id="bootsteps"></ul>
     </div>
   </div>
 
@@ -75,6 +98,7 @@ body.photo #gameplay-prompt-bar, body.photo #wanted, body.photo #ammo, body.phot
       <div class="go" data-pad-default>ENTER THE CITY</div>
       <!-- core/quality.js presets; main.js cycles Auto -> Low -> Medium -> High on click and reloads on ENTER when the choice differs from what booted -->
       <div class="quality" role="button" tabindex="0" title="Quality preset: Low / Medium / High / Auto">QUALITY · <b>AUTO</b> <small>click to change</small></div>
+      <div class="offline" role="button" tabindex="0" title="Download the whole city so the game plays with no connection">SAVE OFFLINE · <b>checking…</b></div>
       <!-- One line to drive on; everything else folds into ALL CONTROLS (the 2026-09-11 brief's <details>, lost in a later merge). main.js hides this first .keys and the <details> when a pad presses a button; style.css hides both on touch. -->
       <div class="keys">
         <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive &nbsp; <kbd>Space</kbd> handbrake &nbsp; <kbd>F</kbd> out / in &nbsp; <kbd>C</kbd> camera &nbsp; <kbd>H</kbd> lights &nbsp; <kbd>Tab</kbd> map &nbsp; <kbd>M</kbd> phone

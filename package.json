@@ -7,7 +7,7 @@
   "description": "A realistic night-drive through a procedural city, built on three.js",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node tools/offline-list.mjs",
     "preview": "vite preview --port 4173",
     "test": "node --test test/*.test.js",
     "ingest": "node tools/ingest.mjs",
