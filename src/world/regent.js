@@ -483,7 +483,13 @@ export function planRegent(district, opts = {}) {
   }
 
   // then plots along every run: arterials first, so the grand streets keep their depth
-  const order = runs.map((r, i) => i).sort((a, b) => cls[runs[a].cls] - cls[runs[b].cls] || a - b);
+  /* Regent Street and the Quadrant first (2026-09-24): as 'boundary' and a
+     late 'street' they came LAST, so the side streets' plots had already
+     taken the land inside the curve and the Quadrant's own frontage was
+     dropped -- the empty wedge inside the sweep. The grand street claims its
+     building line before anything that meets it. */
+  const rank = (r) => (RS && (r.road === RS.road || r.road === RS.quadrant?.road) ? -1 : cls[r.cls]);
+  const order = runs.map((r, i) => i).sort((a, b) => rank(runs[a]) - rank(runs[b]) || a - b);
   for (const ri of order) {
     const r = runs[ri], st = runStyle(r), len = r.s1 - r.s0;
     if (len < 6) continue;
@@ -496,7 +502,7 @@ export function planRegent(district, opts = {}) {
        fronts step round the curve as the real ones do, one bay each. */
     const curved = RS?.quadrant && r.road === RS.quadrant.road;
     for (let s = r.s0; ;) {
-      const w = curved ? 12 + rnd() * 4 : rnd() < 0.25 ? 26 + rnd() * 14 : 13 + rnd() * 13;
+      const w = curved ? 10 + rnd() * 3 : rnd() < 0.25 ? 26 + rnd() * 14 : 13 + rnd() * 13;
       if (r.s1 - (s + w) < MIN_PLOT) break;
       s += w; cuts.push(s);
     }
@@ -557,7 +563,8 @@ export function planRegent(district, opts = {}) {
      over the carriageway, to the building line opposite. `b.bunting` is the
      span in metres; regentBuilding hangs it. */
   for (const b of buildings) {
-    if (b.kind !== 'plot' || b.width < 10 || (Math.round(b.F0[0] * 3 + b.F0[1] * 7) & 1)) continue;
+    // ONE side of a street hangs them (side +1): with both sides built, facing plots strung the same line twice and the two strands z-fought
+    if (b.kind !== 'plot' || b.side !== 1 || b.width < 10 || (Math.round(b.F0[0] * 3 + b.F0[1] * 7) & 1)) continue;
     const mx = (b.F0[0] + b.F1[0]) / 2, mz = (b.F0[1] + b.F1[1]) / 2, ox = -b.away[0], oz = -b.away[1];
     let t = 2, onRoad = false, span = 0;
     for (; t < 64; t += 1) {
@@ -849,6 +856,11 @@ export function circusArc(C, ua, ub, J, wa, wb, depth) {
  * point-down and seen from both sides (two faces, opposite windings). ~2
  * triangles a metre plus the line.
  */
+/* Window glass (2026-09-24, Arun: "what are these windows?"). 0x141c26 and
+   kin read as black holes by day; Regent Street's sashes hold the sky -- a
+   blue-grey, lighter the higher up it faces. The emit (lit rooms at night)
+   is untouched. */
+const WIN_UP = 0x3a4a5c, WIN_MEZZ = 0x34414f, WIN_ATTIC = 0x39485a;
 const PENNANT = [0xc8102e, 0xf2f2f0, 0x012169];
 const STRAND = [1.2, 1.05, 0.8];   // the lit cord's emit (x the night intensity: ~0.06 by day, 1.5 at night)
 function bunting(M, b, y, rnd) {
@@ -866,7 +878,9 @@ function bunting(M, b, y, rnd) {
     M.poly(q, [tx, 0, tz], line, S_PAINT, STRAND); M.poly(q.slice().reverse(), [-tx, 0, -tz], line, S_PAINT, STRAND);
     // the pennant under the middle of this span
     const m = P((L * (i + 0.5)) / n), w = 0.24, h = 0.5 + rnd() * 0.08, col = lin(PENNANT[i % 3]);
-    const tri = [[m[0] - ox * w, m[1] - 0.02, m[2] - oz * w], [m[0] + ox * w, m[1] - 0.02, m[2] + oz * w], [m[0], m[1] - h, m[2]]];
+    // hung just under the 5 cm cord and 1 cm off its plane: sharing it, the two z-fought (regent.test)
+    const px = m[0] + tx * 0.01, pz = m[2] + tz * 0.01, top = m[1] - 0.06;
+    const tri = [[px - ox * w, top, pz - oz * w], [px + ox * w, top, pz + oz * w], [px, m[1] - h, pz]];
     M.poly(tri, [tx, 0, tz], col, S_PAINT); M.poly(tri.slice().reverse(), [-tx, 0, -tz], col, S_PAINT);
   }
 }
@@ -1028,7 +1042,7 @@ function streetFace(M, e, B, L, rnd, lit, isChamfer, out) {
         eface(M, e, p, a0, mS, mH, 0, B.stone, B.sw); p = a1;
         ehole(M, e, a0, a1, mS, mH, -0.2, 0, 'LRTD', B.stone, B.sw);
         const em = rnd() < 0.45 ? scale3(shop.col, 0.2) : null;
-        eglass(M, e, a0, a1, mS, mH, -0.2, lin(0x18202a), em, rnd());
+        eglass(M, e, a0, a1, mS, mH, -0.2, lin(WIN_MEZZ), em, rnd());
       }
       eface(M, e, p, e.L, mS, mH, 0, B.stone, B.sw);
     } else eface(M, e, 0, e.L, openTop, Yb, 0, B.stone, B.sw);
@@ -1053,7 +1067,7 @@ function streetFace(M, e, B, L, rnd, lit, isChamfer, out) {
       p = a1 + (B.surround ? fr : 0);
       const lo = B.surround ? 0.06 : 0, sw = B.surround ? fr + 0.02 : 0.1;
       ehole(M, e, a0, a1, sill, head, -R, lo, 'LRTD', B.stone, B.sw);                     // reveals, head and the sill's inner half
-      eglass(M, e, a0, a1, sill, head, -R, lin(0x141c26), lit.win(), rnd());
+      eglass(M, e, a0, a1, sill, head, -R, lin(WIN_UP), lit.win(), rnd());
       ebox(M, e, a0 - sw, a1 + sw, sill - 0.09, sill, 0, 0.09, 'FD', B.trim, B.sw);      // the sill
       ebox(M, e, a0 - sw, a1 + sw, sill - 0.09, sill, lo, 0.09, 'T', B.trim, S_TOP);
       if (B.surround) {
@@ -1111,7 +1125,7 @@ function plainWall(M, e, yA, yB, L, B, lit, windows, rnd) {
   for (let k = 0; k < B.st.floors; k++) {
     const ys = L.Yb + k * B.st.upper + 0.9, ye = ys + B.st.upper * 0.5;
     if (ys < yA + 0.3 || ye > yB) continue;
-    for (let i = 0; i < nb; i++) { const c = 0.6 + bw * (i + 0.5); eglass(M, e, c - ww / 2, c + ww / 2, ys, ye, 0.03, lin(0x151b22), lit.back(), rnd()); }
+    for (let i = 0; i < nb; i++) { const c = 0.6 + bw * (i + 0.5); eglass(M, e, c - ww / 2, c + ww / 2, ys, ye, 0.03, lin(WIN_ATTIC), lit.back(), rnd()); }
   }
 }
 
@@ -1152,7 +1166,7 @@ function cornerFeature(M, B, O, L, rnd, out) {
     for (let i = 0; i < NS; i += 2) {                                            // its windows, lit at night
       const t = ((i + 0.5) / NS) * Math.PI * 2, nx = Math.cos(t), nz = Math.sin(t), tx = -nz, tz = nx, rr = R * Math.cos(Math.PI / NS) + 0.03;
       const px = cxx + nx * rr, pz = czz + nz * rr, hw = 0.38, ya = yB - 1.9, yb2 = yB - 0.45;
-      M.poly([[px - tx * hw, ya, pz - tz * hw], [px + tx * hw, ya, pz + tz * hw], [px + tx * hw, yb2, pz + tz * hw], [px - tx * hw, yb2, pz - tz * hw]], [nx, 0, nz], lin(0x151b22), S_GLASS(0.8), out.nightDome ? WARM.map((v) => v * 0.3) : null, [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      M.poly([[px - tx * hw, ya, pz - tz * hw], [px + tx * hw, ya, pz + tz * hw], [px + tx * hw, yb2, pz + tz * hw], [px - tx * hw, yb2, pz - tz * hw]], [nx, 0, nz], lin(WIN_ATTIC), S_GLASS(0.8), out.nightDome ? WARM.map((v) => v * 0.3) : null, [[0, 0], [1, 0], [1, 1], [0, 1]]);
     }
     band(R, yB, R + 0.35, yB + 0.1, stone, S_TOP);                               // a cornice ring
     band(R + 0.35, yB + 0.1, R + 0.35, yB + 0.4, stone, B.sw);
@@ -1195,7 +1209,7 @@ function cornerFeature(M, B, O, L, rnd, out) {
     for (let i = 0; i < nw; i++) {
       const c = (ce.L * (i + 0.5)) / nw;
       if (f === 'clock' && ce === sc.edges[Math.floor(sc.edges.length / 2)] && i === Math.floor(nw / 2)) continue;
-      eglass(M, ce, c - 0.5, c + 0.5, y + 0.9, y + 2.5, 0.08, lin(0x151b22), rnd() < 0.3 ? WARM.map((v) => v * 0.16) : null, rnd());
+      eglass(M, ce, c - 0.5, c + 0.5, y + 0.9, y + 2.5, 0.08, lin(WIN_ATTIC), rnd() < 0.3 ? WARM.map((v) => v * 0.16) : null, rnd());
     }
   }
   const pe = sc.edges[Math.floor(sc.edges.length / 2)];
@@ -1300,7 +1314,7 @@ export function regentBuilding(M, b) {
       for (let k = 0; k < nb; k++) {
         const c = 0.55 + bw * (k + 0.5), w = Math.min(1.3, bw * 0.42), y1 = L.Yr + 0.5, y2 = L.Yr + 2.25;
         ebox(M, e, c - w / 2, c + w / 2, y1, y2, -1.5, -0.62, 'FLR', B.trim, B.sw);
-        eglass(M, e, c - w / 2 + 0.14, c + w / 2 - 0.14, y1 + 0.16, y2 - 0.14, -0.59, lin(0x151b22), rnd() < 0.3 ? WARM.map((v) => v * 0.16) : null, rnd());
+        eglass(M, e, c - w / 2 + 0.14, c + w / 2 - 0.14, y1 + 0.16, y2 - 0.14, -0.59, lin(WIN_ATTIC), rnd() < 0.3 ? WARM.map((v) => v * 0.16) : null, rnd());
         pediment(M, e, c - w / 2 - 0.08, c + w / 2 + 0.08, y2, 0.45, -1.5, -0.56, lin(LEAD), S_PAINT);
       }
     }
@@ -1311,7 +1325,7 @@ export function regentBuilding(M, b) {
       const e = O.edges[i];
       if (e.L < 2.6) continue;
       const nb = Math.max(1, Math.round((e.L - 1.1) / B.bayT)), bw = (e.L - 1.1) / nb;
-      for (let k = 0; k < nb; k++) { const c = 0.55 + bw * (k + 0.5); eglass(M, e, c - 0.5, c + 0.5, L.Yr + 0.7, L.Yr + 2.0, -0.27, lin(0x151b22), rnd() < 0.3 ? WARM.map((v) => v * 0.16) : null, rnd()); }
+      for (let k = 0; k < nb; k++) { const c = 0.55 + bw * (k + 0.5); eglass(M, e, c - 0.5, c + 0.5, L.Yr + 0.7, L.Yr + 2.0, -0.27, lin(WIN_ATTIC), rnd() < 0.3 ? WARM.map((v) => v * 0.16) : null, rnd()); }
     }
   }
   // the roof: the whole outline at the cornice top (earcut: a corner's L is not convex)
