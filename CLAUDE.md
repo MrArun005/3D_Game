@@ -108,6 +108,43 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
 
 ## Current state
 
+- **Regent Street, the Quadrant, London markings (2026-09-24).** All node-
+  verified, headless renders checked; nobody has driven it on a GPU.
+  - **Regent Street** = the Kingsway boundary road (1907,1769)-(2880,1763),
+    `district.js #regentStreet`: narrowed 26 -> 18 m in the DATA (roads,
+    graph edges; every consumer derives from them), named, both sides lined
+    by `regent.js` (a 60 m strip south of it is planned as Kingsway,
+    `RS.strip`), ONE cornice (ground 5.2 + mezz 3.0 + 3 x 3.6 -> 19.3 m,
+    mansard ~23.5 m), planned FIRST (`rank`) so side streets cannot take its
+    line. `#regentSideStreets`: roads meeting it under 40 deg are cut back to
+    their first junction >70 m off (three Harbour Point diagonals), other
+    non-arterial side streets are 11 m (`SIDE_W`) over their first block
+    (`#splitRoadAt`). Real-street figures and sources: docs/REF-REGENT-STREET.md
+    and the commit messages (7c1472e, 11c478f).
+  - **The Quadrant** (`#quadrant`): an arc tangent to Regent Street at
+    (2056,1768) to the junction (1934,1659), R 123 m, 179 m; it REPLACES the
+    straight corner (edges dropped, `#rebuildRoad` re-derives polylines).
+    Curve plots are 10-13 m (sagitta). Graph now 1781 / 2915 full, 320 / 497
+    compact (tests pinned). All of this runs BEFORE the compact graph is
+    clipped -- after it, traffic drove removed roads.
+  - **Markings** (`districtWorld #streetFurniture`, `#paintStyle`): London
+    (near Regent buildings, Old Quarter) white dashed centre + double yellow
+    at the kerb; Tokyo one solid white centre. Crossings / stop lines / the
+    traffic gate sit outside `junctionHalves` (the widest road at the node),
+    lane lines stop short of the stop line; kerbs keep the old setback.
+  - **Circus corners** at the widest crossroads (`circusArc`), **bunting**
+    (one side of a street, lit cord = winter lights at night), Regent window
+    glass sky blue-grey (`WIN_*`), lit shop windows show by day.
+  - **Traffic**: `#leaderLimit` also finds a leader along the car's PATH
+    round bends (a stopped bus past a 7 deg kink was unseen; cabs ran into
+    it). Bus scenario runs 24 cars.
+  - Gantries off (`?gantries`). `?spawn=regent|quadrant|tokyo|downtown|track`
+    and `/tp regent|quadrant`. Boot download measured 36 MB (the NC Sketchfab
+    camaro is 7.5 MB of it -- replace before release).
+  - Headless render: llvmpipe OOMs near 11.4 GB GPU RSS; a moving camera
+    streams chunks and compiles programs, so record video in ~70-frame
+    segments with a fresh browser each (scratchpad rec-seg.mjs / rec-all.sh).
+
 - **"Old buildings pulling it down" (2026-09-24).** Census of the compact
   city (`scratchpad/route-census.mjs` recipe: replay the chunk builder's
   route per footprint in node): it holds NO Kingsway footprints (the Regent
