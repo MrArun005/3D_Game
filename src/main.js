@@ -1932,7 +1932,7 @@ let started = false;
 const qualityLine = document.querySelector('#hud .quality');
 let qualityChosen = (() => { try { const s = localStorage.getItem(QUALITY_KEY); return QUALITY_NAMES.includes(s) ? s : 'auto'; } catch { return 'auto'; } })();
 // ?quality= in the URL outranks the toggle (dev flag), so picking AUTO under it is not pending: it would reload forever
-const qualityPending = () => (qualityChosen === 'auto' ? quality.source === 'saved' : qualityChosen !== quality.name);
+const qualityPending = () => !TOUCH && (qualityChosen === 'auto' ? quality.source === 'saved' : qualityChosen !== quality.name);
 const drawQualityLine = () => {
   if (!qualityLine) return;
   qualityLine.querySelector('b').textContent = qualityChosen.toUpperCase() + (qualityChosen === 'auto' ? ` (${quality.name})` : '');
@@ -2268,6 +2268,7 @@ const touch = TOUCH ? createTouch(onInputAction, {
   onAim: (on) => { aiming = on; },
   onInput: () => { idleT = 0; start(); },
 }) : null;
+window.__touch = touch;   // the harness reads touch.state (a phone has no console)
 
 /* The pad on the clickables (ui/padnav.js), topmost layer first. The map's
    clicks are positions, so it gets a crosshair; the touchpad that opened it
