@@ -173,7 +173,7 @@ export class Hud {
          to fill the screen, and at 1120x800 every road came out soft. */
       el.width = 1680; el.height = 1200;
       el.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:70;display:none;'
-        + 'width:min(94vw,1680px);height:auto;background:#0a0d13;border:1px solid rgba(120,140,170,.28);'
+        + 'width:min(94vw,1680px,131vh);height:auto;max-height:92vh;background:#0a0d13;border:1px solid rgba(120,140,170,.28);'
         + 'border-radius:12px;box-shadow:0 24px 80px rgba(0,0,0,.6);cursor:crosshair';
       el.addEventListener('click', (e) => {
         if (!this.district) return;
@@ -190,9 +190,20 @@ export class Hud {
       });
       document.body.appendChild(el);
       this.mapEl = el;
+      /* A way out that is always on top (2026-09-24): on a phone the open map
+         covered the touch MAP button, and there was no key to press. */
+      const x = document.createElement('button');
+      x.type = 'button'; x.textContent = 'CLOSE MAP ✕';
+      x.style.cssText = 'position:fixed;z-index:71;top:calc(10px + env(safe-area-inset-top,0px));right:calc(10px + env(safe-area-inset-right,0px));display:none;'
+        + 'min-width:110px;height:44px;border-radius:12px;border:1px solid rgba(230,196,137,.7);background:rgba(8,11,18,.85);color:#f3dcae;font:700 12px inherit;letter-spacing:.1em';
+      const close = (e) => { e.preventDefault(); e.stopPropagation(); if (this.mapOpen) this.toggleMap(); };
+      x.addEventListener('pointerdown', close); x.addEventListener('click', close);
+      document.body.appendChild(x);
+      this.mapClose = x;
     }
     this.mapOpen = !this.mapOpen;
     this.mapEl.style.display = this.mapOpen ? 'block' : 'none';
+    if (this.mapClose) this.mapClose.style.display = this.mapOpen ? 'block' : 'none';
   }
 
   /* On top of the rotating minimap: the job marker (and the next one), live

@@ -68,10 +68,10 @@ export const PRESETS = {
     blur: false,
     pixelBudget: 960 * 573,
     streamRadius: 1,
-    traffic: 18,
-    crowd: 110,
-    farTraffic: 80,
-    lights: 3,              // real night point lights (game/lighting.js LightPool); the rest glow as sprites
+    traffic: 14,
+    crowd: 80,
+    farTraffic: 60,
+    lights: 2,              // real night point lights (game/lighting.js LightPool); the rest glow as sprites
     bloomScale: 0.25,          // bloom mip chain resolution (1 = full)
   },
   medium: {
