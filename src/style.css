@@ -162,7 +162,7 @@ body.touch #hud .go .tap{display:inline}
 #touch .t-pads.drive .fire{grid-column:2;grid-row:1}
 #touch .t-pads.drive .brake{grid-column:1;grid-row:2;width:92px;height:108px;border-radius:18px}
 #touch .t-pads.drive .gas{grid-column:2;grid-row:2;width:104px;height:150px;border-radius:20px;font-size:16px;
-  background:rgba(57,255,176,.14);border-color:rgba(57,255,176,.5)}
+  border-color:rgba(57,255,176,.5)}   /* dark like BRAKE: it looked held down before you touched it */
 #touch .t-pads.foot .tb{width:76px;height:64px}
 #touch .t-pads.foot .fire{width:92px;height:92px}
 #touch .tb.big{border-radius:50%;width:84px;height:84px;background:rgba(255,80,80,.28);border-color:rgba(255,120,120,.6)}
@@ -181,3 +181,7 @@ body.touch #rotate{position:fixed;inset:0;z-index:98;display:none;align-items:ce
 body.photo #touch,body.filming #touch,body.idlecam #touch{opacity:0;pointer-events:none}
 /* the desktop weapon slots (keys 0-6) mean nothing on a phone: the drawer's WEAPON button cycles */
 body.touch #arsenal{display:none!important}
+/* the car's joystick (2026-09-24): always shown, so the thumb knows where it is */
+#touch.mode-drive .t-stick .t-stick-base{opacity:.75}
+#touch .t-stick-hint{position:absolute;left:35%;top:65%;transform:translate(-50%,78px);white-space:nowrap;font-size:9px;letter-spacing:.22em;color:rgba(200,215,235,.55);pointer-events:none}
+#touch.mode-foot .t-stick-hint{display:none !important}

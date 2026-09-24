@@ -61,3 +61,15 @@ test('controls carry the same keys createInput().read() returns', () => {
   const c = mapTouches(emptyState()).controls;
   for (const k of ['throttle', 'brake', 'steer', 'handbrake', 'hold', 'nos', 'lookBack', 'analogue']) assert.ok(k in c, k);
 });
+
+test('driving joystick: up is gas, down is brake, sideways steers (right negative)', () => {
+  const s = emptyState(); s.mode = 'drive';
+  s.stick.active = true; s.stick.dx = 0; s.stick.dy = -GEOMETRY.stickR;
+  let c = mapTouches(s).controls;
+  assert.equal(c.throttle, 1); assert.equal(c.brake, 0); assert.ok(c.active);
+  s.stick.dy = GEOMETRY.stickR;
+  c = mapTouches(s).controls;
+  assert.equal(c.brake, 1); assert.equal(c.throttle, 0);
+  s.stick.dx = GEOMETRY.stickR; s.stick.dy = 0;
+  assert.ok(mapTouches(s).controls.steer < -0.9);
+});

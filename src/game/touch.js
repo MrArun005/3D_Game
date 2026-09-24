@@ -97,11 +97,16 @@ export function mapTouches(state, g = GEOMETRY, dt = 1 / 60, prev = { throttle: 
     analogue = v.mag > 0;
     rampOut.throttle = 0; rampOut.brake = 0;
   } else {
-    steer = state.steer.active ? steerFromDrag(state.steer.dx, g) : 0;
+    /* The car's left thumb is a JOYSTICK (2026-09-24, Arun: "add a joy stick
+       kind of"): sideways steers, up is gas, down is brake/reverse. The pedals
+       still work and the stronger of the two wins. */
+    const v = state.stick.active ? stickVector(state.stick.dx, state.stick.dy, g) : { x: 0, y: 0, mag: 0 };
+    steer = state.stick.active ? clamp1(-v.x * 1.25)
+      : state.steer.active ? steerFromDrag(state.steer.dx, g) : 0;
     rampOut.throttle = ramp(prev.throttle, state.gas ? 1 : 0, dt, g.rampUp, g.rampDown);
     rampOut.brake = ramp(prev.brake, state.brake ? 1 : 0, dt, g.rampUp, g.rampDown);
-    throttle = rampOut.throttle;
-    brake = rampOut.brake;
+    throttle = Math.max(rampOut.throttle, Math.min(1, Math.max(0, -v.y) * 1.4));
+    brake = Math.max(rampOut.brake, Math.min(1, Math.max(0, v.y) * 1.4));
     analogue = throttle > 0.02 || brake > 0.02 || Math.abs(steer) > 0.02;
   }
 
@@ -144,8 +149,7 @@ const MARKUP = `
     ${BTN('phone', 'PHONE')}${BTN('horn', 'HORN', 'drive')}${BTN('lights', 'LIGHTS', 'drive')}${BTN('radio', 'RADIO', 'drive')}
     ${BTN('weaponNext', 'WEAPON', 'foot')}${BTN('reload', 'RELOAD', 'foot')}${BTN('crouch', 'CROUCH', 'foot')}
   </div>
-  <div class="t-steer drive" data-zone="steer"><div class="t-steer-track"><div class="t-steer-knob"></div></div><span>DRAG TO STEER</span></div>
-  <div class="t-stick foot" data-zone="stick"><div class="t-stick-base"><div class="t-stick-knob"></div></div></div>
+  <div class="t-stick foot drive" data-zone="stick"><span class="t-stick-hint drive">JOYSTICK · UP GAS · DOWN BRAKE</span><div class="t-stick-base"><div class="t-stick-knob"></div></div></div>
   <div class="t-look foot" data-zone="look"></div>
   <div class="t-pads drive">
     ${BTN('handbrake', 'DRIFT', 'hand hold')}
@@ -232,7 +236,7 @@ export function createTouch(onAction, opts = {}) {
   function zoneOf(target) {
     const btn = target.closest?.('.tb');
     if (btn) return { kind: 'button', btn };
-    if (steerZone.contains(target)) return { kind: 'steer' };
+    if (steerZone?.contains(target)) return { kind: 'steer' };
     if (stickZone.contains(target)) return { kind: 'stick' };
     if (lookZone.contains(target)) return { kind: 'look' };
     return null;
@@ -253,7 +257,7 @@ export function createTouch(onAction, opts = {}) {
     fingers.set(e.pointerId, f);
     try { el.setPointerCapture(e.pointerId); } catch { /* not all browsers */ }
     if (z.kind === 'button') buttonDown(z.btn);
-    else if (z.kind === 'steer') { state.steer.active = true; state.steer.dx = 0; steerZone.classList.add('on'); }
+    else if (z.kind === 'steer') { state.steer.active = true; state.steer.dx = 0; steerZone?.classList.add('on'); }
     else if (z.kind === 'stick') {
       state.stick.active = true; state.stick.dx = 0; state.stick.dy = 0;
       // the stick base jumps under the thumb: the whole zone is the stick
@@ -291,7 +295,7 @@ export function createTouch(onAction, opts = {}) {
     if (!f) return;
     prevent(e);
     fingers.delete(e.pointerId);
-    if (f.kind === 'steer') { state.steer.active = false; state.steer.dx = 0; place(null, steerKnob, 0, 0); steerZone.classList.remove('on'); }
+    if (f.kind === 'steer') { state.steer.active = false; state.steer.dx = 0; place(null, steerKnob, 0, 0); steerZone?.classList.remove('on'); }
     else if (f.kind === 'stick') { state.stick.active = false; state.stick.dx = 0; state.stick.dy = 0; place(stickBase, stickKnob, 0, 0); stickZone.classList.remove('on'); }
     else if (f.kind === 'button') buttonUp(f.btn);
   };
