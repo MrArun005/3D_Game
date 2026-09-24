@@ -443,6 +443,28 @@ export function planRegent(district, opts = {}) {
     }
   }
 
+  /* THE CIRCUS CORNERS (2026-09-24, Arun: "where's that curvy building of
+     London?"). The compact city's London grid has no curved road, so the
+     Quadrant has nothing to follow; what Regent Street does at a crossroads is
+     Oxford Circus -- the corner blocks cut back on ONE circle round the
+     junction, concave stone fronts facing each other across it. A corner on a
+     wide crossroads (its roads sum >= CIRCUS_W m of carriageway: the grandest few) takes that arc:
+     centre the junction, radius so the curve meets each street 11-15 m from
+     the corner, and never deeper into the block than its depth allows. */
+  {
+    const crosses = (district.graph?.nodes ?? []).filter((n) => n.kind === 'cross');
+    const wsum = new Map();
+    for (const e of district.graph?.edges ?? []) for (const id of [e.a, e.b]) wsum.set(id, (wsum.get(id) ?? 0) + e.width);
+    for (const b of buildings) {
+      if (b.kind !== 'corner') continue;
+      let J = null, jd = 32;
+      for (const n of crosses) { const r = Math.hypot(n.x - b.C[0], n.y - b.C[1]); if (r < jd) { jd = r; J = n; } }
+      if (!J || (wsum.get(J.id) ?? 0) < CIRCUS_W) continue;
+      const arc = circusArc(b.C, b.ua, b.ub, [J.x, J.y], b.wa, b.wb, b.depth);
+      if (arc) { b.shape = 'circus'; b.J = [J.x, J.y]; b.Rc = arc.R; }
+    }
+  }
+
   // then plots along every run: arterials first, so the grand streets keep their depth
   const order = runs.map((r, i) => i).sort((a, b) => cls[runs[a].cls] - cls[runs[b].cls] || a - b);
   for (const ri of order) {
@@ -506,6 +528,24 @@ export function planRegent(district, opts = {}) {
     if (prev && r.cornerEnd && prev.kind === 'plot' && Math.hypot(prev.F1[0] - F[F.length - 1][0], prev.F1[1] - F[F.length - 1][1]) < 0.01) {
       prev.right = r.cornerEnd; r.cornerEnd[r.cornerEndKey] = prev;
     }
+  }
+  /* BUNTING (2026-09-24, the reference: Regent Street strung with red, white
+     and blue pennants across the road). From every other plot on a street
+     whose far side is built too: straight out from the frontage's middle,
+     over the carriageway, to the building line opposite. `b.bunting` is the
+     span in metres; regentBuilding hangs it. */
+  for (const b of buildings) {
+    if (b.kind !== 'plot' || b.width < 10 || (Math.round(b.F0[0] * 3 + b.F0[1] * 7) & 1)) continue;
+    const mx = (b.F0[0] + b.F1[0]) / 2, mz = (b.F0[1] + b.F1[1]) / 2, ox = -b.away[0], oz = -b.away[1];
+    let t = 2, onRoad = false, span = 0;
+    for (; t < 64; t += 1) {
+      const d = clear(mx + ox * t, mz + oz * t);
+      if (d < 0) onRoad = true;
+      else if (onRoad) { span = t + FRONT; break; }
+    }
+    if (span < 16 || span > 52) continue;
+    const fx = mx + ox * span, fz = mz + oz * span;
+    if (buildings.some((o) => o !== b && (o.cx - fx) ** 2 + (o.cz - fz) ** 2 < 22 * 22)) b.bunting = span;
   }
   ms.total = performance.now() - T0;
   /* Owned by the chunk its footprint's centroid stands in -- the same rule blkByChunk uses for a block. */
@@ -758,6 +798,53 @@ function subChain(chain, j, w) {
   return { edges: [edge([a[0], a[2]], p, e0.n), edge(p, [b[0], b[2]], e1.n)] };
 }
 
+/**
+ * A circus corner's arc: the circle about the junction J that cuts both street
+ * lines (C + ua*s, C + ub*t) 11-15 m from the corner. Null when no radius fits
+ * the wings (wa, wb) or would cut deeper than `depth - 4` into the block.
+ * Returns { R, sa, sb } -- the arc meets street A at sa and B at sb. Pure.
+ */
+const CIRCUS_W = 116;   // m of carriageway meeting at a junction: 18 of the 81 corners on the shipped district, facing pairs at the widest crossroads
+
+export function circusArc(C, ua, ub, J, wa, wb, depth) {
+  const cx = C[0] - J[0], cz = C[1] - J[1], c2 = cx * cx + cz * cz, c = Math.sqrt(c2);
+  const ka = ua[0] * cx + ua[1] * cz, kb = ub[0] * cx + ub[1] * cz;
+  if (ka < 0 || kb < 0) return null;   // the corner must face the junction: its streets run AWAY from it
+  const sOn = (k, R) => -k + Math.sqrt(Math.max(0, k * k - (c2 - R * R)));
+  for (let want = 15; want >= 11; want -= 1) {
+    const R = Math.sqrt(c2 + 2 * want * ka + want * want);
+    const sa = want, sb = sOn(kb, R);
+    if (sa > wa * 0.78 || sb > wb * 0.78 || sb < 8) continue;
+    if (R - c > depth - 4) continue;
+    return { R, sa, sb };
+  }
+  return null;
+}
+
+/**
+ * A string of pennants across the street from a plot's frontage: a 1.1-1.6 m
+ * sag, a pennant every 0.8 m cycling red, white and blue, each a triangle hung
+ * point-down and seen from both sides (two faces, opposite windings). ~2
+ * triangles a metre plus the line.
+ */
+const PENNANT = [0xc8102e, 0xf2f2f0, 0x012169];
+function bunting(M, b, y, rnd) {
+  const mx = (b.F0[0] + b.F1[0]) / 2, mz = (b.F0[1] + b.F1[1]) / 2, ox = -b.away[0], oz = -b.away[1];
+  const L = b.bunting - 0.6, sag = 1.1 + rnd() * 0.5, tx = b.u[0], tz = b.u[1];
+  const P = (t) => { const f = t / L; return [mx + ox * (t + 0.3), y - 4 * sag * f * (1 - f), mz + oz * (t + 0.3)]; };
+  const line = lin(0x2a2a2a), n = Math.max(2, Math.round(L / 0.8));
+  for (let i = 0; i < n; i++) {
+    const a = P((L * i) / n), c = P((L * (i + 1)) / n);
+    // the cord: a thin vertical ribbon, both sides
+    const q = [a, c, [c[0], c[1] - 0.03, c[2]], [a[0], a[1] - 0.03, a[2]]];
+    M.poly(q, [tx, 0, tz], line, S_PAINT); M.poly(q.slice().reverse(), [-tx, 0, -tz], line, S_PAINT);
+    // the pennant under the middle of this span
+    const m = P((L * (i + 0.5)) / n), w = 0.24, h = 0.5 + rnd() * 0.08, col = lin(PENNANT[i % 3]);
+    const tri = [[m[0] - ox * w, m[1] - 0.02, m[2] - oz * w], [m[0] + ox * w, m[1] - 0.02, m[2] + oz * w], [m[0], m[1] - h, m[2]]];
+    M.poly(tri, [tx, 0, tz], col, S_PAINT); M.poly(tri.slice().reverse(), [-tx, 0, -tz], col, S_PAINT);
+  }
+}
+
 /* ---- One building ---- */
 
 /** Cornice top (the roof) and the attic's top, from a style: the plan and the generator agree on these. */
@@ -788,7 +875,16 @@ function outlineOf(b, rnd) {
     const sinH = Math.sqrt(Math.max(0.01, (1 - (ua[0] * ub[0] + ua[1] * ub[1])) / 2));
     const ch = b.shape === 'square' ? 0 : Math.min(Math.max(3.4 + rnd() * 1.4, 2.6 / sinH), b.wa * 0.4, b.wb * 0.4);
     let mid;
-    if (ch === 0) mid = [C];
+    if (b.shape === 'circus') {
+      // the concave arc about the junction, from street B's end to street A's, in facets ~3.2 m long (a bay each)
+      const J = b.J, R = b.Rc;
+      const arc = circusArc(C, ua, ub, J, b.wa, b.wb, b.depth), Cb = at(ub, arc.sb), Ca = at(ua, arc.sa);
+      let t0 = Math.atan2(Cb[1] - J[1], Cb[0] - J[0]), t1 = Math.atan2(Ca[1] - J[1], Ca[0] - J[0]);
+      let dt = t1 - t0; while (dt > Math.PI) dt -= 2 * Math.PI; while (dt < -Math.PI) dt += 2 * Math.PI;
+      const n = Math.max(3, Math.round((Math.abs(dt) * R) / 3.2));
+      mid = [];
+      for (let i = 0; i <= n; i++) { const t = t0 + (dt * i) / n; mid.push([J[0] + Math.cos(t) * R, J[1] + Math.sin(t) * R]); }
+    } else if (ch === 0) mid = [C];
     else if (b.shape === 'round') {
       const Cb = at(ub, ch * 1.5), Ca = at(ua, ch * 1.5);
       mid = [Cb];
@@ -867,7 +963,12 @@ function streetFace(M, e, B, L, rnd, lit, isChamfer, out) {
     ehole(M, e, o.s0, o.s1, y0 + 0.012, o.top, -0.14, 0, 'D', B.base, B.sw);               // the threshold before the stallriser, 12 mm over the pavement (which runs 5 cm in: never its plane)
     eface(M, e, o.s0, o.s1, y0, y0 + 0.55, -0.14, lin(GRANITE), S_PAINT);                  // stallriser: dark granite
     ebox(M, e, o.s0, o.s1, y0 + 0.55, y0 + 0.55, -R, -0.14, 'T', lin(GRANITE), S_PAINT);
-    eglass(M, e, o.s0, o.s1, y0 + 0.55, glTop, -R, lin(0x2a2620), gl, 0.62 + rnd() * 0.3);
+    /* A lit shop's glass carries its display in the ALBEDO too (2026-09-24):
+       the emit is scaled by the night intensity (0.05 by day), so by day every
+       shopfront read as a black hole; Regent Street's windows are bright
+       displays at noon. The warm tone takes the daylight; the emit still
+       comes up after dark. */
+    eglass(M, e, o.s0, o.s1, y0 + 0.55, glTop, -R, shop.lit ? scale3(shop.col, 0.34) : lin(0x2a2620), gl, 0.62 + rnd() * 0.3);
     if (!B.arcade) {
       // the fascia: a painted board in the shop's colour, proud of the stone
       ebox(M, e, o.s0, o.s1, glTop, o.top, -R, 0.1, 'FD', shop.fascia, S_PAINT);
@@ -1127,6 +1228,7 @@ export function regentBuilding(M, b) {
   };
   const O = outlineOf(b, rnd);
   const out = { shopIx: 0, top: L.top, nightDome: rnd() < 0.6 };
+  if (b.bunting) bunting(M, b, L.Yb + 1.4, mulberry32(b.seed ^ 0xb0b));
 
   // the street faces
   for (let i = 0; i < O.nStreet; i++) streetFace(M, O.edges[i], B, L, rnd, lit, O.nStreet >= 3 && i === Math.floor(O.nStreet / 2) && O.edges[i].L < 8, out);

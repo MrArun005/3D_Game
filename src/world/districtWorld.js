@@ -11,7 +11,7 @@ import { KIT_DISTRICT, pickKitModel } from './kitBuildings.js';
 import { PAINT_COLOURS, BODY_KEYS } from '../vehicle/config.js';
 import { signalState, LAMP_COLOURS } from './signals.js';
 import { BREAK_CLASS } from './breakables.js';
-import { ZEBRA_DEPTH } from '../game/traffic.js';
+import { ZEBRA_DEPTH, junctionHalves } from '../game/traffic.js';
 import { buildTokyoBuilding, frontRotation, tokyoFacadeMaterial, ensureSurf, buildTokyoStreet, wireMaterial, buildShrine } from './tokyo.js';
 import { buildTokyoLot } from './tokyoTypes.js';
 import { loadTokyoTowers, towerFor } from './tokyoTowers.js';
@@ -24,7 +24,7 @@ import { keptCellSet, wallProps, ringHides, segmentSplit, pieceHas } from './pla
 import { buildSpan, signatureBridge } from './spans.js';
 import { skirtFoot } from './district.js';
 import { styleFor, buildArt, artMaterial, ART_CAP } from './artBuildings.js';
-import { regentChunk, regentEnabled } from './regent.js';
+import { regentChunk, regentEnabled, regentPlan } from './regent.js';
 
 /**
  * Halstead Bay in three dimensions.
@@ -326,6 +326,27 @@ export class DistrictWorld {
    * they can never fight the real geometry for the same pixel.
    */
   /** How many roads meet at `nodeId`. Cached: a scan per approach is not free. */
+  /**
+   * Which country's paint a road wears: 'london' beside the Regent frontages
+   * (they stand in the grid round Little Tokyo, whose district label they
+   * share) or in the Old Quarter, 'tokyo' in the rest of Little Tokyo, else
+   * null. From the edge's midpoint; the Regent cells are 32 m squares within
+   * 40 m of a building, built once.
+   */
+  #paintStyle(e) {
+    const pts = e.points, m = pts[Math.floor(pts.length / 2)], q = pts[Math.max(0, Math.floor(pts.length / 2) - 1)];
+    const mx = (m[0] + q[0]) / 2, mz = (m[1] + q[1]) / 2;
+    if (!this.londonCells) {
+      this.londonCells = new Set();
+      if (regentEnabled()) for (const b of regentPlan(this.district).buildings) {
+        for (let x = b.cx - 40; x <= b.cx + 40; x += 16) for (let z = b.cz - 40; z <= b.cz + 40; z += 16) this.londonCells.add(Math.floor(x / 32) * 4096 + Math.floor(z / 32));
+      }
+    }
+    if (this.londonCells.has(Math.floor(mx / 32) * 4096 + Math.floor(mz / 32))) return 'london';
+    const dn = this.district.districtAt?.(mx, mz);
+    return dn === 'OLD QUARTER' ? 'london' : dn === 'LITTLE TOKYO' ? 'tokyo' : null;
+  }
+
   #nodeDegree(nodeId) {
     let n = this.nodeDegreeById.get(nodeId);
     if (n !== undefined) return n;
@@ -1068,49 +1089,62 @@ export class DistrictWorld {
       const laneW = (half - 1.0) / lanes;
       // enough to clear a junction, but not so much that a 40m block of street
       // gets no paint at all -- which is exactly what half+3 was doing
-      const trim = Math.min(half, 11) + 2;
-
-      // walk the polyline as one run so the trim applies to the whole edge
+      /* Per END, from the junction there (2026-09-24): lines stopped
+         min(half, 11) + 2 from the node, so every dash and the centre line ran
+         on through the zebra and the stop line (those sit up to 7 m further
+         out) and, where a narrow street met a wide one, into the wide road.
+         A signalled end clears its stop line; any other end clears the
+         widest road that meets it. */
       const pts = e.points;
+      const JH = (this.junctionHalf ??= junctionHalves(this.graph.edges));
+      const endTrim = (id) => {
+        const nd = this.nodeById.get(id), jh = Math.max(half, JH.get(id) ?? 0);
+        const sig = nd && (nd.kind === 'cross' || nd.kind === 'tee') && this.#nodeDegree(id) < 5;
+        return sig ? jh + 1.2 + ZEBRA_DEPTH + 1.6 + 0.8 : Math.min(jh, 11) + 2;
+      };
+      const p0 = pts[0], nA = this.nodeById.get(e.a), nB = this.nodeById.get(e.b);
+      const aFirst = !nA || !nB || Math.hypot(nA.x - p0[0], nA.y - p0[1]) <= Math.hypot(nB.x - p0[0], nB.y - p0[1]);
+      const trim0 = endTrim(aFirst ? e.a : e.b), trim1 = endTrim(aFirst ? e.b : e.a);
+      // the kerb and the pavement keep the old, shorter setback: they must reach the corner
+      const kt = (id) => Math.min(Math.max(half, JH.get(id) ?? 0), 11) + 2;
+      const kt0 = kt(aFirst ? e.a : e.b), kt1 = kt(aFirst ? e.b : e.a);
+      const style = this.#paintStyle(e);
       let done = 0;
       const total = e.length || this.#polyLen(pts);
-      if (total < trim * 2 + 4) continue;
+      if (total < kt0 + kt1 + 4) continue;
 
       for (let i = 0; i < pts.length - 1; i++) {
         const ax = pts[i][0], az = pts[i][1], bx = pts[i + 1][0], bz = pts[i + 1][1];
         const segL = Math.hypot(bx - ax, bz - az);
         const ux = (bx - ax) / segL, uz = (bz - az) / segL;
-        // clip this piece to the trimmed span [trim, total - trim]
-        const s0 = Math.max(0, trim - done), s1 = Math.min(segL, total - trim - done);
+        // clip this piece: [m0, m1] for the paint (clear of the crossings), [s0, s1] for kerb and pavement
+        const m0 = Math.max(0, trim0 - done), m1 = Math.min(segL, total - trim1 - done);
+        const s0 = Math.max(0, kt0 - done), s1 = Math.min(segL, total - kt1 - done);
         done += segL;
         if (s1 - s0 < 1) continue;
-        const px0 = ax + ux * s0, pz0 = az + uz * s0;
-        const px1 = ax + ux * s1, pz1 = az + uz * s1;
         const nx = -uz, nz = ux;
         const at = (o, t) => [ax + ux * t + nx * o, az + uz * t + nz * o];
+        const paint = m1 - m0 >= 1;
+        const px0 = ax + ux * m0, pz0 = az + uz * m0;
+        const px1 = ax + ux * m1, pz1 = az + uz * m1;
+        const dashes = (o, w, on, gap) => { for (let t = m0; t < m1; t += on + gap) { const [qx, qz] = at(o, t), [rx, rz] = at(o, Math.min(m1, t + on)); ribbon(white, qx, qz, rx, rz, w, 0.02); } };
 
-        // centre line: double solid on anything wider than a lane each way
-        if (lanes > 1 || e.width > 12) {
+        /* The centre line by place (2026-09-24, Arun: "correct road markings
+           too"). London (the Regent streets and the Old Quarter): a WHITE
+           dashed centre line (UK: 4 m on, 5 m off in town) and double yellow
+           lines at the kerb. Little Tokyo: one solid white centre line and
+           white lane lines, as Tokyo paints a wide street. Elsewhere the double
+           yellow centre line it always had. */
+        if (paint && style === 'london') dashes(0, 0.12, 4, 5);
+        else if (paint && style === 'tokyo' && (lanes > 1 || e.width > 12)) ribbon(white, px0, pz0, px1, pz1, 0.16, 0.02);
+        else if (paint && (lanes > 1 || e.width > 12)) {
           for (const o of [-0.22, 0.22]) {
             ribbon(warm, px0 + nx * o, pz0 + nz * o, px1 + nx * o, pz1 + nz * o, 0.14, 0.02);
           }
-        } else {
-          for (let t = s0; t < s1; t += 9) {
-            const [qx, qz] = at(0, t), [rx, rz] = at(0, Math.min(s1, t + 3));
-            ribbon(white, qx, qz, rx, rz, 0.14, 0.02);
-          }
-        }
+        } else if (paint) dashes(0, 0.14, 3, 6);
 
         // lane dividers: dashed, at the real lane pitch on both carriageways
-        for (let k = 1; k < lanes; k++) {
-          for (const side of [-1, 1]) {
-            const o = side * laneW * k;
-            for (let t = s0; t < s1; t += 9) {
-              const [qx, qz] = at(o, t), [rx, rz] = at(o, Math.min(s1, t + 3));
-              ribbon(white, qx, qz, rx, rz, 0.13, 0.02);
-            }
-          }
-        }
+        if (paint) for (let k = 1; k < lanes; k++) for (const side of [-1, 1]) dashes(side * laneW * k, 0.13, 3, 6);
 
         /* Edge line, then the kerb it runs alongside, then the pavement --
            but the kerb and the pavement are CLIPPED where they would land on
@@ -1143,7 +1177,10 @@ export class DistrictWorld {
         };
         for (const side of [-1, 1]) {
           const o = side * (half - 0.45);
-          ribbon(white, px0 + nx * o, pz0 + nz * o, px1 + nx * o, pz1 + nz * o, 0.15, 0.02);
+          if (paint && style === 'london') {
+            // double yellow at the kerb (UK no waiting): two 0.1 m lines, 0.1 m apart, 0.25 m off the kerb
+            for (const oo of [half - 0.3, half - 0.5]) ribbon(warm, px0 + nx * side * oo, pz0 + nz * side * oo, px1 + nx * side * oo, pz1 + nz * side * oo, 0.1, 0.021);
+          } else if (paint) ribbon(white, px0 + nx * o, pz0 + nz * o, px1 + nx * o, pz1 + nz * o, 0.15, 0.02);
           const kx = side * half, w = side * (half + 2.4);
           // the slab texture is 2.4m; without UVs the pavement is flat colour
           const u = 4.8 / 2.4;
@@ -1280,7 +1317,8 @@ export class DistrictWorld {
         const L = Math.hypot(ux, uz) || 1;
         const dx = ux / L, dz = uz / L;             // points INTO the junction
         const half = e.width / 2;
-        const back = e.width / 2 + 1.2 + ZEBRA_DEPTH + 1.0;
+        const jh = Math.max(half, (this.junctionHalf ??= junctionHalves(this.graph.edges)).get(end) ?? 0);   // clear the CROSSING road (traffic.js junctionHalves)
+        const back = jh + 1.2 + ZEBRA_DEPTH + 1.0;
         // mounted on the right of the approach, at the stop line
         // the mast stands level with the stop line, behind the crossing
         const px = node.x - dx * back + -dz * (half - 1.2);
@@ -1344,8 +1382,8 @@ export class DistrictWorld {
            Without one the cars pulled up nose-to-post at the signal itself,
            which is where the pole is, not where a car should stop. */
         for (let k = -half + 1.6; k <= half - 1.6; k += 1.45) {
-          const bx = node.x - dx * (e.width / 2 + 1.2 + ZEBRA_DEPTH / 2) + -dz * k;
-          const bz = node.y - dz * (e.width / 2 + 1.2 + ZEBRA_DEPTH / 2) + dx * k;
+          const bx = node.x - dx * (jh + 1.2 + ZEBRA_DEPTH / 2) + -dz * k;
+          const bz = node.y - dz * (jh + 1.2 + ZEBRA_DEPTH / 2) + dx * k;
           zebra.push(flatRect(bx, 0.02, bz, yaw, ZEBRA_DEPTH, 0.62));
         }
 
@@ -1358,7 +1396,7 @@ export class DistrictWorld {
         /* 1.6m of clear tarmac between the crossing and the stop line. At the
            0.5m the first pass used, the line touched the zebra and read as one
            more stripe rather than as the place you stop. */
-        const stopBack = half + 1.2 + ZEBRA_DEPTH + 1.6;
+        const stopBack = jh + 1.2 + ZEBRA_DEPTH + 1.6;
         const sx = node.x - dx * stopBack + -dz * (half / 2);
         const sz = node.y - dz * stopBack + dx * (half / 2);
         rect(sx, sz, dx, dz, 0.3, half / 2 - 0.3);

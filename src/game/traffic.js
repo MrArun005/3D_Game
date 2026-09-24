@@ -59,6 +59,21 @@ const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
 const CLASS_SPEED = { freeway: 27, ramp: 14, arterial: 17, boundary: 13, street: 10.5 };
 const LOOKAHEAD = 150;               // metres of path kept in front of a car
 export const ZEBRA_DEPTH = 4.2;      // shared with the crossing paint in the world
+/**
+ * Half the widest road meeting at each junction, by node id (freeways and
+ * ramps excepted). A crossing, stop line and stop gate sit outside THIS, not
+ * outside their own road's half-width: where a 10 m street meets a 28 m
+ * arterial the street's zebra used to land 9 m inside the arterial's lanes
+ * (measured 2026-09-24: 1,117 of 5,308 signalled approaches). Pure; tested.
+ */
+export function junctionHalves(edges) {
+  const m = new Map();
+  for (const e of edges) {
+    if (e.class === 'freeway' || e.class === 'ramp') continue;
+    for (const id of [e.a, e.b]) m.set(id, Math.max(m.get(id) ?? 0, e.width / 2));
+  }
+  return m;
+}
 /* Shirts. A street where every driver wears the same colour reads as clones,
    and you see straight into these cabins now. */
 const OCCUPANT = [0x2c3a4e, 0x6d4630, 0x3f5b45, 0x7a3540, 0x4a4a55, 0x8a7a58, 0x2f4f6b];
@@ -666,7 +681,8 @@ export class Traffic {
        it used to do -- parked cars in the middle of short links, nowhere near
        a junction, waiting at a stop line that was 65% of the way down a 20m
        stub of road. */
-    const back = e.width / 2 + 1.2 + ZEBRA_DEPTH + 1.0;
+    const jh = Math.max(e.width / 2, (this.JH ??= junctionHalves(this.E)).get(far) ?? 0);   // the crossing road's kerb, not ours
+    const back = jh + 1.2 + ZEBRA_DEPTH + 1.0;
     const cut = L - back;
     const gated = cut > 3;                      // no room on this stub: no gate
 

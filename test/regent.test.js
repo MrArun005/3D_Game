@@ -32,7 +32,7 @@ const THREE = await import('three');
 const { mergeGeometries } = await import('three/examples/jsm/utils/BufferGeometryUtils.js');
 const { District } = await import('../src/world/district.js');
 const { COMPACT_POLY, makePlayArea } = await import('../src/world/playArea.js');
-const { planRegent, regentPlan, regentChunk, regentGeometry, regentEnabled, FRONT, area2 } = await import('../src/world/regent.js');
+const { planRegent, regentPlan, regentChunk, regentGeometry, regentEnabled, FRONT, area2, circusArc } = await import('../src/world/regent.js');
 const { SURF, tokyoWarmGeometry } = await import('../src/world/tokyo.js');
 
 const read = () => JSON.parse(readFileSync(new URL('../public/halstead-bay.district.json', import.meta.url)));
@@ -457,4 +457,19 @@ test('districtWorld builds it: one regent mesh on the Tokyo material, its boxes 
     assert.equal(any, 0, 'no regent mesh');
     assert.equal(w2.solidsByChunk.get(key).filter((b) => b.regent).length, 0, 'no regent boxes');
   } finally { delete globalThis.location; }
+});
+
+test('circus corners: concave arcs about the widest junctions, inside their wings and their depth', () => {
+  const cs = plan.buildings.filter((b) => b.shape === 'circus');
+  assert.ok(cs.length >= 8 && cs.length <= 30, `${cs.length} circus corners`);
+  for (const b of cs) {
+    const a = circusArc(b.C, b.ua, b.ub, b.J, b.wa, b.wb, b.depth);
+    assert.ok(a && Math.abs(a.R - b.Rc) < 1e-9, 'the plan and the outline agree on the arc');
+    const c = Math.hypot(b.C[0] - b.J[0], b.C[1] - b.J[1]);
+    assert.ok(a.R > c && a.R - c <= b.depth - 4 + 1e-9, `cuts ${(a.R - c).toFixed(1)} m into a ${b.depth.toFixed(1)} m block`);
+    assert.ok(a.sa <= b.wa * 0.78 && a.sb <= b.wb * 0.78, 'the arc stays inside both wings');
+  }
+  // a corner turned away from its junction takes no arc
+  assert.equal(circusArc([0, 0], [-1, 0], [0, -1], [-10, -10], 30, 30, 20), null);
+  assert.ok(circusArc([0, 0], [1, 0], [0, 1], [-10, -10], 30, 30, 20));
 });
