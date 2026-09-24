@@ -614,10 +614,11 @@ const S_GLASS = (r) => SURF.GLASS + 0.05 + 0.8 * r;     // r: curtains < 0.21, b
 /* Portland stone, pale and a little warm, ~0.5 linear: about half a stop
    over tokyo.js's LIGHT walls, which is what "pale stone against a dark
    Tokyo" needs without competing with the sky (ART_BIBLE: albedo <= 0.85). */
-const STONE = [0xc6bdab, 0xc0b8a7, 0xcbc3b1, 0xbbb4a4, 0xc7c0b2, 0xc3b9a3, 0xbfb6a2];
-const FASCIA = [0x1e2b23, 0x2c1b1e, 0x1b2029, 0x28231c, 0x2b2b2d, 0x3a2a1a, 0x16261f];
-const SLATE = 0x4b5058, LEAD = 0x5c6064, ROOF = 0x4b4844, GRANITE = 0x26231f, BRONZE = 0x3b3326;
-const COPPER = 0x5f8b79, POTS = 0x8a4b33, FLAGS = [0xa8232b, 0x1f2d5c, 0xe6e4de, 0x1f5a3a];
+/* Warmer and more varied (2026-09-24, Arun: "the colours of the buildings are so poor"): the old set was one grey-beige +-4%. Portland stone runs cream to honey to a cool pale grey, building by building. */
+const STONE = [0xe6d9bf, 0xdccaa6, 0xece2cc, 0xd4c29e, 0xe9dbc0, 0xd9d3c7, 0xcfb991, 0xe3cfae];
+const FASCIA = [0x1f4a36, 0x5a1e28, 0x1c2a4a, 0x1a1a1c, 0x5a3c1a, 0x2e5a55, 0x6b2a1e];   // racing green, burgundy, navy, black, bronze, teal, oxblood
+const SLATE = 0x3f4a5a, LEAD = 0x5a6470, ROOF = 0x4b4844, GRANITE = 0x26231f, BRONZE = 0x3b3326;
+const COPPER = 0x72ad96, POTS = 0x8a4b33, FLAGS = [0xa8232b, 0x1f2d5c, 0xe6e4de, 0x1f5a3a];
 const WARM = [1.0, 0.82, 0.55], COOL = [0.72, 0.85, 1.0];
 const SHOPS = [[1.0, 0.86, 0.64], [1.0, 0.86, 0.64], [0.96, 0.94, 0.86], [0.84, 0.91, 1.0], [1.0, 0.78, 0.55], [1.0, 0.74, 0.8]];
 const Z3 = [0, 0, 0];

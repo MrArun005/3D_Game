@@ -1417,7 +1417,7 @@ export function buildTokyoSignStack(seed, hw, hd, h, ctx = {}) {
   /* A street stack takes the plot's height (6-13 storeys) so the district is
      not one 29 m cornice line; the corner is the photo's eight. */
   const n = street ? clamp(Math.round((h - 1.8) / 3.4), 6, 13) : 8;
-  const H = n * 3.4 + 1.8, wall = street ? pick([0xe8e8e6, 0xd9d6cf, 0xcfd3d6, 0xe2ddd2, 0xbfc3c6]) : 0xe8e8e6;
+  const H = n * 3.4 + 1.8, wall = street ? pick([0xe8e8e6, 0xe9dcc6, 0xd6e0e6, 0xf0d9d2, 0xdcdcc4, 0xc9d8cf]) : 0xe8e8e6;   // + cream, pale blue, blush, sage (2026-09-24)
   const canopy = street ? pick([[0x2a57c8, [0.12, 0.3, 1.0]], [0xc8283c, [1.0, 0.2, 0.25]], [0x1f7a4a, [0.2, 0.9, 0.45]], [0x202226, [1.0, 0.8, 0.4]], [0xd8a018, [1.0, 0.75, 0.2]]]) : [0x2a57c8, [0.12, 0.3, 1.0]];
   const [sx, sz] = crossingCorner(ctx, hd, rnd);
   const F = faces(hw, hd), [fa, fb] = streetFaces(F, sx, sz, ctx);

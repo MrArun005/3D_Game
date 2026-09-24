@@ -193,7 +193,7 @@ window.__isLite = isLite;
 /* Quality preset (core/quality.js): ?quality= > localStorage hb.quality > auto
    (medium on the LITE tier, high otherwise). Every knob below reads Q; the
    tier (isLite) still decides the FULL cascades and the light-pool count. */
-const quality = resolveQuality({ isLite });
+const quality = resolveQuality({ isLite, mobile: TOUCH });   // a phone gets the mobile preset (core/quality.js)
 const Q = quality.preset;
 window.__quality = quality;
 /* Easy by default (2026-09-23, game/difficulty.js): the owner asked for "easy

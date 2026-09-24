@@ -16,10 +16,28 @@
  * RUNTIME-SAFE knobs: pixel ratio, traffic live count, farTraffic count.
  */
 
-export const QUALITY_NAMES = ['auto', 'low', 'balanced', 'medium', 'high'];   // the title-card cycle order
+export const QUALITY_NAMES = ['auto', 'mobile', 'low', 'balanced', 'medium', 'high'];   // the title-card cycle order
 export const STORAGE_KEY = 'hb.quality';                          // shared with core/gpu.js ('lite' | 'full' live there too)
 
 export const PRESETS = {
+  /* Mobile (2026-09-24, Arun: "make a mobile version too, iPhone 15"): Auto's
+     pick on a touch device. A phone GPU is a quarter of a laptop's and the
+     panel is DPR 3 (2556x1179 on an iPhone 15): 0.35 MP drawn and upscaled,
+     no shadows, the night glow kept at a quarter resolution, one real light,
+     a thin fleet and crowd. Unmeasured on a device. */
+  mobile: {
+    shadows: 'off',
+    bloom: true,
+    aa: false,
+    blur: false,
+    pixelBudget: 780 * 450,   // ~0.35 MP
+    streamRadius: 1,
+    traffic: 8,
+    crowd: 30,
+    farTraffic: 30,
+    lights: 1,
+    bloomScale: 0.25,
+  },
   low: {
     shadows: 'off',           // -48% triangles, -~300 draws (census)
     bloom: false,             // ~12 passes
@@ -104,7 +122,7 @@ export function nextLower(name) {
  * are not preset names, so they fall through to auto, and the tier they set
  * decides the auto pick. One key, two vocabularies, no mapping table.
  */
-export function resolveQuality({ isLite = false, search = null, storage = null } = {}) {
+export function resolveQuality({ isLite = false, mobile = false, search = null, storage = null } = {}) {
   const q = new URLSearchParams(search ?? (typeof location !== 'undefined' ? location.search : ''));
   let name = (q.get('quality') || '').toLowerCase();
   let source = 'url';
@@ -116,7 +134,10 @@ export function resolveQuality({ isLite = false, search = null, storage = null }
       if (PRESETS[saved]) { name = saved; source = 'saved'; }
     } catch { /* private mode */ }
   }
-  if (!name || name === 'auto') { name = isLite ? 'balanced' : 'high'; source = `auto, ${isLite ? 'integrated' : 'discrete'} GPU`; }
+  if (!name || name === 'auto') {
+    if (mobile) { name = 'mobile'; source = 'auto, touch device'; }
+    else { name = isLite ? 'balanced' : 'high'; source = `auto, ${isLite ? 'integrated' : 'discrete'} GPU`; }
+  }
   return { name, source, preset: PRESETS[name] };
 }
 

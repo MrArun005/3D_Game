@@ -60,13 +60,14 @@ export const FLOOR_H = 3.1;    // every storey above
    0.197/0.211. Same hues, darkened, so the wall is a surface the neon lights
    rather than a surface that competes with it. */
 const WALLS = [
-  [0x24423f, 0x19302e], [0x7d6560, 0x5c4a46], [0x86807a, 0x6b665f], [0x42474a, 0x2e3236],
-  [0x2f3a34, 0x1f2622], [0x56534f, 0x3f3d3a], [0x1e2023, 0x141518], [0x726257, 0x554741],
+  // 2026-09-24: real colour -- tile teal, terracotta, sand, slate blue, sage, clay, charcoal, ochre (was eight greys)
+  [0x2f5d58, 0x21423e], [0x9a6b5e, 0x734f45], [0xa89a82, 0x857a66], [0x4d5a66, 0x37414a],
+  [0x46604e, 0x324538], [0x8c7a64, 0x6b5d4c], [0x2a2c33, 0x1c1e23], [0x9c7a56, 0x78603f],
 ];
 /* The pale masses of the Shibuya day stills: stone, blue-grey and cream, about
    half a stop over the brightest wall above -- not the first pass's 1.5 stops.
    Office slabs with ribbon glass wear these; a few others do too. */
-const LIGHT = [[0x9d9a93, 0x7f7c76], [0x8f979c, 0x70777c], [0xa39a86, 0x857d6b]];
+const LIGHT = [[0xc9c3b6, 0xa39e92], [0xb3c0c8, 0x8e9aa2], [0xd2c4a2, 0xab9f82]];
 const MAGENTA = [1.0, 0.25, 0.75], CYAN = [0.2, 0.9, 1.0];
 // weighted by repetition: the cover art is six parts magenta/cyan to four of everything else
 const NEON = [MAGENTA, CYAN, MAGENTA, CYAN, MAGENTA, CYAN, [1.0, 0.85, 0.2], [0.95, 0.95, 1.0], [1.0, 0.3, 0.2], [0.5, 1.0, 0.4]];
