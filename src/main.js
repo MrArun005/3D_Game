@@ -34,6 +34,7 @@ import { isTouchDevice } from './core/device.js';
 import { createTouch } from './game/touch.js';
 import { mergeDrive, keyboardSteer } from './game/input.js';
 import { createSkill } from './game/skill.js';
+import { benchStats } from './game/bench.js';
 import { createSkillHud } from './ui/skillHud.js';
 import { City, releaseCell } from './world/city.js';
 import { DistrictWorld } from './world/districtWorld.js';
@@ -424,7 +425,59 @@ let people = null;
 const skill = createSkill();
 const skillHud = createSkillHud();
 let hornCooldown = 0;
-let hitStop = 0, lastHitStopAt = -1e9;   // seconds of hit-stop left (the frame loop, below the dt clamp)
+let hitStop = 0, lastHitStopAt = -1e9;
+/* F9: the benchmark (game/bench.js). The film autopilot drives the route for
+   30 s, the first 3 s (streaming, first compiles) are not counted, every
+   frame after is, and the result stays on screen until F9 or Esc. Built
+   because frame rate cannot be measured from an automated browser: this
+   measures it on the machine you actually play on. */
+let bench = null;
+function benchTick(rawDt) {
+  /* Two phases (2026-09-25). WARM: the film start teleports the car to the
+     route, and the ring around the new spot builds -- one frame took 122 s in
+     the software-GL container, and it ate the old fixed 3 s warm-up AND the
+     30 s window in one step, so the whole result was that single frame. So
+     recording starts only after 1.5 s of steady frames (none over 200 ms, at
+     least 3 s in), or after 60 s regardless, and then it measures a full 30 s
+     of its own. Streaming while it DRIVES is counted: that is gameplay. */
+  bench.t += rawDt;
+  if (bench.phase === 'warm') {
+    bench.calm = rawDt > 0.2 ? 0 : bench.calm + rawDt;
+    if ((bench.t > 3 && bench.calm > 1.5) || bench.t > 60) { bench.phase = 'rec'; bench.recT = 0; }
+    if (bench.label) bench.label.textContent = 'BENCHMARK · loading the route…';
+    return;
+  }
+  bench.ms.push(rawDt * 1000);
+  bench.recT += rawDt;
+  if (bench.label) bench.label.textContent = `BENCHMARK · ${Math.max(0, 30 - bench.recT).toFixed(0)} s`;
+  if (bench.recT >= 30) {
+    const r = benchStats(bench.ms), label = bench.label;
+    bench = null;
+    stopFilm({ download: false });
+    const px = renderer.getDrawingBufferSize?.(new THREE.Vector2());
+    const col = r?.verdict === 'SMOOTH' ? '#39ffb0' : r?.verdict === 'PLAYABLE' ? '#ffd24a' : '#ff5a5a';
+    label.style.cssText += ';pointer-events:auto;text-align:left;padding:14px 18px;font:500 12px/1.7 ui-monospace,Menlo,monospace;letter-spacing:.04em';
+    label.innerHTML = r ? `<div style="font:800 18px system-ui;letter-spacing:.12em;color:${col}">${r.verdict}</div>`
+      + `AVG <b>${r.avgFps} fps</b> · 1% LOW <b>${r.low1Fps} fps</b><br>median ${r.p50Ms} ms · 99th ${r.p99Ms} ms · worst ${r.worstMs} ms<br>`
+      + `hitches (&lt;30 fps) ${r.over33} of ${r.frames} frames<br>quality ${quality.name.toUpperCase()} · ${px ? `${px.x}x${px.y}` : ''}<br><span style="opacity:.6">fn+F9 again to re-run · Esc to close · screenshot this for Claude</span>` : 'no frames recorded';
+  }
+}
+function runBenchmark() {
+  document.getElementById('bench')?.remove();
+  if (bench) return;
+  const label = document.createElement('div');
+  label.id = 'bench';
+  label.style.cssText = 'position:fixed;left:50%;top:40%;transform:translate(-50%,-50%);z-index:95;background:rgba(6,9,15,.86);border:1px solid rgba(120,140,170,.35);border-radius:10px;padding:10px 16px;color:#dbe6f5;font:700 13px ui-monospace,Menlo,monospace;letter-spacing:.14em;pointer-events:none';
+  document.body.appendChild(label);
+  started = true; hud.dismiss();
+  if (!film) startFilm({ record: false });
+  bench = { t: 0, ms: [], label, phase: 'warm', calm: 0, recT: 0 };
+}
+addEventListener('keydown', (e) => {
+  if (e.code === 'F9') { e.preventDefault(); if (document.getElementById('bench') && !bench) document.getElementById('bench').remove(); else runBenchmark(); }
+  else if (e.code === 'Escape' && !bench) document.getElementById('bench')?.remove();
+});
+window.runBenchmark = runBenchmark;   // seconds of hit-stop left (the frame loop, below the dt clamp)
 let warming = false;
 let roadblock = null, metro = null, landmarks = null;
 let billboards = null, streetLife = null, airspace = null;
@@ -2516,6 +2569,7 @@ function frameBody() {
   mark('frame-start');
   const now = performance.now();
   const rawDt = (now - lastTime) / 1000;
+  if (bench) benchTick(rawDt);
   let dt = Math.min(rawDt, 0.05);
   /* Hit-stop (2026-09-25): a big crash holds the world at a quarter speed
      for ~0.1 s, then eases back over 0.2 s -- the beat that makes an impact
