@@ -1377,7 +1377,8 @@ export function tokyoFacadeMaterial() {
   const stock = step(0.1, dfy).mul(step(dfy, mix(float(0.38), float(0.82), dh))).mul(step(0.14, fract(dcx))).mul(dFade);
   const shelfEdge = step(dfy, 0.06).mul(dFade);
   const hue = fract(dh.mul(7.13));
-  const stockCol = vec3(0.5).add(vec3(0.5).mul(vec3(hue, hue.add(0.33), hue.add(0.67)).mul(6.2832).cos())).mul(0.55).add(base.mul(0.35));
+  // muted (2026-09-25, first on-screen look): at full swing the stock read as pastel toy boxes; shop light carries more of it
+  const stockCol = vec3(0.5).add(vec3(0.3).mul(vec3(hue, hue.add(0.33), hue.add(0.67)).mul(6.2832).cos())).mul(0.5).add(base.mul(0.5));
   const ceiling = smoothstep(0.87, 0.97, dq.y), floorBand = step(dq.y, 0.06);
   const displayCol = mix(mix(mix(mix(base.mul(0.8), stockCol, stock.mul(0.85)), base.mul(0.3), shelfEdge), base.mul(0.45), floorBand).add(base.mul(ceiling.mul(0.7))), vec3(0.30, 0.31, 0.33), frame);
   const displayGlow = mix(float(1), float(0.55).add(stock.mul(0.45)).add(ceiling.mul(0.9)).mul(shelfEdge.oneMinus()), isDisplay);
