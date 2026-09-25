@@ -221,13 +221,13 @@ test('triangles per building stay inside the facade budget (200 seeds)', () => {
 });
 
 test('every triangle faces outward, every attribute is finite, every surf is a real kind (200 seeds)', () => {
-  let wrong = 0, total = 0, bad = 0, badSurf = 0;
+  let wrong = 0, total = 0, bad = 0, badSurf = 0, displays = 0;
   for (let s = 0; s < 200; s++) {
     const g = buildTokyoBuilding(...spread(s)).geo;
     assert.ok(g.index, 'indexed');
     const P = g.attributes.position.array, N = g.attributes.normal.array, I = g.index.array, S = g.attributes.surf.array;
     for (const n of ['position', 'normal', 'uv', 'color', 'emit', 'flick', 'surf']) for (const v of g.attributes[n].array) if (!Number.isFinite(v)) bad++;
-    for (const v of S) { const k = Math.floor(v), f = v - k; if (k < SURF.WALL || k > SURF.PAINT || f < 0.04 || f > 0.86) badSurf++; }
+    for (const v of S) { const k = Math.floor(v), f = v - k; if (k < SURF.WALL || k > SURF.DISPLAY || f < 0.04 || f > 0.86) badSurf++; if (k === SURF.DISPLAY) displays++; }
     for (let t = 0; t < I.length; t += 3) {
       const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
       const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2], vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
@@ -238,7 +238,8 @@ test('every triangle faces outward, every attribute is finite, every surf is a r
     }
   }
   assert.equal(bad, 0, 'non-finite attribute values');
-  assert.equal(badSurf, 0, 'surf values outside WALL..PAINT or the 0.05..0.85 variant band');
+  assert.equal(badSurf, 0, 'surf values outside WALL..DISPLAY or the 0.05..0.85 variant band');
+  assert.ok(displays > 0, 'no side-street shop bay carries SURF.DISPLAY (the brown boards are back)');
   assert.equal(wrong, 0, `${wrong} of ${total} triangles face against their normals`);
 });
 

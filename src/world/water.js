@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { positionWorld, max, mix, vec3, smoothstep, texture } from 'three/tsl';
 
 /**
  * The bay, the river, and the ten bridges that cross them.
@@ -92,7 +93,7 @@ function buildRiverGeometry(points, width, y) {
   return geo;
 }
 
-export function buildWater(scene, district, day = true) {
+export function buildWater(scene, district, day = true, { pave = null } = {}) {
   const group = new THREE.Group();
   group.name = 'water_system';
   const D = district.data;
@@ -114,9 +115,26 @@ export function buildWater(scene, district, day = true) {
     const h = area(hole) * outerSign > 0 ? hole.slice().reverse() : hole;
     outline.holes.push(new THREE.Path(h));
   }
-  const land = new THREE.Mesh(flatten(outline, -0.06), new THREE.MeshLambertMaterial({
-    color: day ? 0x59614a : 0x11161c,
-  }));
+  /* City ground is PAVING, country ground is field (2026-09-25). The plate
+     was olive (0x59614a) everywhere, so wherever a block slab stops short of
+     the pavement -- Regent Street at its real 18 m and the side streets
+     narrowed to 11 m left strips by every frontage -- the city showed a grass
+     verge in front of its shops. Inside the district bounds the plate is
+     concrete grey; it fades back to field over 60 m past the edge, where the
+     fence and the open ground begin. One mix a pixel on a surface that
+     already draws; no draws, no triangles. */
+  const landMat = THREE.MeshLambertNodeMaterial ? new THREE.MeshLambertNodeMaterial() : new THREE.MeshLambertMaterial();
+  const field = new THREE.Color(day ? 0x59614a : 0x11161c), paving = new THREE.Color(day ? 0x7a7b7d : 0x14171c);
+  if (landMat.isNodeMaterial) {
+    const p = positionWorld.xz;
+    const outside = max(max(p.x.negate(), p.x.sub(b.w)), max(p.y.negate(), p.y.sub(b.h)));   // metres past the district rectangle, <= 0 inside
+    /* With the pavement's own slab texture (main.js passes walkDistrict's map)
+       in world metres at the pavement's 2.4 m tile, a gap reads as more
+       pavement rather than as a flat smear; one texture sample a pixel. */
+    const city = pave ? texture(pave, p.div(2.4)).rgb : vec3(paving.r, paving.g, paving.b);
+    landMat.colorNode = mix(city, vec3(field.r, field.g, field.b), smoothstep(0, 60, outside));
+  } else landMat.color.copy(field);
+  const land = new THREE.Mesh(flatten(outline, -0.06), landMat);
   land.name = 'ground_water_cutout';
   land.receiveShadow = true;
   land.frustumCulled = false;

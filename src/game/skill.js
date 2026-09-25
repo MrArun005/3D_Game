@@ -68,13 +68,13 @@ export function createSkill(cfg = SKILL) {
         const key = o.id ?? o;   // traffic cars are their own id
         const dx = o.x - car.x, dz = o.z - car.z;
         const along = dx * fx + dz * fz;
-        const lat = Math.abs(-Math.sin(car.yaw) * dx - Math.cos(car.yaw) * dz);
+        const latS = -Math.sin(car.yaw) * dx - Math.cos(car.yaw) * dz, lat = Math.abs(latS);   // signed: + is the car's left
         if (Math.abs(along) < cfg.nearAlong && lat < cfg.nearDist + 1.9) nowBeside.add(key);
         if (Math.abs(along) < cfg.nearAlong && lat < cfg.nearDist && !s.passed.has(key)) {
           s.passed.add(key);
           const pts = cfg.nearPoints * (1 + Math.max(0, (kmh - cfg.nearMinKmh) / 60));
           s.chain += pts; s.mult = Math.min(cfg.maxMult, s.mult + 1); s.calm = 0;
-          ev.push({ kind: 'near', pts: Math.round(pts), mult: s.mult });
+          ev.push({ kind: 'near', pts: Math.round(pts), mult: s.mult, side: Math.sign(latS) || 1 });
         }
       }
     }

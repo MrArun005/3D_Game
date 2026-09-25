@@ -243,7 +243,12 @@ export class OnFoot {
     this.bob += dt * speed * 2.1;
 
     // Locomotion bank roll: tilt torso smoothly into rapid direction cuts
-    this.rollLean = (this.rollLean || 0) + (-turnRate * Math.min(1, speed / RUN) * 0.28 - (this.rollLean || 0)) * Math.min(1, dt * 12);
+    /* Clamped (2026-09-25): turnRate is the heading still to turn, not a rate,
+       so a 180-degree cut at a sprint asked for 0.28 x pi = 0.88 rad -- the
+       whole body tipped ~50 degrees sideways about its feet, one of the reasons
+       the running read as weird. Seven degrees is a lean into the turn. */
+    const rollTarget = Math.max(-0.12, Math.min(0.12, -turnRate * Math.min(1, speed / RUN) * 0.28));
+    this.rollLean = (this.rollLean || 0) + (rollTarget - (this.rollLean || 0)) * Math.min(1, dt * 12);
     // Forward lean proportional to acceleration
     this.pitchLean = (this.pitchLean || 0) + ((speed / RUN) * 0.12 - (this.pitchLean || 0)) * Math.min(1, dt * 8);
 

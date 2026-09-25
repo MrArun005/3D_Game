@@ -610,6 +610,7 @@ const S_TOP = SURF.WALL + 0.1;                          // tops take plaster (to
 const S_PAINT = SURF.PAINT + PAINT_VARIANT.PLAIN, S_RIBS = SURF.PAINT + PAINT_VARIANT.RIBS;
 const S_PANEL = SURF.PAINT + PAINT_VARIANT.PANEL, S_SLATS = SURF.PAINT + PAINT_VARIANT.SLATS;
 const S_GLASS = (r) => SURF.GLASS + 0.05 + 0.8 * r;     // r: curtains < 0.21, blinds 0.36-0.51, clear above
+const S_DISPLAY = (r) => SURF.DISPLAY + 0.05 + 0.8 * r; // a lit shop window with its stock (tokyo.js); r seeds the shelves
 
 /* Portland stone, pale and a little warm, ~0.5 linear: about half a stop
    over tokyo.js's LIGHT walls, which is what "pale stone against a dark
@@ -757,7 +758,7 @@ function ehole(M, e, s0, s1, y0, y1, o0, o1, mask, rgb, surf) {
 /** A wall quad in an edge's plane at offset `o`, facing out. */
 const eface = (M, e, s0, s1, y0, y1, o, rgb, surf, emit) => { if (s1 - s0 > 1e-3 && y1 - y0 > 1e-3) M.poly([EP(e, s0, o, y0), EP(e, s1, o, y0), EP(e, s1, o, y1), EP(e, s0, o, y1)], [e.n[0], 0, e.n[1]], rgb, surf, emit); };
 /** A pane: normalised UVs, so the glass shader draws its frame and transom. */
-const eglass = (M, e, s0, s1, y0, y1, o, rgb, emit, r) => M.poly([EP(e, s0, o, y0), EP(e, s1, o, y0), EP(e, s1, o, y1), EP(e, s0, o, y1)], [e.n[0], 0, e.n[1]], rgb, S_GLASS(r), emit, [[0, 0], [1, 0], [1, 1], [0, 1]]);
+const eglass = (M, e, s0, s1, y0, y1, o, rgb, emit, r, sf = S_GLASS) => M.poly([EP(e, s0, o, y0), EP(e, s1, o, y0), EP(e, s1, o, y1), EP(e, s0, o, y1)], [e.n[0], 0, e.n[1]], rgb, sf(r), emit, [[0, 0], [1, 0], [1, 1], [0, 1]]);
 /** A gable triangle (a pediment's face) on an edge: base s0..s1 at y0, apex at y1, plane o. */
 const etri = (M, e, s0, s1, y0, y1, o, rgb, surf) => M.poly([EP(e, s0, o, y0), EP(e, s1, o, y0), EP(e, (s0 + s1) / 2, o, y1)], [e.n[0], 0, e.n[1]], rgb, surf);
 /** A pediment: front triangle at o1, two raking tops back to o0 -- and a back triangle when it stands clear of any wall (on a roof). */
@@ -1009,7 +1010,7 @@ function streetFace(M, e, B, L, rnd, lit, isChamfer, out) {
        shopfront read as a black hole; Regent Street's windows are bright
        displays at noon. The warm tone takes the daylight; the emit still
        comes up after dark. */
-    eglass(M, e, o.s0, o.s1, y0 + 0.55, glTop, -R, shop.lit ? scale3(shop.col, 0.34) : lin(0x2a2620), gl, 0.62 + rnd() * 0.3);
+    eglass(M, e, o.s0, o.s1, y0 + 0.55, glTop, -R, shop.lit ? scale3(shop.col, 0.34) : lin(0x2a2620), gl, 0.62 + rnd() * 0.3, shop.lit ? S_DISPLAY : S_GLASS);   // a lit shop shows its stock (tokyo.js DISPLAY)
     if (!B.arcade) {
       // the fascia: a painted board in the shop's colour, proud of the stone
       ebox(M, e, o.s0, o.s1, glTop, o.top, -R, 0.1, 'FD', shop.fascia, S_PAINT);

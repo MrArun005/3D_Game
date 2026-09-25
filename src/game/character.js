@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { retargetClip } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { PARTS } from '../../tools/avatar/avatar.mjs';
 import { SHAPES } from '../../tools/avatar/shapes.mjs';
+import { gaitBlend, bestPhaseOffset, stepWeight } from './gait.js';
 
 /**
  * The player, as an actual rigged human.
@@ -129,6 +130,23 @@ const CLIPS = {
 };
 const TARGET_HEIGHT = 1.78;            // metres, so they match the cars
 
+/* The left thigh's rotation over one cycle of each clip (2026-09-25): what
+   bestPhaseOffset (gait.js) lines up, so the blended walk and run land the
+   same foot at the same time instead of crossing their legs. Quaternius names
+   it UpperLeg.L (UpperLegL once three sanitises the dot); the RPM avatars'
+   retargeted tracks, LeftUpLeg. No such track: phase 0, as it always was. */
+const THIGH = /(UpperLeg[._]?L|LeftUpLeg|Thigh[._]?L|UpLeg[._]?L)\.quaternion$/i;
+function thighPhase(walkClip, runClip, N = 48) {
+  const sample = (clip) => {
+    const track = clip.tracks.find((t) => THIGH.test(t.name));
+    if (!track) return null;
+    const it = track.createInterpolant();
+    return Array.from({ length: N }, (_, i) => Array.from(it.evaluate((i / N) * clip.duration)));
+  };
+  const a = sample(walkClip), b = sample(runClip);
+  return a && b ? bestPhaseOffset(a, b) : 0;
+}
+
 export class Character {
   constructor(scene, url = CHARACTERS[2]) {
     this.root = new THREE.Group();
@@ -137,6 +155,7 @@ export class Character {
     this.ready = false;
     this.actions = {};
     this.current = null;
+    this.state = null; this.fade = 0.2; this.weights = new Map(); this.runPhase = 0;   // hand-managed blend weights (play / #blend)
     this.morphMeshes = [];
     this.blinkTimer = 2.0;
     this.blinkProgress = -1;
@@ -167,6 +186,7 @@ export class Character {
     this.mixer = null;
     this.actions = {};
     this.current = null;
+    this.state = null; this.weights = new Map(); this.runPhase = 0;
     this.morphMeshes = [];
     this.ready = false;
     this.#load(CHARACTERS[i]);
@@ -294,6 +314,7 @@ export class Character {
           );
           if (clip) this.actions[key] = this.mixer.clipAction(clip);
         }
+        if (this.actions.walk && this.actions.run) this.runPhase = thighPhase(this.actions.walk.getClip(), this.actions.run.getClip());
         this.play('idle', 0);
         this.#initFace();
         this.ready = true;
@@ -307,27 +328,53 @@ export class Character {
     }
   }
 
-  /** Cross-fade to a state. Re-requesting the current one is a no-op. */
+  /**
+   * Go to a state over `fade` seconds. Re-requesting the current one is a
+   * no-op. The weights are managed by hand (#blend), not by three's
+   * crossFadeFrom: the walk/run blend below holds TWO clips at once, and
+   * three's fadeOut always starts from weight 1, so leaving a 60/40 blend
+   * spiked both clips to full. Every clip's weight walks linearly toward its
+   * target instead, which also keeps the total at 1 through a transition (a
+   * total under 1 blends in the bind pose).
+   */
   play(name, fade = 0.22) {
     let next = this.actions[name];
     if (!next && name === 'runningJump') next = this.actions.jump;
-    if (!next || next === this.current) return;
-    next.reset();
+    if (!next || this.state === name) return;
+    const once = name === 'hit' || name === 'jump' || name === 'runningJump';
+    next.clampWhenFinished = once;
+    next.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, once ? 1 : Infinity);
+    if (once || !(this.weights.get(next) > 0)) next.reset();   // a one-shot starts over; a clip already fading back in keeps its step
     next.enabled = true;
-    next.setEffectiveWeight(1);
-    if (name === 'hit') {
-      next.clampWhenFinished = true;
-      next.setLoop(THREE.LoopOnce, 1);
-    } else if (name === 'jump' || name === 'runningJump') {
-      next.clampWhenFinished = true;
-      next.setLoop(THREE.LoopOnce, 1);
-    } else {
-      next.clampWhenFinished = false;
-      next.setLoop(THREE.LoopRepeat, Infinity);
-    }
-    if (this.current) next.crossFadeFrom(this.current, fade, false);
     next.play();
-    this.current = next;
+    this.state = name; this.fade = fade; this.current = next;
+  }
+
+  /** The locomotion blend: walk and run together, phase-locked (gait.js). */
+  #loco() {
+    if (this.state === 'loco') return;
+    const walk = this.actions.walk, run = this.actions.run;
+    for (const a of [walk, run]) {
+      a.clampWhenFinished = false;
+      a.setLoop(THREE.LoopRepeat, Infinity);
+      if (!(this.weights.get(a) > 0)) a.reset();
+      a.enabled = true;
+      a.play();
+    }
+    this.state = 'loco'; this.fade = 0.2; this.current = walk;
+  }
+
+  /** Every clip's weight one step toward its target; clips at zero stop costing anything. */
+  #blend(dt, wRun) {
+    const walk = this.actions.walk, run = this.actions.run;
+    for (const a of Object.values(this.actions)) {
+      const target = this.state === 'loco' ? (a === walk ? 1 - wRun : a === run ? wRun : 0) : (a === this.current ? 1 : 0);
+      const w = stepWeight(this.weights.get(a) ?? 0, target, dt, this.fade);
+      this.weights.set(a, w);
+      a.stopFading();
+      a.setEffectiveWeight(w);
+      if (w === 0 && target === 0) a.enabled = false;
+    }
   }
 
   /**
@@ -412,33 +459,40 @@ export class Character {
     this.root.rotation.set(pitchLean * 0.5, -yaw + Math.PI / 2, rollLean, 'YXZ');
     this.#updateFace(dt);
 
+    let wRun = 0;
+    const walk = this.actions.walk, run = this.actions.run;
     if (!(this.busyUntil > performance.now())) {
       if (!isGrounded) {
-        if (speed > 3.8 && this.actions.runningJump) {
-          this.play('runningJump', 0.12);
-        } else if (this.actions.jump) {
-          this.play('jump', 0.12);
-        }
+        if (speed > 3.8 && this.actions.runningJump) this.play('runningJump', 0.12);
+        else if (this.actions.jump) this.play('jump', 0.12);
+      } else if (speed > 0.35 && !backing && walk && run) {
+        this.#loco();
       } else {
-        /* The walk clip is authored for ~1.9 m/s and the run clip for ~5.2.
-           Default movement here is 3.2 m/s -- a jog in real terms -- so picking
-           'walk' for it forced playback to 1.68x (the old clamp ceiling) and the
-           character speed-walked. Anything above a crouch/ADS gait now takes the
-           RUN clip and simply plays it slower: 3.2 m/s reads as a relaxed jog at
-           0.62x, sprint lands near 1.15x. Measured in the browser 2026-09-12. */
-        this.play(backing ? 'walk' : speed > 2.4 ? 'run' : speed > 0.35 ? 'walk' : 'idle', 0.2);
+        this.play(backing || (speed > 0.35 && !run) ? 'walk' : speed > 0.35 ? 'run' : 'idle', 0.2);
       }
     }
-    // the clips are authored at their own pace; nudge playback so the feet
-    // roughly keep up with how fast we are actually moving
-    if (this.current) {
+    if (this.state === 'loco') {
+      /* Blend space (gait.js): the default 3.2 m/s jog is ~40% run on a
+         ~1x cycle, where it used to be the sprint clip at 0.62x. The run is
+         phase-LOCKED to the walk every frame (runPhase is measured at load
+         from the thigh), so the two can never drift into crossed legs. */
+      const Dw = walk.getClip().duration, Dr = run.getClip().duration;
+      const g = gaitBlend(speed, Dw, Dr);
+      wRun = g.w;
+      walk.timeScale = g.tsWalk;
+      run.timeScale = g.tsRun;
+      run.time = (((walk.time / Dw + this.runPhase) % 1) + 1) % 1 * Dr;
+    } else if (this.current) {
       if (this.current === this.actions.jump || this.current === this.actions.runningJump) {
         this.current.timeScale = 1.05;
-      } else {
-        const rate = speed > 0.35 ? Math.max(0.55, Math.min(1.45, speed / (!backing && speed > 2.4 ? 5.2 : 1.9))) : 1;
+      } else if (this.current === walk || this.current === run) {
+        const rate = speed > 0.35 ? Math.max(0.55, Math.min(1.45, speed / (this.current === run ? 5.2 : 1.9))) : 1;
         this.current.timeScale = backing ? -rate : rate;
+      } else {
+        this.current.timeScale = 1;
       }
     }
+    this.#blend(dt, wRun);
     this.mixer.update(dt);
   }
 

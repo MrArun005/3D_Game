@@ -88,7 +88,7 @@ const _c = new THREE.Color();
                fraction picks a painted pattern (PAINT_VARIANT, 2026-09-23):
                0.05 plain, 0.25 1 m panel seams, 0.45 8 cm ribs, 0.65 12 cm
                slats -- so every PAINT part made before still reads plain */
-export const SURF = { LEGACY: 0, WALL: 1, GLASS: 2, PAINT: 3 };
+export const SURF = { LEGACY: 0, WALL: 1, GLASS: 2, PAINT: 3, DISPLAY: 4 };   // DISPLAY: a lit shop window with its stock (tokyoFacadeMaterial)
 
 /** Add `color`, `emit`, `flick` and `surf` attributes to a geometry, flat. `flick` > 0 marks a part whose glow buzzes (the phase is the value). */
 function paint(geo, hex, emit = null, k = 1, flick = 0, surf = SURF.PAINT + 0.05) {
@@ -132,6 +132,8 @@ const cyl = (r, h, hex, seg = 10) => paint(new THREE.CylinderGeometry(r, r, h, s
 const quad = (w, h, hex, emit, k, flick, surf = SURF.WALL) => paint(metrePlane(new THREE.PlaneGeometry(w, h), w, h), hex, emit, k, flick, surf + 0.05);
 /** A pane of glass: normalised UVs for the frame, `r` (0..1, seeded per window) picks curtains, blinds or clear. */
 const glass = (w, h, hex, emit, k, r) => paint(new THREE.PlaneGeometry(w, h), hex, emit, k, 0, SURF.GLASS + 0.05 + 0.8 * r);
+/** A lit shop window with its stock (SURF.DISPLAY, drawn by tokyoFacadeMaterial): `hex` is the shop's light, `r` seeds the shelves. */
+const display = (w, h, hex, emit, k, r) => paint(new THREE.PlaneGeometry(w, h), hex, emit, k, 0, SURF.DISPLAY + 0.05 + 0.8 * r);
 /** One finish per building: every upright WALL face takes `variant` (< 0.45 plaster, >= 0.45 tile); tops take plaster. */
 function wallFinish(geo, variant) {
   const s = geo.attributes.surf, n = geo.attributes.normal;
@@ -871,7 +873,13 @@ export function buildTokyoBuilding(seed, hw, hd, h) {
       for (let i = 0; i < bays; i++) {
         const along = -(f.w - 0.8) / 2 + bayW / 2 + i * (bayW + pier);
         const [bx2, bz2] = onFace(f, along, 0.08);
-        parts.push(at(glass(bayW, 1.95, 0x3a2a1c, shop, 0.62, 0.95), bx2, 1.72, bz2, f.yaw));   // the glazing
+        /* The glazing shows the shop (2026-09-25): it was one dark-brown pane,
+           so by day (emit x 0.05) every side-street bay read as a brown board
+           -- the flat panels either side of the spawn. Now the display pattern
+           in the shop's warm light; the stock is seeded from the bay's own
+           position, NOT a fresh rnd(), which would reshuffle everything this
+           building rolls after it. */
+        parts.push(at(display(bayW, 1.95, 0x9a8f7a, shop, 0.62, (Math.abs(along * 0.173 + f.w * 0.31)) % 1), bx2, 1.72, bz2, f.yaw));   // the glazing
         parts.push(at(quad(bayW, 0.55, 0x24201c), bx2, 0.42, bz2, f.yaw));               // stallriser, dark
         // the dark pier after it, standing 18 cm proud so the glass reads set back
         const e = along + bayW / 2;
@@ -1318,7 +1326,8 @@ export function tokyoFacadeMaterial() {
   m.envMapIntensity = 1.15;
   const surf = attribute('surf', 'float'), kind = floor(surf), vari = fract(surf);
   const wall = step(0.5, kind).mul(step(kind, 1.5)), isGlass = step(1.5, kind).mul(step(kind, 2.5));
-  const isPaint = step(2.5, kind), legacy = step(kind, 0.5);
+  const isPaint = step(2.5, kind).mul(step(kind, 3.5)), legacy = step(kind, 0.5);
+  const isDisplay = step(3.5, kind), paned = isGlass.add(isDisplay);   // paned: anything with a window frame
   const base = attribute('color', 'vec3');
 
   // walls: the building's finish, shifted per building so no two show the same streaks
@@ -1352,9 +1361,30 @@ export function tokyoFacadeMaterial() {
   const paintK = float(1).sub(pan.mul(max(seam(mu.x), seam(mu.y))).mul(0.4))
     .sub(rib.mul(stripe(mu.y.mul(12.5))).mul(0.3)).sub(sla.mul(stripe(mu.x.mul(8.3))).mul(0.3));
 
-  m.colorNode = wallCol.mul(wall).add(glassCol.mul(isGlass)).add(base.mul(isPaint.mul(paintK).add(legacy)));
+  /* A SHOP WINDOW WITH ITS STOCK (2026-09-25). A lit shop pane was one flat
+     colour, so every Regent Street shopfront read as a beige board. Now the
+     pane (its own 0..1 UV) shows the room behind it: three shelf rows of
+     products in seeded widths, heights and colours, a dark shelf edge under
+     each row, a lit ceiling strip across the top and a darker floor. The
+     vertex colour is the shop's light, so the stock sits in it. It fades to
+     the flat lit tone by its own screen rate before it can shimmer, and the
+     night emit carries the same pattern. A dozen ALU a display pixel, no
+     texture, no draws. */
+  const dq = uv(), dr = dq.y.mul(3.0), drow = floor(dr), dfy = fract(dr);
+  const dcx = dq.x.mul(7.0).add(drow.mul(3.7)).add(vari.mul(11.0));
+  const dh = fract(sin(floor(dcx).mul(12.9898).add(drow.mul(78.233)).add(vari.mul(37.719))).mul(43758.5453));
+  const dFade = fadeOf(dcx);
+  const stock = step(0.1, dfy).mul(step(dfy, mix(float(0.38), float(0.82), dh))).mul(step(0.14, fract(dcx))).mul(dFade);
+  const shelfEdge = step(dfy, 0.06).mul(dFade);
+  const hue = fract(dh.mul(7.13));
+  const stockCol = vec3(0.5).add(vec3(0.5).mul(vec3(hue, hue.add(0.33), hue.add(0.67)).mul(6.2832).cos())).mul(0.55).add(base.mul(0.35));
+  const ceiling = smoothstep(0.87, 0.97, dq.y), floorBand = step(dq.y, 0.06);
+  const displayCol = mix(mix(mix(mix(base.mul(0.8), stockCol, stock.mul(0.85)), base.mul(0.3), shelfEdge), base.mul(0.45), floorBand).add(base.mul(ceiling.mul(0.7))), vec3(0.30, 0.31, 0.33), frame);
+  const displayGlow = mix(float(1), float(0.55).add(stock.mul(0.45)).add(ceiling.mul(0.9)).mul(shelfEdge.oneMinus()), isDisplay);
+
+  m.colorNode = wallCol.mul(wall).add(glassCol.mul(isGlass)).add(displayCol.mul(isDisplay)).add(base.mul(isPaint.mul(paintK).add(legacy)));
   m.roughnessNode = mix(float(0.9), float(0.55), tile).mul(wall)
-    .add(mix(float(0.05), float(0.42), frame).mul(isGlass))
+    .add(mix(float(0.05), float(0.42), frame).mul(paned))
     .add(float(0.45).mul(isPaint)).add(float(0.48).mul(legacy));
   m.metalnessNode = float(0.22).mul(legacy);
   /* Relief on the walls only. Y is negated: the heights were painted with
@@ -1365,7 +1395,7 @@ export function tokyoFacadeMaterial() {
 
   const ph = attribute('flick', 'float');
   const buzz = mix(float(1), float(0.45).add(float(0.55).mul(step(float(0.35), sin(time.mul(23).add(ph.mul(7)))))), step(float(0.01), ph));
-  m.emissiveNode = attribute('emit', 'vec3').mul(materialReference('emissiveIntensity', 'float', m)).mul(buzz).mul(frame.mul(isGlass).oneMinus());   // a lit room glows, its window frame does not
+  m.emissiveNode = attribute('emit', 'vec3').mul(materialReference('emissiveIntensity', 'float', m)).mul(buzz).mul(frame.mul(paned).oneMinus()).mul(displayGlow);   // a lit room glows, its window frame does not; a display glows in its stock's pattern
   FACADE = m;
   return m;
 }

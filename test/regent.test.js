@@ -201,7 +201,7 @@ const chunks = [...plan.byChunk.keys()].map((k) => {
 const ATTRS = ['position', 'normal', 'uv', 'color', 'emit', 'flick', 'surf'];
 
 test('every chunk: indexed, finite, unit normals, real surf kinds, wound to its normals, metre UVs', () => {
-  let wrong = 0, total = 0, zeroUv = 0, verts = 0;
+  let wrong = 0, total = 0, zeroUv = 0, verts = 0, displays = 0;
   for (const c of chunks) {
     const g = c.geo;
     assert.ok(g.index, 'indexed');
@@ -211,7 +211,7 @@ test('every chunk: indexed, finite, unit normals, real surf kinds, wound to its 
     }
     const P = g.attributes.position.array, N = g.attributes.normal.array, U = g.attributes.uv.array, S = g.attributes.surf.array, I = g.index.array;
     for (let i = 0; i < N.length; i += 3) { const l = Math.hypot(N[i], N[i + 1], N[i + 2]); if (Math.abs(l - 1) > 0.02) assert.fail(`${c.k}: normal of length ${l}`); }
-    for (const v of S) { const k = Math.floor(v), f = v - k; if (k < SURF.WALL || k > SURF.PAINT || f < 0.04 || f > 0.86) assert.fail(`${c.k}: surf ${v}`); }
+    for (const v of S) { const k = Math.floor(v), f = v - k; if (k < SURF.WALL || k > SURF.DISPLAY || f < 0.04 || f > 0.86) assert.fail(`${c.k}: surf ${v}`); if (k === SURF.DISPLAY) displays++; }
     for (let i = 0; i < U.length; i += 2) { verts++; if (U[i] === 0 && U[i + 1] === 0) zeroUv++; }
     for (let t = 0; t < I.length; t += 3) {
       const a = I[t] * 3, b = I[t + 1] * 3, d = I[t + 2] * 3;
@@ -228,6 +228,8 @@ test('every chunk: indexed, finite, unit normals, real surf kinds, wound to its 
   }
   assert.equal(wrong, 0, `${wrong} of ${total} triangles face against their normals`);
   assert.ok(zeroUv / verts < 0.02, `${zeroUv} of ${verts} vertices at uv (0, 0)`);
+  // lit shops show their stock (tokyo.js SURF.DISPLAY, 2026-09-25): the flat beige shop boards must not come back
+  assert.ok(displays > 0, 'no lit shop window carries SURF.DISPLAY');
 });
 
 test('the triangle budget: per building, per chunk, the whole street wall (and +1 draw a chunk)', () => {

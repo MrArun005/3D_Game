@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import {
   Fn, Loop, uv, uniform, vec2, vec3, vec4, float, mix, smoothstep, clamp, fract, sin, dot,
   pass, mrt, output, emissive, normalView, convertToTexture, cameraWorldMatrix,
-  max, min, pow, toneMappingExposure,
+  max, min, pow, toneMappingExposure, screenCoordinate,
 } from 'three/tsl';
 import { ssr } from 'three/examples/jsm/tsl/display/SSRNode.js';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
@@ -190,6 +190,17 @@ export const GRADE_PRESETS = {
 
 /** The same hash the GLSL used, so the grain and rain keep their character. */
 const hash2 = Fn(([p]) => fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453)));
+/* The GRAIN's hash (2026-09-25): sine-free (Dave Hoskins' hash12) on real
+   pixel coordinates. hash2 above fed sin() arguments near 580,000 (uv x
+   1920/1080, dotted with 127/311): float32 sin has ~0.06 rad of precision
+   there, so the "noise" was a regular lattice -- a 6 px screen-door grid over
+   every flat sky in every shot, flickering with the frame. hash2 stays for
+   the lens rain, whose seeds are small. */
+const hash12 = Fn(([p]) => {
+  const p3 = fract(vec3(p.x, p.y, p.x).mul(0.1031)).toVar();
+  p3.addAssign(dot(p3, p3.yzx.add(33.33)));
+  return fract(p3.x.add(p3.y).mul(p3.z));
+});
 
 const _size = new THREE.Vector2();
 
@@ -461,7 +472,8 @@ export function createGrade(renderer, scene, camera, {
     c.b.subAssign(chromaOffset.mul(0.14));
 
     // 9. Film grain (luminance-weighted: organic in mid/darks, subtle in brights)
-    const n = hash2(uv().mul(vec2(1920.0, 1080.0)).add(fract(gTime).mul(91.7)));
+    // zero-mean (the old [0,1) grain lifted every black by half its amount), same peak-to-peak
+    const n = hash12(screenCoordinate.xy.add(fract(gTime.mul(0.37)).mul(vec2(413.1, 289.7)))).sub(0.5);
     const grainMask = float(1.0).sub(lum.mul(0.55));
     c.addAssign(vec3(n.mul(gAmount).mul(grainMask)));
 

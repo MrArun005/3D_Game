@@ -1590,7 +1590,7 @@ Promise.all([districtReady, catalogueReady, moduleReady, new URLSearchParams(loc
   }
   world.onChunkBuilt = (ms) => stats.reportChunkBuild(ms);
   world.onChunkDone = (ms) => stats.reportChunkTotal(ms);
-  water = buildWater(scene, district, DAY);
+  water = buildWater(scene, district, DAY, { pave: assets.mat.walkDistrict?.map });   // city ground wears the pavement slab (water.js)
   buildSurrounds(scene, district.bounds, DAY);
   if (!RACE_MODE) buildPlaces(scene, district, DAY);
   const params = new URLSearchParams(location.search);
@@ -2072,6 +2072,13 @@ let saveOffline = () => {};
       }
       chip.textContent = done ? 'SAVED OFFLINE ✓' : `SAVE OFFLINE · ${t}`;
       if (done) setTimeout(() => chip?.remove(), 4000);
+      /* A clean HUD (2026-09-25): the offer shows for 12 s after boot, then
+         fades; a save in progress keeps it up. */
+      if (!chip.dataset.fade) {
+        chip.dataset.fade = '1';
+        chip.style.transition = 'opacity 1.2s';
+        setTimeout(() => { if (chip && !/%/.test(chip.textContent)) { chip.style.opacity = '0'; chip.style.pointerEvents = 'none'; } }, 12000);
+      }
     }
   };
   const ok = 'serviceWorker' in navigator && typeof caches !== 'undefined' && !import.meta.env.DEV;
@@ -3024,6 +3031,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     for (const e of skill.update(car, traffic.cars.filter((t) => t.live && t.mesh.visible), dt)) {
       skillHud.event(e);
       if (e.kind === 'bank') { garage?.addCash?.(e.cash, 'STREET SKILL'); audio.hitmark?.(); }
+      else if (e.kind === 'near') audio.whiz?.(-e.side);   // the car you threaded, heard going past on its own side (the bullet near-miss voice; the panner's -1 is left, skill's +1 is the car's left)
     }
   }
   skillHud.update(skill.live(), dt);
