@@ -12,8 +12,6 @@ import { positionWorld, max, mix, vec3, smoothstep, texture } from 'three/tsl';
  */
 
 const WATER_Y = -2.6;              // deep enough to read as a drop from the quay
-const DECK_T = 0.9;                // bridge deck thickness
-const DECK_Y = 7.6;               // must match District's bridge span height
 
 /** A centreline of `width` turned into a closed polygon, one side then back. */
 function ribbonPolygon(points, width) {
@@ -194,58 +192,12 @@ export function buildWater(scene, district, day = true, { pave = null } = {}) {
     group.add(riverB);
   }
 
-  /* --- bridges ---
-     The carriageway itself stays flat at y=0 on the road graph, but ramps
-     up to 7.6m over water in districtWorld. What water.js provides is the
-     deck soffit under the elevated river section and realistic concrete piers
-     in the water channel, stopping clear of the approach ramps. */
-  const decks = [], piers = [];
-  for (const br of D.bridges) {
-    const pts = br.points;
-    for (let i = 0; i < pts.length - 1; i++) {
-      const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
-      const L = Math.hypot(bx - ax, bz - az);
-      if (L < 1) continue;
-      const yaw = Math.atan2(bz - az, bx - ax);
-      const cy = Math.cos(yaw), sy = Math.sin(yaw);
-
-      // Inset deck soffit by ramp distance (60m) so it never overhangs sloped approach ramps on land
-      const rampInset = Math.min(60, L * 0.28);
-      const deckLen = L - rampInset * 2;
-      if (deckLen > 4) {
-        const mx = ax + cy * (L / 2), mz = az + sy * (L / 2);
-        decks.push(M(mx, DECK_Y - DECK_T, mz, yaw, deckLen, DECK_T, br.width));
-      }
-
-      // Concrete piers placed strictly in the river channel between the abutments
-      const pierStart = rampInset + 18;
-      const pierEnd = L - rampInset - 18;
-      for (let t = pierStart; t <= pierEnd; t += 46) {
-        const px = ax + cy * t, pz = az + sy * t;
-        // Submerged pier down into riverbed
-        piers.push(M(px, WATER_Y - 4, pz, yaw, 4.2, DECK_Y - DECK_T - (WATER_Y - 4), br.width * 0.52));
-      }
-    }
-  }
-  const box = new THREE.BoxGeometry(1, 1, 1);
-  box.translate(0, 0.5, 0);
-  const concreteMat = new THREE.MeshStandardMaterial({
-    color: day ? 0x9a978e : 0x767980,
-    roughness: 0.85,
-    metalness: 0.12,
-  });
-  const inst = (list, shadow) => {
-    if (!list.length) return;
-    const m = new THREE.InstancedMesh(box, concreteMat, list.length);
-    list.forEach((mm, i) => m.setMatrixAt(i, mm));
-    m.instanceMatrix.needsUpdate = true;
-    m.frustumCulled = false;
-    m.castShadow = !!shadow;
-    m.receiveShadow = true;
-    group.add(m);
-  };
-  inst(decks, true);
-  inst(piers, true);
+  /* --- bridges --- nothing here any more (2026-09-25). This block predated
+     world/spans.js (piers, soffit, fascia per road segment) and
+     world/liftBridge.js (the signature bridge, whole) and put a SECOND set of
+     piers and a slab at a fixed 7.6 m under every bridge. Once the river
+     bridges became arches with a 3.3-4.1 m crown (district.js) that slab
+     stood 3-4 m ABOVE their decks. Two instanced draws fewer. */
 
   scene.add(group);
 
@@ -296,11 +248,3 @@ function waveNormals(cross = false) {
   return tex;
 }
 
-const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
-/** Box placed by centre-along-run, bottom-anchored in Y, yawed to the run. */
-function M(x, y, z, yaw, len, h, w) {
-  _e.set(0, -yaw, 0);
-  return new THREE.Matrix4().compose(
-    _v.set(x, y, z), _q.setFromEuler(_e), _s.set(len, h, w),
-  );
-}

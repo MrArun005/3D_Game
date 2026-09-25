@@ -38,8 +38,11 @@ function segsOn(br) {
        is one quad with elevationAt() at its four corners -- so a 1.2 km
        boundary segment whose ENDS are at grade is drawn flat and gets no
        structure, on purpose (spans.js header). Match that test here. */
+    /* ...and since 2026-09-25 "elevated along it" is the DRAWN profile's peak
+       (District.deckProfile): a river-bridge arch segment is at grade at both
+       end nodes and 3-4 m up in the middle. */
     return nearPoly(br.points, mx, mz) < br.width / 2 + 4
-      && Math.max(city.elevationAt(s.ax, s.az), city.elevationAt(s.bx, s.bz)) > 0.12;
+      && city.deckProfile(s).peak > 0.12;
   });
 }
 
@@ -61,7 +64,14 @@ function crossFall(s) {
    apart. spans.js refuses to build on a quad like that, so read it off the
    longest bridge segment that IS a deck. */
 const deckSegs = data.bridges.flatMap(segsOn).filter((s) => crossFall(s) <= DECK_T);
-const deckSeg = deckSegs.reduce((a, s) => (Math.hypot(s.bx - s.ax, s.bz - s.az) > Math.hypot(a.bx - a.ax, a.bz - a.az) ? s : a));
+/* The fixture is a CLASSIC deck, flat and carried at both ends (DOCK ROAD,
+   2026-09-25): the arches ramp from 0 at their end nodes, and a structure
+   read off one would test the parapet trim, not the deck. */
+const flatDecks = deckSegs.filter((s) => city.deckProfile(s).knots.length === 2
+  && Math.min(city.elevationAt(s.ax, s.az), city.elevationAt(s.bx, s.bz)) >= MIN_SPAN_H
+  && Math.abs(city.elevationAt(s.ax, s.az) - city.elevationAt(s.bx, s.bz)) < 0.05
+  && buildSpan(s, city).parts.length > 0);
+const deckSeg = flatDecks.reduce((a, s) => (Math.hypot(s.bx - s.ax, s.bz - s.az) > Math.hypot(a.bx - a.ax, a.bz - a.az) ? s : a));
 const deckL = Math.hypot(deckSeg.bx - deckSeg.ax, deckSeg.bz - deckSeg.az);
 const built = buildSpan(deckSeg, city);
 

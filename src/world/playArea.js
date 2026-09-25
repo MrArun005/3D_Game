@@ -404,8 +404,14 @@ export function wallProps(district, area) {
       const d = Math.hypot(x - s.ax - vx * t, z - s.az - vz * t) - s.half;
       if (d < best) {
         best = d;
-        const ea = district.elevationAt(s.ax, s.az), eb = district.elevationAt(s.bx, s.bz);
-        y = ea + (eb - ea) * t;
+        /* ...through District.deckProfile (2026-09-25): the end centres on a
+           plain segment, knots along the centreline on a river-bridge arch
+           (0 at both end nodes) -- exactly the heights the tarmac is cut at. */
+        if (district.deckAt) y = district.deckAt(s, t * Math.sqrt(l2));
+        else {
+          const ea = district.elevationAt(s.ax, s.az), eb = district.elevationAt(s.bx, s.bz);
+          y = ea + (eb - ea) * t;
+        }
       }
     }
     return { depth: best, y };

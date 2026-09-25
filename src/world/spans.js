@@ -41,12 +41,12 @@
  * the alignment gets fixed upstream. It costs five bridges nothing: MARROW
  * ROAD, BROADWAY, STEEL MILE and NORTHGATE are all inside 0.30 m.
  *
- * THE DECK HEIGHT IS LINEAR ALONG THE SEGMENT, NOT SAMPLED. districtWorld's
- * carriageway is ONE quad per segment with elevationAt() at its four corners,
- * so between them the tarmac interpolates linearly. Sampling elevationAt in
- * the middle (which is a smoothstep on a ramp) would put the fascia, the
- * upstand and the railing through the road surface on every approach. Every
- * height here is a lerp of the same four corner values the tarmac uses.
+ * THE DECK HEIGHT IS THE TARMAC'S, NOT elevationAt's. districtWorld draws the
+ * carriageway from District.deckProfile: the two END CENTRES lerped on a plain
+ * segment, knots every <= DECK_STEP m on a river-bridge arch (2026-09-25).
+ * Sampling elevationAt anywhere else (a smoothstep on a ramp) would put the
+ * fascia, the upstand and the railing through the road surface on every
+ * approach, so every height here comes from that same profile, flat across.
  *
  * SEAMS. districtWorld buckets a segment into every chunk it touches, so a
  * span that crosses a chunk boundary is built twice. world/decals.js already
@@ -66,7 +66,7 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../core/rng.js';
 import { boxM, quadM, cylM, at, Parts } from './artKit.js';
-import { DECK_T } from './district.js';
+import { DECK_T, profileAt } from './district.js';
 
 export const WATER_Y = -2.6;        // water.js WATER_Y, and districtWorld's `ground()` over water
 const BED_DROP = 3.4;               // how far a pier carries on below the waterline
@@ -75,6 +75,9 @@ export const PIER_MIN = 24, PIER_MAX = 34;
 export const POST_STEP = 2.4;       // railing posts
 export const LAMP_STEP = 26;        // lamp columns, alternating sides
 export const UPSTAND_H = 0.45;      // the solid part of the parapet
+export { DECK_STEP } from './district.js';
+export const PARAPET_MIN = 1.0;     // a deck lower than this, on land, is a kerb-high embankment or the street itself: no parapet
+const SOLID_STEP = 8;               // parapet collision boxes, each with its own baseY
 const UPSTAND_T = 0.34;
 const CAP_H = 0.9;                  // pier cap
 const ABUT_D = 3.2;                 // abutment block, along the span
@@ -203,15 +206,38 @@ export function buildSpan(seg, district, opts = {}) {
      +n edge (q[0] -> q[1]), side -1 the other (q[3] -> q[2]). */
   const yA = [elev(ax - nx * half, az - nz * half), elev(ax + nx * half, az + nz * half)];
   const yB = [elev(bx - nx * half, bz - nz * half), elev(bx + nx * half, bz + nz * half)];
-  const si = (side) => (side > 0 ? 1 : 0);
-  const edgeY = (side, t) => yA[si(side)] + (yB[si(side)] - yA[si(side)]) * (t / L);
+  /* The deck is the centreline PROFILE, flat across -- the same heights
+     districtWorld gives the tarmac (2026-09-25). This used to lerp the four
+     CORNERS, and a corner of an expressway segment that lands on a street
+     passing underneath reads that street (elevationAt's under-the-flyover
+     guard answers 0 there): measured on segment 683 at (3032-3078, 559-600),
+     both end centres 9.4 m, the fascia and parapet on one side sloped from
+     9.4 m to the ground while the tarmac stayed flat -- and the parapet's
+     collision box took baseY 0, a wall across every street under it. On an
+     arch the profile has a knot every <= DECK_STEP m; elsewhere it is the two
+     end centres. */
+  const prof = deckProfile(district, seg);
+  const arch = prof.knots.length > 2;
+  const edgeY = (side, t) => profileAt(prof, t);
   const midY = (t) => (edgeY(1, t) + edgeY(-1, t)) * 0.5;
-  const peak = Math.max(yA[0], yA[1], yB[0], yB[1]);
+  const peak = Math.max(yA[0], yA[1], yB[0], yB[1], prof.peak);
+  /* Runs between the profile's knots: a straight beam from tLo to tHi is a
+     CHORD of an arch and would cut through the deck at the crown. One piece
+     on a linear segment, so nothing changes there. */
+  const runs = (a, b) => {
+    const ts = [a, ...prof.knots.filter((t) => t > a + 0.01 && t < b - 0.01), b];
+    const out = [];
+    for (let i = 0; i < ts.length - 1; i++) out.push([ts[i], ts[i + 1]]);
+    return out;
+  };
   if (peak <= 0.12) return out;                   // not elevated: districtWorld already skips it
   /* ...and not a DECK either, if its two kerbs disagree by more than it is
      thick: that quad is the elevation band's edge cutting the carriageway, not
      a bridge (see the header). Nothing false gets built on it. */
-  if (Math.max(Math.abs(yA[0] - yA[1]), Math.abs(yB[0] - yB[1])) > DECK_T) return out;
+  /* (Not on the expressway or its ramps: there the kerbs disagree because a
+     street passes UNDER a corner, which says nothing about the deck.) */
+  if (seg.cls !== 'freeway' && seg.cls !== 'ramp'
+    && Math.max(Math.abs(yA[0] - yA[1]), Math.abs(yB[0] - yB[1])) > DECK_T) return out;
 
   const pt = (t, off, y) => [ax + ux * t + nx * off, y, az + uz * t + nz * off];
   const wet = (x, z) => !!district.inOpenWater?.(x, z);
@@ -289,8 +315,8 @@ export function buildSpan(seg, district, opts = {}) {
      between the two fascias closes it: one box, 12 triangles, and it follows
      the deck's own pitch. */
   const softW = 2 * half - 0.9;
-  if (softW > 0.5) {
-    push('concrete', beam(pt(tLo, 0, midY(tLo) - DECK_T + 0.05), pt(tHi, 0, midY(tHi) - DECK_T + 0.05),
+  if (softW > 0.5) for (const [a, b] of runs(tLo, tHi)) {
+    push('concrete', beam(pt(a, 0, midY(a) - DECK_T + 0.05), pt(b, 0, midY(b) - DECK_T + 0.05),
       softW, 0.1, CONCRETE_DARK));
   }
 
@@ -306,9 +332,10 @@ export function buildSpan(seg, district, opts = {}) {
        embankment ramp); where it does not, the 40 mm reads as a drip groove,
        which is what a real deck edge has. */
     const off = (half - 0.29) * side;
-    const eLo = edgeY(side, tLo), eHi = edgeY(side, tHi);
     // fascia beam: the deck reads DECK_T thick from the bank and from a boat
-    push('concrete', beam(pt(tLo, off, eLo - DECK_T * 0.5), pt(tHi, off, eHi - DECK_T * 0.5), 0.5, DECK_T, CONCRETE));
+    for (const [a, b] of runs(tLo, tHi)) {
+      push('concrete', beam(pt(a, off, edgeY(side, a) - DECK_T * 0.5), pt(b, off, edgeY(side, b) - DECK_T * 0.5), 0.5, DECK_T, CONCRETE));
+    }
     // haunch: the fascia deepens over each pier, the way a real girder does
     for (const t of piers) {
       const a = Math.max(tLo, t - 3.2), b = Math.min(tHi, t + 3.2);
@@ -317,30 +344,61 @@ export function buildSpan(seg, district, opts = {}) {
     }
     // the solid upstand: low enough to see over, solid enough to stop a car
     const uOff = (half - UPSTAND_T * 0.5) * side;
-    push('concrete', beam(pt(tLo, uOff, eLo + UPSTAND_H * 0.5), pt(tHi, uOff, eHi + UPSTAND_H * 0.5), UPSTAND_T, UPSTAND_H, CONCRETE));
-    // ...and a REAL railing above it: you can see the water through this one
-    for (const ry of railYs) {
-      push('metal', beam(pt(tLo, uOff, eLo + UPSTAND_H + ry), pt(tHi, uOff, eHi + UPSTAND_H + ry), 0.07, 0.05, STEEL));
+    /* The parapet stops where the bridge meets the bank (2026-09-25). An arch
+       lands at grade on its end node, and that node is a junction: the quay
+       street crosses right there, so a parapet run to t = 0 stood across its
+       carriageway (a 0.45 m kerb with a solid behind it). It covers the deck
+       where it is PARAPET_MIN up or over water -- which also takes it off the
+       last few metres of every expressway ramp's foot, where it stood on the
+       street the ramp lands on. */
+    const [gLo, gHi] = guardedRange(prof, (t) => { const p = pt(t, 0, 0); return wet(p[0], p[2]); }, tLo, tHi);
+    const pr = gHi > gLo + 0.5 ? runs(gLo, gHi) : [];
+    for (const [a, b] of pr) {
+      const ea = edgeY(side, a), eb = edgeY(side, b);
+      push('concrete', beam(pt(a, uOff, ea + UPSTAND_H * 0.5), pt(b, uOff, eb + UPSTAND_H * 0.5), UPSTAND_T, UPSTAND_H, CONCRETE));
+      // ...and a REAL railing above it: you can see the water through this one
+      for (const ry of railYs) {
+        push('metal', beam(pt(a, uOff, ea + UPSTAND_H + ry), pt(b, uOff, eb + UPSTAND_H + ry), 0.07, 0.05, STEEL));
+      }
     }
     const postAt = [];
     for (let tc = POST_STEP * 0.5, n = 0; tc < L && n < 400; tc += POST_STEP, n++) {
       const t = tOf(tc);
-      if (!inChunk(t)) continue;
+      if (!inChunk(t) || t < gLo || t > gHi) continue;
       const [px, , pz] = pt(t, uOff, 0);
       postAt.push(new THREE.Matrix4().makeTranslation(px, edgeY(side, t) + UPSTAND_H + postH * 0.5, pz));
     }
     push('metal', repeat(boxM(0.09, postH, 0.09, STEEL), postAt));   // one geometry for the whole run of posts
     // collision: the parapet line, so the caller can drop districtWorld's own
-    const cx = (pt(tLo, uOff, 0)[0] + pt(tHi, uOff, 0)[0]) * 0.5;
-    const cz = (pt(tLo, uOff, 0)[2] + pt(tHi, uOff, 0)[2]) * 0.5;
+    /* ...one box per SOLID_STEP m, each with its own baseY (2026-09-25). One
+       box for the whole clipped run took the LOWEST end as its base, so on any
+       ramp segment (0 -> 9.4 m) the parapet counted as standing on the ground
+       along its entire length: a street passing under the high end hit a wall
+       4-9 m below the deck. Measured over the full map before this: 18 of 47
+       ground crossings of a span stopped the car dead. */
     /* baseY: the deck this parapet stands on (2026-09-14).
        Car/building collision is a 2D footprint test -- resolveBoxes never looked
        at a box's height or the car's y -- so a parapet 7.6 m up in the air was a
        wall across the road passing UNDERNEATH the bridge. "under bridge road i
        cannot pass through" is exactly this. Carrying the base lets the solver
        skip a structure the car is driving below. */
-    solids.push({ x: cx, z: cz, hw: (tHi - tLo) / 2, hd: UPSTAND_T * 0.5 + 0.15,
-      angle: Math.atan2(dz, dx), baseY: Math.min(edgeY(side, tLo), edgeY(side, tHi)) });
+    const nS = gHi > gLo + 0.5 ? Math.max(1, Math.ceil((gHi - gLo) / SOLID_STEP)) : 0;
+    for (let i = 0; i < nS; i++) {
+      const a = gLo + (gHi - gLo) * i / nS, b = gLo + (gHi - gLo) * (i + 1) / nS;
+      const pa = pt(a, uOff, 0), pb = pt(b, uOff, 0);
+      const baseY = Math.min(edgeY(side, a), edgeY(side, b), edgeY(side, (a + b) / 2));
+      /* Where a street at grade OWNS the spot (elevationAt's "the road wins
+         ties against a ramp"), a low ramp foot's parapet is not a wall on it:
+         measured, ramp 760 lands across street 596 at (3221,1284) with its
+         parapet 0.5-1.5 m up while the street there is at 0 -- a wall across a
+         road you can see; DOCK ROAD's east approach (still the old 7.6 m deck)
+         does the same to street 656 at (2027,2421), 2.3-2.9 m up. Pieces the
+         car could not pass under anyway (base under 1.7 m + 0.62 ride) and
+         that stand > 0.3 m over the surface there go. */
+      const mx = (pa[0] + pb[0]) * 0.5, mz = (pa[2] + pb[2]) * 0.5;
+      if (baseY < 2.4 && elev(mx, mz) < baseY - 0.3) continue;
+      solids.push({ x: mx, z: mz, hw: (b - a) / 2, hd: UPSTAND_T * 0.5 + 0.15, angle: Math.atan2(dz, dx), baseY });
+    }
   }
 
   // ---------------------------------------------------------------- lamps
@@ -385,6 +443,25 @@ export function buildSpan(seg, district, opts = {}) {
   }
 
   return out;
+}
+
+/** The deck height along a road segment -- District.deckProfile (district.js),
+ *  re-exported here beside the structure that reads it. */
+export function deckProfile(district, seg) {
+  if (district?.deckProfile) return district.deckProfile(seg);
+  const L = Math.hypot(seg.bx - seg.ax, seg.bz - seg.az) || 1;   // a stub district: the end-centre lerp
+  const yA = district?.elevationAt?.(seg.ax, seg.az) ?? 0, yB = district?.elevationAt?.(seg.bx, seg.bz) ?? 0;
+  return { knots: [0, L], ys: [yA, yB], peak: Math.max(yA, yB) };
+}
+export { profileAt } from './district.js';
+
+/** [lo, hi] of [tLo, tHi] where an arch deck needs a parapet: PARAPET_MIN up, or over water. */
+function guardedRange(prof, wetAt, tLo, tHi) {
+  const need = (t) => profileAt(prof, t) >= PARAPET_MIN || wetAt(t);
+  let lo = tLo, hi = tHi;
+  while (lo < hi && !need(lo)) lo += 0.5;
+  while (hi > lo && !need(hi)) hi -= 0.5;
+  return [lo, hi];
 }
 
 /**

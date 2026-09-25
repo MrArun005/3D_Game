@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
-import { District } from '../src/world/district.js';
+import { District, ARCH_R, ARCH_GRADE } from '../src/world/district.js';
 import {
   COMPACT_POLY, RACEWAY_POLY, COMPACT_PLACES, COMPACT_CHOP, COMPACT_TARGETS, JERSEY, HOARDING,
   makePlayArea, holdInside, clipGraph, pickMapMode, keptCellSet, wallProps, remapMission, ringHides,
@@ -407,7 +407,7 @@ test('the wall is dressed: jersey barriers on roads and decks, hoarding on open 
     assert.ok(city.tarmacDepth(p.x, p.z) >= 5.5, 'hoarding on a road');
   }
   /* Height: the DRAWN road under the barrier -- the segment it is deepest
-     into, at districtWorld's end-centre deck interpolation, +KERB_H on the
+     into, at districtWorld's deck profile (District.deckAt), +KERB_H on the
      pavement -- never elevationAt at its own spot (CLAUDE.md, the banked
      bridge). Checked independently of wallProps' own surface() walk. */
   for (const p of jersey) {
@@ -416,14 +416,16 @@ test('the wall is dressed: jersey barriers on roads and decks, hoarding on open 
       const vx = sg.bx - sg.ax, vz = sg.bz - sg.az, l2 = vx * vx + vz * vz;
       let t = l2 ? ((p.x - sg.ax) * vx + (p.z - sg.az) * vz) / l2 : 0; t = Math.max(0, Math.min(1, t));
       const d = Math.hypot(p.x - sg.ax - vx * t, p.z - sg.az - vz * t) - sg.half;
-      if (d < best) { best = d; const ea = city.elevationAt(sg.ax, sg.az); deck = ea + (city.elevationAt(sg.bx, sg.bz) - ea) * t; }
+      if (d < best) { best = d; deck = city.deckAt(sg, t * Math.sqrt(l2)); }   // the drawn profile (end centres, or an arch's knots)
     }
     assert.ok(Math.abs(p.y - (deck + (best > 0 ? KERB_H : 0))) < 1e-6, `barrier at y ${p.y}, road drawn at ${deck}`);
   }
-  // the three river decks the outline crosses mid-span (Marrow Road, Steel Mile, Broadway): barriers at 7.6 m
-  const decks = jersey.filter((p) => p.y > 5);
+  /* the three river decks the outline crosses mid-span (Marrow Road, Steel
+     Mile, Broadway): barriers up on the arch (3.5-4.1 m crowns since
+     2026-09-25, district.js; they were 7.6 m flat decks) */
+  const decks = jersey.filter((p) => p.y > 1.5);
   assert.ok(decks.length >= 40, `${decks.length} barriers on decks`);
-  for (const p of decks) assert.ok(Math.abs(p.y - 7.6) < 0.05 || Math.abs(p.y - (7.6 + KERB_H)) < 0.05, `deck barrier at y ${p.y}`);
+  for (const p of decks) assert.ok(p.y <= ARCH_GRADE * ARCH_R / 1.5 + KERB_H + 0.01, `deck barrier at y ${p.y}, over the highest crown`);
   for (const p of jersey) if (city.inOpenWater(p.x, p.z)) assert.ok(city.elevationAt(p.x, p.z) > 0.5, 'a barrier in the water off any deck');
   // local +Z (the hoarding's printed face) looks into the city
   for (const p of props.slice(0, 200)) {

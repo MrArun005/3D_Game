@@ -21,7 +21,7 @@ import { boardCell, tokyoBoardMesh } from './tokyoSigns.js';
 import { buildDecals, decalMaterial, decalGeometry } from './decals.js';
 import { buildGlare, setGlareRing, setGlareClip } from './glare.js';
 import { keptCellSet, wallProps, ringHides, segmentSplit, pieceHas } from './playArea.js';
-import { buildSpan, signatureBridge } from './spans.js';
+import { buildSpan, signatureBridge, deckProfile, profileAt } from './spans.js';
 import { skirtFoot } from './district.js';
 import { styleFor, buildArt, artMaterial, ART_CAP } from './artBuildings.js';
 import { regentChunk, regentEnabled, regentPlan } from './regent.js';
@@ -1727,11 +1727,39 @@ export class DistrictWorld {
            163 elevated segments had their two long edges more than a metre
            apart. A real deck is flat across and ramped along, which is exactly
            what sampling the centreline gives. */
-        const decA = D.elevationAt(s.ax, s.az), decB = D.elevationAt(s.bx, s.bz);
+        /* ...and sampled ALONG the centreline too, every <= 16 m (spans.js DECK_STEP), on any
+           segment that is lifted at an end or its middle (2026-09-25). The river
+           bridges are arches now (district.js, 0 at both end nodes), and a
+           BROADWAY deck segment ends at grade at both ends: end-centre
+           interpolation drew it flat on the water while the car rode a 3.7 m
+           crown -- an invisible road over a visible one. spans.js samples the
+           same knots (deckProfile), so tarmac, fascia and parapet agree.
+           Cost: one quad per 16 m of arch road instead of one per segment,
+           ~+40 triangles a bridge; no draws. Ground roads keep one quad. */
+        const prof = deckProfile(D, s);
         const deckY = (px, pz) => {
           const t = L > 0.001 ? Math.max(0, Math.min(1, ((px - s.ax) * dx + (pz - s.az) * dz) / (L * L))) : 0;
-          return decA + (decB - decA) * t;
+          return profileAt(prof, t * L);
         };
+        if (prof.knots.length > 2) {
+          // cut every quad at the profile's knots, so the tarmac bends where the deck does
+          const cutQ = [];
+          for (const pq of quads) {
+            const ts = [pq.lo, ...prof.knots.filter((t) => t > pq.lo + 0.01 && t < pq.hi - 0.01), pq.hi];
+            for (let i = 0; i < ts.length - 1; i++) {
+              const a = ts[i] / L, b = ts[i + 1] / L;
+              const sq = [
+                [q[0][0] + (q[1][0] - q[0][0]) * a, q[0][1] + (q[1][1] - q[0][1]) * a],
+                [q[0][0] + (q[1][0] - q[0][0]) * b, q[0][1] + (q[1][1] - q[0][1]) * b],
+                [q[3][0] + (q[2][0] - q[3][0]) * b, q[3][1] + (q[2][1] - q[3][1]) * b],
+                [q[3][0] + (q[2][0] - q[3][0]) * a, q[3][1] + (q[2][1] - q[3][1]) * a],
+              ];
+              sq.lo = ts[i]; sq.hi = ts[i + 1];
+              cutQ.push(sq);
+            }
+          }
+          quads.length = 0; quads.push(...cutQ);
+        }
         for (const pq of quads) {
           for (const [px, pz] of [pq[0], pq[1], pq[2], pq[0], pq[2], pq[3]]) {
             pos.push(px, deckY(px, pz), pz);
@@ -1747,7 +1775,7 @@ export class DistrictWorld {
         // elevated? then this segment gets sides
         const e0 = deckY(q[0][0], q[0][1]), e1 = deckY(q[1][0], q[1][1]);
         const e3 = deckY(q[3][0], q[3][1]), e2 = deckY(q[2][0], q[2][1]);
-        if (Math.max(e0, e1, e2, e3) > 0.12) {
+        if (Math.max(e0, e1, e2, e3, prof.peak) > 0.12) {   // peak: an arch segment is at grade at both ends
           /* Piers, fascia, railing, soffit, lamps, joints, abutment --
              world/spans.js. Clipped to this chunk so the neighbour builds the
              other half. NOT on the signature bridge: world/liftBridge.js

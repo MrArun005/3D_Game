@@ -117,7 +117,34 @@ export class District {
        reject most of them without doing any geometry. */
     this.spans = [];
     for (const br of data.bridges) {
-      this.spans.push(makeSpan(br.points, br.width, 7.6, 62, false, 'bridge'));
+      /* A river bridge LANDS AT GRADE on its own bank nodes (2026-09-25).
+         Every bridge but the lift bridge was a 7.6 m flat deck from end node
+         to end node plus a 62 m smoothstep ramp carried on INTO the city past
+         them. Measured over the plan (scratchpad/bridge-audit.mjs): every one
+         of the nine has a junction 0-39 m past each end, the quay streets
+         (segment 539 on the east bank) run straight through the bridgeheads,
+         and the water starts only 9-15 m in from the end nodes. So: (1) the
+         quay street at BROADWAY rose 0 -> 6.4 m in 3 m at (1768,1600) and fell
+         7.6 -> 0 at (1774,1641) -- the "invisible wall under the bridge"; (2)
+         the approach ramp peaked at 18.4% (1.5 x 7.6 / 62), a ski jump; (3)
+         the ramps stood across the next junction inland.
+         The plan put junctions AT the bridge ends, so the deck has to meet the
+         street there: an arch INSIDE the polyline, 0 at each end node, rising
+         over the water with a smoothstep of half-length R <= ARCH_R and a crown
+         H = ARCH_GRADE * R / 1.5, so the steepest point is ARCH_GRADE (7.5%).
+         BROADWAY (148 m): R 74, crown 3.70 m, soffit 5.4 m over the water
+         mid-river. The lift bridge keeps its 7.6 m deck and ramps --
+         world/liftBridge.js and its tests are built on them. */
+      /* DOCK ROAD keeps the old deck too: it crosses the lift bridge mid-river
+         AT deck level (t 90-126 m of its 147), so an arch under it would be a
+         7.6 m wall in the river, and its east end is 21 m from that crossing. */
+      if (br.signature || crossesSignature(br, data.bridges)) {
+        this.spans.push(makeSpan(br.points, br.width, 7.6, 62, false, 'bridge')); continue;
+      }
+      const sp = makeSpan(br.points, br.width, 0, 0, false, 'bridge');
+      sp.arch = Math.min(ARCH_R, sp.length / 2);
+      sp.height = Math.min(7.6, ARCH_GRADE * sp.arch / 1.5);
+      this.spans.push(sp);
     }
     for (const e of data.graph.edges) {
       if (e.class !== 'freeway') continue;
@@ -836,6 +863,58 @@ export class District {
     return best;
   }
 
+  /**
+   * The deck height along a road segment, as knots {knots: t[], ys: y[], peak}
+   * (2026-09-25). Two knots -- the end centres, exactly the old lerp -- unless
+   * an end or the middle of the segment is on a river-bridge ARCH
+   * (district.archAt), where elevationAt is a smoothstep and not a lerp: then
+   * a knot every <= DECK_STEP m on the centreline, straight runs merged (16 m keeps
+   * the worst arch segment at 2,191 triangles per 100 m; 10 m cost 3,035). This is
+   * the ONE place the tarmac (districtWorld) and the structure (buildSpan) get
+   * their heights from, so they cannot disagree.
+   */
+  deckProfile(seg) {
+    const dx = seg.bx - seg.ax, dz = seg.bz - seg.az, L = Math.hypot(dx, dz) || 1;
+    const e = (t) => this.elevationAt(seg.ax + dx * t / L, seg.az + dz * t / L);
+    const yA = e(0), yB = e(L);
+    /* A long street that merely STARTS at a bridgehead node is not on the
+       arch: sampling its 500 m would draw every other span's lift it passes
+       (measured: nine such streets, 0.1-0.7 m bumps). The middle, or a short
+       segment with an end on it, is. */
+    const onArch = this.archAt(seg.ax + dx / 2, seg.az + dz / 2)
+      || (L < 2 * ARCH_R && (this.archAt(seg.ax, seg.az) || this.archAt(seg.bx, seg.bz)));
+    if (!onArch) return { knots: [0, L], ys: [yA, yB], peak: Math.max(yA, yB) };
+    const n = Math.ceil(L / DECK_STEP);
+    const T = [], Y = [];
+    for (let i = 0; i <= n; i++) { T.push(L * i / n); Y.push(i === 0 ? yA : i === n ? yB : e(L * i / n)); }
+    const knots = [T[0]], ys = [Y[0]];
+    for (let i = 1; i < n; i++) {                   // drop a knot the line through its neighbours already passes
+      const t0 = knots[knots.length - 1], y0 = ys[ys.length - 1];
+      const lin = y0 + (Y[i + 1] - y0) * (T[i] - t0) / (T[i + 1] - t0);
+      if (Math.abs(Y[i] - lin) > 0.02) { knots.push(T[i]); ys.push(Y[i]); }
+    }
+    knots.push(T[n]); ys.push(Y[n]);
+    return { knots, ys, peak: Math.max(...ys) };
+  }
+
+  /** The drawn deck height t metres along a road segment (deckProfile). */
+  deckAt(seg, t) { return profileAt(this.deckProfile(seg), t); }
+
+  /** Is (x, z) on a river-bridge arch's band (2026-09-25)? deckProfile asks,
+      to know which road segments must be sampled along and not lerped. */
+  archAt(x, z) {
+    for (const s of this.spans) {
+      if (!s.arch || x < s.minX || x > s.maxX || z < s.minZ || z > s.maxZ) continue;
+      for (let i = 0; i < s.pts.length - 1; i++) {
+        const ax = s.pts[i][0], az = s.pts[i][1], vx = s.pts[i + 1][0] - ax, vz = s.pts[i + 1][1] - az;
+        const l2 = vx * vx + vz * vz;
+        let t = l2 ? ((x - ax) * vx + (z - az) * vz) / l2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+        if (Math.hypot(x - ax - vx * t, z - az - vz * t) <= s.half + 5.5) return true;
+      }
+    }
+    return false;
+  }
+
   buildingsOf(blockId) { return this.buildingsByBlock.get(blockId) ?? []; }
 
   /**
@@ -959,6 +1038,38 @@ function makeSpan(points, width, height, ramp, taper = false, kind = 'bridge') {
 }
 
 const smooth = (t) => t * t * (3 - 2 * t);
+/** Height of a deckProfile at t metres along its segment. */
+export function profileAt(prof, t) {
+  const K = prof.knots, Y = prof.ys;
+  if (t <= K[0]) return Y[0];
+  for (let i = 1; i < K.length; i++) {
+    if (t <= K[i]) return Y[i - 1] + (Y[i] - Y[i - 1]) * (t - K[i - 1]) / (K[i] - K[i - 1] || 1);
+  }
+  return Y[Y.length - 1];
+}
+
+
+/** Arch profile knot spacing, m: a 16 m chord sags <= 13 cm at BROADWAY's
+    crown (6H/R^2 = 0.004 /m). */
+export const DECK_STEP = 16;
+
+/** Does a bridge's polyline pass within the signature bridge's deck band? */
+function crossesSignature(br, bridges) {
+  for (const sg of bridges) {
+    if (!sg.signature || sg === br) continue;
+    const r = sg.width / 2 + 5.5;
+    for (let i = 0; i < br.points.length - 1; i++) {
+      const [ax, az] = br.points[i], [bx, bz] = br.points[i + 1], L = Math.hypot(bx - ax, bz - az);
+      for (let t = 0; t <= L; t += 2) {
+        if (withinPolyline(sg.points, ax + (bx - ax) * t / L, az + (bz - az) * t / L, r)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/** River-bridge arch: longest half-rise, and the steepest grade it may reach. */
+export const ARCH_R = 90, ARCH_GRADE = 0.075;
 
 /** Unit direction of the span's nearest piece to (x, z). */
 function spanDir(s, x, z) {
@@ -1026,6 +1137,11 @@ function spanHeight(s, x, z) {
   /* The lifted band covers the PAVEMENT, not just the carriageway.
      half + 5.5 clears the 4.8m pavement's outer edge with room for a railing. */
   if (bestD <= s.half + 5.5) {
+    if (s.arch) {
+      // the river bridge's arch: 0 at both end nodes, never past them
+      const k = Math.min(along, s.length - along) / s.arch;
+      return k <= 0 ? 0 : s.height * smooth(Math.min(1, k));
+    }
     if (s.taper) {
       // a ramp climbs across its whole length rather than having approaches
       return s.height * smooth(Math.max(0, Math.min(1, along / Math.max(1, s.length))));
