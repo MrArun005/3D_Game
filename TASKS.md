@@ -77,3 +77,8 @@ going, and put status in the same message as the next action.
 - [x] Joystick, pedals, drawer taps, no title card, loader, offline save —
       `59c7f5a` … `f9a7024`
 - [ ] `[owner]` confirm the iPhone plays on `f9a7024` or later
+
+### Deploy
+- [ ] Cloudflare Worker `3d-game`: production branch `main`, deploy command
+      must be `npx wrangler deploy` (`versions upload` never goes live);
+      other branches stay `versions upload` previews
