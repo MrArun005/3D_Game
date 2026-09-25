@@ -64,9 +64,14 @@ export const RIGS = [
      back within 1 deg ~1 s after the key comes up (0.5-0.7 s welded). 3.0
      gives ~14 deg at 40, 4.5 ~11: it is the one knob. Every other rig
      (bonnet, bumper, cockpit, tank, heli, the video angles that do not copy
-     these) keeps the welded heading. */
-  { back: 5.9, up: 1.5, aim: 6.2, aimUp: -0.25, fov: 48, lag: 3.4, tilt: 1, yawLag: 3.5 },   // 7.2 measured 24% wide on the GT3 R; 30% is 7.2 * 24/30
-  { back: 4.7, up: 1.92, aim: 8.2, fov: 63, lag: 6.0, tilt: 1, yawLag: 4.5 },
+     these) keeps the welded heading.
+     2026-09-25: 3.5 -> 6.0 on the default rig, 4.5 -> 7.0 on the high one.
+     Owner, on the keyboard: turning left or right still lags. At 3.5 the
+     view takes ~0.3 s to start following a turn; 6.0 halves the trail
+     (roughly 7-8 deg of flank at 40 km/h) and is back on the centreline in
+     ~0.5 s. */
+  { back: 5.9, up: 1.5, aim: 6.2, aimUp: -0.25, fov: 48, lag: 3.4, tilt: 1, yawLag: 6.0 },   // 7.2 measured 24% wide on the GT3 R; 30% is 7.2 * 24/30
+  { back: 4.7, up: 1.92, aim: 8.2, fov: 63, lag: 6.0, tilt: 1, yawLag: 7.0 },
   { back: -1.3, up: 1.28, aim: 14.0, fov: 62, lag: 22.0, tilt: 0 },
   { back: -0.55, up: 1.3, aim: 16.0, fov: 55, lag: 26.0, tilt: 0 },
   /* COCKPIT. Every number here was found by putting the camera there and

@@ -249,7 +249,7 @@ export function createInput(onAction, { chatAllowed = () => true } = {}) {
     if (e.code === 'KeyK') onAction('avatar'); // cycle which character you are
     if (e.code === 'KeyP') onAction('photo');  // photo mode: free camera + the plan's acceptance presets
     if (e.code === 'KeyO') onAction('tour');   // automated feature tour and demo video recording
-    if (e.code === 'KeyT') onAction(e.shiftKey ? 'track' : 'time');   // Shift+T: Halstead Raceway; T: advance clock 3 hours
+    if (e.code === 'KeyT') onAction(e.shiftKey ? 'track' : 'time');   // Shift+T: Halstead Raceway; T: next time of day (morning, midday, afternoon, sunset, night)
     if (e.code === 'KeyI') onAction('horn');   // the horn: pedestrians ahead scatter, the car in front gets a move on
     // weapons: 1-4 select, X reloads. Digits are the only keys left that a
     // driving game has not already spent, and they are what shooters use.

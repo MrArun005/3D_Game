@@ -114,6 +114,7 @@ import { Debris } from './world/breakables.js';
 /* Day first. Night is still fully built -- ?night in the URL brings it back --
    but daylight is the honest view: nothing hides behind a lamp glow. */
 const DAY = !new URLSearchParams(location.search).has('night');
+const RAIN_ON = new URLSearchParams(location.search).has('rain');
 /* ?mode=race -- the raceway as its OWN run. Only the chunks under the circuit
    are built, no far-city LOD, no civilian traffic, no crowd, no landmarks, no
    beach or riverside dressing, and the race stages itself on the grid at
@@ -1902,7 +1903,13 @@ chase.buildings = (x, z) => (world?.nearbyBuildings ? world.nearbyBuildings(x, z
 const weather = createWeather(scene, { hemi, dome: () => dome, onStrike: (delay) => audio.thunder?.(delay) });   // always built: rain comes in night spells (rainSpell) on the day cycle, and all night with ?night
 const hud = new Hud();
 let navigation = null;
-const clock = new GameClock({ startHour: +(new URLSearchParams(location.search).get('time') ?? (DAY ? 16.85 : 19.5)) });
+/* speed 0.1 (2026-09-25): one game hour per ten real minutes. At 1.0 the
+   16:51 start was dark by 19:30 -- three minutes of play -- so every session
+   ended up driving at night. ?clockspeed=N for the old pace or a time-lapse. */
+const clock = new GameClock({
+  startHour: +(new URLSearchParams(location.search).get('time') ?? (DAY ? 16.85 : 19.5)),
+  speed: +(new URLSearchParams(location.search).get('clockspeed') ?? 0.1),
+});
 hud.useClock(clock);
 const stats = new Stats();
 window.stats = stats;
@@ -2347,7 +2354,17 @@ const onInputAction = (action) => {
   if (action === 'reset') respawnCar();
   if (action === 'mile') startHalsteadMile();
   if (action === 'track') startCircuitRace();
-  if (action === 'time' && DEBUG_KEYS) { clock.hour = (clock.hour + 3) % 24; hud.flash(`TIME · ${clock.formattedTime}`); }
+  /* T: time of day, for everyone (2026-09-25, owner: "enable time to play
+     day time too"). Steps through five set pieces instead of +3 h, so two
+     presses from a night boot is morning, not 04:00. The choice persists
+     (hb.clock, saved every 5 s and on pagehide). */
+  if (action === 'time') {
+    const SET = [[8.5, 'MORNING'], [12.5, 'MIDDAY'], [16.85, 'AFTERNOON'], [19.3, 'SUNSET'], [22.5, 'NIGHT']];
+    const i = SET.findIndex(([h]) => h > clock.hour + 0.05);
+    const [h, name] = SET[i < 0 ? 0 : i];
+    clock.hour = h;
+    hud.flash(`${name} · ${clock.formattedTime} · T for the next`);
+  }
   if (action === 'horn' && !onFoot.active) {
     // your horn: heard, and answered -- pedestrians ahead break for the kerb, the car in front picks up for three seconds
     audio.horn?.(0, 0);
@@ -2905,7 +2922,9 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
       if (h !== null && !q.has('night') && !q.has('dusk') && !q.has('hour') && !q.has('time')) {
         const val = ((+h) % 24 + 24) % 24;
         // Upgrade previous flat noon hours (10.5 - 15.5) to golden hour (16.85)
-        clock.hour = (val >= 10.5 && val <= 15.5) ? 16.85 : val;
+        /* Boot in daylight (2026-09-25): a session that was left at night
+           used to come back at night, dark and raining. Night is one T away. */
+        clock.hour = (val >= 7 && val <= 19) ? ((val >= 10.5 && val <= 15.5) ? 16.85 : val) : 16.85;
       }
     } catch { /* private mode */ }
   }
@@ -3091,7 +3110,9 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   if (weather) {
     // rain only at night (the clock's thresholds), in spells on the normal cycle, all night with ?night
     const nightNow = clock.hour >= 20.5 || clock.hour < 5.2;
-    weather.setEnabled(rainForce ?? (nightNow && (!DAY || rainSpell(now / 1000))));
+    /* Rain is OFF unless asked for (2026-09-25, owner: "remove rain, it's
+       bad"). ?rain brings the night spells back; __rain() still forces it. */
+    weather.setEnabled(rainForce ?? (RAIN_ON && nightNow && (!DAY || rainSpell(now / 1000))));
     weather.update(camera, currentVehicle, dt); car.wet = weather.amount ?? 1; traffic.wet = car.wet; if (crowd) crowd.rain = car.wet; grade.setWet?.(car.wet);   // ?ssr: wet-street reflections follow the rain
     if (Math.abs((weather.amount ?? 1) - (rainHeard ?? -1)) > 0.05) { rainHeard = weather.amount; audio.setRain(rainHeard); }
     // the road LOOKS wet: uniforms only, no recompile. Dry must stay the day
