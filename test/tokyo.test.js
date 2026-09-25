@@ -227,7 +227,7 @@ test('every triangle faces outward, every attribute is finite, every surf is a r
     assert.ok(g.index, 'indexed');
     const P = g.attributes.position.array, N = g.attributes.normal.array, I = g.index.array, S = g.attributes.surf.array;
     for (const n of ['position', 'normal', 'uv', 'color', 'emit', 'flick', 'surf']) for (const v of g.attributes[n].array) if (!Number.isFinite(v)) bad++;
-    for (const v of S) { const k = Math.floor(v), f = v - k; if (k < SURF.WALL || k > SURF.DISPLAY || f < 0.04 || f > 0.86) badSurf++; if (k === SURF.DISPLAY) displays++; }
+    for (const v of S) { const k = Math.floor(v), f = v - k; if (k < SURF.WALL || k > SURF.SASH || f < 0.04 || f > 0.86) badSurf++; if (k === SURF.DISPLAY) displays++; }
     for (let t = 0; t < I.length; t += 3) {
       const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
       const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2], vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];

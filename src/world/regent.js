@@ -611,6 +611,7 @@ const S_PAINT = SURF.PAINT + PAINT_VARIANT.PLAIN, S_RIBS = SURF.PAINT + PAINT_VA
 const S_PANEL = SURF.PAINT + PAINT_VARIANT.PANEL, S_SLATS = SURF.PAINT + PAINT_VARIANT.SLATS;
 const S_GLASS = (r) => SURF.GLASS + 0.05 + 0.8 * r;     // r: curtains < 0.21, blinds 0.36-0.51, clear above
 const S_DISPLAY = (r) => SURF.DISPLAY + 0.05 + 0.8 * r; // a lit shop window with its stock (tokyo.js); r seeds the shelves
+const S_SASH = (r) => SURF.SASH + 0.05 + 0.8 * r;       // a white-painted sash window (tokyo.js); r picks curtains / blinds as for glass
 
 /* Portland stone, pale and a little warm, ~0.5 linear: about half a stop
    over tokyo.js's LIGHT walls, which is what "pale stone against a dark
@@ -1069,7 +1070,7 @@ function streetFace(M, e, B, L, rnd, lit, isChamfer, out) {
       p = a1 + (B.surround ? fr : 0);
       const lo = B.surround ? 0.06 : 0, sw = B.surround ? fr + 0.02 : 0.1;
       ehole(M, e, a0, a1, sill, head, -R, lo, 'LRTD', B.stone, B.sw);                     // reveals, head and the sill's inner half
-      eglass(M, e, a0, a1, sill, head, -R, lin(WIN_UP), lit.win(), rnd());
+      eglass(M, e, a0, a1, sill, head, -R, lin(WIN_UP), lit.win(), rnd(), S_SASH);   // a painted sash, not a navy pane (tokyo.js SASH)
       ebox(M, e, a0 - sw, a1 + sw, sill - 0.09, sill, 0, 0.09, 'FD', B.trim, B.sw);      // the sill
       ebox(M, e, a0 - sw, a1 + sw, sill - 0.09, sill, lo, 0.09, 'T', B.trim, S_TOP);
       if (B.surround) {

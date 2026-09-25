@@ -88,7 +88,7 @@ const _c = new THREE.Color();
                fraction picks a painted pattern (PAINT_VARIANT, 2026-09-23):
                0.05 plain, 0.25 1 m panel seams, 0.45 8 cm ribs, 0.65 12 cm
                slats -- so every PAINT part made before still reads plain */
-export const SURF = { LEGACY: 0, WALL: 1, GLASS: 2, PAINT: 3, DISPLAY: 4 };   // DISPLAY: a lit shop window with its stock (tokyoFacadeMaterial)
+export const SURF = { LEGACY: 0, WALL: 1, GLASS: 2, PAINT: 3, DISPLAY: 4, SASH: 5 };   // DISPLAY: a lit shop window with its stock; SASH: a painted timber sash window (tokyoFacadeMaterial)
 
 /** Add `color`, `emit`, `flick` and `surf` attributes to a geometry, flat. `flick` > 0 marks a part whose glow buzzes (the phase is the value). */
 function paint(geo, hex, emit = null, k = 1, flick = 0, surf = SURF.PAINT + 0.05) {
@@ -1327,7 +1327,7 @@ export function tokyoFacadeMaterial() {
   const surf = attribute('surf', 'float'), kind = floor(surf), vari = fract(surf);
   const wall = step(0.5, kind).mul(step(kind, 1.5)), isGlass = step(1.5, kind).mul(step(kind, 2.5));
   const isPaint = step(2.5, kind).mul(step(kind, 3.5)), legacy = step(kind, 0.5);
-  const isDisplay = step(3.5, kind), paned = isGlass.add(isDisplay);   // paned: anything with a window frame
+  const isDisplay = step(3.5, kind).mul(step(kind, 4.5)), isSash = step(4.5, kind), paned = isGlass.add(isDisplay);   // paned: glass in an aluminium frame
   const base = attribute('color', 'vec3');
 
   // walls: the building's finish, shifted per building so no two show the same streaks
@@ -1344,6 +1344,13 @@ export function tokyoFacadeMaterial() {
   const blind = step(0.34, vari).mul(step(vari, 0.46)).mul(step(0.42, g.y));
   const slat = step(0.5, fract(g.y.mul(22))).mul(0.18).add(0.82);
   const glassCol = mix(mix(mix(base, vec3(0.40, 0.34, 0.27), curtain), vec3(0.55, 0.55, 0.52).mul(slat), blind), vec3(0.30, 0.31, 0.33), frame);
+  /* A SASH WINDOW (2026-09-25): Regent Street's upper windows were plain navy
+     panes in an aluminium line, where London's terraces are a grid of white
+     painted timber -- the frame, the meeting rail where the two sashes pass,
+     a glazing bar up each (2-over-2). Same curtains and blinds behind it, same
+     night glow through the glass only. Colour and mask only; no geometry. */
+  const sashBars = max(max(step(edge, 0.06), step(abs(g.y.sub(0.5)), 0.022)), step(abs(g.x.sub(0.5)), 0.013));
+  const sashCol = mix(mix(mix(base, vec3(0.40, 0.34, 0.27), curtain), vec3(0.55, 0.55, 0.52).mul(slat), blind), vec3(0.80, 0.78, 0.72), sashBars);
 
   /* Paint with a pattern (2026-09-23), picked by PAINT's fraction
      (PAINT_VARIANT): 1 m panel seams (the FRP water tanks), 8 cm ribs (roller
@@ -1383,9 +1390,9 @@ export function tokyoFacadeMaterial() {
   const displayCol = mix(mix(mix(mix(base.mul(0.8), stockCol, stock.mul(0.85)), base.mul(0.3), shelfEdge), base.mul(0.45), floorBand).add(base.mul(ceiling.mul(0.7))), vec3(0.30, 0.31, 0.33), frame);
   const displayGlow = mix(float(1), float(0.55).add(stock.mul(0.45)).add(ceiling.mul(0.9)).mul(shelfEdge.oneMinus()), isDisplay);
 
-  m.colorNode = wallCol.mul(wall).add(glassCol.mul(isGlass)).add(displayCol.mul(isDisplay)).add(base.mul(isPaint.mul(paintK).add(legacy)));
+  m.colorNode = wallCol.mul(wall).add(glassCol.mul(isGlass)).add(displayCol.mul(isDisplay)).add(sashCol.mul(isSash)).add(base.mul(isPaint.mul(paintK).add(legacy)));
   m.roughnessNode = mix(float(0.9), float(0.55), tile).mul(wall)
-    .add(mix(float(0.05), float(0.42), frame).mul(paned))
+    .add(mix(float(0.05), float(0.42), frame).mul(paned)).add(mix(float(0.05), float(0.55), sashBars).mul(isSash))
     .add(float(0.45).mul(isPaint)).add(float(0.48).mul(legacy));
   m.metalnessNode = float(0.22).mul(legacy);
   /* Relief on the walls only. Y is negated: the heights were painted with
@@ -1396,7 +1403,7 @@ export function tokyoFacadeMaterial() {
 
   const ph = attribute('flick', 'float');
   const buzz = mix(float(1), float(0.45).add(float(0.55).mul(step(float(0.35), sin(time.mul(23).add(ph.mul(7)))))), step(float(0.01), ph));
-  m.emissiveNode = attribute('emit', 'vec3').mul(materialReference('emissiveIntensity', 'float', m)).mul(buzz).mul(frame.mul(paned).oneMinus()).mul(displayGlow);   // a lit room glows, its window frame does not; a display glows in its stock's pattern
+  m.emissiveNode = attribute('emit', 'vec3').mul(materialReference('emissiveIntensity', 'float', m)).mul(buzz).mul(frame.mul(paned).add(sashBars.mul(isSash)).oneMinus()).mul(displayGlow);   // a lit room glows, its window frame does not; a display glows in its stock's pattern
   FACADE = m;
   return m;
 }
