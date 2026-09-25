@@ -3,12 +3,16 @@ import * as THREE from 'three';
 // Diurnal color grade anchor profiles
 
 const DIURNAL_PROFILES = {
+  /* Aesthetic pass 2026-09-25 (GTA V's afternoon: punchy, clean, cool
+     shadows under a warm sun): sat 1.10 -> 1.14 (the test's 'natural' cap), vibrance 0.08 -> 0.18,
+     contrast 0.40 -> 0.47, shadows a step cooler, vignette 0.35 -> 0.42.
+     Uniform values only: zero cost. */
   DAY: {
-    sat: 1.10,
-    vibrance: 0.08,
-    contrast: 0.40,
-    split: 0.40,
-    shadowTint: [0.94, 0.97, 1.02],
+    sat: 1.14,
+    vibrance: 0.18,
+    contrast: 0.47,
+    split: 0.55,
+    shadowTint: [0.91, 0.96, 1.06],
     midTint: [1.0, 1.0, 1.0],
     highTint: [1.04, 1.01, 0.99],   // was 0.95 blue: the day sky IS the highlight, and a warm highlight tint turned its blue grey-green (2026-09-23, measured (161,167,165) on screen)
     slope: [1.02, 1.01, 1.0],
@@ -17,7 +21,7 @@ const DIURNAL_PROFILES = {
     bloomStrength: 0.35,
     bloomRadius: 0.35,
     bloomThreshold: 0.85,
-    vignette: 0.35,
+    vignette: 0.42,
     grain: 0.012,
     filmic: 0.0,
   },

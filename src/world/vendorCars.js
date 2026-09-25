@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { BODY_TYPES, BODY_KEYS } from '../vehicle/config.js';
 import { toTex } from './textures.js';
+import { texture, uv, attribute, uniform, vec3, max, mix, materialReference } from 'three/tsl';
 import { isTouchDevice } from '../core/device.js';
 import { londonKitFor, londonEnabled, LONDON_SPECS } from './londonVehicles.js';
 
@@ -97,6 +98,36 @@ export const BODIES = {
  * position is a normalized Int16 -- applyMatrix4 on that truncates every
  * coordinate to -1/0/1, the exact trap catalogue.js:deQuantize records.
  */
+/* Lamp masks (2026-09-25). Ddiaz Design's bodies do not paint their lamps:
+   the emissive map is a MASK with each lamp group in its own channel (green
+   = the lamp lenses, blue = the second tail lens, red = the indicators), made
+   to be driven by a shader. Drawn raw, the Camaro's tail lamps glowed green
+   and blue. Decoded here: every lamp behind the car's middle is RED (the blue
+   lens brightens with `heroBrake`), every lamp ahead is warm white, and the
+   red channel is amber either way. Front/rear is a per-vertex attribute from
+   the merged positions along the body's own front axis (BODIES[].front). */
+export const heroBrake = uniform(0);
+function decodeLampMasks(wrap, frontSpec = '+x') {
+  const ax = /z/i.test(frontSpec) ? 'getZ' : 'getX', sg = frontSpec.startsWith('-') ? -1 : 1;   // the body's own front (BODIES[].front), in the merged local frame
+  if (!THREE.MeshPhysicalNodeMaterial) return;   // plain three (node tests): nothing to decode with
+  wrap.traverse((o) => {
+    const m = o.material;
+    if (!o.isMesh || !m || Array.isArray(m) || !m.emissiveMap || !/light|lamp/i.test(m.name || '')) return;
+    const pos = o.geometry.attributes.position, n = pos.count, front = new Float32Array(n);
+    for (let i = 0; i < n; i++) front[i] = pos[ax](i) * sg > 0 ? 1 : 0;
+    o.geometry.setAttribute('aFront', new THREE.BufferAttribute(front, 1));
+    const nm = new THREE.MeshPhysicalNodeMaterial();
+    nm.copy(m);
+    const mask = texture(m.emissiveMap, uv()).rgb;
+    const lens = max(mask.g, mask.b);
+    const rear = vec3(1.0, 0.04, 0.02).mul(mask.g.mul(0.7).add(mask.b.mul(heroBrake.mul(1.8).add(0.5))));
+    const head = vec3(1.0, 0.93, 0.82).mul(lens);
+    const amber = vec3(1.0, 0.45, 0.02).mul(mask.r);
+    nm.emissiveNode = mix(rear, head, attribute('aFront')).add(amber).mul(materialReference('emissiveIntensity', 'float', nm));
+    o.material = nm;
+  });
+}
+
 function mergeByMaterial(wrap, group) {
   const toFloat = (a) => {
     if (a.array instanceof Float32Array && !a.normalized) return a.clone();
@@ -474,6 +505,7 @@ export async function fetchKit(id, spec, assets, opts = {}) {
     if (!eye) eye = new THREE.Vector3(ws.x * 0.03 - 0.40, ws.y * 0.74, -0.36);   // and 20 cm further back on the box path to match   // 0.06 put the 992's eye past its wheel and 0.74 of the height into its headliner; 0.03 / 0.70 frame both it and the C8
     const cockpit = { back: -eye.x, up: eye.y - 0.62, side: eye.z };   // camera.js: back is rearward-positive, up is over car.y (= ground + 0.62)
     mergeByMaterial(wrap, group);
+    decodeLampMasks(wrap, def.front);
     return { group: wrap, paint: null, detail: null, detailMat: null, lodBody: null, cockpit };
   }
   if (def.src === 'q') {

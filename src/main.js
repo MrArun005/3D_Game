@@ -9,7 +9,7 @@ import { createGrade } from './core/grade.js';
 import { resolveQuality, describeQuality, nextLower, limitTraffic, limitFarTraffic, DENSITY_STEPS, QUALITY_NAMES, STORAGE_KEY as QUALITY_KEY } from './core/quality.js';
 import { setAnisotropy, setTexScale, wetTarmacLook } from './world/textures.js';
 import { createAssets } from './world/assets.js';
-import { loadVendorCars, loadHeroSkin, KENNEY_CARS, DEFAULT_BODY, tooHeavy } from './world/vendorCars.js';
+import { loadVendorCars, loadHeroSkin, KENNEY_CARS, DEFAULT_BODY, tooHeavy, heroBrake } from './world/vendorCars.js';
 import { loadTreeModels } from './world/treeModels.js';
 import { LightPool } from './game/lighting.js';
 import { Jobs, onPavementAtSpeed } from './game/jobs.js';
@@ -33,6 +33,8 @@ import { Catalogue, dressCarMaterials, spawnEssential } from './world/catalogue.
 import { isTouchDevice } from './core/device.js';
 import { createTouch } from './game/touch.js';
 import { mergeDrive, keyboardSteer } from './game/input.js';
+import { createSkill } from './game/skill.js';
+import { createSkillHud } from './ui/skillHud.js';
 import { City, releaseCell } from './world/city.js';
 import { DistrictWorld } from './world/districtWorld.js';
 import { loadDistrict } from './world/district.js';
@@ -419,6 +421,8 @@ let activeVehicle = null;
 let chat = null, chatter = null, commands = null;
 let vehicleVFX = null, puddles = null;
 let people = null;
+const skill = createSkill();
+const skillHud = createSkillHud();
 let hornCooldown = 0;
 let warming = false;
 let roadblock = null, metro = null, landmarks = null;
@@ -2951,6 +2955,16 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
       break;
     }
   }
+  /* Street skill (game/skill.js): near misses and drifts chain into a
+     multiplier and bank as cash; a crash loses the chain. Car only. */
+  if (!onFoot.active && (!activeVehicle || activeVehicle === carVehicle) && started && !photo.on) {
+    for (const e of skill.update(car, traffic.cars.filter((t) => t.live && t.mesh.visible), dt)) {
+      skillHud.event(e);
+      if (e.kind === 'bank') { garage?.addCash?.(e.cash, 'STREET SKILL'); audio.hitmark?.(); }
+    }
+  }
+  skillHud.update(skill.live(), dt);
+  heroBrake.value += (((car.brake || 0) > 0.1 ? 1 : 0) - heroBrake.value) * Math.min(1, dt * 20);   // vendorCars.decodeLampMasks: the brake lens
   if (beach) beach.update(dt);
   if (water) water.update(dt);
 

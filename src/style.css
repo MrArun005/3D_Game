@@ -189,3 +189,19 @@ body:has(#hud:not(.gone)) #touch{display:none}   /* the title card owns the scre
 /* the top rows and the drawer sit ABOVE the joystick zone (2026-09-24): the zone covers the lower-left 46% from 22% down and, later in the DOM, swallowed every drawer tap */
 #touch .t-top,#touch .t-drawer{z-index:5}
 #touch .t-stick,#touch .t-steer,#touch .t-look{z-index:1}
+/* street skill (ui/skillHud.js): GTA's bold italic, under the place line */
+#skill{position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:22;pointer-events:none;text-align:center;font-family:inherit}
+#skill .sk-live{opacity:0;transition:opacity .25s;display:flex;gap:10px;align-items:baseline;justify-content:center;
+  font:italic 800 15px/1 system-ui,sans-serif;letter-spacing:.08em;color:#fff;text-shadow:0 2px 0 #000,0 0 14px rgba(0,0,0,.6)}
+#skill .sk-live.on{opacity:1}
+#skill .sk-live b{font-size:24px;color:#fff}
+#skill .sk-live i{font-size:18px;color:#ffd24a}
+#skill .sk-live.kick{animation:skkick .35s ease-out}
+@keyframes skkick{0%{transform:scale(1.35)}100%{transform:scale(1)}}
+#skill .sk-pop{margin-top:8px;opacity:0;transform:translateY(-6px);transition:opacity .3s,transform .3s;
+  font:italic 800 20px/1.1 system-ui,sans-serif;letter-spacing:.06em;text-shadow:0 2px 0 #000,0 0 18px rgba(0,0,0,.7)}
+#skill .sk-pop.bank,#skill .sk-pop.lost{opacity:1;transform:none}
+#skill .sk-pop.bank{color:#fff}#skill .sk-pop.bank b{color:#7dff6a;margin-left:8px}
+#skill .sk-pop.lost{color:#ff4a4a}
+#skill .sk-pop small{display:block;font-size:11px;letter-spacing:.2em;color:#c9d3e2;margin-top:3px;font-style:normal}
+body.touch #skill{top:14px;transform:translateX(-50%) scale(.8)}
