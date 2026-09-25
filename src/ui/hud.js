@@ -557,7 +557,7 @@ export class Hud {
     if (!this.arsEl) {
       const el = document.createElement('div');
       el.id = 'arsenal';
-      el.style.cssText = 'position:fixed;right:26px;bottom:262px;z-index:40;display:flex;gap:6px;pointer-events:none';
+      el.style.cssText = 'position:fixed;right:26px;bottom:262px;z-index:40;display:flex;gap:6px;pointer-events:none;transition:opacity .5s';
       document.body.appendChild(el);
       this.arsEl = el;
     }
@@ -567,6 +567,13 @@ export class Hud {
     this.arsEl.innerHTML = rows.map((r) => `<div style="min-width:52px;padding:5px 7px;border-radius:6px;text-align:center;font:700 10px ui-monospace,Menlo,monospace;letter-spacing:.05em;`
       + `background:${r.current ? 'rgba(234,241,251,.92)' : 'rgba(9,12,18,.72)'};color:${r.current ? '#0b0e14' : '#c8d2e2'};border:1px solid rgba(120,140,170,.35)">`
       + `<div>${r.key}</div><div style="font-size:12px">${r.name}</div><div style="opacity:.75">${r.reserve === '' ? (r.mag === '' ? '&nbsp;' : r.mag) : `${r.mag}/${r.reserve}`}</div></div>`).join('');
+    /* GTA's HUD (2026-09-25): the whole arsenal shows when it CHANGES -- a
+       switch, a shot, a reload, a pickup -- and fades after 3 s; the current
+       weapon and its ammo stay in the readout above the tacho. It stood as a
+       permanent row of seven cards across the middle-right of the screen. */
+    this.arsEl.style.opacity = '1';
+    clearTimeout(this._arsHide);
+    this._arsHide = setTimeout(() => { if (this.arsEl) this.arsEl.style.opacity = '0'; }, 3000);
   }
 
   /** `visible` false hides it (in a car, until you use the gun). Rebuilt only when the text changes: this runs every frame. */
