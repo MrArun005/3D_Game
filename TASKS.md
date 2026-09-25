@@ -45,12 +45,17 @@ going, and put status in the same message as the next action.
 - [x] Tail lamps decoded from the lamp mask (were green / blue) — `3e28216`
 - [x] Punchier afternoon grade — `3e28216`
 - [x] Grass verges in front of Regent Street shops → the city ground is paved
-      (pavement slab texture) — `1df8689` *(textured version not yet seen)*
+      (pavement slab texture) — `1df8689` *(seen)*
 - [x] Lit shop windows show their stock instead of flat beige / brown boards
-      (Regent Street, Little Tokyo side streets) — `1df8689` *(not yet seen)*
-- [x] The 6 px grid over every sky (broken grain hash) — `1df8689`
-- [ ] Building detail up close, next: flat Regent upper windows, Tokyo flank
-      walls — from the 2026-09-25 shots
+      — Regent `1df8689`, every Tokyo type `250ea7b`, muted `7c87fb6` *(seen)*
+- [x] Regent Street upper windows are white sash windows, not navy panes —
+      `b5d8d27` *(seen)*
+- [x] On-foot HUD: the weapon row shows on change, fades after 3 s — `8029204`
+- [x] Grain hash no longer collapses to a lattice; zero-mean — `1df8689`
+- [ ] A faint 6 px grid in flat sky persists in the software-GL shots: most
+      likely that renderer's coarse texture filtering, unverified on a GPU —
+      `[owner]` tell me if you see a screen-door pattern in the sky
+- [ ] Night check at 21:30 (night environment map, displays glowing) — running
 - [ ] Minimap looks tilted on touch — needs a screenshot from Arun
 - [ ] `[owner]` sign-off on the four shots
 
@@ -59,7 +64,8 @@ going, and put status in the same message as the next action.
 - [x] Crash weight: hit-stop + pad rumble — `d21c705`
 - [x] On-foot running: walk/run blend space (the jog was a 0.62x slow-motion
       sprint), phase-locked feet, body roll capped at 7° (was ~50° on a sharp
-      turn), near-miss whoosh — `1df8689` *(in-browser check running)*
+      turn), near-miss whoosh — `1df8689` *(seen: jog = walk 0.61 / run 0.39
+      at ~1x, sprint = run 1.0 at 1.15x, stop = idle; 0 errors)*
 - [ ] `[owner]` run around on foot: does it read as running now?
 - [ ] `[owner]` play-test: the chain pays, a crash feels heavy, slow motion
       never sticks
