@@ -55,7 +55,9 @@ going, and put status in the same message as the next action.
 - [ ] A faint 6 px grid in flat sky persists in the software-GL shots: most
       likely that renderer's coarse texture filtering, unverified on a GPU —
       `[owner]` tell me if you see a screen-door pattern in the sky
-- [ ] Night check at 21:30 (night environment map, displays glowing) — running
+- [x] Night check at 21:30: displays read as lit shops with shelves, neon and
+      headlamps hold — `d890a35` *(seen)*; the near shop walls still read a little
+      pale in software GL — judge on the M2
 - [ ] Minimap looks tilted on touch — needs a screenshot from Arun
 - [ ] `[owner]` sign-off on the four shots
 
