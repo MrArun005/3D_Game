@@ -1388,7 +1388,14 @@ export function tokyoFacadeMaterial() {
   const stockCol = vec3(0.5).add(vec3(0.3).mul(vec3(hue, hue.add(0.33), hue.add(0.67)).mul(6.2832).cos())).mul(0.5).add(base.mul(0.5));
   const ceiling = smoothstep(0.87, 0.97, dq.y), floorBand = step(dq.y, 0.06);
   const displayCol = mix(mix(mix(mix(base.mul(0.8), stockCol, stock.mul(0.85)), base.mul(0.3), shelfEdge), base.mul(0.45), floorBand).add(base.mul(ceiling.mul(0.7))), vec3(0.30, 0.31, 0.33), frame);
-  const displayGlow = mix(float(1), float(0.55).add(stock.mul(0.45)).add(ceiling.mul(0.9)).mul(shelfEdge.oneMinus()), isDisplay);
+  /* The night glow (2026-09-25, first night look): 0.55 + stock + ceiling put
+     every display at mean luminance 0.42 against a 0.18 frame -- a street of
+     light boxes, the thing the 2026-09-14 bays were built to stop. Now the
+     ceiling strip is the bright part, the stock sits dim in it and glows in
+     its own colour, the shelf edges are dark: about half the mean, and the
+     contrast is what reads as a lit shop. Day is untouched (emit x 0.05). */
+  const glowK = float(0.2).add(stock.mul(0.3)).add(ceiling.mul(1.2)).mul(shelfEdge.oneMinus());
+  const displayGlow = mix(vec3(1), vec3(glowK).mul(mix(vec3(1), stockCol.mul(1.8), stock.mul(0.5))), isDisplay);
 
   m.colorNode = wallCol.mul(wall).add(glassCol.mul(isGlass)).add(displayCol.mul(isDisplay)).add(sashCol.mul(isSash)).add(base.mul(isPaint.mul(paintK).add(legacy)));
   m.roughnessNode = mix(float(0.9), float(0.55), tile).mul(wall)
