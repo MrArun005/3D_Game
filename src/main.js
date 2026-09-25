@@ -424,6 +424,7 @@ let people = null;
 const skill = createSkill();
 const skillHud = createSkillHud();
 let hornCooldown = 0;
+let hitStop = 0, lastHitStopAt = -1e9;   // seconds of hit-stop left (the frame loop, below the dt clamp)
 let warming = false;
 let roadblock = null, metro = null, landmarks = null;
 let billboards = null, streetLife = null, airspace = null;
@@ -2516,6 +2517,14 @@ function frameBody() {
   const now = performance.now();
   const rawDt = (now - lastTime) / 1000;
   let dt = Math.min(rawDt, 0.05);
+  /* Hit-stop (2026-09-25): a big crash holds the world at a quarter speed
+     for ~0.1 s, then eases back over 0.2 s -- the beat that makes an impact
+     read as heavy instead of as a bump. Real time drives it, so it cannot
+     stretch itself. Off in multiplayer, where clocks must agree. */
+  if (hitStop > 0) {
+    hitStop = Math.max(0, hitStop - Math.min(rawDt, 0.05));
+    if (!net) dt *= hitStop > 0.2 ? 0.25 : 0.25 + (1 - hitStop / 0.2) * 0.75;
+  }
   lastTime = now;
   if (wastedAnim === 1) dt *= 0.35;   // wasted: the fall plays at a third speed, GTA's beat
 
@@ -3354,6 +3363,15 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     const k = Math.min(1, (car.impact - 3) / 12), hx = car.hitAt.x, hz = car.hitAt.z, gy = groundHeightAt(hx, hz);
     const ddx = (hx - car.x), ddz = (hz - car.z), dl = Math.hypot(ddx, ddz) || 1;
     weapon.sparksAt?.(hx, gy + 0.45, hz, ddx / dl, ddz / dl);
+    /* Weight: a hard hit (over ~30 km/h into it) gets the hit-stop and the
+       pad's rumble, both scaled; a scrape gets neither. */
+    if (car.impact > 8 && performance.now() - lastHitStopAt > 900) {   // one beat per crash: grinding along a wall must not hold the world in slow motion
+      lastHitStopAt = performance.now();
+      hitStop = Math.max(hitStop, 0.2 + Math.min(0.12, (car.impact - 8) * 0.01));
+      try {
+        for (const pad of navigator.getGamepads?.() || []) pad?.vibrationActuator?.playEffect?.('dual-rumble', { duration: 180 + k * 220, strongMagnitude: 0.5 + k * 0.5, weakMagnitude: 0.8 });
+      } catch { /* no rumble on this pad */ }
+    }
     for (let i = 0, n = 2 + Math.round(k * 5); i < n; i++) puffs.puff(hx + (Math.random() - 0.5) * 1.2, gy + 0.3 + Math.random() * 0.6, hz + (Math.random() - 0.5) * 1.2, { r: 0.24, g: 0.22, b: 0.19, life: 1.0 + k, vy: 0.8 + k, vx: -ddx / dl * 1.5, vz: -ddz / dl * 1.5 });
   }
   car.hitAt = null;
