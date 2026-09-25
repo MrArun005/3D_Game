@@ -1727,7 +1727,7 @@ export class DistrictWorld {
            163 elevated segments had their two long edges more than a metre
            apart. A real deck is flat across and ramped along, which is exactly
            what sampling the centreline gives. */
-        /* ...and sampled ALONG the centreline too, every <= 16 m (spans.js DECK_STEP), on any
+        /* ...and sampled ALONG the centreline too (District.deckProfile: ~4 m samples, merged to chords), on any
            segment that is lifted at an end or its middle (2026-09-25). The river
            bridges are arches now (district.js, 0 at both end nodes), and a
            BROADWAY deck segment ends at grade at both ends: end-centre
@@ -2644,6 +2644,13 @@ export class DistrictWorld {
     inst(A.geo.hut, A.mat.plant, plant.hut, true);
 
     this.parkedByChunk.set(k, solidParked);
+    /* world.extraSolids (landmarks.js: the lift bridge's towers and deck-edge
+       parapets, the skyline pieces) were documented as "folded into each
+       chunk's box list" and never were (2026-09-25): no landmark stopped a car.
+       Each goes to the chunk its centre is in; nearbyBuildings reads 3x3. */
+    for (const b of this.extraSolids ?? []) {
+      if (Math.floor(b.x / CHUNK) === ix && Math.floor(b.z / CHUNK) === iz) boxes.push(b);
+    }
     this.solidsByChunk.set(k, boxes);
     this.scene.add(group);   // the last step: the chunk appears whole
     const rgm = this.regentMeshes.get(k);

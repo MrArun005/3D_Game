@@ -587,7 +587,10 @@ test('the faster water test answers exactly as the old least-distance walk', () 
   const check = (x, z) => {
     const inRiver = near(data.water.river.points, x, z) < data.water.river.width / 2;
     const open = x > full.bounds.w + 20 || inRiver || inPoly(data.water.bay, x, z);
-    const onDeck = data.bridges.some((br) => near(br.points, x, z) < br.width / 2 + 2.5);
+    // (and the lift system's twin deck, 2026-09-25: its Embankment half is 15-30 m off the plan line)
+    const ls = full.liftSystem;
+    const onDeck = data.bridges.some((br) => near(br.points, x, z) < br.width / 2 + 2.5)
+      || (ls && near([ls.a, ls.b], x, z) < ls.width / 2 + 2.5);
     assert.equal(full.inOpenWater(x, z), open, `open water at (${x.toFixed(1)},${z.toFixed(1)})`);
     assert.equal(full.inWater(x, z), onDeck ? false : open, `water at (${x.toFixed(1)},${z.toFixed(1)})`);
     wet += open; river += inRiver; decks += onDeck;

@@ -59,9 +59,10 @@ export function surfaceAt(x, z) {
  */
 const KERB_RAMP = 0.35;
 
-export function groundHeightAt(x, z) {
-  // bridges and the expressway sit above everything else the road does
-  const lift = DISTRICT ? DISTRICT.elevationAt(x, z) : 0;
+export function groundHeightAt(x, z, yHint) {
+  // bridges and the expressway sit above everything else the road does;
+  // yHint (the caller's own height) picks the layer under the expressway
+  const lift = DISTRICT ? DISTRICT.elevationAt(x, z, yHint) : 0;
   const d = roadDepth(x, z);          // <=0 on tarmac, grows off it
   if (d <= 0) return lift;
   if (d >= KERB_RAMP) return lift + KERB_H;

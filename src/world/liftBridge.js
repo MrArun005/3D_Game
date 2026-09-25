@@ -82,8 +82,9 @@ const RED = [1, 0.12, 0.06], GREEN = [0.15, 1, 0.4], WARM = [1, 0.86, 0.62];
 const _m = new THREE.Matrix4();
 
 /* ---- local-frame helpers. x runs along the plan line from a, z across it
-   (+z is left of travel), y is world y: the deck is at DECK_Y everywhere on
-   [0, L] because district.js ramps OUTSIDE the endpoints. ---- */
+   (+z is left of travel), y is world y. The towers and span sit on DY (the
+   lift deck); the approaches follow opts.deckAt -- district.js's lift
+   system lands both ends at grade INSIDE [0, L] (2026-09-25). ---- */
 
 /** A strut between two points in the x-y plane at z, `t` square. */
 function strut(P, key, x0, y0, x1, y1, z, t, hex) {
@@ -98,6 +99,11 @@ const post = (P, key, x, y0, y1, z, t, hex) => P.push(key, at(boxM(t, y1 - y0, t
 const cross = (P, key, x, y, z0, z1, t, hex) => P.push(key, at(boxM(t, t, Math.abs(z1 - z0), hex), x, y, (z0 + z1) / 2));
 
 export function buildLiftBridge(a, b, width = 26, opts = {}) {
+  /* opts.deckY / opts.deckAt (2026-09-25): the deck the towers and span sit on,
+     and the approach deck's height t metres along -- district.js's lift
+     system (a flat lift deck, a junction deck at DOCK ROAD, both ends at
+     grade). Without them the bridge is the old flat 7.6 m deck. */
+  const DY = opts.deckY ?? DECK_Y;
   const lift = Math.min(1, Math.max(0, opts.lift ?? 0));
   const ax = a[0], az = a[1];
   const dx = b[0] - ax, dz = b[1] - az;
@@ -114,7 +120,7 @@ export function buildLiftBridge(a, b, width = 26, opts = {}) {
      carriageway. */
   const TZ = halfW + 3.0;
 
-  const P = new Parts(), lamps = [], solids = [], rig = { sheaves: [], lugs: [], counterweights: [], cables: [], legs: [], deckY: DECK_Y, travel: LIFT_TRAVEL, spanY: DECK_Y + lift * LIFT_TRAVEL, trussH: TRUSS_H };
+  const P = new Parts(), lamps = [], solids = [], rig = { sheaves: [], lugs: [], counterweights: [], cables: [], legs: [], deckY: DY, travel: LIFT_TRAVEL, spanY: DY + lift * LIFT_TRAVEL, trussH: TRUSS_H };
   const tA = L / 2 - TOWER_GAP / 2, tB = L / 2 + TOWER_GAP / 2;
 
   /* ---------- the two towers ---------- */
@@ -128,11 +134,11 @@ export function buildLiftBridge(a, b, width = 26, opts = {}) {
       const FZ = sz * TZ;                            // this side-frame's centreline
 
       // caisson: one concrete box per side-frame, from the riverbed to the deck
-      P.push('concrete', at(boxM(2 * LEG_DX + 2.6, DECK_Y - PIER_FOOT, 2 * LEG_DZ + 2.6, CONCRETE), TX, (DECK_Y + PIER_FOOT) / 2, FZ));
+      P.push('concrete', at(boxM(2 * LEG_DX + 2.6, DY - PIER_FOOT, 2 * LEG_DZ + 2.6, CONCRETE), TX, (DY + PIER_FOOT) / 2, FZ));
 
       // four legs
       for (const lx of [-LEG_DX, LEG_DX]) for (const lz of [-LEG_DZ, LEG_DZ]) {
-        post(P, 'metal', TX + lx, DECK_Y - 0.4, TOWER_TOP, FZ + lz, LEG_T, STEEL);
+        post(P, 'metal', TX + lx, DY - 0.4, TOWER_TOP, FZ + lz, LEG_T, STEEL);
         rig.legs.push({ x: TX + lx, z: FZ + lz, half: LEG_T / 2 });
       }
 
@@ -141,7 +147,7 @@ export function buildLiftBridge(a, b, width = 26, opts = {}) {
          horizontals only (a diagonal that shallow is a pixel at 400 m and
          twelve triangles nobody sees). The counterweight rides INSIDE the
          frame, between the four legs, so nothing here is in its way. */
-      const y0 = DECK_Y + 1.2, levels = 8, dy = (TOWER_TOP - y0) / levels;
+      const y0 = DY + 1.2, levels = 8, dy = (TOWER_TOP - y0) / levels;
       for (const lz of [-LEG_DZ, LEG_DZ]) {
         for (let i = 0; i <= levels; i++) strut(P, 'metal', TX - LEG_DX, y0 + i * dy, TX + LEG_DX, y0 + i * dy, FZ + lz, 0.42, STEEL);
         for (let i = 0; i < levels; i++) {
@@ -172,7 +178,7 @@ export function buildLiftBridge(a, b, width = 26, opts = {}) {
          is (S - lugY) + (S - cwTopY) with lugY and cwTopY moving by +d and -d:
          the total is constant in `lift` by construction, and the strand
          lengths below are measured from those points, never assumed. */
-      const lugY = DECK_Y + lift * LIFT_TRAVEL + TRUSS_H;
+      const lugY = DY + lift * LIFT_TRAVEL + TRUSS_H;
       const cwTopY = CW_TOP0 - lift * LIFT_TRAVEL;
       for (const off of [-0.55, 0.55]) {
         strut(P, 'dark', lugX, lugY, lugX, SHEAVE_Y, FZ + off, 0.09, DARK_STEEL);
@@ -198,11 +204,11 @@ export function buildLiftBridge(a, b, width = 26, opts = {}) {
 
     // across the road: the top girder, and one portal strut clear of the counterweights
     cross(P, 'metal', TX, TOWER_TOP - 1.4, -TZ - LEG_DZ, TZ + LEG_DZ, 1.3, STEEL);
-    cross(P, 'metal', TX - inner * 2.5, DECK_Y + 6.6, -TZ - LEG_DZ, TZ + LEG_DZ, 1.0, STEEL);
+    cross(P, 'metal', TX - inner * 2.5, DY + 6.6, -TZ - LEG_DZ, TZ + LEG_DZ, 1.0, STEEL);
   }
 
   /* ---------- the lift span: a through truss you drive inside ---------- */
-  const sy = DECK_Y + lift * LIFT_TRAVEL;                 // the span's own deck level
+  const sy = DY + lift * LIFT_TRAVEL;                 // the span's own deck level
   const s0 = tA + LEG_DX + 0.6, s1 = tB - LEG_DX - 0.6, sl = s1 - s0;
   const panels = 8, pw = sl / panels;
   for (const sz of [-1, 1]) {
@@ -235,23 +241,51 @@ export function buildLiftBridge(a, b, width = 26, opts = {}) {
   lamps.push({ x: (s0 + s1) / 2, y: sy - 1.1, z: 0, colour: 0x2bff77, range: 40 });
 
   /* ---------- the approaches: piers, railings, lamp standards ---------- */
+  const yAt = opts.deckAt ?? (() => DY);
+  const gaps = opts.gaps ?? [];                      // [t0, t1]: a road crosses the deck edge here (DOCK ROAD)
+  const open = (t) => gaps.some(([g0, g1]) => t > g0 && t < g1);
+  const STEP = 16;
+  const knots = [];
+  for (let i = 0, n = Math.ceil(L / STEP); i <= n; i++) knots.push(L * i / n);
   for (let t = PIER_SPACING; t < L - PIER_SPACING / 2; t += PIER_SPACING) {
     /* Nothing between the towers: that is the navigation channel the lift
        span exists to open, and the 16 m either side is the caissons. The two
        conditions this replaces were ANDed, which is only true in a 4 m window
        -- it left a pier standing at t=184, mid-channel, under the lift span. */
     if (t > tA - 16 && t < tB + 16) continue;
-    for (const sz of [-1, 1]) P.push('concrete', at(boxM(2.2, DECK_Y - DECK_T - 0.9 - PIER_FOOT, 2.4, CONCRETE), t, (DECK_Y - DECK_T - 0.9 + PIER_FOOT) / 2, sz * halfW * 0.45));
-    P.push('concrete', at(boxM(2.6, 0.9, 2 * halfW * 0.75, CONCRETE), t, DECK_Y - DECK_T - 0.45, 0));
+    const top = yAt(t) - DECK_T - 0.9;
+    if (top - PIER_FOOT < 2) continue;
+    for (const sz of [-1, 1]) P.push('concrete', at(boxM(2.2, top - PIER_FOOT, 2.4, CONCRETE), t, (top + PIER_FOOT) / 2, sz * halfW * 0.45));
+    P.push('concrete', at(boxM(2.6, 0.9, 2 * halfW * 0.75, CONCRETE), t, top + 0.45, 0));
   }
-  /* A steel railing on top of the parapet, both sides, the full length.
-     districtWorld #buildSteps puts that parapet's OUTER face on the deck edge
-     (+-halfW) and runs it PARAPET_T = 0.38 inward with its cap at DECK_Y + 1.0,
-     so the rails ride the middle of the cap. */
-  const RZ = halfW - 0.19;
+  /* The deck edge, both sides, on the deck's own height (yAt): a 1.0 m
+     concrete parapet, a two-rail steel railing on its cap, posts every 6 m --
+     and GAPS where DOCK ROAD crosses the edge at its junctions. The approach
+     soffit closes the deck from below between the towers' caissons and the
+     ends. Collision for the parapet comes back in `edgeSolids`, 8 m pieces
+     with their own baseY (district.js resolveBoxes contract). */
+  const RZ = halfW - 0.19, edgeSolids = [];
+  for (let i = 0; i < knots.length - 1; i++) {
+    const t0 = knots[i], t1 = knots[i + 1];
+    if (!(t1 < tA - 8 || t0 > tB + 8)) continue;   // the lift span has its own floor plate
+    P.push('concrete', at(boxM(t1 - t0, 0.12, 2 * halfW - 0.6, CONCRETE), (t0 + t1) / 2, (yAt(t0) + yAt(t1)) / 2 - DECK_T, 0));
+  }
   for (const sz of [-1, 1]) {
-    for (const ry of [DECK_Y + 1.95, DECK_Y + 1.35]) strut(P, 'metal', 0, ry, L, ry, sz * RZ, 0.08, STEEL);
-    for (let t = 3; t < L; t += 6) post(P, 'metal', t, DECK_Y + 1.0, DECK_Y + 2.0, sz * RZ, 0.09, STEEL);
+    // intervals of the edge with no gap, cut at the profile knots
+    const cuts = [...new Set([...knots, ...gaps.flat()])].filter((t) => t >= 0 && t <= L).sort((p, q) => p - q);
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const t0 = cuts[i], t1 = cuts[i + 1];
+      if (t1 - t0 < 0.3 || open((t0 + t1) / 2)) continue;
+      const y0 = yAt(t0), y1 = yAt(t1);
+      strut(P, 'concrete', t0, y0 + 0.5, t1, y1 + 0.5, sz * (halfW - 0.19), 0.38, CONCRETE);   // 0.38 square: the upstand...
+      strut(P, 'concrete', t0, y0 + 0.19, t1, y1 + 0.19, sz * (halfW - 0.19), 0.38, CONCRETE); // ...two courses, 1.0 m cap would read as a wall
+      for (const ry of [1.95, 1.35]) strut(P, 'metal', t0, y0 + ry, t1, y1 + ry, sz * RZ, 0.08, STEEL);
+      for (let a0 = t0; a0 < t1 - 0.3; a0 += 8) {
+        const a1 = Math.min(t1, a0 + 8);
+        edgeSolids.push({ x: (a0 + a1) / 2, z: sz * RZ, hw: (a1 - a0) / 2, hd: 0.34, baseY: Math.min(yAt(a0), yAt(a1), yAt((a0 + a1) / 2)), height: 1.0 });
+      }
+    }
+    for (let t = 3; t < L; t += 6) if (!open(t)) post(P, 'metal', t, yAt(t) + 0.7, yAt(t) + 2.0, sz * RZ, 0.09, STEEL);
   }
   /* Lamp standards, alternating sides, off the channel. The column stands on
      the parapet cap with the railing (there is no footway on this deck -- the
@@ -260,11 +294,13 @@ export function buildLiftBridge(a, b, width = 26, opts = {}) {
   let side = 1;
   for (let t = 24; t < L - 12; t += 44, side = -side) {
     if (t > tA - 10 && t < tB + 10) continue;
+    if (open(t)) continue;
+    const y = yAt(t);
     const lz = side * RZ, hz = lz - side * 3.0;
-    post(P, 'metal', t, DECK_Y + 1.0, DECK_Y + 9.0, lz, 0.26, STEEL);
-    cross(P, 'metal', t, DECK_Y + 9.0, hz, lz, 0.2, STEEL);
-    P.push('emit', at(boxM(0.7, 0.24, 0.4, 0x2a2622, WARM, 1.6), t, DECK_Y + 8.85, hz));
-    lamps.push({ x: t, y: DECK_Y + 8.85, z: hz, colour: 0xffd9a0, range: 34 });
+    post(P, 'metal', t, y + 1.0, y + 9.0, lz, 0.26, STEEL);
+    cross(P, 'metal', t, y + 9.0, hz, lz, 0.2, STEEL);
+    P.push('emit', at(boxM(0.7, 0.24, 0.4, 0x2a2622, WARM, 1.6), t, y + 8.85, hz));
+    lamps.push({ x: t, y: y + 8.85, z: hz, colour: 0xffd9a0, range: 34 });
   }
 
   /* ---------- local -> world ---------- */
@@ -277,6 +313,7 @@ export function buildLiftBridge(a, b, width = 26, opts = {}) {
   for (const { geo } of P.list) geo.applyMatrix4(M);
   for (const l of lamps) { const [wx, , wz] = W(l.x, 0, l.z); l.x = wx; l.z = wz; }
   for (const o of solids) { const [wx, , wz] = W(o.x, 0, o.z); o.x = wx; o.z = wz; o.angle = yaw; delete o.local; }
+  for (const o of edgeSolids) { const [wx, , wz] = W(o.x, 0, o.z); o.x = wx; o.z = wz; o.angle = yaw; }
   for (const g of [rig.sheaves, rig.counterweights, rig.legs, rig.lugs]) for (const o of g) { const [wx, , wz] = W(o.x, 0, o.z); o.x = wx; o.z = wz; }
   for (const cb of rig.cables) { cb.from = W(...cb.from); cb.to = W(...cb.to); }
 
@@ -293,7 +330,7 @@ export function buildLiftBridge(a, b, width = 26, opts = {}) {
 
   let tris = 0;
   for (const { geo } of P.list) tris += geo.index ? geo.index.count / 3 : geo.attributes.position.count / 3;
-  return { parts: P.list, lamps, solids, keepOut, rig, tris, length: L, angle: yaw, lift, height: TOWER_TOP + MACH_H + 0.5 };
+  return { parts: P.list, lamps, solids, edgeSolids, keepOut, rig, tris, length: L, angle: yaw, lift, height: TOWER_TOP + MACH_H + 0.5 };
 }
 
 /* The plan's numbers, worked out once, so a caller places the bridge without

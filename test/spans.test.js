@@ -64,14 +64,12 @@ function crossFall(s) {
    apart. spans.js refuses to build on a quad like that, so read it off the
    longest bridge segment that IS a deck. */
 const deckSegs = data.bridges.flatMap(segsOn).filter((s) => crossFall(s) <= DECK_T);
-/* The fixture is a CLASSIC deck, flat and carried at both ends (DOCK ROAD,
-   2026-09-25): the arches ramp from 0 at their end nodes, and a structure
-   read off one would test the parapet trim, not the deck. */
-const flatDecks = deckSegs.filter((s) => city.deckProfile(s).knots.length === 2
-  && Math.min(city.elevationAt(s.ax, s.az), city.elevationAt(s.bx, s.bz)) >= MIN_SPAN_H
-  && Math.abs(city.elevationAt(s.ax, s.az) - city.elevationAt(s.bx, s.bz)) < 0.05
-  && buildSpan(s, city).parts.length > 0);
-const deckSeg = flatDecks.reduce((a, s) => (Math.hypot(s.bx - s.ax, s.bz - s.az) > Math.hypot(a.bx - a.ax, a.bz - a.az) ? s : a));
+/* The fixture is the longest EXPRESSWAY segment (2026-09-25): since the lift
+   system and the arches there is no long flat bridge deck left in the plan --
+   the river arches are 30-65 m segments on a smoothstep -- and the expressway
+   is the one deck that is flat, long and carried on piers end to end. */
+const deckSeg = city.segments.filter((s) => s.cls === 'freeway' && buildSpan(s, city).parts.length > 0)
+  .reduce((a, s) => (Math.hypot(s.bx - s.ax, s.bz - s.az) > Math.hypot(a.bx - a.ax, a.bz - a.az) ? s : a));
 const deckL = Math.hypot(deckSeg.bx - deckSeg.ax, deckSeg.bz - deckSeg.az);
 const built = buildSpan(deckSeg, city);
 
@@ -101,22 +99,15 @@ test('the plan has bridges whose carriageway is actually elevated', () => {
   assert.ok(built.carried, 'this deck is carried on piers');
 });
 
-test('a deck quad the elevation band cut in half builds nothing at all', () => {
-  /* district.js lifts the band `half + 5.5` about the BRIDGE polyline; the
-     deck quad is the ROAD segment at its own half. On the lift bridge the two
-     are ~16 m apart, so one kerb comes back at 7.60 m and the other at 0.
-     A fascia on the low edge would lie on the ground beside the road and a
-     pier under the average of the two would hold nothing: build neither. */
-  const cut = liftSegs.filter((s) => crossFall(s) > DECK_T);
-  assert.ok(cut.length >= 4, `lift-bridge segments cut by the band: ${cut.length}`);
-  assert.ok(Math.max(...cut.map(crossFall)) > 7, `worst cross-fall ${Math.max(...cut.map(crossFall)).toFixed(2)} m`);
-  for (const s of cut) {
-    const none = buildSpan(s, city);
-    assert.equal(none.parts.length, 0, `structure on a ${crossFall(s).toFixed(1)} m cross-fall`);
-    assert.equal(none.piers.length, 0);
-    assert.equal(none.carried, false);
-  }
-  // ...and it costs the bridges that ARE built nothing: they are all near flat
+test('the lift bridge is one twin deck: no quad the elevation band cuts in half', () => {
+  /* It used to be: district.js lifted a band about the BRIDGE polyline and the
+     Embankment ran ~16 m west of it, so one kerb read 7.60 m and the other 0,
+     and spans.js refused to build on those quads. Since 2026-09-25 the band is
+     the twin deck (district.js #liftSystem) and covers both carriageways. */
+  assert.ok(liftSegs.length >= 4, `lift-bridge segments: ${liftSegs.length}`);
+  // (0.15: a road a couple of degrees off the twin's axis reads the deck's GRADE across its width, not a bank)
+  for (const s of liftSegs) assert.ok(crossFall(s) <= 0.15, `cross-fall ${crossFall(s).toFixed(2)} m`);
+  // ...and the rule itself still holds for any quad that IS cut: nothing built on it
   for (const s of deckSegs) assert.ok(crossFall(s) <= DECK_T, `kept segment cross-fall ${crossFall(s)}`);
 });
 
@@ -276,7 +267,7 @@ test('lamps alternate sides, sit on the parapet line, and come back for the ligh
     const side = Math.sign(f.off);
     if (i) assert.equal(side, -last, `lamp ${i} alternates sides`);
     last = side;
-    const deck = city.elevationAt(lp.x, lp.z);
+    const deck = city.elevationAt(lp.x, lp.z, lp.y)   // the layer the lamp stands on, not a street under the expressway;
     assert.ok(lp.y > deck + 3.5 && lp.y < deck + 6, `lamp head ${(lp.y - deck).toFixed(2)} m over the deck`);
     assert.equal(typeof lp.colour, 'number', 'a colour for the glare sprite and the light pool');
   });
@@ -315,7 +306,10 @@ test('signatureBridge picks the bridge world/liftBridge.js owns, and nothing els
   assert.ok(on.length >= 4, `lift-bridge segments recognised: ${on.length}`);
   const other = data.bridges.find((b) => b.name === 'DOCK ROAD');
   // DOCK ROAD crosses the lift bridge at right angles: inside the corridor, not running with it
-  for (const s of segsOn(other)) assert.equal(signatureBridge(s, city), false, 'DOCK ROAD is not the signature bridge');
+  // (its own segments: the ones running WITH it -- the Embankment's, which pass through its corridor, are the twin deck's)
+  const [p0, p1] = other.points, ol = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+  const withDock = (s) => Math.abs(((s.bx - s.ax) * (p1[0] - p0[0]) + (s.bz - s.az) * (p1[1] - p0[1])) / (Math.hypot(s.bx - s.ax, s.bz - s.az) * ol)) > 0.7;
+  for (const s of segsOn(other).filter(withDock)) assert.equal(signatureBridge(s, city), false, 'DOCK ROAD is not the signature bridge');
   assert.equal(signatureBridge({ ax: 900, az: 900, bx: 1000, bz: 900 }, city), false, 'a street downtown is not a bridge');
 });
 

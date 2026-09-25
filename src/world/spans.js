@@ -76,6 +76,7 @@ export const POST_STEP = 2.4;       // railing posts
 export const LAMP_STEP = 26;        // lamp columns, alternating sides
 export const UPSTAND_H = 0.45;      // the solid part of the parapet
 export { DECK_STEP } from './district.js';
+const RIB_N = 4;                    // voussoir pieces per arch rib
 export const PARAPET_MIN = 1.0;     // a deck lower than this, on land, is a kerb-high embankment or the street itself: no parapet
 const SOLID_STEP = 8;               // parapet collision boxes, each with its own baseY
 const UPSTAND_T = 0.34;
@@ -200,7 +201,7 @@ export function buildSpan(seg, district, opts = {}) {
   const nx = -uz, nz = ux;                        // across it
   const half = seg.half ?? 6;
   const yawAcross = -Math.atan2(nz, nx);
-  const elev = (x, z) => district.elevationAt?.(x, z) ?? 0;
+  const elev = (x, z, h) => district.elevationAt?.(x, z, h) ?? 0;
 
   /* The four corner heights the carriageway quad itself uses. Side +1 is the
      +n edge (q[0] -> q[1]), side -1 the other (q[3] -> q[2]). */
@@ -264,10 +265,33 @@ export function buildSpan(seg, district, opts = {}) {
      holds it, so its wall-or-soffit decision has to be the same in all of
      them -- including a chunk the segment's bounding box touches but its
      centreline never enters, which clips to an empty range and returns below. */
+  /* A wide deck stands on TWO columns under a crosshead, a narrow one on one
+     (2026-09-25) -- the GTA IV expressway silhouette. And no column stands in
+     a road: a pier whose column would touch a carriageway underneath slides
+     along the span (up to 12 m either way) to the nearest clear spot, or is
+     dropped. Measured before: 31 expressway piers stood on a street's
+     tarmac, one in the middle of the arterial at (3054,563). */
+  const twin = 2 * half >= 20;
+  const colOff = twin ? [-half * 0.55, half * 0.55] : [0];
+  const colR = twin ? 1.3 : Math.min(2 * half * 0.5, 9) * 0.61;
+  const clearAt = (t) => colOff.every((o) => {
+    const [cx, , cz] = pt(t, o, 0);
+    return !roadUnder(district, seg, cx, cz, colR + 0.6, midY(t) - DECK_T - 1);
+  });
   const piers = [];
   for (let tc = pierStep * 0.5, n = 0; tc < L - 1 && n < 64; tc += pierStep, n++) {
-    const t = tOf(tc);
-    if (midY(t) >= MIN_SPAN_H) piers.push(t);     // below that it is an embankment, not a span
+    let t = tOf(tc);
+    if (midY(t) < MIN_SPAN_H) continue;           // below that it is an embankment, not a span
+    if (!clearAt(t)) {
+      let moved = null;
+      for (let d = 2; d <= 12 && moved === null; d += 2) for (const sg of [1, -1]) {
+        const u = t + sg * d;
+        if (moved === null && u > 1 && u < L - 1 && midY(u) >= MIN_SPAN_H && clearAt(u)) moved = u;
+      }
+      if (moved === null) continue;
+      t = moved;
+    }
+    piers.push(t);
   }
   piers.sort((p, q) => p - q);
   out.carried = piers.length > 0;
@@ -287,10 +311,27 @@ export function buildSpan(seg, district, opts = {}) {
     const capTop = y - DECK_T;
     const shaftH = capTop - CAP_H - base;
     if (shaftH < 0.6) continue;
-    pierList.push({ x: px, z: pz, t, base, top: capTop, deck: y });
-    // the shaft batters in as it rises; the cap splays back out under the deck
-    push('concrete', at(taper(pierW * 1.22, pierT * 1.45, pierW, pierT, shaftH, CONCRETE_DARK), px, base, pz, yawAcross));
-    push('concrete', at(taper(pierW, pierT, pierW + 1.5, pierT + 1.1, CAP_H, CONCRETE), px, capTop - CAP_H, pz, yawAcross));
+    pierList.push({ x: px, z: pz, t, base, top: capTop, deck: y, cols: colOff.map((o) => { const c = pt(t, o, 0); return [c[0], c[2]]; }), colR });
+    if (twin) {
+      /* two round-cornered columns (8-sided, battered) and a crosshead the
+         full deck width under the girders -- the cap IS the crosshead */
+      for (const o of colOff) {
+        const [cx, , cz] = pt(t, o, 0);
+        const cb = inWater ? base : groundY(cx, cz);
+        const h = capTop - CAP_H - cb;
+        if (h < 0.6) continue;
+        const col = cylM(1, h, CONCRETE_DARK, 8);
+        uvScale(col, 2 * Math.PI * colR, h);
+        col.scale(colR, 1, colR);
+        col.translate(0, h / 2, 0);
+        push('concrete', at(col, cx, cb, cz, yawAcross));
+      }
+      push('concrete', at(taper(2 * half - 1.2, pierT, 2 * half - 0.4, pierT + 0.6, CAP_H, CONCRETE), px, capTop - CAP_H, pz, yawAcross));
+    } else {
+      // the shaft batters in as it rises; the cap splays back out under the deck
+      push('concrete', at(taper(pierW * 1.22, pierT * 1.45, pierW, pierT, shaftH, CONCRETE_DARK), px, base, pz, yawAcross));
+      push('concrete', at(taper(pierW, pierT, pierW + 1.5, pierT + 1.1, CAP_H, CONCRETE), px, capTop - CAP_H, pz, yawAcross));
+    }
     if (inWater) {
       // boat-nosed cutwater at each end of the shaft, up to just over the waterline
       const cwH = Math.min(shaftH, (WATER_Y + 1.6) - base);
@@ -308,6 +349,32 @@ export function buildSpan(seg, district, opts = {}) {
 
   pierList.sort((p, q) => p.t - q.t);
 
+  /* ARCH RIBS on the river bridges (2026-09-25): under each fascia, from pier
+     cap to pier cap, a segmental rib whose intrados springs at the cap and
+     meets the soffit at mid-span -- the deck reads as carried by arches, not
+     laid on posts. RIB_N straight voussoir pieces per rib (12 triangles each),
+     built by the chunk that owns the arch's mid-point. River arches only
+     (district.archAt); the expressway keeps its straight girders. */
+  const riverArch = arch && district.archAt?.((ax + bx) / 2, (az + bz) / 2);
+  if (riverArch) for (let i = 0; i < piers.length - 1; i++) {
+    const t0 = piers[i], t1 = piers[i + 1], tm = (t0 + t1) / 2;
+    if (!inChunk(tm)) continue;
+    for (const side of [1, -1]) {
+      const off = (half - 0.7) * side;
+      const spring = (t) => midY(t) - DECK_T - CAP_H;
+      const yb = (u) => {
+        const t = t0 + (t1 - t0) * u;
+        const lo = spring(t0) + (spring(t1) - spring(t0)) * u;
+        return lo + (midY(t) - DECK_T - 0.12 - lo) * Math.sin(Math.PI * u);
+      };
+      for (let k = 0; k < RIB_N; k++) {
+        const ua = k / RIB_N, ub = (k + 1) / RIB_N;
+        const ta = t0 + (t1 - t0) * ua, tb = t0 + (t1 - t0) * ub;
+        push('concrete', beam(pt(ta, off, yb(ua) - 0.35), pt(tb, off, yb(ub) - 0.35), 0.8, 0.7, CONCRETE_DARK));
+      }
+    }
+  }
+
   /* The soffit. A.mat.tarmac is FrontSide, so from underneath the carriageway
      quad is not there; the skirt wall used to hide that by enclosing the span
      down to the ground. Once it is a 0.9 m band you are looking up through the
@@ -321,7 +388,7 @@ export function buildSpan(seg, district, opts = {}) {
   }
 
   // ---------------------------- deck edge: fascia, haunch, upstand, railing
-  const rails = 2 * half >= 20 ? 3 : 2;
+  const rails = 2 * half >= 30 ? 3 : 2;   // 3 on the expressway; 2 on the river arches (their ribs cost the third rail's triangles, 2026-09-25)
   const railYs = rails === 3 ? [0.30, 0.62, 0.94] : [0.42, 0.90];
   const postH = railYs[railYs.length - 1] + 0.08;
 
@@ -337,7 +404,8 @@ export function buildSpan(seg, district, opts = {}) {
       push('concrete', beam(pt(a, off, edgeY(side, a) - DECK_T * 0.5), pt(b, off, edgeY(side, b) - DECK_T * 0.5), 0.5, DECK_T, CONCRETE));
     }
     // haunch: the fascia deepens over each pier, the way a real girder does
-    for (const t of piers) {
+    // (not under a river arch: the ribs spring from the pier caps there instead)
+    if (!riverArch) for (const t of piers) {
       const a = Math.max(tLo, t - 3.2), b = Math.min(tHi, t + 3.2);
       if (b - a < 0.5) continue;
       push('concrete', beam(pt(a, off, edgeY(side, a) - DECK_T - 0.3), pt(b, off, edgeY(side, b) - DECK_T - 0.3), 0.56, 0.62, CONCRETE));
@@ -352,8 +420,24 @@ export function buildSpan(seg, district, opts = {}) {
        last few metres of every expressway ramp's foot, where it stood on the
        street the ramp lands on. */
     const [gLo, gHi] = guardedRange(prof, (t) => { const p = pt(t, 0, 0); return wet(p[0], p[2]); }, tLo, tHi);
-    const pr = gHi > gLo + 0.5 ? runs(gLo, gHi) : [];
-    for (const [a, b] of pr) {
+    /* ...and it OPENS wherever another road's carriageway reaches this edge at
+       the same level (2026-09-25): a junction on the deck (DOCK ROAD across
+       the lift deck), an on-ramp's gore merging into the expressway. A parapet
+       there was a kerb-and-rail wall across a live lane. A street passing
+       UNDER the edge is at another level and keeps the parapet over it.
+       Sampled every metre; the open stretches come back as intervals. */
+    const ivs = [];
+    if (gHi > gLo + 0.5) {
+      let open = null;
+      for (let t = gLo; ; t = Math.min(gHi, t + 1)) {
+        const [px, , pz] = pt(t, uOff, 0);
+        const ok = !junctionAt(district, seg, px, pz, edgeY(side, t));
+        if (ok && open === null) open = t;
+        if ((!ok || t >= gHi) && open !== null) { if (t - open > 0.5) ivs.push([open, t]); open = null; }
+        if (t >= gHi) break;
+      }
+    }
+    for (const [ia, ib] of ivs) for (const [a, b] of runs(ia, ib)) {
       const ea = edgeY(side, a), eb = edgeY(side, b);
       push('concrete', beam(pt(a, uOff, ea + UPSTAND_H * 0.5), pt(b, uOff, eb + UPSTAND_H * 0.5), UPSTAND_T, UPSTAND_H, CONCRETE));
       // ...and a REAL railing above it: you can see the water through this one
@@ -361,43 +445,41 @@ export function buildSpan(seg, district, opts = {}) {
         push('metal', beam(pt(a, uOff, ea + UPSTAND_H + ry), pt(b, uOff, eb + UPSTAND_H + ry), 0.07, 0.05, STEEL));
       }
     }
+    const inIv = (t) => ivs.some(([a, b]) => t >= a && t <= b);
     const postAt = [];
     for (let tc = POST_STEP * 0.5, n = 0; tc < L && n < 400; tc += POST_STEP, n++) {
       const t = tOf(tc);
-      if (!inChunk(t) || t < gLo || t > gHi) continue;
+      if (!inChunk(t) || !inIv(t)) continue;
       const [px, , pz] = pt(t, uOff, 0);
       postAt.push(new THREE.Matrix4().makeTranslation(px, edgeY(side, t) + UPSTAND_H + postH * 0.5, pz));
     }
     push('metal', repeat(boxM(0.09, postH, 0.09, STEEL), postAt));   // one geometry for the whole run of posts
-    // collision: the parapet line, so the caller can drop districtWorld's own
-    /* ...one box per SOLID_STEP m, each with its own baseY (2026-09-25). One
-       box for the whole clipped run took the LOWEST end as its base, so on any
-       ramp segment (0 -> 9.4 m) the parapet counted as standing on the ground
-       along its entire length: a street passing under the high end hit a wall
-       4-9 m below the deck. Measured over the full map before this: 18 of 47
-       ground crossings of a span stopped the car dead. */
-    /* baseY: the deck this parapet stands on (2026-09-14).
-       Car/building collision is a 2D footprint test -- resolveBoxes never looked
-       at a box's height or the car's y -- so a parapet 7.6 m up in the air was a
-       wall across the road passing UNDERNEATH the bridge. "under bridge road i
-       cannot pass through" is exactly this. Carrying the base lets the solver
-       skip a structure the car is driving below. */
-    const nS = gHi > gLo + 0.5 ? Math.max(1, Math.ceil((gHi - gLo) / SOLID_STEP)) : 0;
-    for (let i = 0; i < nS; i++) {
-      const a = gLo + (gHi - gLo) * i / nS, b = gLo + (gHi - gLo) * (i + 1) / nS;
-      const pa = pt(a, uOff, 0), pb = pt(b, uOff, 0);
-      const baseY = Math.min(edgeY(side, a), edgeY(side, b), edgeY(side, (a + b) / 2));
-      /* Where a street at grade OWNS the spot (elevationAt's "the road wins
-         ties against a ramp"), a low ramp foot's parapet is not a wall on it:
-         measured, ramp 760 lands across street 596 at (3221,1284) with its
-         parapet 0.5-1.5 m up while the street there is at 0 -- a wall across a
-         road you can see; DOCK ROAD's east approach (still the old 7.6 m deck)
-         does the same to street 656 at (2027,2421), 2.3-2.9 m up. Pieces the
-         car could not pass under anyway (base under 1.7 m + 0.62 ride) and
-         that stand > 0.3 m over the surface there go. */
-      const mx = (pa[0] + pb[0]) * 0.5, mz = (pa[2] + pb[2]) * 0.5;
-      if (baseY < 2.4 && elev(mx, mz) < baseY - 0.3) continue;
-      solids.push({ x: mx, z: mz, hw: (b - a) / 2, hd: UPSTAND_T * 0.5 + 0.15, angle: Math.atan2(dz, dx), baseY });
+    /* Collision: one box per SOLID_STEP m, each with its own baseY (2026-09-25).
+       One box for the whole clipped run took the LOWEST end as its base, so on
+       any ramp segment (0 -> 9.4 m) the parapet counted as standing on the
+       ground along its entire length: a street passing under the high end hit
+       a wall 4-9 m below the deck. Measured over the full map before this: 18
+       of 47 ground crossings of a span stopped the car dead.
+       baseY (2026-09-14): resolveBoxes skips a box the car is driving under.
+       The boxes of one interval abut exactly and share a line, so a car
+       scraping along the parapet slides from one to the next (the resolver
+       pushes along the box normal; test/bridges.test.js drives it). */
+    for (const [ia, ib] of ivs) {
+      const nS = Math.max(1, Math.ceil((ib - ia) / SOLID_STEP));
+      for (let i = 0; i < nS; i++) {
+        const a = ia + (ib - ia) * i / nS, b = ia + (ib - ia) * (i + 1) / nS;
+        const pa = pt(a, uOff, 0), pb = pt(b, uOff, 0);
+        const baseY = Math.min(edgeY(side, a), edgeY(side, b), edgeY(side, (a + b) / 2));
+        /* Where a street at grade OWNS the spot (elevationAt's "the road wins
+           ties against a ramp"), a low ramp foot's parapet is not a wall on it:
+           measured, ramp 760 lands across street 596 at (3221,1284) with its
+           parapet 0.5-1.5 m up while the street there is at 0. Pieces the car
+           could not pass under anyway (base under 1.7 m + 0.62 ride) and that
+           stand > 0.3 m over the surface there go. */
+        const mx = (pa[0] + pb[0]) * 0.5, mz = (pa[2] + pb[2]) * 0.5;
+        if (baseY < 2.4 && elev(mx, mz, baseY) < baseY - 0.3) continue;   // the surface on the parapet's own layer
+        solids.push({ x: mx, z: mz, hw: (b - a) / 2, hd: UPSTAND_T * 0.5 + 0.15, angle: Math.atan2(dz, dx), baseY });
+      }
     }
   }
 
@@ -455,6 +537,38 @@ export function deckProfile(district, seg) {
 }
 export { profileAt } from './district.js';
 
+/**
+ * Does another road's carriageway reach (x, z) at height y (+-1.5 m)? A
+ * junction or a merge on the deck -- not a street passing underneath.
+ */
+function roadUnder(district, seg, x, z, r, below) {
+  if (!district?.segmentsNear) return false;
+  for (const o of district.segmentsNear(x, z, 40)) {
+    if (o === seg) continue;
+    const vx = o.bx - o.ax, vz = o.bz - o.az, l2 = vx * vx + vz * vz;
+    if (!l2) continue;
+    let t = ((x - o.ax) * vx + (z - o.az) * vz) / l2; t = t < 0 ? 0 : t > 1 ? 1 : t;
+    if (Math.hypot(x - o.ax - vx * t, z - o.az - vz * t) >= o.half + r) continue;
+    const oy = district.deckAt ? district.deckAt(o, t * Math.sqrt(l2)) : 0;
+    if (oy < below) return true;                 // a carriageway under the deck: the column would stand in it
+  }
+  return false;
+}
+
+function junctionAt(district, seg, x, z, y) {
+  if (!district?.segmentsNear) return false;
+  for (const o of district.segmentsNear(x, z, 40)) {
+    if (o === seg) continue;
+    const vx = o.bx - o.ax, vz = o.bz - o.az, l2 = vx * vx + vz * vz;
+    if (!l2) continue;
+    let t = ((x - o.ax) * vx + (z - o.az) * vz) / l2; t = t < 0 ? 0 : t > 1 ? 1 : t;
+    if (Math.hypot(x - o.ax - vx * t, z - o.az - vz * t) >= o.half - 0.3) continue;
+    const oy = district.deckAt ? district.deckAt(o, t * Math.sqrt(l2)) : 0;
+    if (Math.abs(oy - y) < 1.5) return true;
+  }
+  return false;
+}
+
 /** [lo, hi] of [tLo, tHi] where an arch deck needs a parapet: PARAPET_MIN up, or over water. */
 function guardedRange(prof, wetAt, tLo, tHi) {
   const need = (t) => profileAt(prof, t) >= PARAPET_MIN || wetAt(t);
@@ -485,6 +599,19 @@ function guardedRange(prof, wetAt, tLo, tHi) {
  * not dress a bridge world/liftBridge.js has already built.
  */
 export function signatureBridge(seg, district) {
+  /* The lift system's twin deck (district.js #liftSystem) is the bridge now:
+     every road running with it inside its width -- the lift road AND the
+     Embankment -- is world/liftBridge.js's to build (2026-09-25). */
+  const sys = district?.liftSystem;
+  if (sys && seg) {
+    const [a, b] = [sys.a, sys.b], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const ux = (b[0] - a[0]) / L, uz = (b[1] - a[1]) / L;
+    const mx = (seg.ax + seg.bx) / 2, mz = (seg.az + seg.bz) / 2;
+    const t = (mx - a[0]) * ux + (mz - a[1]) * uz, off = Math.abs((mx - a[0]) * -uz + (mz - a[1]) * ux);
+    const sl = Math.hypot(seg.bx - seg.ax, seg.bz - seg.az) || 1;
+    const par = Math.abs(((seg.bx - seg.ax) * ux + (seg.bz - seg.az) * uz) / sl) > 0.7;
+    return par && off < sys.width / 2 && t > -20 && t < L + 20;
+  }
   const bridges = district?.data?.bridges;
   if (!bridges || !seg) return false;
   const mx = (seg.ax + seg.bx) / 2, mz = (seg.az + seg.bz) / 2;

@@ -133,27 +133,59 @@ export class District {
          over the water with a smoothstep of half-length R <= ARCH_R and a crown
          H = ARCH_GRADE * R / 1.5, so the steepest point is ARCH_GRADE (7.5%).
          BROADWAY (148 m): R 74, crown 3.70 m, soffit 5.4 m over the water
-         mid-river. The lift bridge keeps its 7.6 m deck and ramps --
-         world/liftBridge.js and its tests are built on them. */
-      /* DOCK ROAD keeps the old deck too: it crosses the lift bridge mid-river
-         AT deck level (t 90-126 m of its 147), so an arch under it would be a
-         7.6 m wall in the river, and its east end is 21 m from that crossing. */
-      if (br.signature || crossesSignature(br, data.bridges)) {
-        this.spans.push(makeSpan(br.points, br.width, 7.6, 62, false, 'bridge')); continue;
-      }
+         mid-river. The lift bridge and DOCK ROAD are one system with its own
+         profile (#liftSystem, round 2 of the same day). */
+      // the lift bridge and DOCK ROAD are one system, profiled below
+      if (br.signature || crossesSignature(br, data.bridges)) continue;
       const sp = makeSpan(br.points, br.width, 0, 0, false, 'bridge');
       sp.arch = Math.min(ARCH_R, sp.length / 2);
       sp.height = Math.min(7.6, ARCH_GRADE * sp.arch / 1.5);
       this.spans.push(sp);
     }
+    this.liftSystem = this.#liftSystem(data);
+    /* The expressway at FREEWAY_H, not 9.4 (2026-09-25): 6.1 m under the
+       soffit is clear of the 4.5 m every street under it needs, and every
+       metre off the deck is 13 m off each ramp at 7.5%. Its approach where an
+       edge ends on the ground is a straight 7.4% grade with vertical curves
+       (FWY_RAMP), not a 90 m smoothstep that peaked at 15.7%. */
+    const inc = new Map();
+    for (const e of data.graph.edges) for (const n of [e.a, e.b]) (inc.get(n) ?? inc.set(n, []).get(n)).push(e);
     for (const e of data.graph.edges) {
       if (e.class !== 'freeway') continue;
-      this.spans.push(makeSpan(e.points, e.width, 9.4, 90, false, 'freeway'));
+      const sp = makeSpan(e.points, e.width, FREEWAY_H, FWY_RAMP, false, 'freeway');
+      /* ...and only at an end where the expressway STOPS: where another
+         freeway edge carries on, a 105 m corridor out of the end lay over the
+         junction's streets as a ghost ramp (measured on the arterial at
+         (3176,1251): 0.39 m climbing under the car). */
+      sp.rampEnds = [e.a, e.b].map((n) => !(inc.get(n) ?? []).some((x) => x !== e && x.class === 'freeway'));
+      this.spans.push(sp);
     }
+    /* Ramps climb between the heights of the NODES they join (2026-09-25):
+       the expressway's deck where a freeway edge meets the node, the ground
+       where a street does, the far node's height at a dead-end stub. Each
+       ramp edge used to climb 0 -> 9.4 m over ITS OWN length whatever it
+       joined, so a chain of ramp edges was a saw-tooth (2925: 9.4 m in 30 m
+       then back to 0 at 721), and ramps 2926 / 2932, which join two streets,
+       were 9.4 m humps between them. The climb is a straight grade with
+       vertical curves at both ends (vl), so the steepest point is |dh| / (L - c). */
+    const nodeH = (n, self) => {
+      const es = (inc.get(n) ?? []).filter((x) => x !== self);
+      if (es.some((x) => x.class === 'freeway')) return FREEWAY_H;
+      if (es.some((x) => x.class !== 'ramp')) return 0;
+      return null;                                       // a dead-end stub, or ramp-to-ramp
+    };
     for (const e of data.graph.edges) {
-      // ramps meet the freeway at its deck and the street at the ground
       if (e.class !== 'ramp') continue;
-      this.spans.push(makeSpan(e.points, e.width, 9.4, 0, true, 'ramp'));
+      let hA = nodeH(e.a, e), hB = nodeH(e.b, e);
+      if (hA === null && hB === null) hA = hB = 0;
+      if (hA === null) hA = hB;
+      if (hB === null) hB = hA;
+      const sp = makeSpan(e.points, e.width, Math.max(hA, hB), 0, false, 'ramp');
+      const L = sp.length, c = Math.min(12, L / 4);
+      sp.profAt = (t) => hA + (hB - hA) * vl(t, L, c);
+      sp.grade = Math.abs(hB - hA) / Math.max(1, L - c);
+      sp.edge = e.id;
+      if (sp.height > 0.12) this.spans.push(sp);
     }
 
     // buildings indexed by their block, so a chunk load is one lookup
@@ -680,6 +712,11 @@ export class District {
     for (const br of this.data.bridges) {
       if (withinPolyline(br.points, x, z, br.width / 2 + 2.5)) return false;
     }
+    /* ...and the lift system's twin deck is a bridge too (2026-09-25): the
+       Embankment half of it is 15-30 m off the plan line, where a car driving
+       the deck started drowning. */
+    const ls = this.liftSystem;
+    if (ls && withinPolyline([ls.a, ls.b], x, z, ls.width / 2 + 2.5)) return false;
     return this.inOpenWater(x, z);
   }
 
@@ -706,16 +743,19 @@ export class District {
    * approach at each end, so the height is a function of how far along that
    * span you are and how far off its centre.
    */
-  elevationAt(x, z) {
+  elevationAt(x, z, yHint) {
     if (this.racewayElevationAt) {
       const rh = this.racewayElevationAt(x, z);
       if (rh !== null && rh !== undefined) return rh;
     }
+    if (!Number.isFinite(yHint)) yHint = undefined;       // a car state with no y yet is not a hint
     let best = 0, bs = null, deckBest = 0, rampBest = 0, fwyBest = 0;
+    const layers = yHint !== undefined ? [] : null;
     for (let i = 0; i < this.spans.length; i++) {
       const s = this.spans[i];
       if (x < s.minX || x > s.maxX || z < s.minZ || z > s.maxZ) continue;
       const h = spanHeight(s, x, z);
+      if (layers && h > 0) layers.push({ h, s });
       if (h > best) { best = h; bs = s; }
       /* Three separate "best"s, because the guard below has three answers and
          one number could not carry them (2026-09-14). deckBest used to mean
@@ -793,6 +833,37 @@ export class District {
         if (crossD < alongD) return 0;      // squarely on the cross street: underneath
       }
     }
+    /* LAYERS, when the caller knows how high it is (2026-09-25). Under the
+       expressway two surfaces share the plan point -- the deck and the street
+       below -- and the tie-breaks below have to guess from 2D which one you
+       are on. They guess per SAMPLE, so a car on the deck with a wheel over
+       the kerb above a crossing street had that wheel read the street (9.4 m
+       down), and the deck centreline itself had a 1 m hole at (3054,563). A
+       caller that passes the surface it was last on (dynamics.js: the car's
+       y less its ride height; traffic.js: its last y) gets the surface
+       nearest yHint (at most 0.4 above it) -- the one it is on. Only where the
+       choice is real: an elevated candidate 2.5 m or more up. */
+    if (layers && Math.max(fwyBest, rampBest) >= 2.5) {
+      /* the layer NEAREST the hint (never more than 0.4 above it): where a
+         slip road leaves the deck the two overlap in plan, and "highest"
+         kept a car on the ramp riding the expressway's layer until its band
+         ended -- then dropped it to the ramp, 5.6 m, at (3194,1469) */
+      let pick = 0;
+      for (const { h } of layers) if (h <= yHint + 0.4 && Math.abs(h - yHint) < Math.abs(pick - yHint)) pick = h;
+      /* ...and where two decks are within a metre of each other and of you
+         (the gore, where a slip road peels off the expressway), height alone
+         cannot say which you are on, so the one you are more CENTRED in wins,
+         as a fraction of its own half-width -- the tie-break below uses. */
+      const close = layers.filter(({ h }) => h <= yHint + 0.4 && Math.abs(h - pick) < 1.0);
+      if (close.length > 1) {
+        let f = Infinity;
+        for (const { h, s } of close) {
+          const c = polyDist(s.pts, x, z) / Math.max(1, s.half);
+          if (c < f) { f = c; pick = h; }
+        }
+      }
+      return pick;
+    }
     if (best > 0 && bs && (bs.isFreeway || bs.height > 8.0)) {
       /* Deck or underneath? In plan they overlap, so no geometry alone can say
          -- a surface street crossing beneath the expressway sits inside the
@@ -865,36 +936,119 @@ export class District {
 
   /**
    * The deck height along a road segment, as knots {knots: t[], ys: y[], peak}
-   * (2026-09-25). Two knots -- the end centres, exactly the old lerp -- unless
-   * an end or the middle of the segment is on a river-bridge ARCH
-   * (district.archAt), where elevationAt is a smoothstep and not a lerp: then
-   * a knot every <= DECK_STEP m on the centreline, straight runs merged (16 m keeps
-   * the worst arch segment at 2,191 triangles per 100 m; 10 m cost 3,035). This is
-   * the ONE place the tarmac (districtWorld) and the structure (buildSpan) get
+   * (2026-09-25): samples every ~4 m on the centreline, walked from end A so
+   * each sample is on the layer the last one was (elevationAt's yHint), then
+   * reduced to the longest chords within DECK_TOL. A flat street or a flat
+   * deck is two knots, exactly the old end-centre lerp; an arch gets a knot
+   * every ~14 m, a grade change one where it is. The ONE place the tarmac
+   * (districtWorld), the structure (buildSpan) and the barriers (playArea) get
    * their heights from, so they cannot disagree.
    */
   deckProfile(seg) {
+    const hit = this._prof?.get(seg);
+    if (hit) return hit;
     const dx = seg.bx - seg.ax, dz = seg.bz - seg.az, L = Math.hypot(dx, dz) || 1;
-    const e = (t) => this.elevationAt(seg.ax + dx * t / L, seg.az + dz * t / L);
-    const yA = e(0), yB = e(L);
-    /* A long street that merely STARTS at a bridgehead node is not on the
-       arch: sampling its 500 m would draw every other span's lift it passes
-       (measured: nine such streets, 0.1-0.7 m bumps). The middle, or a short
-       segment with an end on it, is. */
-    const onArch = this.archAt(seg.ax + dx / 2, seg.az + dz / 2)
-      || (L < 2 * ARCH_R && (this.archAt(seg.ax, seg.az) || this.archAt(seg.bx, seg.bz)));
-    if (!onArch) return { knots: [0, L], ys: [yA, yB], peak: Math.max(yA, yB) };
-    const n = Math.ceil(L / DECK_STEP);
+    /* EVERY segment is sampled along now, not only the arches (2026-09-25):
+       a long street that ends on a deck was one quad lerped from 0 to the deck
+       over its whole length -- 790 m climbing to DOCK ROAD's 7.6 m, while the
+       car rode flat ground and met the deck in its last metres. Samples walk
+       from end A with the last one as the layer hint, the way a car would, so
+       an expressway segment reads its deck and a street under it the street. Straight runs merge
+       away (a flat street is still two knots); cached per segment. */
+    const yA0 = this.elevationAt(seg.ax, seg.az), yB0 = this.elevationAt(seg.bx, seg.bz);
+    let last = yA0;                                     // walk from end A: each sample's layer is the one the last was on
+    const e = (t) => (last = this.elevationAt(seg.ax + dx * t / L, seg.az + dz * t / L, last));   // 4 m apart: 0.3 m at 7.5%
+    const yA = yA0, yB = yB0;
+    const done = (p) => { (this._prof ??= new WeakMap()).set(seg, p); return p; };
+    if (L <= DECK_STEP) return done({ knots: [0, L], ys: [yA, yB], peak: Math.max(yA, yB) });
+    /* Samples every ~4 m, then the longest chords that stay within
+       DECK_TOL of every sample under them (greedy): a kink (the lift deck's
+       grade change) gets a knot where it is, a smooth arch one every ~14 m,
+       a flat street none. */
+    const n = Math.max(2, Math.ceil(L / 4));
     const T = [], Y = [];
     for (let i = 0; i <= n; i++) { T.push(L * i / n); Y.push(i === 0 ? yA : i === n ? yB : e(L * i / n)); }
     const knots = [T[0]], ys = [Y[0]];
-    for (let i = 1; i < n; i++) {                   // drop a knot the line through its neighbours already passes
-      const t0 = knots[knots.length - 1], y0 = ys[ys.length - 1];
-      const lin = y0 + (Y[i + 1] - y0) * (T[i] - t0) / (T[i + 1] - t0);
-      if (Math.abs(Y[i] - lin) > 0.02) { knots.push(T[i]); ys.push(Y[i]); }
+    let k = 0;
+    while (k < n) {
+      let j = k + 1;
+      for (let m = k + 2; m <= n && straight(T, Y, k, m); m++) j = m;
+      knots.push(T[j]); ys.push(Y[j]); k = j;
     }
-    knots.push(T[n]); ys.push(Y[n]);
-    return { knots, ys, peak: Math.max(...ys) };
+    return done({ knots, ys, peak: Math.max(...ys) });
+  }
+
+  /**
+   * HALSTEAD LIFT BRIDGE and DOCK ROAD, as ONE engineered system (2026-09-25).
+   *
+   * What the plan hands us, measured: the lift bridge runs 381 m ALONG the
+   * harbour channel, and THE EMBANKMENT (arterial, 28 m) runs beside it
+   * 14.6-17.4 m to the west, over the same water -- their carriageways
+   * overlap in plan. DOCK ROAD crosses both mid-channel at two AT-GRADE graph
+   * junctions (nodes 27 and 81), and its east end node 1342 is itself a
+   * junction on land only 22 m past the lift deck's kerb. The old spans were
+   * a 7.6 m deck on the plan line only (the Embankment's west kerb read 0,
+   * the east 7.6: 5.7 m of cross-fall), 62 m ramps at 18.4%, and DOCK ROAD's
+   * east ramp stood 2.9 m over street 656 at the next junction.
+   *
+   * The engineering that fits those junctions:
+   *   - ONE twin deck under both parallel roads: the band is widened to the
+   *     Embankment's west kerb, so the two carriageways are one flat deck.
+   *   - The DOCK ROAD junctions are a flat JUNCTION DECK at H_J, set by the
+   *     22 m to node 1342 at LIFT_GRADE: H_J = 0.075 x (22 - 3) = ~1.4 m.
+   *   - The lift span and its towers sit on a flat LIFT DECK at H_L, climbed
+   *     to from the junction deck at LIFT_GRADE over the gap before the
+   *     towers: ~4.0 m, 6.6 m over the water (the span lifts 30 m for ships;
+   *     a low deck is what a lift bridge is FOR).
+   *   - Both ends land at 0 on their own end nodes; every kink between grades
+   *     is a parabolic vertical curve (vcAt), so the steepest point is the
+   *     straight grade itself.
+   * world/liftBridge.js is built on the same numbers (LIFT_BRIDGE is the plan
+   * entry; landmarks.js passes `this.liftSystem`).
+   */
+  #liftSystem(data) {
+    const LB = data.bridges.find((b) => b.signature);
+    const DK = LB && data.bridges.find((b) => !b.signature && crossesSignature(b, data.bridges));
+    if (!LB || !DK || LB.points.length !== 2 || DK.points.length !== 2) return null;
+    const [A, B] = LB.points, L = Math.hypot(B[0] - A[0], B[1] - A[1]);
+    const ux = (B[0] - A[0]) / L, uz = (B[1] - A[1]) / L, nx = -uz, nz = ux;   // n: across, +n = WEST here (the bridge runs +z)
+    // lateral extent of every road running WITH the bridge over its length
+    let lo = -LB.width / 2, hi = LB.width / 2;
+    for (const r of data.roads) for (let i = 0; i < r.points.length - 1; i++) {
+      const p = r.points[i], q = r.points[i + 1], l = Math.hypot(q[0] - p[0], q[1] - p[1]);
+      if (l < 1 || Math.abs(((q[0] - p[0]) * ux + (q[1] - p[1]) * uz) / l) < 0.95) continue;
+      for (const [x, z] of [p, q]) {
+        const t = (x - A[0]) * ux + (z - A[1]) * uz, o = (x - A[0]) * nx + (z - A[1]) * nz;
+        if (t < 0 || t > L || Math.abs(o) > 24) continue;
+        lo = Math.min(lo, o - r.width / 2); hi = Math.max(hi, o + r.width / 2);
+      }
+    }
+    const mid = (lo + hi) / 2, half = (hi - lo) / 2;
+    const pts = [[A[0] + nx * mid, A[1] + nz * mid], [B[0] + nx * mid, B[1] + nz * mid]];
+    // where DOCK ROAD crosses, along each
+    const [C, E] = DK.points, LD = Math.hypot(E[0] - C[0], E[1] - C[1]);
+    const dx = (E[0] - C[0]) / LD, dz = (E[1] - C[1]) / LD;
+    const den = ux * dz - uz * dx;
+    const tl = ((C[0] - pts[0][0]) * dz - (C[1] - pts[0][1]) * dx) / den;      // along the lift centreline
+    const td = ((C[0] - pts[0][0]) * uz - (C[1] - pts[0][1]) * ux) / den;      // along DOCK ROAD
+    const g = LIFT_GRADE, VC = 3;
+    const across = (half + 2) / Math.abs(nx * dx + nz * dz);                    // the twin deck's band, along DOCK ROAD
+    const tW = td - across - VC, tE = td + across + VC;                         // DOCK ROAD flat over all of it, curves outside
+    const HJ = g * Math.min(tW, LD - tE) - g * VC;
+    const dockHalf = DK.width / 2 + 3;
+    const towers = [L / 2 - 50, L / 2 + 50];                                    // liftBridge: towers 84 m apart, caissons +-7.8
+    const HL = Math.min(7.6, HJ + g * (towers[0] - (tl + dockHalf)) - g * VC, g * (L - towers[1]) - g * VC);
+    const lift = makeSpan(pts, 2 * half, HL, 0, false, 'bridge');
+    lift.band = half + 2;
+    lift.prof = { s: [0, tl - dockHalf, tl + dockHalf, towers[0], towers[1], L], h: [0, HJ, HJ, HL, HL, 0], vc: 10 };
+    lift.profAt = (t) => vcAt(lift.prof, t);
+    const dock = makeSpan(DK.points, DK.width, HJ, 0, false, 'bridge');
+    dock.prof = { s: [0, tW, tE, LD], h: [0, HJ, HJ, 0], vc: 2 * VC };
+    dock.profAt = (t) => vcAt(dock.prof, t);
+    this.spans.push(lift, dock);
+    return { a: pts[0], b: pts[1], width: 2 * half, deckY: HL, junctionY: HJ, offset: mid,
+      gaps: [[tl - dockHalf, tl + dockHalf]],
+      deckAt: (t) => vcAt(lift.prof, t) };
   }
 
   /** The drawn deck height t metres along a road segment (deckProfile). */
@@ -904,12 +1058,12 @@ export class District {
       to know which road segments must be sampled along and not lerped. */
   archAt(x, z) {
     for (const s of this.spans) {
-      if (!s.arch || x < s.minX || x > s.maxX || z < s.minZ || z > s.maxZ) continue;
+      if (!(s.arch || s.prof) || x < s.minX || x > s.maxX || z < s.minZ || z > s.maxZ) continue;
       for (let i = 0; i < s.pts.length - 1; i++) {
         const ax = s.pts[i][0], az = s.pts[i][1], vx = s.pts[i + 1][0] - ax, vz = s.pts[i + 1][1] - az;
         const l2 = vx * vx + vz * vz;
         let t = l2 ? ((x - ax) * vx + (z - az) * vz) / l2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
-        if (Math.hypot(x - ax - vx * t, z - az - vz * t) <= s.half + 5.5) return true;
+        if (Math.hypot(x - ax - vx * t, z - az - vz * t) <= (s.band ?? s.half + 5.5)) return true;
       }
     }
     return false;
@@ -1049,9 +1203,26 @@ export function profileAt(prof, t) {
 }
 
 
-/** Arch profile knot spacing, m: a 16 m chord sags <= 13 cm at BROADWAY's
-    crown (6H/R^2 = 0.004 /m). */
-export const DECK_STEP = 16;
+/** deckProfile: segments this short are one quad whatever; a chord may miss
+    the physics surface by DECK_TOL (0.1 m: an arch then gets a knot every
+    ~14 m -- 6H/R^2 = 0.004 /m at BROADWAY's crown). */
+export const DECK_STEP = 16, DECK_TOL = 0.1;
+/** Do samples k..n all lie on the chord from k to n (DECK_TOL)? */
+function straight(T, Y, k, n) {
+  for (let q = k + 1; q < n; q++) if (Math.abs(Y[k] + (Y[n] - Y[k]) * (T[q] - T[k]) / (T[n] - T[k]) - Y[q]) > DECK_TOL) return false;
+  return true;
+}
+
+/** Least distance from (x, z) to a polyline. */
+function polyDist(pts, x, z) {
+  let best = Infinity;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const ax = pts[i][0], az = pts[i][1], vx = pts[i + 1][0] - ax, vz = pts[i + 1][1] - az, l2 = vx * vx + vz * vz;
+    let t = l2 ? ((x - ax) * vx + (z - az) * vz) / l2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+    best = Math.min(best, Math.hypot(x - ax - vx * t, z - az - vz * t));
+  }
+  return best;
+}
 
 /** Does a bridge's polyline pass within the signature bridge's deck band? */
 function crossesSignature(br, bridges) {
@@ -1067,6 +1238,49 @@ function crossesSignature(br, bridges) {
   }
   return false;
 }
+
+/**
+ * Piecewise-linear deck profile {s, h, vc} with a parabolic VERTICAL CURVE of
+ * length <= vc at every interior knot -- the standard highway transition: the
+ * grade changes linearly through the curve, so the steepest point anywhere is
+ * the steepest straight grade between knots.
+ */
+export function vcAt(prof, t) {
+  const S = prof.s, Hh = prof.h, n = S.length;
+  if (t <= S[0]) return Hh[0];
+  if (t >= S[n - 1]) return Hh[n - 1];
+  const gr = (i) => (Hh[i + 1] - Hh[i]) / Math.max(1e-6, S[i + 1] - S[i]);
+  for (let i = 1; i < n - 1; i++) {
+    const b = Math.min(prof.vc / 2, 0.45 * (S[i] - S[i - 1]), 0.45 * (S[i + 1] - S[i]));
+    if (t >= S[i] - b && t <= S[i] + b && b > 0) {
+      const g1 = gr(i - 1), g2 = gr(i), u = t - (S[i] - b);
+      return Hh[i] - g1 * b + g1 * u + (g2 - g1) * u * u / (4 * b);
+    }
+  }
+  let i = 0;
+  while (i < n - 2 && t > S[i + 1]) i++;
+  return Hh[i] + gr(i) * (t - S[i]);
+}
+
+/**
+ * 0 -> 1 over [0, L]: a straight grade with a parabolic vertical curve of
+ * length c at each end (grade 1 / (L - c) at the steepest). Needs L >= 2c.
+ */
+export function vl(t, L, c) {
+  if (t <= 0) return 0;
+  if (t >= L) return 1;
+  c = Math.min(c, L / 2);
+  const m = L - c;
+  if (t < c) return (t * t) / (2 * c * m);
+  if (t > L - c) return 1 - ((L - t) * (L - t)) / (2 * c * m);
+  return (t - c / 2) / m;
+}
+
+/** Expressway deck height, and the length of its approach where an edge lands on the ground. */
+export const FREEWAY_H = 7.0, FWY_RAMP = 105;
+
+/** The lift system's steepest grade (the arches' ARCH_GRADE, same limit). */
+export const LIFT_GRADE = 0.075;
 
 /** River-bridge arch: longest half-rise, and the steepest grade it may reach. */
 export const ARCH_R = 90, ARCH_GRADE = 0.075;
@@ -1106,6 +1320,7 @@ function spanHeight(s, x, z) {
   // 1. Check approach ramps first if not a continuous taper and ramp length > 0
   if (!s.taper && s.ramp) {
     for (const end of [0, 1]) {
+      if (s.rampEnds && !s.rampEnds[end]) continue;
       const p0 = end ? s.pts[s.pts.length - 1] : s.pts[0];
       const p1 = end ? s.pts[s.pts.length - 2] : s.pts[1];
       let ux = p0[0] - p1[0], uz = p0[1] - p1[1];
@@ -1116,7 +1331,7 @@ function spanHeight(s, x, z) {
       if (out > 0 && out <= s.ramp) {
         const perp = Math.hypot(rx - ux * out, rz - uz * out);
         if (perp <= s.half + 5.5) {           // same band as the span (covers pavement)
-          return s.height * smooth(1 - out / s.ramp);
+          return s.height * vl(s.ramp - out, s.ramp, 10);
         }
       }
     }
@@ -1136,6 +1351,7 @@ function spanHeight(s, x, z) {
 
   /* The lifted band covers the PAVEMENT, not just the carriageway.
      half + 5.5 clears the 4.8m pavement's outer edge with room for a railing. */
+  if (s.profAt) return bestD <= (s.band ?? s.half + 5.5) ? s.profAt(Math.max(0, Math.min(s.length, along))) : 0;
   if (bestD <= s.half + 5.5) {
     if (s.arch) {
       // the river bridge's arch: 0 at both end nodes, never past them

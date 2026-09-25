@@ -207,7 +207,7 @@ export function stepVehicle(car, dt) {
   for (let i = 0; i < 4; i++) {
     const [ax, az] = offsets[i];
     const cornerY = car.y + ax * sinP + az * sinR;
-    const ground = groundHeightAt(contactX[i], contactZ[i]);
+    const ground = groundHeightAt(contactX[i], contactZ[i], car.y - 0.6);
     wheelGround.push(ground);
     let c = V.restLength - ((cornerY - WHEEL_R) - ground);
     c = Math.max(-0.02, Math.min(V.maxTravel, c));
@@ -532,7 +532,7 @@ export function stepVehicle(car, dt) {
   car.pitch = Math.max(-0.20, Math.min(0.20, car.pitch + car.pitchRate * dt));
   car.roll = Math.max(-0.24, Math.min(0.24, car.roll + car.rollRate * dt));
 
-  const floor = groundHeightAt(car.x, car.z) + WHEEL_R + V.restLength - V.maxTravel;
+  const floor = groundHeightAt(car.x, car.z, car.y - 0.6) + WHEEL_R + V.restLength - V.maxTravel;
   if (car.y < floor) { car.y = floor; car.vy = Math.max(0, car.vy); }
 
   const ax = Fx / mass, ay = Fy / mass;
@@ -647,7 +647,7 @@ export function stepVehicle(car, dt) {
 
   // pitch/roll are integrated from the springs above, not faked from
   // acceleration, so heave measures suspension displacement from nominal ride height above local ground
-  const groundCG = groundHeightAt(car.x, car.z);
+  const groundCG = groundHeightAt(car.x, car.z, car.y - 0.6);
   car.heave = car.y - (groundCG + V.rideHeight);
 
   const rearSlip = Math.abs(((car.wheelW[2] + car.wheelW[3]) / 2) * WHEEL_R - u);

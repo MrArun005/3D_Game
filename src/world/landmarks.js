@@ -278,7 +278,15 @@ export class Landmarks {
        raised span would cut the road. Parts come back per material key, the
        same keys the self-built styles use. */
     try {
-      const lb = buildLiftBridge(LIFT_BRIDGE.a, LIFT_BRIDGE.b, LIFT_BRIDGE.width);
+      /* On district.js's lift system (2026-09-25) when it has one: the twin
+         deck under the lift road AND the Embankment beside it (44 m, centred
+         9 m west of the plan line, so no tower stands in either carriageway),
+         the lift deck's own height, the approach profile, and a gap in each
+         parapet where DOCK ROAD crosses at its junctions. */
+      const sys = this.district?.liftSystem;
+      const lb = sys
+        ? buildLiftBridge(sys.a, sys.b, sys.width, { deckY: sys.deckY, deckAt: sys.deckAt, gaps: sys.gaps })
+        : buildLiftBridge(LIFT_BRIDGE.a, LIFT_BRIDGE.b, LIFT_BRIDGE.width);
       const byKey = new Map();
       for (const p of lb.parts) (byKey.get(p.mat) ?? byKey.set(p.mat, []).get(p.mat)).push(p.geo);
       for (const [key, geos] of byKey) {
@@ -296,17 +304,17 @@ export class Landmarks {
          go through the same local-to-world turn the skyline pieces use. The
          car must pass BETWEEN the legs, so these are per-leg clusters, never a
          box across the deck. */
-      const ang = LIFT_BRIDGE.angle, ca = Math.cos(ang), sa = Math.sin(ang);
+      /* buildLiftBridge returns solids and lamps ALREADY in the world frame
+         (its own "local -> world" pass strips `local`). This used to turn
+         them a second time about the bridge's midpoint, which put the tower
+         solids and every hero light of the bridge ~1.9 km away (measured
+         2026-09-25: first leg solid at (-1079, 4745)). */
       for (const b of lb.solids ?? []) {
-        const wx = LIFT_BRIDGE.x + b.x * ca - b.z * sa;
-        const wz = LIFT_BRIDGE.z + b.x * sa + b.z * ca;
-        this.solids.push({ x: wx, z: wz, hw: b.hw, hd: b.hd, angle: ang, height: b.height, district: LIFT_BRIDGE.district, landmark: true });
+        this.solids.push({ x: b.x, z: b.z, hw: b.hw, hd: b.hd, angle: b.angle, height: b.height, district: LIFT_BRIDGE.district, landmark: true });
       }
-      for (const l of lb.lamps ?? []) {
-        const wx = LIFT_BRIDGE.x + l.x * ca - l.z * sa;
-        const wz = LIFT_BRIDGE.z + l.x * sa + l.z * ca;
-        heads.push({ x: wx, y: l.y, z: wz, colour: l.colour ?? 0xffd9a0 });
-      }
+      // the deck-edge parapets: low boxes with a baseY, so a car under them is not stopped
+      for (const b of lb.edgeSolids ?? []) this.solids.push({ ...b, district: LIFT_BRIDGE.district, landmark: true });
+      for (const l of lb.lamps ?? []) heads.push({ x: l.x, y: l.y, z: l.z, colour: l.colour ?? 0xffd9a0 });
     } catch (e) { console.warn('lift bridge', e.message); }
 
     for (const s of SKYLINE) {

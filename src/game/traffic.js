@@ -335,6 +335,18 @@ export class Traffic {
     return this.#makeCar(force);
   }
 
+  /* Which surface a car stands on where two share the plan point -- the
+     expressway deck and the street under it (district.js elevationAt, 2026-09-25):
+     its own last height, or the deck if it is on an expressway edge and has
+     not been placed yet. Without it a cruiser on the expressway sat on the
+     street below at every underpass where the street's centre was nearer. */
+  layerHint(c) {
+    const y = c.mesh?.position.y ?? 0;
+    if (y > 0.5) return y;
+    const e = typeof c.edge === 'number' ? this.E?.[c.edge] : c.edge;
+    return e?.class === 'freeway' ? 99 : y;
+  }
+
   #makeCar(force) {
     const rand = this.rand;
     const keys = this.assets.geo.stuntKeys ?? BODY_KEYS;    // vendor kits add taxi
@@ -528,7 +540,7 @@ export class Traffic {
          line at the same speed for 5.7 km and finish in a tangle. */
       c.skill = 0.86 + (i / Math.max(1, count - 1)) * 0.26;
       c.raceCap = 26 * c.skill;        // m/s: ~94 km/h for the slowest, ~122 for the quickest
-      c.mesh.position.set(c.x, groundHeightAt(c.x, c.z), c.z);
+      c.mesh.position.set(c.x, groundHeightAt(c.x, c.z, this.layerHint(c)), c.z);
       c.mesh.rotation.y = c.yaw;
       this.racers.push(c);
     }
@@ -563,7 +575,7 @@ export class Traffic {
       const nx = path[Math.min(c.leg + 1, path.length - 1)];
       const aimX = t.x * 0.7 + nx.x * 0.3, aimZ = t.z * 0.7 + nx.z * 0.3;
       this.#steerToward(c, aimX, aimZ, dt, 0, c.raceCap);
-      c.mesh.position.set(c.x, groundHeightAt(c.x, c.z), c.z);
+      c.mesh.position.set(c.x, groundHeightAt(c.x, c.z, this.layerHint(c)), c.z);
       c.mesh.rotation.y = c.yaw;
       if (c.leg >= path.length - 1) { c.finished = true; c.speed *= 0.97; }
     }
@@ -932,7 +944,7 @@ export class Traffic {
       car.z = (f[1] + r[1]) * 0.5;
       const dx = f[0] - r[0], dz = f[1] - r[1];
       if (dx * dx + dz * dz > 1e-6) car.yaw = Math.atan2(-dz, dx);
-      car.mesh.position.set(car.x, groundHeightAt(car.x, car.z), car.z);
+      car.mesh.position.set(car.x, groundHeightAt(car.x, car.z, this.layerHint(car)), car.z);
       car.mesh.rotation.y = car.yaw;
       return;
     }
@@ -945,7 +957,7 @@ export class Traffic {
     car.z = a[1] + (b[1] - a[1]) * t;
     car.yaw = Math.atan2(-(b[1] - a[1]), b[0] - a[0]);
     // bridges: the deck is 7.6m up, and a car at y=0 drives through it
-    car.mesh.position.set(car.x, groundHeightAt(car.x, car.z), car.z);
+    car.mesh.position.set(car.x, groundHeightAt(car.x, car.z, this.layerHint(car)), car.z);
     car.mesh.rotation.y = car.yaw;
   }
 
@@ -1545,7 +1557,7 @@ export class Traffic {
             if (c.stopT > 6) { c.chaseT = 0; c.bailed = false; }
           } else if (gapF < 9) { f.fleeT = 0; f.cruise = 0; }                 // alongside: the fugitive gives up and stops
           else this.#steerToward(c, f.x, f.z, dt, 4, (c.baseCruise ?? c.cruise) * 1.7);
-          c.mesh.position.set(c.x, groundHeightAt(c.x, c.z), c.z); c.mesh.rotation.y = c.yaw;
+          c.mesh.position.set(c.x, groundHeightAt(c.x, c.z, this.layerHint(c)), c.z); c.mesh.rotation.y = c.yaw;
           const lit = Math.floor(t * 6) % 2;
           if (c.bar) { c.bar[0].emissiveIntensity = lit ? 5.5 : 0.15; c.bar[1].emissiveIntensity = lit ? 0.15 : 5.5; }
           if (c.pool) { c.pool.visible = true; c.pool.material = poolMat(lit ? 0xff2a1c : 0x2f6dff); }
@@ -1846,7 +1858,7 @@ export class Traffic {
           c.z += (oz / od) * push;
         }
 
-        c.mesh.position.set(c.x, groundHeightAt(c.x, c.z), c.z);
+        c.mesh.position.set(c.x, groundHeightAt(c.x, c.z, this.layerHint(c)), c.z);
         c.mesh.rotation.y = c.yaw;
         continue;
       }
