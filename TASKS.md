@@ -2,7 +2,7 @@
 
 The live checklist for the owner's goal. Read this file, not the chat
 scrollback, to see where the run is. Tick items as they land (with the commit),
-add anything new that is found. Last updated 2026-09-25.
+add anything new that is found. Last updated 2026-09-25 (afternoon).
 
 **Goal (Arun):** GTA-level graphics — stylised, "GTA IV-era geometry under
 modern lighting" (`docs/ART_BIBLE.md`) — running smoothly on Arun's M2 Air,
@@ -44,14 +44,23 @@ going, and put status in the same message as the next action.
 - [x] Night environment map (was the noon sky all night) — `43dbca8`
 - [x] Tail lamps decoded from the lamp mask (were green / blue) — `3e28216`
 - [x] Punchier afternoon grade — `3e28216`
-- [ ] Building detail up close: Downtown + Regent Street shots → the weakest
-      facade → fix it (shots running 2026-09-25)
+- [x] Grass verges in front of Regent Street shops → the city ground is paved
+      (pavement slab texture) — `1df8689` *(textured version not yet seen)*
+- [x] Lit shop windows show their stock instead of flat beige / brown boards
+      (Regent Street, Little Tokyo side streets) — `1df8689` *(not yet seen)*
+- [x] The 6 px grid over every sky (broken grain hash) — `1df8689`
+- [ ] Building detail up close, next: flat Regent upper windows, Tokyo flank
+      walls — from the 2026-09-25 shots
 - [ ] Minimap looks tilted on touch — needs a screenshot from Arun
 - [ ] `[owner]` sign-off on the four shots
 
 ### Feel
 - [x] Street skill loop: near miss, drift, combo, cash — `3e28216`
 - [x] Crash weight: hit-stop + pad rumble — `d21c705`
+- [x] On-foot running: walk/run blend space (the jog was a 0.62x slow-motion
+      sprint), phase-locked feet, body roll capped at 7° (was ~50° on a sharp
+      turn), near-miss whoosh — `1df8689` *(in-browser check running)*
+- [ ] `[owner]` run around on foot: does it read as running now?
 - [ ] `[owner]` play-test: the chain pays, a crash feels heavy, slow motion
       never sticks
 
