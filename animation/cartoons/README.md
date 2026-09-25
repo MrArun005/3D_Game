@@ -24,6 +24,21 @@ were the first animals people tamed, more than 15,000 years ago. Slapstick
 with speech bubbles; every beat time is in `stories/firstpet.beats.json`,
 read by both `src/firstpet.js` and `tools/audio-firstpet.mjs`.
 
+**The Unicorn Seal** (92 s, 1080p 16:9, the rich engine): Mohenjo-daro, 4,500
+years ago. Siya, a seal carver's daughter, must get her father's unicorn seal to
+a merchant's boat before sunset. A monkey steals it, and the chase runs through
+the real city: grid streets, covered brick drains, the carnelian bead market,
+the Great Bath (it hops across on the bathers' heads). The seal falls into a
+drain, rides it to the river, and is stamped onto a cotton bale bound for
+Mesopotamia. Epilogue: the city under the sand, an archaeologist's brush, and
+the writing no one has read yet. `src/indus/` is the rich engine: `core.js`
+(parallax camera, brick/mud textures, sky, god rays, depth-of-field blur,
+grade), `world.js` (2.5D houses, the citadel panorama, river and boats, bath,
+market, drain), `people.js` (the outlined clothed rig, monkey, zebu and cart),
+`seal.js` (the unicorn seal, carved stroke by stroke, and its impression).
+Dialogue: Kokoro's Indian voices (hf_alpha, hm_omega, hf_beta, hm_psi). Score:
+synthesised tanpura, sitar, bansuri, santoor and tabla (`tools/audio-indus.mjs`).
+
 ```sh
 npm install
 python3 ../whiteboard/tools/voice.py stories/farming.lines.json out   # narration + timing
@@ -32,6 +47,8 @@ node tools/render.mjs --story farming                                 # out/cart
 # the same three steps with coconut for The Coconut Problem
 python3 ../whiteboard/tools/voice.py stories/firstpet.lines.json out  # Oog's lines
 node tools/audio-firstpet.mjs && node tools/render.mjs --story firstpet
+python3 ../whiteboard/tools/voice.py stories/indus.lines.json out      # The Unicorn Seal
+node tools/audio-indus.mjs && node tools/render.mjs --story indus      # ~10 min at 1080p
 ```
 
 `src/art.js` is the drawing kit (landscape, wheat, people, tents, houses,

@@ -1,0 +1,53 @@
+{
+ "duration": 92.0,
+ "lines": [
+  {
+   "id": "baba",
+   "text": "The merchant's boat leaves at sunset. Take this to him, quickly!",
+   "t0": 12.6,
+   "dur": 3.894
+  },
+  {
+   "id": "go",
+   "text": "I'll be back before you know it!",
+   "t0": 16.5,
+   "dur": 1.654
+  },
+  {
+   "id": "hey",
+   "text": "Hey! That's not yours!",
+   "t0": 31.0,
+   "dur": 1.452
+  },
+  {
+   "id": "beads",
+   "text": "My beads!",
+   "t0": 40.8,
+   "dur": 0.801
+  },
+  {
+   "id": "nono",
+   "text": "No, no, no!",
+   "t0": 52.2,
+   "dur": 1.116
+  },
+  {
+   "id": "wait",
+   "text": "Wait! Wait for me!",
+   "t0": 60.8,
+   "dur": 1.245
+  },
+  {
+   "id": "time",
+   "text": "Just in time, little one!",
+   "t0": 64.6,
+   "dur": 1.812
+  },
+  {
+   "id": "thief",
+   "text": "You little thief!",
+   "t0": 73.8,
+   "dur": 1.123
+  }
+ ]
+}

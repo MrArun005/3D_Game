@@ -1,0 +1,15 @@
+{
+  "voice": "hf_alpha",
+  "speed": 1.05,
+  "duration": 92.0,
+  "lines": [
+    { "id": "baba",  "at": 12.6, "voice": "hm_omega", "speed": 0.95, "text": "The merchant's boat leaves at sunset. Take this to him, quickly!" },
+    { "id": "go",    "at": 16.5, "text": "I'll be back before you know it!" },
+    { "id": "hey",   "at": 31.0, "text": "Hey! That's not yours!" },
+    { "id": "beads", "at": 40.8, "voice": "hf_beta", "speed": 1.1, "text": "My beads!" },
+    { "id": "nono",  "at": 52.2, "text": "No, no, no!" },
+    { "id": "wait",  "at": 60.8, "text": "Wait! Wait for me!" },
+    { "id": "time",  "at": 64.6, "voice": "hm_psi", "speed": 0.95, "text": "Just in time, little one!" },
+    { "id": "thief", "at": 73.8, "text": "You little thief!" }
+  ]
+}

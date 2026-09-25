@@ -1,0 +1,15 @@
+{
+  "duration": 92.0,
+  "scenes": [["open", 0], ["workshop", 8.5], ["sealcu", 10.6], ["handover", 12.4], ["street", 18.6], ["snatch", 28.0], ["roofs", 34.0], ["beads", 39.0], ["bath", 44.5], ["drain", 52.0], ["quay", 60.0], ["stamp", 66.2], ["farewell", 70.2], ["epilogue", 79.0]],
+  "give": 15.3, "take": 15.7, "turn": 16.6, "exit": 17.3,
+  "capGrid": 19.4, "capDrain": 22.4, "capBrick": 25.4, "hop": 24.2,
+  "admire": 28.9, "peek": 29.5, "grab": 30.35, "flee": 32.3,
+  "ladder": 34.0, "onRoof": 35.0, "leap": 36.7, "land": 37.5,
+  "mDrop": 39.35, "tip": 40.15, "slip": 41.25, "slideEnd": 43.1, "capBeads": 40.6,
+  "capBath": 45.0, "hops": [45.7, 46.05, 46.4], "mLand": 46.75, "sLeap": 46.9, "duck": 47.2, "splash": 47.45, "surface": 48.3, "climb": 49.3, "out": 50.6, "drop": 50.3, "bounces": [50.75, 51.1, 51.42], "plink": 51.75,
+  "lid": 52.9, "cut": 53.9, "capFlow": 54.5, "outlet": 58.1, "mud": 58.55, "grabSeal": 59.3,
+  "jump": 63.0, "aboard": 63.9, "hand": 65.6, "mTurn": 62.3,
+  "press": 67.0, "lift": 67.9, "capTrade": 68.1,
+  "monkeyIn": 72.0, "offer": 72.8, "laugh": 73.6, "sitDown": 75.3,
+  "cap1": 82.4, "brush": 84.0, "cap2": 84.8, "glyphs": 87.2, "cap3": 87.6, "cap4": 89.4, "endCard": 90.3
+}
