@@ -429,6 +429,7 @@ export class GameClock {
     const duskProgress = Math.max(0, Math.min(1, (this.hour - 18.0) / 1.8));
     const dawnProgress = Math.max(0, Math.min(1, 1 - (this.hour - 5.4) / 1.6));
     const nightFactor = isNight ? 1 : isDusk ? duskProgress : isDawn ? dawnProgress : 0;
+    this.nightK = nightFactor;   // main.js swaps the environment map on it (sky.js setEnvNight)
 
     /* The real point lights ride the same dusk curve as the painted ones, so a
        lamp's emissive cap and the light it actually casts come up together. */

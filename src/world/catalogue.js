@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { isTouchDevice } from '../core/device.js';
 const PHONE = (() => { try { return isTouchDevice(); } catch { return false; } })();
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { anisotropyOf } from './textures.js';
@@ -196,7 +197,7 @@ export class Catalogue {
        the lag logger reports "textures still loading" as a spike cause while it
        is pending. allSettled, not all: one missing PNG must not stall boot. */
     const texJobs = [];
-    const tex = (url, srgb) => {
+    const png = (url, srgb) => {
       const t = loader.load(url,
         (tx) => {
           /* Phones (2026-09-24): 119 library PNGs at 512^2 were ~165 MB of
@@ -224,6 +225,44 @@ export class Catalogue {
       t.anisotropy = aniso;
       t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
       return t;
+    };
+
+    /* KTX2 first (2026-09-25): tools/ktx2-textures.mjs writes a compressed
+       twin of every library PNG under /textures/ktx2/. The GPU keeps it
+       compressed (BC7/ASTC/ETC after transcoding): ~0.25 MB of VRAM per 512^2
+       map instead of ~1.3 MB, and half the download. The PNG is the fallback
+       -- no transcoder, no twin, a failed fetch. `?noktx` forces PNG.
+       Encoded with --lower_left_maps_to_s0t0, so the KTX2 (flipY false) lands
+       the same way up as the flipped PNG and the normals keep their sign. */
+    let ktx2 = null;
+    if (typeof location !== 'undefined' && !new URLSearchParams(location.search).has('noktx')) {
+      try { ktx2 = new KTX2Loader().setTranscoderPath('/basis/').detectSupport(renderer); } catch (e) { console.warn('ktx2:', e.message); ktx2 = null; }
+    }
+    /* Returns a texture NOW (materials are cloned and copied before any file
+       lands), and fills it in place when the KTX2 arrives: every clone shares
+       the object, so every clone gets the compressed data. On a failure the
+       PNG is loaded into the same object the same way. */
+    const fill = (t0, t) => {
+      t0.image = t.image; t0.mipmaps = t.mipmaps; t0.format = t.format; t0.type = t.type;
+      t0.isCompressedTexture = !!t.isCompressedTexture; t0.generateMipmaps = t.generateMipmaps;
+      t0.minFilter = t.minFilter; t0.magFilter = t.magFilter; t0.flipY = t.flipY;
+      t0.premultiplyAlpha = t.premultiplyAlpha; t0.unpackAlignment = t.unpackAlignment;
+      t0.needsUpdate = true;
+    };
+    const tex = (url, srgb) => {
+      if (!ktx2 || !/\.png$/.test(url)) return png(url, srgb);
+      const t0 = new THREE.Texture();
+      t0.wrapS = t0.wrapT = THREE.RepeatWrapping;
+      t0.anisotropy = aniso;
+      t0.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+      const kurl = url.replace(/^\/textures\/(.*)\.png$/, '/textures/ktx2/$1.ktx2');
+      texJobs.push(new Promise((res) => {
+        ktx2.load(kurl, (t) => { fill(t0, t); res(); }, undefined, () => {
+          new THREE.TextureLoader().load(url, (t) => { fill(t0, t); t0.flipY = true; res(); }, undefined, () => res());
+        });
+        setTimeout(res, 15000);
+      }));
+      return t0;
     };
 
     /* Only the materials something binds (usedMaterials): each one costs

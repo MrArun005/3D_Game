@@ -132,9 +132,47 @@ export function createSky(scene, renderer, day = false) {
 
   const pmrem = new THREE.PMREMGenerator(renderer);
   pmrem.compileEquirectangularShader();
-  scene.environment = pmrem.fromScene(envScene, 0, 1, 200).texture;
+  const envRT = pmrem.fromScene(envScene, 0, 1, 200);
+  scene.environment = envRT.texture;
   scene.environmentIntensity = day ? 0.85 : 0.85;   // clock.js owns this per hour; 0.85 by day since 2026-09-08 (was 1.15: half the flat fill)
-  pmrem.dispose();
+
+  /* A NIGHT environment (2026-09-25; it was the noon PMREM all night, so a
+     glossy wall or the car reflected a blue daytime dome and clock.js had to
+     choke the intensity to 0.05). An ink sky over a city glow at the horizon
+     -- sodium amber with magenta and cyan neon patches, the cover art's
+     palette -- over a near-black ground. Re-rendered INTO THE SAME render
+     target: scene.environment keeps its texture object, so no material
+     rebuilds its node graph and no pipeline recompiles. Costs one PMREM
+     pass (a few ms) at dusk and again at dawn. */
+  const nightCv = document.createElement('canvas');
+  nightCv.width = 512; nightCv.height = 256;
+  {
+    const g = nightCv.getContext('2d');
+    const v = g.createLinearGradient(0, 0, 0, 256);
+    v.addColorStop(0.00, '#04060d'); v.addColorStop(0.36, '#0a0d1c'); v.addColorStop(0.47, '#2a1c2a');
+    v.addColorStop(0.50, '#6b4526'); v.addColorStop(0.53, '#1a1418'); v.addColorStop(1.00, '#050608');
+    g.fillStyle = v; g.fillRect(0, 0, 512, 256);
+    seed(91);
+    for (let i = 0; i < 26; i++) {   // neon patches along the horizon: the signs of a city you cannot see
+      const x = rr(0, 512), w = rr(10, 46), h = rr(4, 14), c = ['#ff2fa8', '#2fe0ff', '#ffb040', '#9a5cff'][i % 4];
+      const gg = g.createRadialGradient(x, 124, 0, x, 124, w);
+      gg.addColorStop(0, c); gg.addColorStop(1, 'rgba(0,0,0,0)');
+      g.globalAlpha = rr(0.25, 0.55); g.fillStyle = gg; g.fillRect(x - w, 124 - h, w * 2, h * 2);
+    }
+    g.globalAlpha = 1;
+  }
+  const nightTex = new THREE.CanvasTexture(nightCv);
+  nightTex.colorSpace = THREE.SRGBColorSpace;
+  nightTex.wrapS = THREE.RepeatWrapping; nightTex.wrapT = THREE.ClampToEdgeWrapping;
+  const nightEnv = new THREE.Scene();
+  nightEnv.add(new THREE.Mesh(new THREE.SphereGeometry(100, 24, 16), new THREE.MeshBasicMaterial({ map: nightTex, side: THREE.BackSide })));
+  let envNight = false;
+  const setEnvNight = (on) => {
+    if (on === envNight) return envNight;
+    envNight = on;
+    try { pmrem.fromScene(on ? nightEnv : envScene, 0, 1, 200, { renderTarget: envRT }); } catch (e) { console.warn('night env:', e.message); }
+    return envNight;
+  };
 
   // stars, only well clear of the afterglow
   seed(88);
@@ -158,5 +196,5 @@ export function createSky(scene, renderer, day = false) {
   }));
   scene.add(stars);
 
-  return { dome, stars, sunSprite, sunRaySprite };
+  return { dome, stars, sunSprite, sunRaySprite, setEnvNight };
 }

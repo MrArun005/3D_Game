@@ -287,7 +287,7 @@ window.scene = scene;
    (53,65,69) with 14000. Depth precision is bought at the NEAR plane, not here. */
 const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.5, 14000);
 const { sun, hemi } = createLights(scene, DAY, { lite: isLite, shadows: Q.shadows, webgl: !!renderer.backend?.isWebGLBackend });   // boot-time: castShadow never changes after the first frame (WebGPU pipeline trap)
-const { dome, stars, sunSprite, sunRaySprite } = createSky(scene, renderer, DAY);
+const { dome, stars, sunSprite, sunRaySprite, setEnvNight } = createSky(scene, renderer, DAY);
 
 setBootProgress(60, 'Initializing TSL post-processing pipeline…');
 const grade = createGrade(renderer, scene, camera, {
@@ -2989,6 +2989,15 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     document.body.classList.toggle('idlecam', idleCam);
   }
   clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: currentVehicle, dome, stars, sunSprite, sunRaySprite });
+  /* The night environment (sky.js): swapped with hysteresis so dusk does not
+     flicker it, and once it is the night map the glow may be seen -- clock.js
+     choked the intensity to 0.05 only because the map was the noon sky. */
+  {
+    const k = clock.nightK ?? 0;
+    const on = setEnvNight?.(k > 0.6 ? true : k < 0.4 ? false : frame.envNight ?? false);
+    frame.envNight = on;
+    if (on && k > 0.6) scene.environmentIntensity = 0.32;
+  }
   // the rain audio follows the weather's breathing, and rain is grip: the physics reads car.wet
   // crossing into a district: the area name, GTA-style, and dispatch tracks you if you are wanted
   distT -= dt;
