@@ -1419,4 +1419,4 @@ export function setTokyoNight(k) {
   if (FACADE) FACADE.emissiveIntensity = e;
 }
 
-export const TOKYO_KIT = { SURF, paint, box, metal, cyl, quad, glass, at, faces, onFace, wallFinish, flickerOf, WALLS, LIGHT, NEON, WARM, COOL, MAGENTA, CYAN, GROUND_H, FLOOR_H };
+export const TOKYO_KIT = { SURF, paint, box, metal, cyl, quad, glass, display, at, faces, onFace, wallFinish, flickerOf, WALLS, LIGHT, NEON, WARM, COOL, MAGENTA, CYAN, GROUND_H, FLOOR_H };

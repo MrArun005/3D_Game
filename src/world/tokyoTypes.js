@@ -49,7 +49,7 @@ import { H_TILE, V_TILE } from './tokyoSigns.js';
  * weights in pickTokyoType, not more boards on a mansion.
  */
 
-const { SURF, paint, box, metal, cyl, quad, glass, at, faces, onFace, wallFinish, flickerOf, WALLS, LIGHT, NEON, WARM, COOL, MAGENTA, GROUND_H, FLOOR_H } = TOKYO_KIT;
+const { SURF, paint, box, metal, cyl, quad, glass, display, at, faces, onFace, wallFinish, flickerOf, WALLS, LIGHT, NEON, WARM, COOL, MAGENTA, GROUND_H, FLOOR_H } = TOKYO_KIT;
 
 const PI = Math.PI;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -144,6 +144,16 @@ const facesAt = (cx, cz, hx, hz) => faces(hx, hz).map((f) => ({ ...f, cx, cz }))
 const on = (f, s, out) => { const [x, z] = onFace(f, s, out); return [x + (f.cx ?? 0), z + (f.cz ?? 0)]; };
 /** One pane on face f: `s` along it, centre height y, `out` proud of the wall. */
 const pane = (parts, f, s, y, w, h, hex, em, k, r, out = 0.035) => { const [x, z] = on(f, s, out); parts.push(at(glass(w, h, hex, em, k, r), x, y, z, f.yaw)); };
+/* A lit SHOP pane (2026-09-25): the ground-floor glazing below was dark
+   brown (0x3a2a1c / 0x2a2016) lit only at night, so by day every shopfront
+   of these types read as a brown board. It shows its stock now (tokyo.js
+   SURF.DISPLAY) in the shop's warm light. The stock is seeded from where the
+   pane stands, never from the building's stream (a fresh draw would
+   reshuffle everything rolled after it). */
+const SHOP_LIGHT = 0x9a8f7a;
+const seedAt = (a, b, c = 0) => Math.abs(Math.sin(a * 12.9898 + b * 78.233 + c * 37.719) * 43758.5453) % 1;
+const shopGlass = (w, h, em, k, a, b) => display(w, h, SHOP_LIGHT, em, k, seedAt(a, b, w + h));
+const shopPane = (parts, f, s, y, w, h, em, k, out = 0.035) => { const [x, z] = on(f, s, out); parts.push(at(shopGlass(w, h, em, k, x, z), x, y, z, f.yaw)); };
 /** A box standing on face f: build it with X along the face and Z out of it; its back sits at `out`. */
 const proud = (parts, g, f, s, y, out, d) => { const [x, z] = on(f, s, out + d / 2); parts.push(at(g, x, y, z, f.yaw)); };
 /** A downward quad (a soffit, a lit ceiling): `w` along X, `d` along Z. */
@@ -339,7 +349,7 @@ export function buildTokyoTower(seed, hw, hd, h) {
     for (const f of [F0[2], F0[3]]) {
       if (f.w < 9) continue;
       const [gx, gz] = on(f, f.w * 0.2, 0.035);
-      parts.push(at(glass(3.2, 2.6, 0x3a2a1c, WARM, 0.55, 0.95), gx, 1.6, gz, f.yaw));
+      parts.push(at(shopGlass(3.2, 2.6, WARM, 0.55, gx, gz), gx, 1.6, gz, f.yaw));
       proud(parts, metal(3.4, 0.85, 0.1, 0x141418), f, f.w * 0.2, 3.6, 0, 0.1);
       const [bx, bz] = on(f, f.w * 0.2, 0.11);
       boards.push({ x: bx, y: 3.6, z: bz, yaw: f.yaw, w: 3.2, h: 0.75, kind: 'h' });
@@ -692,7 +702,7 @@ export function buildTokyoMansion(seed, hw, hd, h, ctx = {}) {
     if (2 * hd >= 11 && rnd() < 0.7) {
       const sz = -Math.sign(ez || 1) * hd * 0.45, sw = Math.min(hd - 1, 4.4), konbini = rnd() < 0.5;
       const shop = konbini ? [1.0, 0.95, 0.85] : WARM;
-      for (const k of [-1, 1]) parts.push(at(glass(sw / 2 - 0.15, 2.4, 0x3a2a1c, shop, konbini ? 0.75 : 0.6, 0.95), gx + 0.035, 1.35, sz + k * sw / 4, PI / 2));
+      for (const k of [-1, 1]) parts.push(at(shopGlass(sw / 2 - 0.15, 2.4, shop, konbini ? 0.75 : 0.6, gx, sz + k * sw / 4), gx + 0.035, 1.35, sz + k * sw / 4, PI / 2));
       if (konbini) [0x1f8a4c, 0xe8762a, 0xd5312a].forEach((c, i) => parts.push(at(metal(0.06, 0.1, sw, c), gx + 0.05, 2.75 + i * 0.1, sz)));
       const fw = Math.min(sw, 4.2), fh = fw / 4.2;
       boards.push({ x: gx + 0.1, y: 3.35, z: sz, yaw: F[0].yaw, w: fw, h: fh, kind: 'h' });
@@ -1063,7 +1073,8 @@ export function buildTokyoDepato(seed, hw, hd, h, ctx = {}) {
     const nb = clamp(Math.round((f.w - 1) / 4), 1, 12), q = (f.w - 1) / nb;
     for (let b = 0; b < nb; b++) {
       const door = main && b === Math.floor(nb / 2);
-      pane(parts, f, -(f.w - 1) / 2 + q * (b + 0.5), door ? 1.6 : 2.3, q - 0.6, door ? 3.0 : 3.4, door ? 0x3c4a5a : 0x2a2016, WARM, door ? 0.6 : 0.5, 0.95);
+      if (door) pane(parts, f, -(f.w - 1) / 2 + q * (b + 0.5), 1.6, q - 0.6, 3.0, 0x3c4a5a, WARM, 0.6, 0.95);
+      else shopPane(parts, f, -(f.w - 1) / 2 + q * (b + 0.5), 2.3, q - 0.6, 3.4, WARM, 0.5);
     }
     for (let b = 0; b <= nb; b++) proud(parts, box(0.5, 4.3, 0.3, 0x1c1e22), f, -(f.w - 1) / 2 + q * b, 2.15, 0, 0.3);
     // the canopy, its lit soffit and neon fascia
@@ -1426,7 +1437,7 @@ export function buildTokyoSignStack(seed, hw, hd, h, ctx = {}) {
 
   // ---- the crossing face (fa)
   const W = fa.w - 0.4;
-  pane(parts, fa, 0, 1.8, W - 0.6, 3.2, 0x3a2a1c, WARM, 0.65, 0.95);                          // the bookshop, open to the pavement
+  shopPane(parts, fa, 0, 1.8, W - 0.6, 3.2, WARM, 0.65);                                        // the bookshop, open to the pavement
   proud(parts, box(fa.w, 0.4, 0.8, canopy[0], canopy[1], 0.35), fa, 0, 3.4, 0, 0.8);      // the flat canopy (blue on the corner)
   proud(parts, box(W, 2.0, 0.3, 0xf2f2ee, [1, 1, 1], 0.35), fa, 0, 5.1, 0, 0.3);                  // the white fascia box
   { const bw = Math.min(W - 0.4, 7.6), [x, z] = on(fa, 0, 0.32); boards.push({ x, y: 5.1, z, yaw: fa.yaw, w: bw, h: clamp(bw / 4.2, 0.8, 1.8), kind: 'h', tile: street ? undefined : H_TILE.books }); }
@@ -1457,7 +1468,7 @@ export function buildTokyoSignStack(seed, hw, hd, h, ctx = {}) {
 
   // ---- the other street face: rows of lightboxes round the corner, the shop at its foot
   const Wb = fb.w - 1.2, sb = -(fb.t[0] * sx + fb.t[1] * sz) * 0.2;
-  pane(parts, fb, 0, 2.0, fb.w - 1.4, 3.4, 0x3a2a1c, WARM, 0.55, 0.95);
+  shopPane(parts, fb, 0, 2.0, fb.w - 1.4, 3.4, WARM, 0.55);
   lightboxRows(parts, boards, lamps, rnd, pick, fb, sb, Wb, 5.6, H - 2.4);
   cornerBlade(parts, boards, F, fb === F[0] || fb === F[1] ? sx : sx, sz, hw, hd, H);
 
@@ -1519,7 +1530,7 @@ function buildTokyoScreensCorner(seed, hw, hd, h, ctx = {}) {
     const street = f === fa || f === fb, W = f.w - 0.6;
     if (street) {
       // the foot: a gold-lit shopfront and a yellow pier by the corner; ribbon windows on floors 3-5
-      pane(parts, f, 0, 3.2, W - 3.0, 5.8, 0x3a2a14, [1.0, 0.78, 0.4], 0.75, 0.95);
+      shopPane(parts, f, 0, 3.2, W - 3.0, 5.8, [1.0, 0.78, 0.4], 0.75);
       const cornerS = (f.t[0] * sx + f.t[1] * sz) > 0 ? 1 : -1;
       proud(parts, box(2.5, 6.6, 0.3, 0xe8b820), f, cornerS * (W / 2 - 1.2), 3.3, 0, 0.3);
       for (let st = 2; st < 5; st++) {
@@ -1592,7 +1603,7 @@ export function buildTokyoAdDrum(seed, hw, hd, h, ctx = {}) {
   // the podium, its shop glass, and the screen out front under its frame
   parts.push(at(box(2 * hw, POD, 2 * hd, 0x9a9ca0), 0, POD / 2, 0));
   const F = faces(hw, hd), [fa, fb] = streetFaces(F, sx, sz, ctx);
-  for (const f of [fa, fb]) pane(parts, f, 0, 2.2, f.w - 1.2, 3.8, 0x2a2016, WARM, 0.6, 0.95);
+  for (const f of [fa, fb]) shopPane(parts, f, 0, 2.2, f.w - 1.2, 3.8, WARM, 0.6);
   {
     const sw = Math.min(11, fa.w + 1.4), crop = 0.8, sh = sw / (2 * crop), [x, z] = on(fa, 0, 1.0 + 0.25);
     parts.push(at(box(sw + 1.0, sh + 1.0, 0.5, 0xc8283c, MAGENTA, 1.2), x, 3 + sh / 2, z, fa.yaw));
@@ -1646,7 +1657,7 @@ export function buildTokyoVistaDrum(seed, hw, hd, h, ctx = {}) {
   const tw = ctx.toward ?? [1, 0], face = Math.atan2(tw[1], tw[0]), fx = Math.cos(face), fz = Math.sin(face);
   // the wings: two low blocks either side, at the back half
   parts.push(at(box(2 * hw, WING, 2 * hd, 0xa1abae), -fx * R * 0.3, WING / 2, -fz * R * 0.3));
-  for (const f of faces(hw, hd)) pane(parts, f, 0, 2.2, f.w - 1.2, 3.6, 0x2a2016, WARM, 0.55, 0.95);
+  for (const f of faces(hw, hd)) shopPane(parts, f, 0, 2.2, f.w - 1.2, 3.6, WARM, 0.55);
   // the drum: 32 hard-edged panels, the body and the crown band apart, a dark groove between
   const seg = 32, body = new Shape(), band = new Shape(), groove = new Shape(), cap = new Shape();
   const ring = (s, y0, y1, r) => {

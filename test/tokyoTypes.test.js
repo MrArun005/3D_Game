@@ -55,6 +55,9 @@ function fnv(arrays) {
   return h >>> 0;
 }
 
+/* The pane kinds (2026-09-25): plain glass, a lit shop display, a painted sash. */
+const PANE = new Set([SURF.GLASS, SURF.DISPLAY, SURF.SASH]);
+
 test('every new type builds for 50 seeds: indexed, every attribute present and finite, surf kinds valid, inside its budget', (t) => {
   for (const type of ALL) {
     let sum = 0, max = 0;
@@ -76,7 +79,7 @@ test('every new type builds for 50 seeds: indexed, every attribute present and f
       const sf = g.attributes.surf.array;
       for (let i = 0; i < sf.length; i++) {
         const k = Math.floor(sf[i]), v = sf[i] - k;
-        if (k < SURF.WALL || k > SURF.PAINT || v < 0.04 || v > 0.86) assert.fail(`${type}: surf ${sf[i]} is no kind the facade material reads`);
+        if (k < SURF.WALL || k > SURF.SASH || v < 0.04 || v > 0.86) assert.fail(`${type}: surf ${sf[i]} is no kind the facade material reads`);
       }
       assert.ok(b.tris <= TOKYO_TYPES[type].budget, `${type} seed ${p.seed} (${p.hw.toFixed(1)} x ${p.hd.toFixed(1)}, h ${p.h.toFixed(0)}): ${b.tris} triangles over its ${TOKYO_TYPES[type].budget}`);
       assert.ok(b.tris > 300, `${type}: ${b.tris} triangles is not a building`);
@@ -152,7 +155,7 @@ function castAt(geo) {
     const hit = rc.intersectObject(mesh, false)[0];
     if (!hit) return;
     hits++;
-    if (level) seen[Math.floor(geo.attributes.surf.array[hit.face.a])]++;
+    if (level) { const k = Math.floor(geo.attributes.surf.array[hit.face.a]); seen[PANE.has(k) ? SURF.GLASS : k]++; }   // a shop display or a sash is glass to the eye
     if (hit.face.normal.dot(d) >= 0) { back++; if (bad.length < 4) bad.push(`(${hit.point.x.toFixed(2)}, ${hit.point.y.toFixed(2)}, ${hit.point.z.toFixed(2)}) dir (${d.x.toFixed(2)}, ${d.y.toFixed(2)}, ${d.z.toFixed(2)})`); }
   };
   const W = 60, step = 1.0317;   // off any round number, so a ray never runs exactly along a wall plane
@@ -199,7 +202,7 @@ test('every pane of glass looks out at open air, not into a wall', () => {
       let panes = 0, buried = 0;
       const bad = [];
       for (let i = 0; i < ix.length; i += 3) {
-        if (Math.floor(sf[ix[i]]) !== SURF.GLASS) continue;
+        if (!PANE.has(Math.floor(sf[ix[i]]))) continue;   // shop displays and sashes are glass too, and must see out just the same
         a.fromBufferAttribute(pos, ix[i]); b.fromBufferAttribute(pos, ix[i + 1]); c.fromBufferAttribute(pos, ix[i + 2]);
         n.subVectors(b, a).cross(m.subVectors(c, a));
         if (n.lengthSq() < 1e-10) continue;
@@ -229,7 +232,7 @@ function surfaces(geo) {
     const A = n.length() / 2;
     if (A < 1e-8) continue;
     n.normalize();
-    const kind = Math.floor(sf[ix[i]]), v = sf[ix[i]] - kind;
+    const kind = PANE.has(Math.floor(sf[ix[i]])) ? SURF.GLASS : Math.floor(sf[ix[i]]), v = sf[ix[i]] - Math.floor(sf[ix[i]]);   // a shop display is glass in the shares
     if (kind === SURF.WALL && n.y > 0.3 && n.y < 0.97) up[v >= 0.45 ? 'tile' : 'plaster'] += A;
     if (em[ix[i] * 3] + em[ix[i] * 3 + 1] + em[ix[i] * 3 + 2] > 3 && kind !== SURF.PAINT) neonNotPaint++;
   }

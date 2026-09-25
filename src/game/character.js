@@ -348,6 +348,10 @@ export class Character {
     next.enabled = true;
     next.play();
     this.state = name; this.fade = fade; this.current = next;
+    /* A zero fade lands NOW, not on the next #blend: the boot idle used to sit
+       at weight 0 until the first update, so the first step out of the car
+       faded in from nothing and showed a sliver of the bind pose. */
+    if (!(fade > 0)) { this.weights.set(next, 1); next.setEffectiveWeight(1); }
   }
 
   /** The locomotion blend: walk and run together, phase-locked (gait.js). */
