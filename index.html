@@ -54,6 +54,12 @@ body.photo #gameplay-prompt-bar, body.photo #wanted, body.photo #ammo, body.phot
       #bootsteps li.run{color:#dbe6f5}
       #bootsteps li.run b{color:#3fe8ff;animation:bpulse 1s infinite}
       @keyframes bpulse{50%{opacity:.35}}
+      #bootoffline{margin-top:14px;display:block;width:100%;text-align:left;padding:10px 14px;border-radius:8px;cursor:pointer;
+        background:rgba(63,232,255,.08);border:1px solid rgba(63,232,255,.45);color:#dbe6f5;font:600 12px ui-monospace,Menlo,monospace;letter-spacing:.14em}
+      #bootoffline:hover:not(:disabled){background:rgba(63,232,255,.18)}
+      #bootoffline:disabled{cursor:default;border-color:rgba(57,255,176,.45)}
+      #bootoffline b{color:#3fe8ff}
+      #bootoffline span{display:block;margin-top:2px;font-weight:400;font-size:10px;letter-spacing:.08em;color:#8fa0b8}
       @media (max-height:430px){#bootsteps{max-height:3.8em}#boot .sub{margin-bottom:10px}}
     </style>
     <div class="bp">
@@ -63,6 +69,7 @@ body.photo #gameplay-prompt-bar, body.photo #wanted, body.photo #ammo, body.phot
       <div class="bar"><div id="bootprogress"></div></div>
       <div class="meta"><span id="bootbytes">0.0 MB downloaded</span><span id="boottime">0.0 s</span></div>
       <ul id="bootsteps"></ul>
+      <button id="bootoffline" hidden></button>
     </div>
   </div>
 

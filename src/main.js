@@ -34,6 +34,7 @@ import { isTouchDevice } from './core/device.js';
 import { createTouch } from './game/touch.js';
 import { mergeDrive, keyboardSteer } from './game/input.js';
 import { createSkill } from './game/skill.js';
+import { offline } from './core/offline.js';
 import { benchStats } from './game/bench.js';
 import { createSkillHud } from './ui/skillHud.js';
 import { City, releaseCell } from './world/city.js';
@@ -2051,76 +2052,32 @@ let started = false;
    renderer, lights, post stack and ring are already built by the time the card
    is clickable), so a change that differs from what booted reloads on ENTER
    and the card says so. stopPropagation: the overlay click IS the start button. */
-/* Offline play (2026-09-24): public/sw.js caches whatever the game fetches;
-   SAVE OFFLINE fills the rest from /offline.json (tools/offline-list.mjs
-   writes it at build time), so the whole city plays with no connection.
-   Not under the dev server: vite's module graph is not a cacheable site. */
-let saveOffline = () => {};
+/* Offline play: core/offline.js (the loading page offers it too). Here: a
+   drawer button on a phone and a small chip bottom-left on desktop that
+   shows for 12 s after boot (a save in progress keeps it up) and goes once
+   saved. */
+const saveOffline = () => offline.save();
 {
-  /* No title card any more (2026-09-24): SAVE OFFLINE is a drawer button on a
-     phone and a small chip bottom-left on desktop that goes once saved. */
-  let chip = null;
-  const show = (t, done = false) => {
+  let chip = null, faded = false;
+  offline.on((o) => {
     const tb = document.querySelector('#touch .tb.offline');
-    if (tb) tb.innerHTML = done ? 'SAVED ✓' : `OFFLINE<small>${t}</small>`;
-    if (!TOUCH) {
-      if (!chip) {
-        chip = document.createElement('div');
-        chip.style.cssText = 'position:fixed;left:24px;bottom:250px;z-index:21;font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.14em;color:#9fb0c6;background:rgba(8,11,18,.6);border:1px solid rgba(120,140,170,.3);border-radius:6px;padding:5px 9px;cursor:pointer';
-        chip.addEventListener('click', (e) => { e.stopPropagation(); saveOffline(); });
-        document.body.appendChild(chip);
-      }
-      chip.textContent = done ? 'SAVED OFFLINE ✓' : `SAVE OFFLINE · ${t}`;
-      if (done) setTimeout(() => chip?.remove(), 4000);
-      /* A clean HUD (2026-09-25): the offer shows for 12 s after boot, then
-         fades; a save in progress keeps it up. */
-      if (!chip.dataset.fade) {
-        chip.dataset.fade = '1';
-        chip.style.transition = 'opacity 1.2s';
-        setTimeout(() => { if (chip && !/%/.test(chip.textContent)) { chip.style.opacity = '0'; chip.style.pointerEvents = 'none'; } }, 12000);
-      }
+    if (o.state === 'off') { tb?.remove(); chip?.remove(); return; }
+    if (o.state === 'checking') return;
+    const t = o.state === 'saving' ? `${o.pct}%` : o.state === 'failed' ? `${o.failed} failed · retry` : `${o.mb} MB`;
+    if (tb) tb.innerHTML = o.state === 'done' ? 'SAVED ✓' : `OFFLINE<small>${t}</small>`;
+    if (TOUCH) return;
+    if (!chip) {
+      chip = document.createElement('div');
+      chip.style.cssText = 'position:fixed;left:24px;bottom:250px;z-index:21;font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.14em;color:#9fb0c6;background:rgba(8,11,18,.6);border:1px solid rgba(120,140,170,.3);border-radius:6px;padding:5px 9px;cursor:pointer;transition:opacity 1.2s';
+      chip.addEventListener('click', (e) => { e.stopPropagation(); saveOffline(); });
+      document.body.appendChild(chip);
+      setTimeout(() => { faded = true; if (chip && offline.state !== 'saving') { chip.style.opacity = '0'; chip.style.pointerEvents = 'none'; } }, 12000);
     }
-  };
-  const ok = 'serviceWorker' in navigator && typeof caches !== 'undefined' && !import.meta.env.DEV;
-  const hide = () => { document.querySelector('#touch .tb.offline')?.remove(); chip?.remove(); };
-  if (!ok) setTimeout(hide, 0);
-  else {
-    navigator.serviceWorker.register('/sw.js').catch((e) => { console.warn('sw:', e.message); hide(); });
-    let list = null, busy = false;
-    const count = async () => {
-      try {
-        list = list || await (await fetch('/offline.json', { cache: 'no-store' })).json();
-        const cache = await caches.open('hb-offline-v1');
-        const keys = new Set((await cache.keys()).map((r) => new URL(r.url).pathname));
-        return list.files.filter((f) => keys.has(f)).length;
-      } catch { return -1; }
-    };
-    count().then((have) => {
-      if (have < 0) { hide(); return; }
-      if (have >= list.files.length) { show('', true); return; }
-      show(`${(list.bytes / 1e6).toFixed(0)} MB`);
-    });
-    saveOffline = async () => {
-      if (busy || !list) return;
-      busy = true;
-      const cache = await caches.open('hb-offline-v1');
-      let done = 0, failed = 0;
-      const todo = [...list.files];
-      const worker = async () => {
-        while (todo.length) {
-          const f = todo.shift();
-          try { if (!(await cache.match(f))) { const r = await fetch(f); if (r.ok) await cache.put(f, r); else failed++; } } catch { failed++; }
-          done++;
-          show(`${Math.round((done / list.files.length) * 100)}%`);
-        }
-      };
-      hud.flash('SAVING THE CITY FOR OFFLINE…');
-      await Promise.all(Array.from({ length: 6 }, worker));
-      try { await navigator.storage?.persist?.(); } catch { /* best effort: ask the browser not to evict it */ }
-      if (failed) show(`${failed} failed · retry`); else { show('', true); hud.flash('SAVED · PLAYS OFFLINE'); }
-      busy = false;
-    };
-  }
+    chip.textContent = o.state === 'done' ? 'SAVED OFFLINE ✓' : `SAVE OFFLINE · ${t}`;
+    if (o.state === 'saving') { chip.style.opacity = '1'; chip.style.pointerEvents = 'auto'; }
+    else if (faded) { chip.style.opacity = '0'; chip.style.pointerEvents = 'none'; }
+    if (o.state === 'done') { setTimeout(() => { chip?.remove(); chip = null; }, 4000); if (started) hud.flash?.('SAVED · PLAYS OFFLINE'); }
+  });
 }
 const qualityLine = document.querySelector('#hud .quality');
 let qualityChosen = (() => { try { const s = localStorage.getItem(QUALITY_KEY); return QUALITY_NAMES.includes(s) ? s : 'auto'; } catch { return 'auto'; } })();
