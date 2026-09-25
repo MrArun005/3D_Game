@@ -257,3 +257,18 @@ test('the autopilot follows its route at least as well under gta as under sim (s
     assert.ok(gta.worst < 8, `gta worst cross-track ${gta.worst.toFixed(2)} m`);
   } finally { CAR.assist = HANDLING.gta; }
 });
+
+test('left and right turns are mirror images (Ackermann steers the INSIDE wheel more)', () => {
+  const turn = (s, kmh) => {
+    const c = settled(); c.yaw = 0;
+    while (c.fwdSpeed < kmh / 3.6) { c.throttle = 1; c.wantsForward = true; stepVehicle(c, H); }
+    c.throttle = 0; const y0 = c.yaw;
+    for (let t = 0; t < 1.5; t += H) { c.steerTarget = s; stepVehicle(c, H); }
+    return c.yaw - y0;
+  };
+  for (const kmh of [20, 30, 60]) {
+    const l = turn(1, kmh), r = turn(-1, kmh);
+    assert.ok(l > 0 && r < 0, 'A turns left, D turns right');
+    assert.ok(Math.abs(l + r) < 0.01 * Math.abs(l), `${kmh} km/h: left ${(l * 57.3).toFixed(1)} deg vs right ${(-r * 57.3).toFixed(1)} deg`);
+  }
+});

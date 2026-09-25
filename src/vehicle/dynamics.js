@@ -308,7 +308,12 @@ export function stepVehicle(car, dt) {
     const [ax, az] = offsets[i];
     const uw = u - r * az;
     const vw = v + r * ax;
-    const delta = front ? car.steer * (1 + az * 0.1) : 0;    // mild Ackermann
+    /* mild Ackermann: the INSIDE wheel steers more. It was `1 + az * 0.1`,
+       which always gave the LEFT wheel more -- right for a left turn and
+       backwards (reverse Ackermann) for a right one: at 20-30 km/h the gta
+       car turned 14-18% less to the right ("turn to the right is very
+       slow", 2026-09-25). az is + on the left, steer + to the left. */
+    const delta = front ? car.steer * (1 + az * 0.1 * Math.sign(car.steer)) : 0;
     const cd = Math.cos(delta), sd = Math.sin(delta);
     const uL = uw * cd + vw * sd;
     const vL = -uw * sd + vw * cd;
