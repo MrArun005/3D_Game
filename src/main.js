@@ -470,7 +470,7 @@ function runBenchmark() {
   label.style.cssText = 'position:fixed;left:50%;top:40%;transform:translate(-50%,-50%);z-index:95;background:rgba(6,9,15,.86);border:1px solid rgba(120,140,170,.35);border-radius:10px;padding:10px 16px;color:#dbe6f5;font:700 13px ui-monospace,Menlo,monospace;letter-spacing:.14em;pointer-events:none';
   document.body.appendChild(label);
   started = true; hud.dismiss();
-  if (!film) startFilm({ record: false });
+  if (!film) startFilm({ record: false, bench: true });
   bench = { t: 0, ms: [], label, phase: 'warm', calm: 0, recT: 0 };
 }
 addEventListener('keydown', (e) => {
@@ -2186,7 +2186,7 @@ let ROUTE = buildRoute([
 ]);
 let film = null;
 
-async function startFilm({ record = true } = {}) {
+async function startFilm({ record = true, bench = false } = {}) {
   if (film) return;
   resetCar(car);
   const start = ROUTE[0], next = ROUTE[Math.min(2, ROUTE.length - 1)];
@@ -2195,7 +2195,12 @@ async function startFilm({ record = true } = {}) {
   world.update(car.x, car.z);
 
   const pilot = new Autopilot(ROUTE, { cruise: 26 });
-  const shots = new Cinematic();
+  /* The benchmark rides the normal chase camera: the film's flyby stands
+     11.5 m off the road (inside the buildings on a Tokyo street) and its
+     33 s of shots ended the film -- and the drive -- before the 30 s
+     measurement did (2026-09-25, "F9 is directed towards the buildings"). */
+  const shots = bench ? null : new Cinematic();
+  if (bench) spawnSnap = true;   // land the chase camera behind the car at its new spot
   const recorder = record && Recorder.supported() ? new Recorder(canvas, { fps: 30 }) : null;
   document.body.classList.add('filming');
   audio.mute(true);
@@ -3041,7 +3046,8 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
 
   dome.position.set(currentVehicle.x, 0, currentVehicle.z);
 
-  if (film) {
+  if (film && !film.shots && film.pilot.done) stopFilm();
+  if (film?.shots) {
     film.shots.update(car, camera, dt);
     if (film.shots.finished || film.pilot.done) stopFilm();
   } else if (photo.on) {
