@@ -131,6 +131,12 @@ body.photo #gameplay-prompt-bar, body.photo #wanted, body.photo #ammo, body.phot
     </div>
   </div>
 
+  <script>
+    /* "?fullmap?4k" is one parameter named "fullmap?4k" to URLSearchParams,
+       so the flags silently did nothing (2026-09-26). Every later "?" is read
+       as "&" before any module parses the address. */
+    (function () { var q = location.search; if (q.indexOf('?', 1) > 0) history.replaceState(null, '', location.pathname + '?' + q.slice(1).replace(/\?/g, '&') + location.hash); })();
+  </script>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

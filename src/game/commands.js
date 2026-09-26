@@ -19,6 +19,12 @@ export const LANDMARKS = {
   // London (2026-09-24): in the kerb lane (traffic keeps right: +Z heading east, -Z heading west)
   regent:   { x: 2300, z: 1770.5, yaw: 0, name: 'Regent Street' },                 // heading east down its 973 m
   quadrant: { x: 2150, z: 1762.5, yaw: Math.PI, name: 'Regent Street · The Quadrant' }, // heading west into the curve
+  // Bridges (2026-09-26): on each span's end junction, facing across it. The
+  // first two are in the compact city; lift and expressway need ?fullmap.
+  broadway:   { x: 1760, z: 1620, yaw: -2.45, name: 'Broadway Bridge' },
+  steelmile:  { x: 1676, z: 1289, yaw: 3.06, name: 'Steel Mile Bridge' },
+  lift:       { x: 1930, z: 2318, yaw: -1.51, name: 'Halstead Lift Bridge (?fullmap)' },
+  expressway: { x: 3088, z: 761, yaw: -1.397, name: 'The Expressway (?fullmap)' },
 };
 
 export class CommandEngine {
