@@ -405,12 +405,14 @@ export const HANDLING = {
        steerG 1.0 -> 1.2: 2.33 / 3.49 s (GT3 2.08 / 2.71), body slip <= 4 deg.
        1.2+ broke the pinned launch, burnout and wall-scrape bands and set the
        car pumping at 160 km/h; the handbrake is the tight-corner tool. */
-    gripBoost: 1.1,     // x the tyre's peak mu under this profile; the drive cap keeps the real tyre (sim keeps it all)
+    gripBoost: 1.1,
+    gripHi: 0.4,      // + up to this much more grip from vHiLo to vHiFull m/s (arcade downforce)
+    vHiLo: 20, vHiFull: 40,     // x the tyre's peak mu under this profile; the drive cap keeps the real tyre (sim keeps it all)
     steerG: 1.2,      // full lock asks for this lateral g at any speed...
     slipK: 0.6,       // ...plus 0.6x the front's peak slip angle (1/Cf): at the peak, not past it (1.2 overshot a step steer by 25%)
     minLock: 0.06,    // rad, the floor at very high speed
     yawDamp: 0.4,     // /s at a crawl, replaces the flat 1.6/s that made low-speed turns plough...
-    yawDampHi: 2.0,   // ...+ this x (speed/38 m/s)^2: 1.07/s at 80 km/h, 2.4 past 137, no limit-cycle wobble
+    yawDampHi: 3.0,   // ...+ this x (speed/38 m/s)^2 (was 2.0; 3.0 holds gripHi's extra grip steady -- 2.0 pumped 22% at 160 km/h)
     tcSlip: 0.07,     // driven-wheel slip ratio where torque starts to be cut (tyre peak = 1/Cx = 0.0625)
     tcWidth: 0.12,    // ...fully cut this much slip above it...
     tcFloor: 0.35,    // ...but never below 35%

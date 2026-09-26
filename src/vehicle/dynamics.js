@@ -147,6 +147,12 @@ export function stepVehicle(car, dt) {
 
   // --- Steering curve by speed: responsive, agile, preserving high-speed authority ---
   const speed = Math.hypot(car.vx, car.vz);
+  /* gta grip: gripBoost everywhere, plus up to gripHi more from vHiLo to
+     vHiFull m/s -- arcade 'downforce' (2026-09-26, owner: "at 100-150 it's
+     impossible to turn"; the muscle car made a 110 m circle at 150 km/h).
+     Rising with speed keeps launches, burnouts and low-speed scrapes on the
+     tuned tyre. */
+  const gBoost = A ? (A.gripBoost ?? 1) + (A.gripHi ?? 0) * Math.max(0, Math.min(1, (speed - (A.vHiLo ?? 20)) / ((A.vHiFull ?? 40) - (A.vHiLo ?? 20)))) : 1;
   const speedNorm = Math.min(1, Math.max(0, speed / 38.0)); // 0 to ~137 km/h (38 m/s)
   /* Steering authority falls with speed, and the rate is the ONLY thing that
      makes a key press progressive -- input.js hands over a binary +-1 the
@@ -318,7 +324,7 @@ export function stepVehicle(car, dt) {
     const uL = uw * cd + vw * sd;
     const vL = -uw * sd + vw * cd;
 
-    const mu = V.muPeak * grip[i] * gripMult * (A?.gripBoost ?? 1);   // gta: arcade grip (config.js HANDLING.gta.gripBoost)
+    const mu = V.muPeak * grip[i] * gripMult * gBoost;   // gta: arcade grip, more of it at speed (config.js gripBoost / gripHi)
     const denom = Math.max(1.2, Math.abs(uL));
     const slipRatio = (car.wheelW[i] * WHEEL_R - uL) / denom;
     const slipAngle = Math.atan2(-vL, denom);
@@ -369,7 +375,7 @@ export function stepVehicle(car, dt) {
       const aL = ((car.lastAx || 0) + v * r) * cd + ((car.lastAy || 0) - u * r) * sd;
       /* drive cap on the REAL tyre, not the gripBoost one: a boosted cap let
          the GT3 spin a rear 1.5x the road on W + full lock (2026-09-26) */
-      const mx = max / (A.gripBoost ?? 1);
+      const mx = max / gBoost;
       let budget = (A.driveCap * WHEEL_R * mx * mx) / Math.max(1e-6, Math.hypot(mx, FcRaw));
       let spin = (I * aL) / WHEEL_R;
       if (Math.abs(slipRatio) > 1 / V.Cx) { budget = Math.min(budget, A.driveCap * WHEEL_R * Math.abs(Fl)); spin = 0; }
