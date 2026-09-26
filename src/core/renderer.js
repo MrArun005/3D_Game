@@ -161,17 +161,25 @@ function patchNestedRenderInBundle(renderer) {
 export function autoResolution(renderer, grade = null, lite = false, opts = {}) {
   if (typeof location !== 'undefined') {
     const q = new URLSearchParams(location.search);
-    if (q.has('native') || q.has('nodrs') || q.has('4k')) {
+    /* ?4k is ADAPTIVE (2026-09-26); ?4k=fixed is the old pinned 4K. Owner:
+       "4k looks so good but it is so slow". A 60 Hz panel caps rAF at 16.7
+       ms, so the up-step (< 13 ms) can never fire there: the scaler only ever
+       walks DOWN. So 4K starts at the top and walks down, fast (15% a second
+       while the frame is over 28 ms), to the sharpest ratio this machine
+       holds -- and never below the normal preset's own ratio. */
+    if (q.has('native') || q.has('nodrs') || q.get('4k') === 'fixed') {
       return function noop() {};
     }
   }
+  const sharp = typeof location !== 'undefined' && new URLSearchParams(location.search).has('4k');
 
   const baseScale = renderScale(window.innerWidth, window.innerHeight, lite, opts.pixelBudget ?? null);
   let currentScale = baseScale;
   let frameCount = 0;
   let sumMs = 0;
   let lastAdjustTime = 0;
-  const MIN_SCALE = 0.50;
+  // under ?4k the floor is what the preset would have drawn without it
+  const MIN_SCALE = sharp ? Math.min(1, Math.sqrt((opts.pixelBudget ?? (lite ? RENDER_BUDGET_PX_LITE : RENDER_BUDGET_PX)) / Math.max(1, window.innerWidth * window.innerHeight))) : 0.50;
   /* The quality ladder (2026-09-22, core/quality.js). Density before pixels:
      `onDensity(step)` hides traffic (a draw that never happens, no
      reallocation) and is stepped up to `densitySteps` BEFORE the scale moves;
@@ -226,7 +234,7 @@ export function autoResolution(renderer, grade = null, lite = false, opts = {}) 
         if (slowMs >= 12000) { sustainedFired = true; onSustained(avgMs); }   // 12 s, was 30: on a throttling fanless laptop 30 s of slideshow is most of a first impression
       }
 
-      if (badRun >= 2 && densityStep < densitySteps) {
+      if (badRun >= 2 && densityStep < densitySteps && !(sharp && currentScale > MIN_SCALE + 1e-6)) {   // ?4k: spend pixels before traffic
         badRun = 0;
         densityStep++;
         lastAdjustTime = now;
