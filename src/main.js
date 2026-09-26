@@ -1732,9 +1732,18 @@ Promise.all([districtReady, catalogueReady, moduleReady, new URLSearchParams(loc
      warpTo is defined further down this module, so it is reached through
      window.__warp once it exists. */
   {
+    /* Say what happened (2026-09-26, owner: "none of the spawn places
+       worked"). A spot outside the compact city used to be skipped in
+       silence; it now reloads with ?fullmap added. An unknown name lists
+       the good ones. Landing flashes the place name. */
     const want = (new URLSearchParams(location.search).get('spawn') || '').toLowerCase(), spot = LANDMARKS[want];
-    if (spot && (!world.district?.wall || world.district.wall.contains(spot.x, spot.z))) {
-      const go = (n = 0) => (window.__warp ? window.__warp(spot.x, spot.z, spot.yaw) : n < 50 && setTimeout(() => go(n + 1), 100));
+    const say = (t) => { const f = (n = 0) => { try { hud.flash(t); } catch { if (n < 100) setTimeout(() => f(n + 1), 200); } }; f(); };   // hud is a later const: TDZ until it exists
+    if (want && !spot) say(`NO SPAWN "${want.toUpperCase()}" · TRY ${Object.keys(LANDMARKS).join(' · ').toUpperCase()}`);
+    else if (spot && world.district?.wall && !world.district.wall.contains(spot.x, spot.z)) {
+      const q = new URLSearchParams(location.search); q.set('fullmap', '');
+      location.replace(`${location.pathname}?${q.toString().replace('fullmap=', 'fullmap')}`);
+    } else if (spot) {
+      const go = (n = 0) => (window.__warp ? (window.__warp(spot.x, spot.z, spot.yaw), say(spot.name.toUpperCase())) : n < 50 && setTimeout(() => go(n + 1), 100));
       go();
     }
   }
