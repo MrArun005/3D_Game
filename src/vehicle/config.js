@@ -397,7 +397,16 @@ export const HANDLING = {
   sim: null,
   gta: {
     name: 'gta',
-    steerG: 1.0,      // full lock asks for this lateral g at any speed...
+    /* 2026-09-26, owner: "this car doesn't turn, only very slow turn, in a
+       race it's so difficult". A keyboard 90 deg turn took 2.61 s at 60 km/h
+       and 3.82 s at 100 (muscle; GT3 2.35 / 3.04) -- grip-bound at ~1.2 g, so
+       more lock alone made it plough. gripBoost 1.1 on the tyre's mu (the
+       drive cap stays on the real tyre, dynamics.js), escG 1.1 -> 1.6,
+       steerG 1.0 -> 1.2: 2.33 / 3.49 s (GT3 2.08 / 2.71), body slip <= 4 deg.
+       1.2+ broke the pinned launch, burnout and wall-scrape bands and set the
+       car pumping at 160 km/h; the handbrake is the tight-corner tool. */
+    gripBoost: 1.1,     // x the tyre's peak mu under this profile; the drive cap keeps the real tyre (sim keeps it all)
+    steerG: 1.2,      // full lock asks for this lateral g at any speed...
     slipK: 0.6,       // ...plus 0.6x the front's peak slip angle (1/Cf): at the peak, not past it (1.2 overshot a step steer by 25%)
     minLock: 0.06,    // rad, the floor at very high speed
     yawDamp: 0.4,     // /s at a crawl, replaces the flat 1.6/s that made low-speed turns plough...
@@ -409,7 +418,7 @@ export const HANDLING = {
     betaCut: 0.2,     // rad: lever off, throttle fades over this much body slip past betaMax...
     betaCutFloor: 0.25, // ...to this share, so a power slide cannot wind itself into a spin
     esc: 8,           // /s, how hard yaw rate beyond the steer's reference is pulled back
-    escG: 1.1,        // g, the grip the reference yaw rate is capped to
+    escG: 1.6,        // g, the grip the reference yaw rate is capped to (was 1.1)
     betaMax: 0.14,    // rad (8 deg) of body slip before the car straightens itself
     straighten: 6,    // /s, yaw added per rad of excess slip, toward the velocity
     scrub: 1.5,       // lateral speed shed per rad of excess slip, x speed

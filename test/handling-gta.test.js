@@ -92,7 +92,7 @@ test('gta: quick launch, strong short stop without locking the fronts', () => {
 test('gta: full lock at any speed is a tight ~1.1 g turn, never a spin', () => {
   for (const kmh of [50, 80, 120]) {
     const s = steadyLock(kmh);
-    assert.ok(s.latG > 0.95 && s.latG < 1.3, `${kmh} km/h: ${s.latG.toFixed(2)} g, want 0.95-1.3`);
+    assert.ok(s.latG > 0.95 && s.latG < 1.4, `${kmh} km/h: ${s.latG.toFixed(2)} g, want 0.95-1.4 (1.4: gripBoost 1.1, 2026-09-26)`);
     assert.ok(s.maxBetaDeg < 8, `${kmh} km/h: body slip ${s.maxBetaDeg.toFixed(1)} deg, want < 8`);
   }
   const r50 = steadyLock(50).radius;

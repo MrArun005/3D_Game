@@ -318,7 +318,7 @@ export function stepVehicle(car, dt) {
     const uL = uw * cd + vw * sd;
     const vL = -uw * sd + vw * cd;
 
-    const mu = V.muPeak * grip[i] * gripMult;
+    const mu = V.muPeak * grip[i] * gripMult * (A?.gripBoost ?? 1);   // gta: arcade grip (config.js HANDLING.gta.gripBoost)
     const denom = Math.max(1.2, Math.abs(uL));
     const slipRatio = (car.wheelW[i] * WHEEL_R - uL) / denom;
     const slipAngle = Math.atan2(-vL, denom);
@@ -367,7 +367,10 @@ export function stepVehicle(car, dt) {
          road's acceleration along the wheel, is last step's body
          acceleration plus the frame terms. */
       const aL = ((car.lastAx || 0) + v * r) * cd + ((car.lastAy || 0) - u * r) * sd;
-      let budget = (A.driveCap * WHEEL_R * max * max) / Math.max(1e-6, Math.hypot(max, FcRaw));
+      /* drive cap on the REAL tyre, not the gripBoost one: a boosted cap let
+         the GT3 spin a rear 1.5x the road on W + full lock (2026-09-26) */
+      const mx = max / (A.gripBoost ?? 1);
+      let budget = (A.driveCap * WHEEL_R * mx * mx) / Math.max(1e-6, Math.hypot(mx, FcRaw));
       let spin = (I * aL) / WHEEL_R;
       if (Math.abs(slipRatio) > 1 / V.Cx) { budget = Math.min(budget, A.driveCap * WHEEL_R * Math.abs(Fl)); spin = 0; }
       drive = Math.max(spin - budget, Math.min(spin + budget, drive));
