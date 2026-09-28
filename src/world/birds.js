@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {
-  positionGeometry, attribute, instancedBufferAttribute, time, vec3, float, sin, cos, abs, mix, smoothstep, select,
+  positionGeometry, attribute, instancedDynamicBufferAttribute, time, vec3, float, sin, cos, abs, mix, smoothstep, select,
 } from 'three/tsl';
 import { mulberry32 } from '../core/rng.js';
 
@@ -106,9 +106,9 @@ function birdGeometry() {
 function birdMaterial(iPos, iAnim, iLook) {
   const mat = new THREE.MeshLambertNodeMaterial({ side: THREE.DoubleSide });
   mat.name = 'birds';
-  const pos = instancedBufferAttribute(iPos);    // x, y, z, yaw
-  const anim = instancedBufferAttribute(iAnim);  // phase, rate, amp, fold (1 spread .. 0 folded)
-  const look = instancedBufferAttribute(iLook);  // scale, bank, kind, -
+  const pos = instancedDynamicBufferAttribute(iPos);    // x, y, z, yaw
+  const anim = instancedDynamicBufferAttribute(iAnim);  // phase, rate, amp, fold (1 spread .. 0 folded)
+  const look = instancedDynamicBufferAttribute(iLook);  // scale, bank, kind, -
   const w = attribute('aWing', 'float');
   const p = positionGeometry;
   // fold: a perched bird's wings lie along its back
@@ -197,8 +197,8 @@ export function createBirds(scene, district, { count = 96, seed = 0xb1d5 } = {})
     flocks.push({ members, mode: 'none', x: 0, z: 0, y: 0, t: 0, fx: 0, fz: 0, cx: 0, cz: 0, alt: 0, ang: rnd() * 6.283 });
   }
   const gulls = birds.slice(nFlock * FLOCK, nFlock * FLOCK + nGull).map((b) => {
-    b.kind = KIND.gull; b.scale = 1.7 + rnd() * 0.4;
-    return { b, cx: 0, cz: 0, r: 20 + rnd() * 35, alt: 12 + rnd() * 22, ang: rnd() * 6.283, w: (0.16 + rnd() * 0.1) * (rnd() < 0.5 ? 1 : -1), beat: rnd() * 10, placed: false };
+    b.kind = KIND.gull; b.scale = 2.0 + rnd() * 0.5;
+    return { b, cx: 0, cz: 0, r: 20 + rnd() * 35, alt: 7 + rnd() * 16, ang: rnd() * 6.283, w: (0.16 + rnd() * 0.1) * (rnd() < 0.5 ? 1 : -1), beat: rnd() * 10, placed: false };
   });
   const skein = { members: birds.slice(nFlock * FLOCK + nGull), active: false, wait: 20 + rnd() * 40, t: 0, x: 0, z: 0, dx: 1, dz: 0, alt: 70 };
   const V = skeinLayout(skein.members.length);

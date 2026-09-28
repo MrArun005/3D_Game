@@ -1,7 +1,8 @@
+// Water shading ported from StarKnightt/ocean-drive (MIT, (c) 2026 Prasenjit) -- see THIRD_PARTY.md.
 import * as THREE from 'three';
 import {
-  positionWorld, max, min, mix, vec2, vec3, float, smoothstep, step, texture, attribute, uniform, time,
-  cameraPosition, length, normalize, reflect, dot, pow, sin, clamp, uv, transformNormalToView,
+  positionWorld, abs, max, min, mix, vec2, vec3, float, smoothstep, step, texture, attribute, uniform, time,
+  cameraPosition, length, normalize, reflect, dot, pow, sin, clamp, uv, exp, fract, vec4, mrt, pmremTexture,
 } from 'three/tsl';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { toTex } from './textures.js';
@@ -175,7 +176,9 @@ export function buildWater(scene, district, day = true, { pave = null } = {}) {
   const nrm2 = toTex(waveNormals(true), false);
   const foamT = toTex(foamCanvas(), false);
   const sunDir = uniform(new THREE.Vector3(-0.55, 0.72, 0.35).normalize());
-  const sunK = uniform(day ? 1 : 0.15);          // glitter strength, from the sun's own intensity in update()
+  const sunCol = uniform(new THREE.Color(day ? 3.4 : 0.3, day ? 3.2 : 0.3, day ? 3.0 : 0.36));   // the sun light's colour x intensity, from update()
+  const envI = uniform(scene.environmentIntensity ?? 0.85);
+  const U = { nrm, nrm2, foamT, sunDir, sunCol, envI, env: scene.environment };
 
   const ocean = toV2([
     [b.w + 20, -pad - 3000], [b.w + 11000, -pad - 3000],
@@ -192,14 +195,14 @@ export function buildWater(scene, district, day = true, { pave = null } = {}) {
   const inField = (u) => step(0, u.x).mul(step(u.x, 1)).mul(step(0, u.y)).mul(step(u.y, 1));
 
   const riverMat = waterMaterial({
-    nrm, nrm2, foamT, sunDir, sunK,
+    ...U,
     shore: () => { const a = attribute('aAcross', 'float'); return min(a, float(1).sub(a)).mul(riverW); },
     beach: null,
-    shallow: day ? 0x3f5a48 : 0x0e1614, deep: day ? 0x1c3530 : 0x081010, depthM: 30,
+    shallow: 0x44604c, deep: 0x1c342e, depthM: 30,   // the river keeps its green
     flow: vec2(0.0, 0.012),
   });
   const bayMat = waterMaterial({
-    nrm, nrm2, foamT, sunDir, sunK,
+    ...U,
     shore: () => {
       const u = fieldUv();
       const openSea = max(positionWorld.x.sub(b.w + 30), 0);   // off the field, the ocean's only coast is the plate's east edge
@@ -209,7 +212,7 @@ export function buildWater(scene, district, day = true, { pave = null } = {}) {
       const u = fieldUv();
       return mix(float(SHORE_RANGE), texture(shoreF.tex, u).g.mul(SHORE_RANGE), inField(u));
     },
-    shallow: day ? 0x2f5452 : 0x0b1416, deep: day ? 0x0c2230 : 0x060c12, depthM: 60,
+    shallow: 0x2a6f68, deep: 0x0c1c26, depthM: 60,   // ocean-drive's turquoise-to-slate ramp, greyed for a harbour
     flow: vec2(-0.004, 0.002),
   });
 
@@ -295,8 +298,9 @@ export function buildWater(scene, district, day = true, { pave = null } = {}) {
         v.copy(sun.position).sub(sun.target.position);
         if (v.lengthSq() > 1e-6) sunDir.value.copy(v.normalize());
         // a low or dim sun (dusk, the moon) glints less; below the horizon, not at all
-        sunK.value = Math.min(1.2, sun.intensity / 3.5) * THREE.MathUtils.smoothstep(sunDir.value.y, -0.02, 0.12);
+        sunCol.value.copy(sun.color).multiplyScalar(sun.intensity * THREE.MathUtils.smoothstep(sunDir.value.y, -0.02, 0.1));
       }
+      envI.value = scene.environmentIntensity ?? 0.85;
     },
     dispose() {
       group.traverse((o) => { o.geometry?.dispose?.(); });
@@ -311,61 +315,119 @@ export function buildWater(scene, district, day = true, { pave = null } = {}) {
 const SHORE_RANGE = 80;            // metres the shore field encodes (8 bits: 0.31 m a step)
 
 /**
- * The water node material. `shore()` returns metres to the nearest bank for
- * this fragment; `beach()` (optional) metres to the nearest sand edge.
+ * The water node material -- a TSL port of the ocean shading in
+ * StarKnightt/ocean-drive (MIT, (c) 2026 Prasenjit; src/world/ocean.js and
+ * surf.js; see THIRD_PARTY.md). What came across: the lifted-reflection
+ * Fresnel (the reflected ray is folded above the horizon and widened by the
+ * slope variance the pixel cannot resolve, so it never samples the dark
+ * ground -- the black-speckle bug of the first version), the depth colour
+ * ramp, the Beckmann sun-glitter lobe broken into glints, the lit foam, and
+ * the swash timing (fast ease-out run-up, slow recede) for the breakers.
+ * What is ours: it runs as a MeshBasicNodeMaterial over flat polygons (no
+ * camera-centred grid, no Gerstner displacement, no ShaderMaterial), the sky
+ * is scene.environment's PMREM instead of their analytic sky, depth is metres
+ * from the bank, and the breakers are keyed to beach distance.
+ *
+ * `shore()` returns metres to the nearest bank for this fragment; `beach()`
+ * (optional) metres to the nearest sand edge.
  */
-function waterMaterial({ nrm, nrm2, foamT, sunDir, sunK, shore, beach, shallow, deep, depthM, flow }) {
-  const mat = new THREE.MeshStandardNodeMaterial();
+function waterMaterial({ nrm, nrm2, foamT, sunDir, sunCol, envI, env, shore, beach, shallow, deep, depthM, flow }) {
+  const mat = new THREE.MeshBasicNodeMaterial();
   mat.name = 'water';
-  mat.metalness = 0;
-  mat.roughness = 0.06;
   const p = positionWorld.xz;
-  const toFrag = positionWorld.sub(cameraPosition);
-  const dist = length(toFrag);
+  const toCam = cameraPosition.sub(positionWorld);
+  const dist = length(toCam);
+  const V = normalize(toCam);
   const d = shore();
-
-  // swell: two crossing wave-normal layers in world metres, drifting with the current
   const t = time;
+  const L = sunDir;
+
+  // --- slopes: two crossing wave-normal layers in world metres, drifting with the current
   const A = texture(nrm, p.div(19).add(vec2(0.021, 0.033).add(flow).mul(t))).xy.mul(2).sub(1);
   const B = texture(nrm2, p.div(7.5).add(vec2(-0.029, 0.013).add(flow.mul(2)).mul(t))).xy.mul(2).sub(1);
-  const calm = float(1).div(dist.mul(0.006).add(1));                 // far water flattens to a mirror (no aliasing)
-  const nearBank = smoothstep(0, 10, d).mul(0.6).add(0.4);             // and the lee of a wall is calmer
-  const slope = A.mul(0.55).add(B.mul(0.35)).mul(calm).mul(nearBank);
-  const nW = normalize(vec3(slope.x, 1, slope.y));
-  mat.normalNode = transformNormalToView(nW);
+  const calm = float(1).div(dist.mul(0.004).add(1));                  // what the pixel still resolves
+  const nearBank = smoothstep(0, 10, d).mul(0.6).add(0.4);             // the lee of a wall is calmer
+  const s = A.mul(0.5).add(B.mul(0.32)).mul(calm).mul(nearBank);
+  // slope variance lost below the pixel (ocean-drive's `lost`): grows as the resolved part shrinks
+  const lost = float(1).sub(calm).mul(0.018).mul(nearBank).add(0.0004);
+  const sig = lost.sqrt();
+  const n = normalize(vec3(s.x.negate(), 1, s.y.negate()));
+  const nv = max(dot(n, V), 0.002);
 
-  // colour by depth
-  const deepK = smoothstep(0, depthM, d);
-  let col = mix(hexVec(shallow), hexVec(deep), deepK);
+  // --- reflection: the ray folded above the horizon and widened by sig (two taps)
+  const R = reflect(V.negate(), n);
+  const gz = float(1).sub(smoothstep(0.02, 0.35, V.y));
+  const Ra = normalize(vec3(R.x, abs(R.y).add(gz.mul(1.6).add(1.2).mul(sig)).add(0.004), R.z));
+  const Rb = normalize(vec3(R.x, abs(R.y).add(gz.mul(2.8).add(2.2).mul(sig)).add(0.004), R.z));
+  const skyAt = (dir, rough) => (env ? pmremTexture(env, dir, float(rough)).rgb.mul(envI) : vec3(0.35, 0.45, 0.6).mul(envI));
+  const sky = skyAt(Ra, 0.04).add(skyAt(Rb, 0.2)).mul(0.5);
+  const F = float(0.02).add(pow(float(1).sub(clamp(nv.add(gz.mul(1.2).add(1).mul(sig)), 0, 1)), 5).mul(0.98));
+
+  // --- the water body: the ramp as a scattering albedo under the sky and the sun
+  const skyUp = skyAt(vec3(0, 1, 0), 1.0);
+  const ambient = skyUp.add(sunCol.mul(max(L.y, 0)).mul(0.12));
+  let ramp = mix(hexVec(shallow), hexVec(deep), smoothstep(0, depthM, d));
   if (beach) {
     // the sand shelf off Halstead Sands (beach.js: the sand leaves the water ~28 m out, its toe is at 34 m)
-    const shelf = float(1).sub(smoothstep(26, 60, beach()));
-    col = mix(col, hexVec(0x3f7f72), shelf.mul(0.75));
+    ramp = mix(ramp, hexVec(0x2f8f86), float(1).sub(smoothstep(27, 60, beach())).mul(0.8));
   }
+  let col = ramp.mul(ambient).mul(float(1).sub(F)).add(sky.mul(F));
 
-  // foam: a lap line at every wall, breathing; breakers over the beach shelf
+  // --- sun glitter: Beckmann lobe whose roughness is the unresolved slope, broken into glints
+  const H = normalize(L.add(V));
+  const nh = max(dot(n, H), 1e-4), nh2 = nh.mul(nh);
+  const m2 = lost.mul(0.6).add(0.0034).add(pow(float(1).sub(nv), 8).mul(0.003)).add(smoothstep(10, 500, dist).mul(0.009)).mul(2);
+  const Dn = min(exp(float(1).sub(nh2).negate().div(nh2.mul(m2))).div(m2.mul(Math.PI).mul(nh2).mul(nh2)), 3000);
+  const Fh = float(0.02).add(pow(float(1).sub(max(dot(H, V), 0)), 5).mul(0.98));
+  let spec = sunCol.mul(Dn).mul(Fh).div(nv.mul(4)).mul(smoothstep(-0.06, 0.06, dot(n, L))).mul(vec3(1.0, 0.8, 0.55));
+  const g1 = texture(nrm2, p.div(1.7).sub(vec2(0.05, 0.08).mul(t))).x;
+  const g2 = texture(nrm, p.div(0.9).add(vec2(0.07, -0.03).mul(t))).y;
+  const glint = smoothstep(0.3, 0.75, g1.mul(g2).mul(1.8));
+  spec = spec.mul(glint.mul(3.0).add(0.15));
+  spec = spec.div(dot(spec, vec3(0.2126, 0.7152, 0.0722)).div(3.0).add(1));   // soft-clip, keeps the path from blowing out
+
+  // --- foam
   const drift = vec2(0.013, -0.009).add(flow).mul(t);
-  const f1 = texture(foamT, p.div(6.5).add(drift)).r;
+  const lace = texture(foamT, p.div(6.5).add(drift)).r;
   const lapW = sin(t.mul(0.8).add(p.x.mul(0.043)).add(p.y.mul(0.061))).mul(0.9).add(2.6);
-  let foam = float(1).sub(smoothstep(0.3, lapW, d)).mul(smoothstep(0.35, 0.7, f1).mul(0.7).add(0.3));
+  let foam = float(1).sub(smoothstep(0.3, lapW, d)).mul(smoothstep(0.35, 0.7, lace).mul(0.7).add(0.3));
   if (beach) {
     const bd = beach();
-    // crests roll shoreward every ~9 m, fading beyond the shelf and dying on the sand
-    const crest = smoothstep(0.82, 0.97, sin(bd.mul(0.7).add(t.mul(1.25))));
-    const band = smoothstep(27, 31, bd).mul(float(1).sub(smoothstep(45, 70, bd)));
-    foam = max(foam, crest.mul(band).mul(smoothstep(0.3, 0.6, f1)));
+    /* Breakers (ocean-drive surf.js's clock, driven by beach distance): each set
+       rolls in from ~70 m to the waterline at 28 m. The front moves with a fast
+       ease-out (run-up), then the wash recedes slowly (pow 1.4); a roller sits
+       on the front, a bore of dissolving foam behind it. */
+    const T = 9.5;
+    const along = p.x.mul(0.011).add(p.y.mul(0.007));                  // sets arrive a little out of phase along the shore
+    const u = fract(t.div(T).add(sin(along).mul(0.08)));
+    const up = smoothstep(0, 0.45, u);
+    const run = float(1).sub(float(1).sub(up).mul(float(1).sub(up)));   // 1-(1-u)^2
+    const front = float(70).sub(run.mul(42)).add(sin(along.mul(9).add(u.mul(3))).mul(1.2));
+    const fresh = float(1).sub(smoothstep(0.45, 1.0, u).pow(1.4));
+    const behind = bd.sub(front);
+    const lead = step(-0.1, behind);
+    const roller = exp(max(behind, 0).negate().div(0.9)).mul(lead).mul(fresh);
+    const bore = exp(max(behind, 0).negate().div(run.mul(3).add(1.5))).mul(lead).mul(fresh).mul(lace);
+    const surfZone = smoothstep(27, 29, bd).mul(float(1).sub(smoothstep(62, 75, bd)));
+    foam = max(foam, max(roller.mul(mix(0.55, 0.95, lace)), bore).mul(surfZone));
+    // the thin line where the water meets the sand, and streaks over the surf zone
+    foam = max(foam, float(1).sub(smoothstep(27.5, 30, bd)).mul(lace).mul(0.8));
+    foam = max(foam, surfZone.mul(smoothstep(0.55, 0.8, texture(foamT, p.div(17).add(vec2(0, 0.01).mul(t))).r)).mul(0.3));
   }
+  // sparse whitecaps far out on open water
+  const cap = smoothstep(0.62, 0.8, texture(foamT, p.div(41).add(vec2(0.004, 0).mul(t))).r).mul(smoothstep(0.5, 0.75, lace));
+  foam = max(foam, cap.mul(smoothstep(80, 160, d)).mul(0.5).mul(float(1).sub(smoothstep(200, 1500, dist))));
   foam = clamp(foam, 0, 1);
-  mat.colorNode = mix(col, vec3(0.82, 0.85, 0.86), foam);
-  mat.roughnessNode = mix(float(0.06), float(0.85), foam);
 
-  // sun glitter: a tight reflection lobe toward the sun, broken into glints
-  const V = normalize(toFrag);
-  const R = reflect(V, nW);
-  const lobe = pow(max(dot(R, sunDir), 0), 420);
-  const g = texture(nrm2, p.div(1.7).sub(vec2(0.05, 0.08).mul(t))).x;
-  const glint = smoothstep(0.62, 0.9, g).mul(0.85).add(0.15);
-  mat.emissiveNode = vec3(1.0, 0.93, 0.8).mul(lobe.mul(glint).mul(sunK).mul(float(1).sub(foam)).mul(3.2));
+  // lit foam: sun on all-facing bubbles + sky fill, taken as luminance so it stays cream-white
+  const toSun = max(dot(V.negate(), L), 0);
+  const foamL = dot(sunCol.mul(0.318).mul(toSun.mul(0.35).add(0.3)).add(skyUp.mul(1.1)), vec3(0.2126, 0.7152, 0.0722));
+  col = mix(col, vec3(1.0, 0.97, 0.92).mul(0.8).mul(foamL), foam);
+  spec = spec.mul(float(1).sub(foam));
+
+  mat.colorNode = col.add(spec);
+  // the glitter feeds the bloom (grade.js reads the emissive MRT target)
+  mat.mrtNode = mrt({ emissive: vec4(spec.mul(0.5), 1) });
   return mat;
 }
 

@@ -25,6 +25,13 @@ right about the column "Ship?".
 | Metro train `train_ride.glb` | `public/models/metro/` | **licence unrecorded** | **do not ship** until recorded |
 | Authored kit (91 assets, 32 materials, textures) | `public/models/props`, `facade`, `public/textures/` | authored in-repo (`assets/source/`, `tools/`) | yes |
 
+Code ported (not vendored): **ocean-drive** by StarKnightt,
+https://github.com/StarKnightt/ocean-drive -- MIT, "Copyright (c) 2026
+Prasenjit (StarKnightt)". Its ocean shading (`src/world/ocean.js`,
+`src/world/surf.js`: lifted-reflection Fresnel, depth colour ramp, Beckmann
+glitter with glints, lit foam, swash timing) was rebuilt as TSL in
+`src/world/water.js`. Ship? yes; its MIT text is in `docs/licenses/ocean-drive-LICENSE.txt`.
+
 Libraries: `three` (MIT), `trystero` (MIT); build tooling `vite`,
 `@gltf-transform/*`, `meshoptimizer` (MIT) is not shipped.
 
