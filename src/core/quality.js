@@ -37,6 +37,7 @@ export const PRESETS = {
     farTraffic: 30,
     lights: 1,
     bloomScale: 0.25,
+    birds: 24,               // world/birds.js pool: ONE draw whatever the count, ~16 tris a bird
   },
   low: {
     shadows: 'off',           // -48% triangles, -~300 draws (census)
@@ -50,6 +51,7 @@ export const PRESETS = {
     farTraffic: 60,
     lights: 2,              // real night point lights (game/lighting.js LightPool); the rest glow as sprites
     bloomScale: 0.5,          // bloom mip chain resolution (1 = full)
+    birds: 48,               // world/birds.js pool: ONE draw whatever the count, ~16 tris a bird
   },
   /* Balanced (2026-09-22): Auto's pick on an integrated GPU. Medium was sized
      on the M2 Air and the owner still called it "very sad" there -- a fanless
@@ -73,6 +75,7 @@ export const PRESETS = {
     farTraffic: 60,
     lights: 2,              // real night point lights (game/lighting.js LightPool); the rest glow as sprites
     bloomScale: 0.25,          // bloom mip chain resolution (1 = full)
+    birds: 64,               // world/birds.js pool: ONE draw whatever the count, ~16 tris a bird
   },
   medium: {
     shadows: 'near',          // 1 cascade, 1024 map, 160 m: the near ring only (cascade 0 is 0-52 m today; 160 m keeps street shadows under the car and lamps)
@@ -90,6 +93,7 @@ export const PRESETS = {
     farTraffic: 120,
     lights: 4,              // real night point lights (game/lighting.js LightPool); the rest glow as sprites
     bloomScale: 0.5,          // bloom mip chain resolution (1 = full)
+    birds: 96,               // world/birds.js pool: ONE draw whatever the count, ~16 tris a bird
   },
   high: {
     shadows: 'full',          // whatever the GPU tier already runs: 2x1024/320 m LITE, 3x2048/520 m FULL
@@ -104,6 +108,7 @@ export const PRESETS = {
     farTraffic: 220,
     lights: 6,              // real night point lights (game/lighting.js LightPool); the rest glow as sprites
     bloomScale: 0.5,          // bloom mip chain resolution (1 = full)
+    birds: 128,               // world/birds.js pool: ONE draw whatever the count, ~16 tris a bird
   },
 };
 
