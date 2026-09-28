@@ -23,6 +23,8 @@ import { buildGlare, setGlareRing, setGlareClip } from './glare.js';
 import { keptCellSet, wallProps, ringHides, segmentSplit, pieceHas } from './playArea.js';
 import { buildSpan, signatureBridge, deckProfile, profileAt } from './spans.js';
 import { skirtFoot } from './district.js';
+import { treeColour, BARK } from './foliage.js';
+import { wallTint } from './wallPalette.js';
 import { styleFor, buildArt, artMaterial, ART_CAP } from './artBuildings.js';
 import { regentChunk, regentEnabled, regentPlan } from './regent.js';
 
@@ -119,17 +121,8 @@ const DISTRICT_FORM = {
   'LITTLE TOKYO':   { forms: { tokyo_walkup: 0.55, setback: 0.25, slab: 0.20 }, style: 'tokyo' },
 };
 const pickForm = (forms, r) => { let acc = 0; for (const [k, w] of Object.entries(forms)) { acc += w; if (r < acc) return k; } return 'slab'; };
-/* Foliage is never one green. These multiply the leaf material, so they read
-   as the same planting in different light rather than as five paint pots. */
-const LEAF = [0x3d5a32, 0x4a6338, 0x2f4a28, 0x455c34, 0x3a522e, 0x486438];
-/* The canopy tint. LEAF's six greens are right for a plane tree and wrong for a
-   cherry, so an AUTHORED species (world/treeModels.js) uses the colour read off
-   its own model instead -- sakura stays pink, the maple red -- while a
-   procedural one keeps the green it always had. Per instance, so it costs
-   nothing: the canopies were already tinted this way. */
-const leafTint = (A, sp, fallback) => A?.geo?.species?.[sp]?.authored
-  ? (A.geo.species[sp].leaf ?? fallback)
-  : fallback;
+/* Leaf colours moved to world/foliage.js (LEAF_OF, treeColour): per species AND
+   per tree, since the leaf material only shades and the instance colour is the hue. */
 
 const GANTRIES = typeof location !== 'undefined' && new URLSearchParams(location.search).has('gantries');
 /* Scratch for the gantry's non-uniform placement matrix. Module scope so the
@@ -390,7 +383,7 @@ export class DistrictWorld {
        Same material, same 18.4m tile in metres, and the join disappears; the
        markings alone are absent out there, and at that range they are
        sub-pixel anyway. */
-    const pos = [], uvs = [];
+    const pos = [], uvs = [], lanes = [];
     for (const s of D.segments) {
       const dx = s.bx - s.ax, dz = s.bz - s.az;
       const L = Math.hypot(dx, dz) || 1;
@@ -401,12 +394,15 @@ export class DistrictWorld {
       );
       const v = L / 18.4, u = (s.half * 2) / 18.4;
       uvs.push(0, 0, v, 0, v, u, 0, 0, v, u, 0, u);
+      const h = s.half;
+      lanes.push(0, h, 0, h, 1, h, 0, h, 1, h, 1, h);   // aLane: across 0..1, half-width (assets.js tarmac wear)
     }
     const rg = new THREE.BufferGeometry();
     rg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
     rg.setAttribute('normal', new THREE.BufferAttribute(
       new Float32Array(pos.length).fill(0).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
     rg.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
+    rg.setAttribute('aLane', new THREE.BufferAttribute(new Float32Array(lanes), 2));
     const farTarmac = this.assets.mat.tarmac.clone();
     farTarmac.polygonOffset = true;
     farTarmac.polygonOffsetFactor = 4;
@@ -421,7 +417,7 @@ export class DistrictWorld {
     roads.receiveShadow = true;
     far.add(roads);
 
-    const slabs = [], solids = [], uvScale = [];
+    const slabs = [], solids = [], uvScale = [], farWall = [];
     /* Compact city: will the chunk that builds this stand-in's REAL building
        ever build? That is the chunk of its BLOCK's centre (blkByChunk), not of
        the stand-in's own centre -- at the clip's edge the two differ (17 hidden
@@ -450,6 +446,8 @@ export class DistrictWorld {
                          bl.y + lx * sa + lz * ca, bl.angle,
                          w, hh, Math.max(1, g.d - 0.3)));
         uvScale.push(w / tileW, hh / tileH);
+        const fx = bl.x + lx * ca - lz * sa, fz = bl.y + lx * sa + lz * ca;   // the near massing's own hash seeds, so the colour does not pop at the ring
+        farWall.push(...wallTint(bl.district, hash(fx * 1.9, fz * 0.7), hash(fz * 2.3, fx * 0.4), 0.5));
         kept.push(blockKept);
       }
     }
@@ -474,6 +472,7 @@ export class DistrictWorld {
     const farGeo = box.clone();
     farGeo.userData.owned = true;
     farGeo.setAttribute('aUvScale', new THREE.InstancedBufferAttribute(new Float32Array(uvScale), 2));
+    farGeo.setAttribute('aWall', new THREE.InstancedBufferAttribute(new Float32Array(farWall), 4));   // the far city in its districts' colours too
     /* Their OWN copy of the tower facade (2026-09-23): the near material lit
        every window on the far boxes' ROOFS too (a box has a top face), so from
        any height at night the far city was a field of white slabs. The copy
@@ -1222,7 +1221,7 @@ export class DistrictWorld {
     const up = (arr) => { const n = new Float32Array(arr.length); for (let i = 1; i < n.length; i += 3) n[i] = 1; return n; };
     emit(white, A.mat.paint, up(white), null, true);
     emit(warm, A.mat.paintWarm, up(warm), null, true);
-    emit(kerb, A.mat.kerbFace, kerbN);
+    emit(kerb, A.mat.kerbFace, kerbN, null, true);   // granite (roadLook.js kerbStone), and a car's shadow runs up it
     emit(walk, A.mat.walkDistrict ?? A.mat.walk, walkN, walkUv, true);
   }
 
@@ -1650,7 +1649,7 @@ export class DistrictWorld {
     const spanParts = new Map(), spanHeads = [];   // world/spans.js: pier/fascia/railing/soffit geo by material key, and its lamp heads
     const segs = this.segByChunk.get(k) ?? [];
     if (segs.length) {
-      const pos = [], nor = [], uv = [];
+      const pos = [], nor = [], uv = [], lane = [];
       /* Structure under and beside any road that leaves the ground.
          Sampling deck height per corner made a bridge a ramp rather than a
          decal -- but only the top surface. From the bank you looked straight
@@ -1770,6 +1769,8 @@ export class DistrictWorld {
           // Measured from the segment's start, so a split stretch tiles on unbroken.
           const v0 = pq.lo / 18.4, v = pq.hi / 18.4, u = (s.half * 2) / 18.4;
           uv.push(v0, 0, v, 0, v, u, v0, 0, v, u, v0, u);
+          const h = s.half;
+          lane.push(0, h, 0, h, 1, h, 0, h, 1, h, 1, h);   // aLane: across 0..1 + half-width, for the tarmac's wheel-path wear
         }
 
         // elevated? then this segment gets sides
@@ -1828,6 +1829,7 @@ export class DistrictWorld {
       g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
       g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(nor), 3));
       g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
+      g.setAttribute('aLane', new THREE.BufferAttribute(new Float32Array(lane), 2));
       const road = new THREE.Mesh(g, A.mat.tarmac);
       road.receiveShadow = true;
       group.add(road);
@@ -2101,6 +2103,14 @@ export class DistrictWorld {
         }
         const pitched = this.#massing(arch, wx, wz, bl.angle, g.w, g.d, h,
                       { bases, facades, roofs, glassRoofs, crowns, masts, plant, gables }, bl.district, chunkDist2);
+        /* This building's wall colour and grime (world/wallPalette.js), one
+           vec4 per shell instance it just pushed -- base and shaft alike, so
+           a building is one colour and the next one is not. */
+        const wt = wallTint(bl.district, hash(wx * 1.9, wz * 0.7), hash(wz * 2.3, wx * 0.4), hash(wx * 0.13 + wz, wz * 0.17));
+        for (const bucket of [...Object.values(facades), ...Object.values(bases)]) {
+          const wl = (bucket.wall ??= []);
+          while (wl.length < bucket.m.length * 4) wl.push(wt[0], wt[1], wt[2], wt[3]);
+        }
         boxes.push({ x: wx, z: wz, angle: bl.angle, hw: g.w / 2, hd: g.d / 2, height: h, district: bl.district, pitched });
       }
     }
@@ -2185,18 +2195,21 @@ export class DistrictWorld {
           pools.push(flat(hx, 0.03 + ly, hz, 13));
         }
         if (!onTarmac && hash(px, pz) < 0.35) {
-          /* 10 Masterpiece Species follow the district and street class:
-             - Little Tokyo: Sakura (Cherry blossom), Ginkgo, Japanese Red Maple, Weeping Willow
-             - Marrow Hill / Suburbs: Magnolia, Autumn Oak, London Plane
-             - Waterfront / Boundary: Royal Palm, Coastal Pine
-             - Arterials & Avenues: Italian Cypress, Poplar, Plane */
+          /* Species by place (2026-09-28, the owner: London plane trees and
+             Tokyo street trees, not palms as a theme). London streets are
+             plane-dominated with lime (poplar crown) and a few oaks and
+             magnolias; Little Tokyo is ginkgo and zelkova (the plane crown)
+             with cherries as a minority and the maple a rare accent. Palms
+             stand only where the kerb actually looks at water. Colours:
+             foliage.js LEAF_OF / treeColour -- per tree, never one green. */
           const r = hash(pz * 1.7, px * 0.9);
           const isTokyo = this.district.name === 'LITTLE TOKYO' || (px > 1950 && px < 2400 && pz > 1300 && pz < 1850);
-          const isWater = s2.cls === 'boundary' || Math.hypot(px - 1850, pz - 2150) < 500;
-          const sp = isTokyo ? (r < 0.45 ? 'sakura' : r < 0.70 ? 'ginkgo' : r < 0.88 ? 'red_maple' : 'willow')
-                   : isWater ? (r < 0.65 ? 'palm' : 'pine')
-                   : s2.cls === 'arterial' ? (r < 0.40 ? 'cypress' : r < 0.70 ? 'poplar' : 'plane')
-                   : r < 0.30 ? 'magnolia' : r < 0.55 ? 'autumn_oak' : r < 0.80 ? 'plane' : 'pine';
+          const D2 = this.district;
+          const isShore = !isTokyo && !!D2.inWater && (D2.inWater(px + 28, pz) || D2.inWater(px - 28, pz) || D2.inWater(px, pz + 28) || D2.inWater(px, pz - 28));
+          const sp = isTokyo ? (r < 0.40 ? 'ginkgo' : r < 0.76 ? 'plane' : r < 0.91 ? 'sakura' : r < 0.96 ? 'red_maple' : 'willow')
+                   : isShore ? (r < 0.4 ? 'palm' : r < 0.7 ? 'plane' : 'pine')
+                   : s2.cls === 'arterial' ? (r < 0.7 ? 'plane' : 'poplar')
+                   : r < 0.55 ? 'plane' : r < 0.70 ? 'magnolia' : r < 0.85 ? 'autumn_oak' : r < 0.95 ? 'poplar' : 'pine';
           const sc = 0.85 + hash(px, pz) * 0.45;
           const tx = px + nx * 2.2 * side, tz = pz + nz * 2.2 * side;
           if (this.district.tarmacDepth(tx, tz) > 0.2) {
@@ -2204,15 +2217,7 @@ export class DistrictWorld {
             trees[sp].push(mat4(tx, ty, tz, hash(pz, px) * 6.28, sc, sc * (0.9 + hash(px, pz) * 0.3), sc));
             solidParked.push({ x: tx, z: tz, yaw: 0, offsets: [0],
                                radius: 0.34, reach: 0.7, tag: 'prop' });
-            const col = sp === 'sakura' ? 0xffb7c5
-                      : sp === 'ginkgo' ? 0xe5cc28
-                      : sp === 'red_maple' ? 0xd61c28
-                      : sp === 'willow' ? 0x6bb854
-                      : sp === 'autumn_oak' ? 0xe67e22
-                      : sp === 'magnolia' ? 0x27ae60
-                      : sp === 'cypress' ? 0x1e5631
-                      : LEAF[Math.floor(r * LEAF.length)];
-            leafCol[sp].push(leafTint(A, sp, col));
+            leafCol[sp].push(treeColour(sp, hash(tx * 0.71, tz * 1.3), hash(tz * 0.53, tx * 0.37)));
           }
         }
       }
@@ -2269,11 +2274,12 @@ export class DistrictWorld {
           const pz = bl.y + jx * sa + jz * ca;
           if (this.district.tarmacDepth(px, pz) <= 0.5) continue;
           if (this.district.landmarkKeepOut?.(px, pz)) continue;   // not inside the bandstand or the palm house
-          const sp = r < 0.55 ? 'plane' : r < 0.78 ? 'poplar' : 'pine';
+          const rs = hash(px * 0.29, pz * 0.83);          // r < 0.55 here, so species needs its own roll
+          const sp = rs < 0.45 ? 'plane' : rs < 0.7 ? 'autumn_oak' : rs < 0.85 ? 'poplar' : 'pine';
           const sc = 1.05 + hash(pz, px) * 0.55;
           const py = KERB_H + this.district.elevationAt(px, pz);
           trees[sp].push(mat4(px, py, pz, hash(px, pz) * 6.28, sc, sc * (0.9 + hash(px, pz) * 0.25), sc));
-          leafCol[sp].push(leafTint(A, sp, LEAF[Math.floor(hash(px * 1.3, pz) * LEAF.length)]));
+          leafCol[sp].push(treeColour(sp, hash(px * 1.3, pz), hash(pz * 0.61, px * 1.7)));
           solidParked.push({ x: px, z: pz, yaw: 0, offsets: [0], radius: 0.38, reach: 0.8, tag: 'prop' });
         }
       }
@@ -2553,7 +2559,7 @@ export class DistrictWorld {
        world, so pick by whether the catalogue dressed this chunk. */
     inst(dressed ? A.geo.lampCap : A.geo.lampHead, A.mat.lampGlow, heads);
     for (const sp of Object.keys(trees)) {
-      inst(A.geo.species[sp].trunk, A.mat.bark, trees[sp], true);
+      inst(A.geo.species[sp].trunk, A.mat.bark, trees[sp], true, trees[sp].map(() => BARK[sp] ?? BARK.plane));
       inst(A.geo.species[sp].canopy, A.mat.leaf, trees[sp], true, leafCol[sp]);
     }
     yield* brk('parked fleet');
@@ -2605,6 +2611,9 @@ export class DistrictWorld {
       geo.userData.owned = true;
       const m = new THREE.InstancedMesh(geo, mat, bucket.m.length);
       geo.setAttribute('aUvScale', new THREE.InstancedBufferAttribute(new Float32Array(bucket.uv), 2));
+      const wall = new Float32Array(bucket.m.length * 4).fill(1);   // city.js makeTileable: per-building wall tint + grime
+      if (bucket.wall) wall.set(bucket.wall.slice(0, wall.length));
+      geo.setAttribute('aWall', new THREE.InstancedBufferAttribute(wall, 4));
       bucket.m.forEach((mm, i) => m.setMatrixAt(i, mm));
       m.instanceMatrix.needsUpdate = true;
       /* Culled. InstancedMesh bounds account for instance matrices now, and

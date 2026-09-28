@@ -82,11 +82,21 @@ export function makeTileable(material) {
      people and rain reach. Darken the bottom 3.5m of every wall (splash and
      hands) and every wall's own top band (soot under the parapet), from world
      height and the tile's V, so no texture had to be repainted. */
-  const grime = float(1).sub(smoothstep(3.5, 0.2, positionWorld.y).mul(0.32))
-    .sub(smoothstep(0.86, 1.0, fract(scaled.y)).mul(0.12));
+  /* Per-building wall colour (2026-09-28, world/wallPalette.js): `aWall` is
+     one vec4 per instance -- rgb multiplies the WALL pixels (the glass is
+     masked out by the ORM roughness the painter writes: glass ~0.12, walls
+     ~0.78), a scales this building's grime. Every mesh on these materials
+     carries it: districtWorld tiled() and the far stand-ins, city.js
+     addInstanced. Cost: one vec4 attribute; the ORM sample is shared. */
+  const aWall = attribute('aWall', 'vec4');
+  const grime = float(1).sub(smoothstep(3.5, 0.2, positionWorld.y).mul(0.32)
+    .add(smoothstep(0.86, 1.0, fract(scaled.y)).mul(0.12)).mul(aWall.w));
+  const orm = material.roughnessMap ? texture(material.roughnessMap, scaled) : null;   // one sample, four uses
   if (material.map) {
+    const wallMask = orm ? smoothstep(0.3, 0.6, orm.g) : float(1);
     material.colorNode = texture(material.map, scaled)
-      .mul(materialReference('color', 'color', material)).mul(grime);
+      .mul(materialReference('color', 'color', material)).mul(grime)
+      .mul(mix(vec3(1), aWall.xyz, wallMask));
   }
   /* Relief follows the same tiled UV (facades.js paints a normal and an ORM
      map beside the colour). Set as nodes because the classic path would
@@ -97,7 +107,6 @@ export function makeTileable(material) {
   if (material.normalMap) {
     material.normalNode = tslNormalMap(texture(material.normalMap, scaled), materialReference('normalScale', 'vec2', material));
   }
-  const orm = material.roughnessMap ? texture(material.roughnessMap, scaled) : null;   // one sample, three uses
   if (orm) material.roughnessNode = orm.g.mul(materialReference('roughness', 'float', material));
   if (material.aoMap) material.aoNode = (orm && material.aoMap === material.roughnessMap ? orm : texture(material.aoMap, scaled)).r;
 
@@ -219,6 +228,8 @@ function addInstanced(parent, geometry, material, matrices, shadow = false,
   if (uvScales) {
     geo.setAttribute('aUvScale',
       new THREE.InstancedBufferAttribute(new Float32Array(uvScales), 2));
+    // makeTileable reads a per-building wall tint; the legacy grid keeps the painted colour
+    geo.setAttribute('aWall', new THREE.InstancedBufferAttribute(new Float32Array(matrices.length * 4).fill(1), 4));
   }
   mesh.frustumCulled = false;
   matrices.forEach((m, i) => mesh.setMatrixAt(i, m));
@@ -630,8 +641,8 @@ export class City {
     if (lampMesh) {
       group.userData.signals = { mesh: lampMesh, meta: lampMeta, i: ci, j: cj };
     }
-    addInstanced(group, A.geo.tree, A.mat.bark, trees, true);
-    addInstanced(group, A.geo.canopy, A.mat.leaf, canopies, true);
+    addInstanced(group, A.geo.tree, A.mat.barkPlain ?? A.mat.bark, trees, true);
+    addInstanced(group, A.geo.canopy, A.mat.leafPlain ?? A.mat.leaf, canopies, true);
     addInstanced(group, A.geo.bollard, A.mat.pole, bollards);
     addInstanced(group, A.geo.bin, A.mat.bin, bins);
     addInstanced(group, A.geo.shelter, A.mat.pole, shelters, true);

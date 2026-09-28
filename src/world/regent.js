@@ -1252,7 +1252,7 @@ function subChainAround(chain, j) {
 export function regentBuilding(M, b) {
   const rnd = mulberry32(b.seed);
   const st = b.style, L = levels(st);
-  const stoneHex = STONE[Math.floor(rnd() * STONE.length)], tone = 0.96 + rnd() * 0.08;
+  const stoneHex = STONE[Math.floor(rnd() * STONE.length)], tone = 0.9 + rnd() * 0.14;   // 2026-09-28: +-7% value building to building (was +-4%): one street, cleaned and sooted at different times
   const B = {
     st, bayT: 3.25 + rnd() * 0.55,
     stone: lin(stoneHex, tone), base: lin(stoneHex, tone * 0.93), trim: lin(stoneHex, tone * 1.04),
