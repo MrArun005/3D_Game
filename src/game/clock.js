@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 // Diurnal color grade anchor profiles
 
-const DIURNAL_PROFILES = {
+export const DIURNAL_PROFILES = {
   /* Aesthetic pass 2026-09-25 (GTA V's afternoon: punchy, clean, cool
      shadows under a warm sun): sat 1.10 -> 1.14 (the test's 'natural' cap), vibrance 0.08 -> 0.18,
      contrast 0.40 -> 0.47, shadows a step cooler, vignette 0.35 -> 0.42.
@@ -52,6 +52,31 @@ const DIURNAL_PROFILES = {
     grain: 0.018,
     filmic: 0.5,
   },
+  /* Golden hour (2026-09-28): the T stop between the afternoon and sunset.
+     The lighting carries it -- a low warm key against a cool sky fill, the
+     ratio set in GameClock.update below -- so the grade here is gentler than
+     DUSK: less contrast (the fill ratio already makes it), modest saturation
+     so Portland stone reads warm off-white rather than orange (REF-REGENT-
+     STREET: ~#dcd5c7 in sun, cool grey in shade), highlights a touch warm,
+     shadows a touch cool. Every key the other profiles carry (blendVal). */
+  GOLDEN: {
+    sat: 1.18,
+    vibrance: 0.20,
+    contrast: 0.40,
+    split: 0.80,
+    shadowTint: [0.90, 0.95, 1.08],
+    midTint: [1.02, 1.0, 0.98],
+    highTint: [1.10, 1.02, 0.92],
+    slope: [1.04, 1.01, 0.97],
+    offset: [-0.014, -0.013, -0.010],
+    power: [1.02, 1.02, 1.03],
+    bloomStrength: 0.38,
+    bloomRadius: 0.38,
+    bloomThreshold: 0.90,
+    vignette: 0.44,
+    grain: 0.014,
+    filmic: 0.25,
+  },
   NIGHT: {
     sat: 1.32,
     vibrance: 0.22,
@@ -99,7 +124,7 @@ const DIURNAL_PROFILES = {
 };
 
 export function interpolateGradeProfile(hour, weather) {
-  let wNight = 0, wDawn = 0, wDay = 0, wDusk = 0;
+  let wNight = 0, wDawn = 0, wDay = 0, wDusk = 0, wGold = 0;
 
   if (hour < 5.0 || hour >= 21.0) {
     wNight = 1.0;
@@ -113,9 +138,16 @@ export function interpolateGradeProfile(hour, weather) {
     wDay = t;
   } else if (hour >= 9.5 && hour < 16.0) {
     wDay = 1.0;
-  } else if (hour >= 16.0 && hour < 19.5) {
-    const t = (hour - 16.0) / 3.5;
+  } else if (hour >= 16.0 && hour < 17.3) {
+    // the afternoon boot (16.85) stays mostly DAY; golden hour takes over by 17.3
+    const t = (hour - 16.0) / 1.3;
     wDay = 1.0 - t;
+    wGold = t;
+  } else if (hour >= 17.3 && hour < 18.2) {
+    wGold = 1.0;
+  } else if (hour >= 18.2 && hour < 19.5) {
+    const t = (hour - 18.2) / 1.3;
+    wGold = 1.0 - t;
     wDusk = t;
   } else if (hour >= 19.5 && hour < 21.0) {
     const t = (hour - 19.5) / 1.5;
@@ -127,13 +159,11 @@ export function interpolateGradeProfile(hour, weather) {
   const pDusk = DIURNAL_PROFILES.DUSK;
   const pNight = DIURNAL_PROFILES.NIGHT;
   const pDawn = DIURNAL_PROFILES.DAWN;
+  const pGold = DIURNAL_PROFILES.GOLDEN;
 
-  const blendVal = (k) => pDay[k] * wDay + pDusk[k] * wDusk + pNight[k] * wNight + pDawn[k] * wDawn;
-  const blendVec = (k) => [
-    pDay[k][0] * wDay + pDusk[k][0] * wDusk + pNight[k][0] * wNight + pDawn[k][0] * wDawn,
-    pDay[k][1] * wDay + pDusk[k][1] * wDusk + pNight[k][1] * wNight + pDawn[k][1] * wDawn,
-    pDay[k][2] * wDay + pDusk[k][2] * wDusk + pNight[k][2] * wNight + pDawn[k][2] * wDawn,
-  ];
+  const blendVal = (k) => pDay[k] * wDay + pDusk[k] * wDusk + pNight[k] * wNight + pDawn[k] * wDawn + pGold[k] * wGold;
+  const blendVec = (k) => [0, 1, 2].map((i) =>
+    pDay[k][i] * wDay + pDusk[k][i] * wDusk + pNight[k][i] * wNight + pDawn[k][i] * wDawn + pGold[k][i] * wGold);
 
   let sat = blendVal('sat');
   let vibrance = blendVal('vibrance');
@@ -184,6 +214,9 @@ export function interpolateGradeProfile(hour, weather) {
  * dynamic solar vector, lighting states (Day, Sunset, Night, Dawn),
  * and weather transitions.
  */
+const STEP_COS = Math.cos(0.12 * Math.PI / 180);
+const _dir = new THREE.Vector3(), _tgt = new THREE.Vector3(), _r = new THREE.Vector3(), _u = new THREE.Vector3(), _s = new THREE.Vector3();
+
 export class GameClock {
   constructor({ startHour = 19.5, speed = 1.0 } = {}) {
     this.hour = startHour; // 0.0 - 24.0
@@ -253,29 +286,20 @@ export class GameClock {
     if (isGolden) {
       // Golden Hour (16:00 - 18:00) — Low, warm dramatic sun, long building shadows, golden road sheen
       const t = (this.hour - 16.0) / 2.0; // 0 to 1
-      this.sunColor.setRGB(1.0, 0.86 - t * 0.22, 0.52 - t * 0.20);
-      /* The fill used to be BLUE here (0.58, 0.68, 0.85) -- a noon sky colour on
-         a golden-hour scene. Every unlit facade took that as its only light and
-         came out cold blue-grey, which is why the city looked like it was in
-         permanent overcast while the sun was warm. At this hour the whole sky
-         dome IS the amber the sun is, so the fill is warm and the shadow side
-         goes amber-brown rather than blue. */
-      /* ...but amber FROM THE SKY TOO made the whole frame one beige (the
-         2026-09-23 recording: sky, road and shade all the same sand). A low
-         sun's shade is lit by the sky that is still blue overhead, bounced
-         warm off the ground: the warm key against a cooler fill is the
-         contrast GTA's evenings run on. Neutral-lavender from above, the
-         warm bounce from below. */
-      this.hemiSky.setRGB(0.80 - t * 0.06, 0.76 - t * 0.10, 0.80 - t * 0.12);
-      this.hemiGround.setRGB(0.52 - t * 0.10, 0.40 - t * 0.10, 0.30 - t * 0.08);
-      /* setHex, not setRGB. setRGB takes LINEAR, so the old (0.44, 0.36, 0.40)
-         displayed as ~#b0a1a8 -- a pale mauve. The range sits 3.4 km out and
-         linear fog far is 3800, so the mountains resolve to EXACTLY the fog
-         colour: that pale mauve was the flat pink paper wall across the end of
-         the street. A range has to be DARKER than the sky behind it to read as
-         a silhouette (see the same note in surrounds.js). Warm and deep. */
-      sunIntensity = 4.3 - t * 0.5;   // the lit faces have to WIN against the fill, or there is no rake
-      hemiIntensity = 0.60 - t * 0.06;
+      /* Fill ratio, 2026-09-28. The contrast of a clear late afternoon is the
+         ratio of a warm low key to a cool sky fill, and ours ran ~7:1 with a
+         lavender fill and the full noon environment on top -- shade was a
+         stop and a half from sun, so the long shadows barely read. Now the
+         key warms with the hour, the fill is the blue of the sky overhead
+         (REF-SHIBUYA: deep blue sky, hard sun, strong shadows; REF-REGENT-
+         STREET: warm stone in sun, cool grey in shade) at a lower level, and
+         the ground bounce stays warm so shade under a stone front does not go
+         dead blue. Ratio at the 16:50 boot: 7.4 -> 9.9. Uniforms only. */
+      this.sunColor.setRGB(1.0, 0.90 - t * 0.24, 0.66 - t * 0.30);
+      this.hemiSky.setRGB(0.58 - t * 0.04, 0.68 - t * 0.06, 0.90 - t * 0.06);
+      this.hemiGround.setRGB(0.50 - t * 0.08, 0.40 - t * 0.08, 0.30 - t * 0.07);
+      sunIntensity = 4.4 - t * 0.4;   // the lit faces have to WIN against the fill, or there is no rake
+      hemiIntensity = 0.46 - t * 0.08;
     } else if (isDay) {
       const dayFactor = Math.min(1, Math.max(0, sinH));
       this.sunColor.setRGB(1.0, 0.95, 0.86);
@@ -325,7 +349,31 @@ export class GameClock {
         sun.target.position.set(px, 0, pz);
         sun.target.updateMatrixWorld();
       }
-      sun.position.copy(this.sunPosition);
+      /* Stepped sun direction (2026-09-28). The clock turns the sun ~0.25 deg a
+         real second; turned every frame, the light's orientation changes every
+         frame and CSM's texel snap (it snaps in LIGHT space) can never hold,
+         so every shadow edge crawled. The direction now moves in 0.12 deg
+         steps (about two a second at the default speed) and the shadow maps sit
+         still between them. */
+      const dir = _dir.copy(this.sunPosition).sub(_tgt.set(px, 0, pz));
+      const len = dir.length() || 1;
+      dir.divideScalar(len);
+      if (!this._sunDir || this._sunDir.dot(dir) < STEP_COS) this._sunDir = (this._sunDir || new THREE.Vector3()).copy(dir);
+      sun.position.copy(this._sunDir).multiplyScalar(len).add(_tgt);
+      /* The WebGL2 backend's one plain shadow map rides on sun.target, which
+         follows the player continuously -- sub-texel moves re-rasterise every
+         edge (shimmer). Snap the target to the map's texel grid in light
+         space; renderer.js sets userData.shadowTexel on that path only. */
+      const texel = sun.userData?.shadowTexel;
+      if (texel && sun.target) {
+        const d = this._sunDir;
+        const right = _r.set(d.z, 0, -d.x).normalize();
+        const upv = _u.crossVectors(d, right);
+        const a = sun.target.position.dot(right), b = sun.target.position.dot(upv);
+        _s.copy(right).multiplyScalar(Math.round(a / texel) * texel - a).addScaledVector(upv, Math.round(b / texel) * texel - b);
+        sun.target.position.add(_s); sun.target.updateMatrixWorld();
+        sun.position.add(_s);
+      }
       sun.color.copy(this.sunColor);
       sun.intensity = sunIntensity;
     }
@@ -339,7 +387,11 @@ export class GameClock {
       /* night 0.24 -> 0.05: the environment map is still the NOON sky (CLAUDE.md,
          open item), so at night every glossy wall, window and the car reflected a
          bright blue daytime dome -- the blue sheen over the whole night street. */
-      scene.environmentIntensity = (isDay || isGolden) ? 1.05 : (isDusk || isDawn) ? 0.80 : 0.05;
+      /* golden: 1.05 -> 0.85..0.65 with the hour. The environment is the
+         noon PMREM, and at full strength it lit shaded faces as brightly as
+         the fill did -- it was half of the missing contrast (see the fill
+         ratio note above). */
+      scene.environmentIntensity = isDay ? 1.05 : isGolden ? 0.85 - ((this.hour - 16.0) / 2.0) * 0.2 : (isDusk || isDawn) ? 0.80 : 0.05;
     }
 
     // Phase 2 ownership: synchronize sky dome rotation & tint and stars visibility

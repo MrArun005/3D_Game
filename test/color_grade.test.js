@@ -1,8 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createGrade, GRADE_PRESETS } from '../src/core/grade.js';
-import { interpolateGradeProfile, GameClock } from '../src/game/clock.js';
+import { interpolateGradeProfile, GameClock, DIURNAL_PROFILES } from '../src/game/clock.js';
 import { CommandEngine } from '../src/game/commands.js';
+import * as THREE from 'three';
+
+test('every diurnal profile carries every key (a missing one is NaN in blendVal)', () => {
+  const keys = Object.keys(DIURNAL_PROFILES.DAY).sort();
+  for (const [name, p] of Object.entries(DIURNAL_PROFILES)) assert.deepEqual(Object.keys(p).sort(), keys, name);
+  for (let h = 0; h < 24; h += 0.1) {
+    const g = interpolateGradeProfile(h, 'CLEAR');
+    for (const [k, v] of Object.entries(g)) for (const x of [].concat(v)) assert.ok(Number.isFinite(x), `${k} @ ${h.toFixed(1)}`);
+  }
+  // the 17.7 T stop IS the golden profile
+  assert.equal(interpolateGradeProfile(17.7, 'CLEAR').contrast, DIURNAL_PROFILES.GOLDEN.contrast);
+});
+
+test('golden hour: warm key, sky-blue fill, key:fill ratio above midday', () => {
+  const mk = (h) => {
+    const sun = new THREE.DirectionalLight(); const hemi = new THREE.HemisphereLight();
+    new GameClock({ startHour: h }).update(0, { sun, hemi });
+    return { sun, hemi };
+  };
+  const g = mk(17.7), noon = mk(12.5);
+  assert.ok(g.sun.color.b < g.sun.color.r * 0.6, 'key is warm');
+  assert.ok(g.hemi.color.b > g.hemi.color.r, 'fill is sky-blue');
+  assert.ok(g.sun.intensity / g.hemi.intensity > noon.sun.intensity / noon.hemi.intensity, 'ratio above midday');
+});
 
 test('GRADE_PRESETS contains standard cinematic profiles', () => {
   assert.ok(GRADE_PRESETS.DEFAULT, 'DEFAULT preset exists');

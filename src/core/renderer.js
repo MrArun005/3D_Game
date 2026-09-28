@@ -30,6 +30,13 @@ class GatedCSM extends CSMShadowNode {
   _init(builder) {
     super._init(builder);
     for (let i = 1; i < this.lights.length; i++) this.lights[i].shadow.camera.layers.set(SHADOW_FAR_LAYER);
+    /* PCF radius per cascade (2026-09-28): the near cascade filters over 1.0
+       texel so the shadow under a car or a lamp stays crisp at its foot; the
+       far ones widen (1.6, 2.2 texels of an already coarser map), so
+       penumbrae grow with distance the way a real sun's do -- a cheap,
+       cascade-granular stand-in for contact hardening. Same five taps, same
+       cost: radius is a uniform (ShadowFilterNode reference('radius')). */
+    for (let i = 0; i < this.lights.length; i++) this.lights[i].shadow.radius = [1.0, 1.6, 2.2][i] ?? 2.2;
     this._fit = '';
   }
   updateBefore(builder) {
@@ -283,7 +290,7 @@ export function autoResolution(renderer, grade = null, lite = false, opts = {}) 
  * hemisphere for the ambient, and no warm fill -- daylight bounce is neutral
  * and adding a coloured fill is what makes a "day" scene look like a lit set.
  */
-function createDayLights(scene, lite = false, shadows = 'full', webgl = false) {
+function createDayLights(scene, lite = false, shadows = 'full', webgl = false, shadowMap = null) {
   /* Less fill, more sun. At 1.05 the hemisphere lit every face the same and
      the 2.6 sun never produced light-and-shade -- a facade turned away from
      the sun was the same tone as one facing it, which is most of why day read
@@ -308,7 +315,10 @@ function createDayLights(scene, lite = false, shadows = 'full', webgl = false) {
      is what sells the light; 'full' is the tier's own 2x1024/320 or 3x2048/520. */
   const near = shadows === 'near';
   sun.castShadow = shadows !== 'off';
-  const mapSize = lite || near ? 1024 : 2048;
+  /* shadowMap: the quality preset's map size (core/quality.js). Medium's one
+     near cascade goes 1024 -> 2048 (2x sharper, depth-only fill 1 -> 4 MP, no
+     extra draws); balanced keeps 1024. Absent, the old tier rule. */
+  const mapSize = shadowMap ?? (lite || near ? 1024 : 2048);
   sun.shadow.mapSize.set(mapSize, mapSize);
   sun.shadow.camera.near = 1;
   sun.shadow.camera.far = near ? 300 : lite ? 600 : 900;
@@ -336,6 +346,7 @@ function createDayLights(scene, lite = false, shadows = 'full', webgl = false) {
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.bias = -0.0001;
     sun.shadow.normalBias = 0.04;
+    sun.userData.shadowTexel = (2 * R) / 2048;   // clock.js snaps sun.target to this grid in light space (no shimmer)
   } else if (sun.castShadow) {   // 'off': no caster, so no cascade node to fit either
     csm = new GatedCSM(sun, { cascades: csmCascades, maxFar: csmFar, mode: 'custom', lightMargin: lite || near ? 200 : 300 });
     csm.customSplitsCallback = (n, _near, _far, target) => {
@@ -377,7 +388,7 @@ export function createLights(scene, day = false, liteOrOpts = false) {
   // third argument: the old `lite` boolean, or { lite, shadows: 'off' | 'near' | 'full' } from core/quality.js
   const opts = typeof liteOrOpts === 'object' && liteOrOpts !== null ? liteOrOpts : { lite: !!liteOrOpts };
   const lite = !!opts.lite, shadows = opts.shadows ?? 'full';
-  if (day) return createDayLights(scene, lite, shadows, !!opts.webgl);
+  if (day) return createDayLights(scene, lite, shadows, !!opts.webgl, opts.shadowMap ?? null);
   // the ground half is warm on purpose: sodium bouncing off wet tarmac is what
   // separates a lit street from a scene that merely has lamps in it
   const hemi = new THREE.HemisphereLight(0x55699c, 0x33241a, 0.98);

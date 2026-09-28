@@ -1,3 +1,4 @@
+import { createHaze } from './core/haze.js';
 import * as THREE from 'three';
 import { additive } from './core/additive.js';
 import './style.css';
@@ -283,6 +284,8 @@ setAnisotropy(TOUCH ? 4 : (renderer.capabilities?.getMaxAnisotropy?.() ?? 16));
 if (TOUCH) setTexScale(0.5);   // world/textures.js: phones upload generated textures at half size (Safari's tab memory limit)
 
 const scene = createScene(DAY);
+/* ?haze: opt-in aerial haze (core/haze.js). Off by default -- the owner ruled fog out on 2026-09-13 (renderer.js createScene). */
+const haze = new URLSearchParams(location.search).has('haze') ? createHaze(scene) : null;
 window.scene = scene;
 /* far 14000, not 8000. The sky dome is a radius-9000 sphere recentred on the
    car every frame (sky.js:74, main.js dome.position.set), so EVERY vertex of it
@@ -291,7 +294,7 @@ window.scene = scene;
    same viewpoint: far 8000 top-quarter mean RGB (43,51,56) -- black -- against
    (53,65,69) with 14000. Depth precision is bought at the NEAR plane, not here. */
 const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.5, 14000);
-const { sun, hemi } = createLights(scene, DAY, { lite: isLite, shadows: Q.shadows, webgl: !!renderer.backend?.isWebGLBackend });   // boot-time: castShadow never changes after the first frame (WebGPU pipeline trap)
+const { sun, hemi } = createLights(scene, DAY, { lite: isLite, shadows: Q.shadows, shadowMap: Q.shadowMap, webgl: !!renderer.backend?.isWebGLBackend });   // boot-time: castShadow never changes after the first frame (WebGPU pipeline trap)
 const { dome, stars, sunSprite, sunRaySprite, setEnvNight } = createSky(scene, renderer, DAY);
 
 setBootProgress(60, 'Initializing TSL post-processing pipeline…');
@@ -2368,7 +2371,7 @@ const onInputAction = (action) => {
      presses from a night boot is morning, not 04:00. The choice persists
      (hb.clock, saved every 5 s and on pagehide). */
   if (action === 'time') {
-    const SET = [[8.5, 'MORNING'], [12.5, 'MIDDAY'], [16.85, 'AFTERNOON'], [19.3, 'SUNSET'], [22.5, 'NIGHT']];
+    const SET = [[8.5, 'MORNING'], [12.5, 'MIDDAY'], [16.85, 'AFTERNOON'], [17.7, 'GOLDEN HOUR'], [19.3, 'SUNSET'], [22.5, 'NIGHT']];
     const i = SET.findIndex(([h]) => h > clock.hour + 0.05);
     const [h, name] = SET[i < 0 ? 0 : i];
     clock.hour = h;
@@ -3065,6 +3068,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
     document.body.classList.toggle('idlecam', idleCam);
   }
   clock.update(dt, { sun, hemi, scene, grade, lightPool, heroLights: beamPool, weatherSystem: weather, assets, player: currentVehicle, dome, stars, sunSprite, sunRaySprite });
+  haze?.update(sun, hemi, 1 - (clock.nightK ?? 0));
   /* The night environment (sky.js): swapped with hysteresis so dusk does not
      flicker it, and once it is the night map the glow may be seen -- clock.js
      choked the intensity to 0.05 only because the map was the noon sky. */

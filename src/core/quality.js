@@ -27,6 +27,7 @@ export const PRESETS = {
      a thin fleet and crowd. Unmeasured on a device. */
   mobile: {
     shadows: 'off',
+    shadowMap: 1024,           // unused while shadows are off
     bloom: true,
     aa: false,
     blur: false,
@@ -40,6 +41,7 @@ export const PRESETS = {
   },
   low: {
     shadows: 'off',           // -48% triangles, -~300 draws (census)
+    shadowMap: 1024,           // unused while shadows are off
     bloom: false,             // ~12 passes
     aa: false,                // SMAA, 3 passes
     blur: false,
@@ -63,6 +65,7 @@ export const PRESETS = {
      little, its mip chain costs a quarter). */
   balanced: {
     shadows: 'near',
+    shadowMap: 1024,           // the M2 Air's auto pick: unchanged cost
     bloom: true,
     aa: false,
     blur: false,
@@ -76,6 +79,7 @@ export const PRESETS = {
   },
   medium: {
     shadows: 'near',          // 1 cascade, 1024 map, 160 m: the near ring only (cascade 0 is 0-52 m today; 160 m keeps street shadows under the car and lamps)
+    shadowMap: 2048,           // one near cascade 2x sharper: depth-only fill 1 -> 4 MP, 0 draws (2026-09-28)
     bloom: true,
     aa: false,
     blur: false,
@@ -93,6 +97,7 @@ export const PRESETS = {
   },
   high: {
     shadows: 'full',          // whatever the GPU tier already runs: 2x1024/320 m LITE, 3x2048/520 m FULL
+    shadowMap: null,           // the GPU tier's own rule (3x2048 FULL, 2x1024 LITE)
     bloom: true,
     aa: true,
     blur: true,
