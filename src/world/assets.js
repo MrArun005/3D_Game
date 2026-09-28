@@ -3,6 +3,9 @@ import { additive } from '../core/additive.js';
 import { texAsphalt, texWalk, texPool, toTex, cv, normalFromCanvas, anisotropyOf } from './textures.js';
 import { buildFacadeMaterials, buildBaseMaterials, BASE_H } from './facades.js';
 import { makeTileable } from './city.js';
+import { leafMaterial, barkMaterial, lawnMaterial } from './foliage.js';
+import { roadWear, wornPaint, kerbStone } from './roadLook.js';
+import { materialColor } from 'three/tsl';
 import { texSignAtlas, buildSignMaterial, signGeometry, buildWindowMaterial } from './signs.js';
 import {
   buildStreetLamp, buildLampHead, buildTrafficPost, buildTree,
@@ -99,7 +102,7 @@ export function createAssets() {
     // Scanned PBR tarmac with aggregate, clean uniform surface and normal relief (zero black patches)
     tarmac: (() => {
       const orm = loadPBR('/textures/asphalt_orm.png', false, 2);
-      const m = new THREE.MeshStandardMaterial({
+      const m = new THREE.MeshStandardNodeMaterial({
         map: loadPBR('/textures/asphalt_albedo.png', true, 2),
         normalMap: loadPBR('/textures/asphalt_normal.png', false, 2),
         normalScale: new THREE.Vector2(0.28, 0.28),
@@ -108,6 +111,7 @@ export function createAssets() {
         roughness: 0.82, metalness: 0.0, envMapIntensity: 0.25,
       });
       orm.channel = 0;
+      m.colorNode = materialColor.rgb.mul(roadWear());   // wheel paths, resurfacing, kerb grit (world/roadLook.js)
       return m;
     })(),
     /* Road paint, drawn as geometry a hair above the tarmac. LIT since
@@ -116,15 +120,15 @@ export function createAssets() {
        the stripe) and shone at night like a light source -- one of the loudest
        "not GTA" tells in the recording. Now it is worn paint on the road:
        shadowed, dark at night outside the lamp pools. */
-    paint: new THREE.MeshStandardMaterial({
-      color: 0xcfd1ca, roughness: 0.62, metalness: 0, envMapIntensity: 0.4,
+    paint: wornPaint(new THREE.MeshStandardNodeMaterial({
+      color: 0xdadcd4, roughness: 0.62, metalness: 0, envMapIntensity: 0.4,
       polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
-    }),
-    paintWarm: new THREE.MeshStandardMaterial({
-      color: 0xd8c24a, roughness: 0.62, metalness: 0, envMapIntensity: 0.4,
+    })),
+    paintWarm: wornPaint(new THREE.MeshStandardNodeMaterial({
+      color: 0xe0b52a, roughness: 0.62, metalness: 0, envMapIntensity: 0.4,
       polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
-    }),
-    kerbFace: new THREE.MeshLambertMaterial({ color: 0x9a9a94 }),
+    })),
+    kerbFace: kerbStone(),
     intersection: new THREE.MeshStandardMaterial({
       map: intersection, roughness: 0.38, metalness: 0.08, envMapIntensity: 1.0,
     }),
@@ -187,8 +191,15 @@ export function createAssets() {
       blending: THREE.AdditiveBlending, depthWrite: false,
       side: THREE.DoubleSide, fog: false,
     })),
-    bark: new THREE.MeshLambertMaterial({ color: 0x312b25 }),
-    leaf: new THREE.MeshStandardMaterial({ color: 0x2f4328, roughness: 0.92, metalness: 0 }),
+    /* Trees and lawns are node materials (world/foliage.js, 2026-09-28): the
+       canopy's hue is the instance colour, the material only shades it, and the
+       park ground is a mown lawn, not the leaf material. `leafPlain` keeps the
+       old flat green for the legacy grid (city.js), which has no instance colour. */
+    bark: barkMaterial(),
+    barkPlain: new THREE.MeshLambertMaterial({ color: 0x312b25 }),
+    leaf: leafMaterial(),
+    leafPlain: new THREE.MeshStandardMaterial({ color: 0x2f4328, roughness: 0.92, metalness: 0 }),
+    parkGround: lawnMaterial(),
     bin: new THREE.MeshStandardMaterial({ color: 0x282c31, roughness: 0.7, metalness: 0.4 }),
     tailDim: new THREE.MeshStandardMaterial({
       color: 0x4a1013, emissive: 0xa8181c, emissiveIntensity: 0.7, roughness: 0.3,
