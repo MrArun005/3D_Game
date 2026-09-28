@@ -46,6 +46,7 @@ import { buildSurrounds } from './world/surrounds.js';
 import { buildWater } from './world/water.js';
 import { buildPlaces } from './world/places.js';
 import { buildBeach } from './world/beach.js';
+import { createBirds } from './world/birds.js';
 import { buildRiverside } from './world/riverside.js';
 import { useDistrict } from './world/metrics.js';
 import { buildCar } from './vehicle/model.js';
@@ -416,7 +417,7 @@ if (new URLSearchParams(location.search).has('debug')) {
   // frame-time distribution + worst chunk-build slice, for the perf harness
   window.__perf = () => ({ frames: [...stats.samples], chunk: stats.worstChunkMs });
 }
-let beach = null, water = null, crowd = null, heli = null, districtRef = null, drowning = 0;
+let birds = null, beach = null, water = null, crowd = null, heli = null, districtRef = null, drowning = 0;
 let districtFailed = false;
 let spawnSnap = false;        // the frame loop snaps the chase camera on its next update (chase is declared later; see the top-level awaits)   // lets the boot gate drop on the legacy grid if the district never lands
 let lightPool = null;
@@ -1596,6 +1597,7 @@ Promise.all([districtReady, catalogueReady, moduleReady, new URLSearchParams(loc
   world.onChunkBuilt = (ms) => stats.reportChunkBuild(ms);
   world.onChunkDone = (ms) => stats.reportChunkTotal(ms);
   water = buildWater(scene, district, DAY, { pave: assets.mat.walkDistrict?.map });   // city ground wears the pavement slab (water.js)
+  if (!new URLSearchParams(location.search).has('nobirds') && Q.birds) birds = createBirds(scene, district, { count: Q.birds });   // one draw; the preset sizes the pool (core/quality.js), ?nobirds off
   buildSurrounds(scene, district.bounds, DAY);
   if (!RACE_MODE) buildPlaces(scene, district, DAY);
   const params = new URLSearchParams(location.search);
@@ -3031,6 +3033,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   heroBrake.value += (((car.brake || 0) > 0.1 ? 1 : 0) - heroBrake.value) * Math.min(1, dt * 20);   // vendorCars.decodeLampMasks: the brake lens
   if (beach) beach.update(dt);
   if (water) water.update(dt);
+  if (birds) birds.update(dt, onFoot.active ? onFoot.x : car.x, onFoot.active ? onFoot.z : car.z, onFoot.active ? (onFoot.speed || 0) : Math.abs(car.speed || 0));
 
   dome.position.set(currentVehicle.x, 0, currentVehicle.z);
 
