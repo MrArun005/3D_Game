@@ -232,6 +232,19 @@ let moduleDone;
 const moduleReady = new Promise((r) => { moduleDone = r; });
 districtReady.catch(() => {});   // handled where it is awaited; this only stops an early 'unhandled rejection' before that
 await renderer.init();
+/* Instance matrices go in VERTEX ATTRIBUTES, never a uniform buffer
+   (2026-11-11). three r185 (nodes/accessors/Instance.js) puts an
+   InstancedMesh's matrices in a uniform buffer whenever they fit the limit,
+   and names that buffer after the node id and sizes it by the count -- so
+   every small InstancedMesh got its OWN vertex shader, which no warm-up can
+   pre-compile. Measured on a straight drive across a chunk border: 67 new
+   programs on the border frame (89 at the next), a 4-6 s stall; with the
+   attribute path 1 program, and the boot compiles 1771 -> 367. Only
+   Instance.js and RangeNode read this limit. `?instubo` restores three's
+   default for an A/B. */
+if (!new URLSearchParams(location.search).has('instubo') && renderer.backend?.capabilities) {
+  renderer.backend.capabilities.getUniformBufferLimit = () => 0;
+}
 /* Safari's WebGPU throws "Range consisting of offset and length are out of
    bounds" from getMappedRange on a zero-byte buffer (Chrome allows it), and
    three maps every vertex buffer at creation -- so ONE empty attribute
