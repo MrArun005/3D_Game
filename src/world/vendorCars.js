@@ -590,7 +590,7 @@ export async function loadHeroSkin(assets, hero, file = DEFAULT_BODY) {
   const trim = assets.carMats.trim, paint = hull.material, glass = u.glass?.material;
   shellG.traverse((o) => { if (o.isMesh && (o.material === paint || o.material === glass || o.material === trim)) o.visible = false; });
   const paintGeo = kit.paint.clone();                    // the hero crumples its own copy
-  paintGeo.userData.owned = true;
+  paintGeo.userData = { ...paintGeo.userData, owned: true };   // a NEW userData: three's clone() shares the source's object, so `.owned = true` flagged the shared original too
   const skin = new THREE.Group();
   const cx = (bb.min.x + bb.max.x) / 2;
   skin.position.set(shellG.position.x - cx, bb.min.y, 0);

@@ -223,7 +223,7 @@ function addInstanced(parent, geometry, material, matrices, shadow = false,
   // a per-instance attribute cannot live on shared geometry, so this clone is
   // ours and has to be freed when the cell streams out
   const geo = uvScales ? geometry.clone() : geometry;
-  if (uvScales) geo.userData.owned = true;
+  if (uvScales) geo.userData = { ...geo.userData, owned: true };   // a NEW userData: three's clone() shares the source's object, so `.owned = true` flagged the shared original too
   const mesh = new THREE.InstancedMesh(geo, material, matrices.length);
   if (uvScales) {
     geo.setAttribute('aUvScale',

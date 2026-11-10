@@ -472,7 +472,13 @@ export class DistrictWorld {
        mountains, and at night they light up with the rest of the city. One
        material, one draw, and #cullFar's matrix bookkeeping is untouched. */
     const farGeo = box.clone();
-    farGeo.userData.owned = true;
+    /* three's BufferGeometry.clone() SHARES userData with its source (copy():
+       `this.userData = source.userData`), so `farGeo.userData.owned = true`
+       flagged A.geo.box itself: every released chunk then disposed the shared
+       box under every roof, mast and facade still drawing it (the silent
+       re-upload at each chunk boundary), and the same happened to A.geo.sign.
+       An owned clone gets its own userData object (2026-11-11). */
+    farGeo.userData = { ...farGeo.userData, owned: true };
     farGeo.setAttribute('aUvScale', new THREE.InstancedBufferAttribute(new Float32Array(uvScale), 2));
     farGeo.setAttribute('aWall', new THREE.InstancedBufferAttribute(new Float32Array(farWall), 4));   // the far city in its districts' colours too
     /* Their OWN copy of the tower facade (2026-09-23): the near material lit
@@ -1517,7 +1523,7 @@ export class DistrictWorld {
          once per mesh per frame, ~100 errors a second across the near
          chunks. The guard is the whole fix. */
       if (!list.length) return null;
-      const mesh = new THREE.InstancedMesh(A.geo.box, m2, list.length);
+      const mesh = this.#takeInstanced(A.geo.box, m2, list.length, false);
       list.forEach((mm, i) => mesh.setMatrixAt(i, mm));
       mesh.instanceMatrix.needsUpdate = true;
       mesh.computeBoundingSphere();
@@ -1540,7 +1546,7 @@ export class DistrictWorld {
     inst(posts, A.mat.pole);
     inst(arms, A.mat.pole);
     if (zebra.length) {
-      const zm = new THREE.InstancedMesh(A.geo.plane, A.mat.paint, zebra.length);
+      const zm = this.#takeInstanced(A.geo.plane, A.mat.paint, zebra.length, false);
       zm.receiveShadow = true;
       zebra.forEach((mm, i) => zm.setMatrixAt(i, mm));
       zm.instanceMatrix.needsUpdate = true;
@@ -1548,13 +1554,16 @@ export class DistrictWorld {
       group.add(zm);
     }
 
-    const lensMesh = new THREE.InstancedMesh(
-      A.geo.lens ?? new THREE.SphereGeometry(0.11, 8, 6),
+    /* ONE lens material and geometry for the world (2026-11-11): this built a
+       new MeshBasicMaterial per chunk -- never disposed, and a fresh shader
+       graph every time a chunk with a junction streamed in. */
+    const lensMesh = this.#takeInstanced(
+      this.lensGeo ??= (A.geo.lens ?? new THREE.SphereGeometry(0.11, 8, 6)),
       /* Basic, not Standard: instanceColor multiplies the DIFFUSE term, so an
          emissive-white Standard material renders every lens white no matter
          what colour the phase says it is. A lens is self-luminous anyway. */
-      new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
-      lens.length,
+      this.lensMat ??= new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
+      lens.length, true,
     );
     lens.forEach((mm, i) => lensMesh.setMatrixAt(i, mm));
     lensMesh.instanceMatrix.needsUpdate = true;
@@ -1569,8 +1578,14 @@ export class DistrictWorld {
     if (!this.signalsByChunk.size) return;
     const c = _colour;
     for (const { mesh, meta } of this.signalsByChunk.values()) {
+      /* Upload only when a lamp changed (2026-11-11): this flagged every
+         chunk's colour buffer every frame, for lights that change a few times
+         a minute. `last` lives on the meta, so a new chunk paints once. */
+      let changed = false;
       for (const m of meta) {
         const state = signalState(m.node, 0, m.axis, t);
+        if (m.last === state) continue;
+        m.last = state; changed = true;
         if (m.ped) {   // pedestrian pair: red man while cars flow, green man while they are held
           const walk = state === 'red';
           mesh.setColorAt(m.base, c.setHex(walk ? 0x2a0a08 : 0xff2a1c));
@@ -1580,7 +1595,7 @@ export class DistrictWorld {
         const cols = LAMP_COLOURS[state];
         for (let k = 0; k < 3; k++) mesh.setColorAt(m.base + k, c.setHex(cols[k]));
       }
-      mesh.instanceColor.needsUpdate = true;
+      if (changed) mesh.instanceColor.needsUpdate = true;
     }
   }
 
@@ -1844,12 +1859,10 @@ export class DistrictWorld {
       const wear = buildDecals(segs.map((id) => this.district.segments[id]), this.district, 0x5ea1,
         { bounds: { x0: ix * CHUNK, z0: iz * CHUNK, x1: (ix + 1) * CHUNK, z1: (iz + 1) * CHUNK } });
       if (wear.count) {
-        const dg = decalGeometry();
-        dg.userData.owned = true;
-        const dm = new THREE.InstancedMesh(dg, decalMaterial(), wear.count);
+        const dm = this.#takeInstanced(this.decalBase ??= decalGeometry(), decalMaterial(), wear.count, false, { aTile: 2, aFade: 1 });
         wear.matrices.forEach((m, i) => dm.setMatrixAt(i, m));
-        dg.setAttribute('aTile', new THREE.InstancedBufferAttribute(wear.tiles, 2));
-        dg.setAttribute('aFade', new THREE.InstancedBufferAttribute(wear.fades, 1));
+        this.#fillInstanced(dm, 'aTile', wear.tiles);
+        this.#fillInstanced(dm, 'aFade', wear.fades);
         dm.instanceMatrix.needsUpdate = true;
         dm.computeBoundingSphere();
         dm.receiveShadow = true;       // no cast: a 12 mm quad's shadow is the road's own
@@ -2350,12 +2363,10 @@ export class DistrictWorld {
          live in the facade group so they share its tighter visibility ring.
          No shadow: a 0.85m board's shadow is a smear on the wall behind it. */
       if (signs.length) {
-        const sg = A.geo.sign.clone();
-        sg.userData.owned = true;
         const tiles = new Float32Array(signs.length * 2);
-        const sm = new THREE.InstancedMesh(sg, A.mat.sign, signs.length);
+        const sm = this.#takeInstanced(A.geo.sign, A.mat.sign, signs.length, false, { aTile: 2 });
         signs.forEach((s, i) => { sm.setMatrixAt(i, s.m); tiles[i * 2] = s.u; tiles[i * 2 + 1] = s.v; });
-        sg.setAttribute('aTile', new THREE.InstancedBufferAttribute(tiles, 2));
+        this.#fillInstanced(sm, 'aTile', tiles);
         sm.instanceMatrix.needsUpdate = true;
         sm.computeBoundingSphere();
         sm.receiveShadow = true;
@@ -2373,12 +2384,10 @@ export class DistrictWorld {
       // Little Tokyo's boards: fascias, kanban, tenant signs and screens, all in one instanced draw
       if (tokyoBoards.length) faces.add(tokyoBoardMesh(tokyoBoards));
       if (windows.length) {
-        const wg = A.geo.sign.clone();
-        wg.userData.owned = true;
         const tints = new Float32Array(windows.length * 3);
-        const wm = new THREE.InstancedMesh(wg, A.mat.windowQuad, windows.length);
+        const wm = this.#takeInstanced(A.geo.sign, A.mat.windowQuad, windows.length, false, { aTint: 3 });
         windows.forEach((w, i) => { wm.setMatrixAt(i, w.m); tints.set(w.tint, i * 3); });
-        wg.setAttribute('aTint', new THREE.InstancedBufferAttribute(tints, 3));
+        this.#fillInstanced(wm, 'aTint', tints);
         wm.instanceMatrix.needsUpdate = true;
         wm.computeBoundingSphere();
         faces.add(wm);
@@ -2593,7 +2602,7 @@ export class DistrictWorld {
     }
     if (nearParked.length) this.parkedLod.set(k, { near: nearParked, far: farParked, byBody });
     if (pools.length) {
-      const pm = new THREE.InstancedMesh(A.geo.plane, A.mat.pool, pools.length);
+      const pm = this.#takeInstanced(A.geo.plane, A.mat.pool, pools.length, false);
       pm.frustumCulled = false; pm.renderOrder = 2;
       pools.forEach((m, i) => pm.setMatrixAt(i, m));
       pm.instanceMatrix.needsUpdate = true;
@@ -2609,13 +2618,11 @@ export class DistrictWorld {
        why every building here used to read as a plain grey box. */
     const tiled = (mat, bucket) => {
       if (!bucket.m.length) return;
-      const geo = slabGeo.clone();
-      geo.userData.owned = true;
-      const m = new THREE.InstancedMesh(geo, mat, bucket.m.length);
-      geo.setAttribute('aUvScale', new THREE.InstancedBufferAttribute(new Float32Array(bucket.uv), 2));
+      const m = this.#takeInstanced(slabGeo, mat, bucket.m.length, false, { aUvScale: 2, aWall: 4 });
+      this.#fillInstanced(m, 'aUvScale', new Float32Array(bucket.uv));
       const wall = new Float32Array(bucket.m.length * 4).fill(1);   // city.js makeTileable: per-building wall tint + grime
       if (bucket.wall) wall.set(bucket.wall.slice(0, wall.length));
-      geo.setAttribute('aWall', new THREE.InstancedBufferAttribute(wall, 4));
+      this.#fillInstanced(m, 'aWall', wall);
       bucket.m.forEach((mm, i) => m.setMatrixAt(i, mm));
       m.instanceMatrix.needsUpdate = true;
       /* Culled. InstancedMesh bounds account for instance matrices now, and
@@ -2713,21 +2720,37 @@ export class DistrictWorld {
    * with its chunk. Each key keeps at most INST_POOL_KEEP spares; the rest
    * are disposed as before.
    */
-  #takeInstanced(geo, mat, n, coloured) {
+  #takeInstanced(geo, mat, n, coloured, own = null) {
     if (geo.userData?.owned) return new THREE.InstancedMesh(geo, mat, n);
     const cap = Math.max(8, 2 ** Math.ceil(Math.log2(n)));
-    const key = `${geo.uuid}|${mat.uuid}|${cap}|${coloured ? 1 : 0}`;
+    const key = `${own ? Object.keys(own).join('+') : ''}|${geo.uuid}|${mat.uuid}|${cap}|${coloured ? 1 : 0}`;
     let m = this.instPool.get(key)?.pop();
     if (m) {
       m.parent?.remove(m);
       m.name = ''; m.visible = true; m.castShadow = false; m.receiveShadow = false;
-      m.frustumCulled = true; m.layers.set(0);
+      m.frustumCulled = true; m.renderOrder = 0; m.layers.set(0);
+    } else if (own) {
+      /* A mesh with per-instance attributes of its own (aTile, aUvScale...)
+         carries a private clone of the geometry, sized to the capacity. It is
+         the POOL's, not the chunk's: never userData.owned, disposed only when
+         #releaseInstanced has no room for it. The caller fills the arrays. */
+      const g = geo.clone();
+      g.userData = {};   // clone() shares the source's userData object
+      for (const [name, size] of Object.entries(own)) g.setAttribute(name, new THREE.InstancedBufferAttribute(new Float32Array(cap * size), size));
+      m = new THREE.InstancedMesh(g, mat, cap);
     } else {
       m = new THREE.InstancedMesh(geo, mat, cap);
     }
-    m.userData = { instPool: key };
+    m.userData = { instPool: key, instOwnGeo: !!own };
     m.count = n;
     return m;
+  }
+
+  /** Write a pooled mesh's per-instance attribute (see #takeInstanced `own`). */
+  #fillInstanced(m, name, values) {
+    const a = m.geometry.attributes[name];
+    a.array.set(values.length > a.array.length ? values.subarray(0, a.array.length) : values);
+    a.needsUpdate = true;
   }
 
   /** A released chunk's InstancedMesh: back to the pool, or disposed. */
@@ -2736,7 +2759,7 @@ export class DistrictWorld {
     if (!key) { m.dispose(); return; }
     let free = this.instPool.get(key);
     if (!free) this.instPool.set(key, free = []);
-    if (free.length >= INST_POOL_KEEP) { m.dispose(); return; }
+    if (free.length >= INST_POOL_KEEP) { if (m.userData.instOwnGeo) m.geometry.dispose(); m.dispose(); return; }
     free.push(m);
   }
 
