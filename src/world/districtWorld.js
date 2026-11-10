@@ -39,6 +39,7 @@ import { regentChunk, regentEnabled, regentPlan } from './regent.js';
 const CHUNK = 256;
 const LOG_SLICES = typeof location !== 'undefined' && new URLSearchParams(location.search).has('slices');
 const BUILD_MS = 2.0;      // 2.0ms budget prevents micro-stutters and drops below 60fps
+const INST_POOL_KEEP = 6;  // spare pooled InstancedMeshes kept per (geometry, material, capacity) -- see #takeInstanced
 const ck = (ix, iz) => `${ix},${iz}`;
 
 /* The file carries footprints, not heights — the 2D planner has no opinion on
@@ -209,6 +210,7 @@ export class DistrictWorld {
     this.facadeGroups = new Map();
     this.regentMeshes = new Map();     // chunk key -> { mesh, proxy }: the Regent street wall, OUTSIDE the chunk bundle so three culls it by frustum (see the build step)
     this.parkedLod = new Map();        // chunk key -> { near, far, byBody } parked-car LOD sets (#cullFar swaps them; #buildSteps sets, releaseChunk deletes). Dropped by the lite/radius constructor edit in 22c1c0c and every chunk build died on .set -- keep it.
+    this.instPool = new Map();         // key -> spare InstancedMeshes handed back by released chunks (#takeInstanced)
     this.isLite = !!opts.lite;
     this.propRadius = opts.lite ? 1 : (opts.propRadius ?? 2);
     /* The WHOLE road graph, always. In the compact city (world/playArea.js)
@@ -698,7 +700,7 @@ export class DistrictWorld {
         b.group.traverse((o) => {
           if (o.userData?.batched) this.catalogue.releaseBatched(o.userData.batched);
           if (!o.isMesh) return;
-          if (o.isInstancedMesh) o.dispose();
+          if (o.isInstancedMesh) this.#releaseInstanced(o);
           if (o.geometry?.userData?.owned) o.geometry.dispose();
         });
         for (const m of [this.propGroups, this.facadeGroups, this.parkedLod,
@@ -808,7 +810,7 @@ export class DistrictWorld {
         g.traverse((o) => {
           if (o.userData?.batched) this.catalogue.releaseBatched(o.userData.batched);   // city-wide batches: free the ids
           if (!o.isMesh) return;
-          if (o.isInstancedMesh) o.dispose();      // frees the instance buffers
+          if (o.isInstancedMesh) this.#releaseInstanced(o);   // pooled spares keep their built shader graph; the rest free their buffers
           if (o.geometry?.userData?.owned) o.geometry.dispose();
         });
         this.chunks.delete(k);
@@ -2483,7 +2485,7 @@ export class DistrictWorld {
     yield* brk('instancing');
     const inst = (geo, mat, list, shadow, colours) => {
       if (!list.length) return;
-      const m = new THREE.InstancedMesh(geo, mat, list.length);
+      const m = this.#takeInstanced(geo, mat, list.length, !!colours);
       list.forEach((mm, i) => m.setMatrixAt(i, mm));
       m.instanceMatrix.needsUpdate = true;
       if (colours) {
@@ -2688,6 +2690,54 @@ export class DistrictWorld {
    */
   #rerecordAll() {
     for (const g of this.chunks.values()) g.needsUpdate = true;
+  }
+
+  /**
+   * Static per-chunk InstancedMeshes come from a POOL (2026-11-11).
+   *
+   * three's render-object cache key carries the uuid of every InstancedMesh
+   * (RenderObject.getMaterialCacheKey: "if isInstancedMesh, += object.uuid"),
+   * because the shader graph is bound to THAT mesh's instance buffers. So a
+   * new InstancedMesh is a full TSL node build per pass it is drawn in, even
+   * when its shader text is identical to one already compiled. A chunk held
+   * ~20 of them (lamps, trees, roofs, three per parked body style) and a
+   * border crossing brought three chunks: 671 + 218 + 150 ms of node builds
+   * on the three border frames (CPU profile, balanced tier, after the
+   * instance-UBO fix in main.js). A mesh handed back by a released chunk and
+   * taken by the next one keeps its uuid, its render objects and its built
+   * graph; only the matrices are rewritten.
+   *
+   * Keyed by geometry + material + capacity (next power of two, so a row of
+   * 11 lamps reuses a row of 14's mesh) + whether it carries instance colour.
+   * Only for geometry the chunk does NOT own: an owned geometry is disposed
+   * with its chunk. Each key keeps at most INST_POOL_KEEP spares; the rest
+   * are disposed as before.
+   */
+  #takeInstanced(geo, mat, n, coloured) {
+    if (geo.userData?.owned) return new THREE.InstancedMesh(geo, mat, n);
+    const cap = Math.max(8, 2 ** Math.ceil(Math.log2(n)));
+    const key = `${geo.uuid}|${mat.uuid}|${cap}|${coloured ? 1 : 0}`;
+    let m = this.instPool.get(key)?.pop();
+    if (m) {
+      m.parent?.remove(m);
+      m.name = ''; m.visible = true; m.castShadow = false; m.receiveShadow = false;
+      m.frustumCulled = true; m.layers.set(0);
+    } else {
+      m = new THREE.InstancedMesh(geo, mat, cap);
+    }
+    m.userData = { instPool: key };
+    m.count = n;
+    return m;
+  }
+
+  /** A released chunk's InstancedMesh: back to the pool, or disposed. */
+  #releaseInstanced(m) {
+    const key = m.userData?.instPool;
+    if (!key) { m.dispose(); return; }
+    let free = this.instPool.get(key);
+    if (!free) this.instPool.set(key, free = []);
+    if (free.length >= INST_POOL_KEEP) { m.dispose(); return; }
+    free.push(m);
   }
 
   /**
