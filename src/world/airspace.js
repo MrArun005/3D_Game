@@ -119,10 +119,10 @@ export class Airspace {
     group.add(tickerLeft, tickerRight);
 
     // Red/Green navigation strobe lights
-    const strobeLight = new THREE.PointLight(0xff0033, 2.5, 30, 2);
-    strobeLight.position.set(0, -14, 0);
-    group.add(strobeLight);
-    this.blimpStrobe = strobeLight;
+    /* No PointLight (2026-11-11): 30 m of range under an airship lit nothing
+       but its own belly, and every light in the scene is evaluated in every
+       lit pixel of the city below (three has no light clustering). */
+    this.blimpStrobe = null;
 
     this.blimp = group;
     this.scene.add(group);

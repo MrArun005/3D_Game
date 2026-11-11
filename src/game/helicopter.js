@@ -54,9 +54,14 @@ export class Helicopter {
     /* The searchlight is two things: a real spot so the beam actually lands on
        geometry, and an additive cone so the shaft is visible in the air. In
        daylight the cone is nearly invisible, which is correct. */
-    const spot = new THREE.SpotLight(0xf2f6ff, day ? 120 : 900, 190, 0.20, 0.55, 1.3);
-    spot.position.set(1.66, -1.0, -0.78);   // from the Nightsun's lens
-    group.add(spot, spot.target);
+    /* In the SCENE, not in the machine's group, and dark (intensity 0) until
+       it arrives (2026-11-11). The group is hidden until three stars, and a
+       light under a hidden parent is not in three's light set: showing it
+       changed the set, and a changed light set rebuilds EVERY material -- a
+       stall of seconds on the frame the helicopter joins a pursuit. One more
+       dark light in the shaders is the price of that never happening. */
+    const spot = new THREE.SpotLight(0xf2f6ff, 0, 190, 0.20, 0.55, 1.3);
+    scene.add(spot, spot.target);
     this.spot = spot;
 
     const cone = new THREE.Mesh(
@@ -121,6 +126,7 @@ export class Helicopter {
     this.landing = false;
     this.landed = false;
     this.group.visible = false;
+    this.spot.intensity = 0;
     return true;
   }
 
@@ -254,7 +260,8 @@ export class Helicopter {
     this.beacon.material.emissiveIntensity = (this.t * 1.1) % 1 < 0.12 ? 6 : 0.25;
 
     // searchlight, held on the car
-    this.spot.target.position.set(car.x - this.pos.x, -this.pos.y, car.z - this.pos.z);
+    this.spot.position.set(this.pos.x, this.pos.y - 1.0, this.pos.z);   // world space: under the nose, where the Nightsun hangs
+    this.spot.target.position.set(car.x, 0, car.z);
     this.spot.target.updateMatrixWorld();
     const h = this.pos.y;
     const beam = Math.hypot(car.x - this.pos.x, car.z - this.pos.z, h);

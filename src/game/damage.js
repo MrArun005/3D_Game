@@ -132,7 +132,9 @@ export class Damage {
     this.flame = this.#cloud(scene, FLAME, 0.85);
     this.core = this.#cloud(scene, CORE, 0.45);
     const light = new THREE.PointLight(0xff8420, 0, 34, 2);
-    light.visible = false;
+    /* Always in the light set, dark until something burns (2026-11-11): flipping
+       `visible` changed three's light set and rebuilt every material on the
+       frame a car caught fire. */
     scene.add(light);
     this.fireLight = light;
 
@@ -253,7 +255,6 @@ export class Damage {
     this.points.visible = false;
     this.flame.points.visible = false;
     this.core.points.visible = false;
-    this.fireLight.visible = false;
     this.fireLight.intensity = 0;
 
     const p = this.parts;
@@ -358,10 +359,9 @@ export class Damage {
       this.ball.scale.setScalar(1.1 + k * 3.4);
       this.ball.material.opacity = Math.max(0, 0.9 * (1 - k) * (1 - k));
       this.ball.visible = this.blastT > 0;
-      this.fireLight.visible = true;
       this.fireLight.intensity = Math.max(0, 900 * (1 - k) * (1 - k));
       this.fireLight.position.copy(this.ball.position);
-      if (this.blastT <= 0) { this.fireLight.visible = false; this.ball.visible = false; }
+      if (this.blastT <= 0) { this.fireLight.intensity = 0; this.ball.visible = false; }
     }
     return false;
   }
@@ -422,7 +422,6 @@ export class Damage {
     const f = 0.62 + Math.sin(this.t * 17) * 0.2 + Math.sin(this.t * 6.3) * 0.18;
     this.fireLight.position.set(bx, 1.3, bz);
     this.fireLight.intensity = (55 + heat * 90) * f;
-    this.fireLight.visible = true;
   }
 
   /**
