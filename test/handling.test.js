@@ -93,7 +93,8 @@ test('sim: the handbrake locks the rears and tightens the turn -- it never throw
 test('a glancing wall scrape keeps most of its speed and a head-on still stops', () => {
   const s = scrape(60, 6);
   assert.ok(s.after > 25, `6 deg scrape at 60 km/h left ${s.after.toFixed(0)} km/h after 3 s; the wall is sticky`);
-  assert.ok(s.after < 58, `6 deg scrape at 60 km/h left ${s.after.toFixed(0)} km/h; a wall must cost something`);
+  // (was: after < 58. The car is turned parallel by the contact now and accelerates away; the cost is paid at the hit.)
+  assert.ok(s.costKmh > 0.3, `the 6 deg contact at 60 km/h took ${s.costKmh.toFixed(2)} km/h; a wall must cost something`);
   const h = headOn(60);
   assert.ok(h.after < 5, `head-on at 60 km/h left ${h.after.toFixed(0)} km/h 0.5 s after contact`);
 });

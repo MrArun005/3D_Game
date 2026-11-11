@@ -289,7 +289,7 @@ test('the parapets hold the car on every river deck: 30 / 80 / 120 km/h, wobblin
     for (const kmh of [80, 120]) for (const into of [0.21, -0.21]) {
       const t0 = L * 0.4;
       const r = drive(full, boxes, d, { kmh, into, steer: false, t0, secs: 2.5, hint: d.hint ?? 50 });
-      assert.ok(r.maxLat < d.half + 0.2, `${kmh} km/h into the ${into > 0 ? 'left' : 'right'} parapet at ${d.ax},${d.az}: ${r.maxLat.toFixed(2)} m off the centre of a ${d.half} m half-deck`);
+      assert.ok(r.maxLat < d.half + 0.6,   /* the car CENTRE: +0.2 until 2026-11-11, when the hull stood 0.42 m off every wall (collision.js PAD); it is the body now, 0.9 m from centre to flank */ `${kmh} km/h into the ${into > 0 ? 'left' : 'right'} parapet at ${d.ax},${d.az}: ${r.maxLat.toFixed(2)} m off the centre of a ${d.half} m half-deck`);
       assert.ok(!full.inWater(r.car.x, r.car.z), `${kmh} km/h into ${into} at ${d.ax | 0},${d.az | 0}: in the river at ${r.car.x | 0},${r.car.z | 0}, lat ${r.maxLat.toFixed(1)}`);
       assert.ok(r.along - t0 > 25, `${kmh} km/h: scraped only ${(r.along - t0).toFixed(1)} m along -- snagged on a box seam?`);
     }

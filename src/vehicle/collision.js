@@ -18,38 +18,72 @@ const HULL_PROBES = [
 ];
 
 /**
- * Cancel the part of the velocity heading into a surface, keep the tangential
- * part. bite = 1.0 is a dead stop against the normal; anything above 1 adds
- * restitution, which on a building reads as the car bouncing across the street.
+ * A wall contact as an IMPULSE AT THE CONTACT POINT (2026-11-11).
+ *
+ * The old response cancelled the centre of gravity's velocity into the wall
+ * and multiplied the yaw rate by 0.6 per probe, per pass, per 120 Hz step.
+ * Nothing ever turned the car: a nose that met a wall at 30 deg lost its
+ * whole normal speed, kept pointing into the masonry, and the engine then
+ * held it there -- 60 km/h at 20-45 deg ended at 0.0-0.3 km/h for as long as
+ * the throttle was down ('walls pin the car').
+ *
+ * A rigid body hit off-centre rotates. With r the arm from the centre of
+ * gravity to the contact, n the surface normal (pointing at the car) and K2
+ * the yaw radius of gyration squared, the inelastic impulse per unit mass is
+ *     j = -(vp . n) / (1 + (r x n)^2 / K2),   vp = v + w x r
+ * and it changes v by j*n and the yaw rate by j*(r x n)/K2. A centred head-on
+ * has r x n = 0 and is the old dead stop (no restitution: on a building that
+ * reads as the car bouncing across the street); a corner hit keeps part of
+ * its speed and swings the nose along the wall. It acts on velocities once
+ * per contact, so it does not depend on the step length -- the per-contact
+ * `yawRate *= 0.6` did.
+ * Yaw is about +y: w x r = (w*rz, -w*rx), (r x n)_y = rz*nx - rx*nz -- the
+ * convention resolveObstacles' glancing kick documents.
+ * Returns the closing speed of the contact point (0 when it was separating).
  */
-function absorb(car, nx, nz, bite = 1.0, px = 0, pz = 0) {
-  const into = car.vx * nx + car.vz * nz;
-  if (into <= 0) return 0;
+const K2 = 1.7;          // m^2: yaw radius of gyration ~1.3 m (config.js inertia / mass gives 1.33-1.42)
+const W_MAX = 3.2;       // rad/s: the most yaw a contact may leave the body with
+function contactImpulse(car, nx, nz, px, pz, pen) {
+  const rx = px - car.x, rz = pz - car.z;
+  const w = car.yawRate || 0;
+  const vn = (car.vx + w * rz) * nx + (car.vz - w * rx) * nz;
+  if (vn >= 0) return 0;
+  const into = -vn;
   if (into > 1.2) {
     if (into > (car.impact || 0)) car.hitAt = { x: px, z: pz };
     car.impact = Math.max(car.impact || 0, into);
   }
-  car.vx -= nx * into * bite;
-  car.vz -= nz * into * bite;
+  const rn = rz * nx - rx * nz;
+  const j = into / (1 + rn * rn / K2);
+  car.vx += nx * j;
+  car.vz += nz * j;
+  let w1 = w + j * rn / K2;
+  if (Math.abs(w1) > W_MAX && Math.abs(w1) > Math.abs(w)) w1 = Math.sign(w1) * Math.max(W_MAX, Math.abs(w));
+  car.yawRate = w1;
+  scrape(car, nx, nz, j, pen);
   return into;
 }
 
 /**
  * Wall friction on the TANGENTIAL velocity, sized by how hard the hull was
  * pressed into the surface this step (a dry-friction impulse: the normal
- * impulse `absorb` removed was m*into, so tangential speed loses at most
+ * impulse contactImpulse applied was m*j, so tangential speed loses at most
  * MU_WALL*into, plus a little for the overlap being corrected). A 6 deg scrape
  * loses a few km/h a second; a head-on has no tangential speed and stops on the
  * normal alone. Replaces `v *= 0.88` per probe hit per 120 Hz step, which took
  * a glancing scrape at 60 km/h to a standstill in 0.05 s (review 2026-09-09).
  */
 const MU_WALL = 0.35;
-function scrape(car, into, pen) {
-  const sp = Math.hypot(car.vx, car.vz);
+function scrape(car, nx, nz, into, pen) {
+  /* Only the part ALONG the surface. An off-centre hit leaves the centre of
+     gravity moving into the wall while the body turns about the contact
+     (contactImpulse); scaling the whole vector took that as 'tangential' and
+     ate it (16.7 -> 0.7 m/s on a clipped corner where the impulse left 4.9). */
+  const tx = -nz, tz = nx;
+  const vt = car.vx * tx + car.vz * tz, sp = Math.abs(vt);
   if (sp < 1e-6 || into <= 0) return;
-  const loss = Math.min(sp, MU_WALL * into + pen * 0.5);
-  const k = 1 - loss / sp;
-  car.vx *= k; car.vz *= k;
+  const loss = Math.min(sp, MU_WALL * into + pen * 0.5) * Math.sign(vt);
+  car.vx -= tx * loss; car.vz -= tz * loss;
 }
 
 /** Push the car off the building line, testing the whole hull, not one point. */
@@ -77,24 +111,39 @@ export function resolveBuildings(car) {
     const push = (worst - BUILD_LINE) * 1.02;
     car.x -= nx * push;
     car.z -= nz * push;
-    const into = absorb(car, nx, nz, 1.0, wpx, wpz);   // masonry does not give anything back
-    car.yawRate *= 0.55;
-    scrape(car, into, push);
+    contactImpulse(car, -nx, -nz, wpx, wpz, push);   // masonry does not give anything back
   }
 }
 
 /**
  * Hull versus real building footprints.
  *
- * Each footprint is an oriented box. For every hull probe inside a box we find
- * the axis of least penetration and push out along it, which is what keeps a
- * car sliding along a facade instead of being ejected through the corner it
- * happened to clip. Three passes so a car wedged into an inside corner
+ * Both are oriented rectangles, tested exactly (separating axes: the two
+ * faces of each). The push-out is along the axis of least overlap, which is
+ * what keeps a car sliding along a facade instead of being ejected through
+ * the corner it happened to clip; the velocity response is contactImpulse at
+ * the contact point. Three passes so a car wedged into an inside corner
  * resolves against both walls.
+ *
+ * Until 2026-11-11 the hull was eight POINTS, each standing for a 0.42 m
+ * radius (PAD) of body. (1) The front corner probes at z = +-0.78 made the
+ * nose 2.40 m wide on a 1.76 m body, and for a probe that has just crossed a
+ * building's front face the least-penetration axis IS that face: passing a
+ * corner with 5-20 cm of air beside the mirrors was a head-on dead stop from
+ * any speed (0.35 m passed). (2) The flanks had 2 m between probes, so a box
+ * corner could sit inside the doors untouched, and a thin parapet could pass
+ * between two probes of a car that was turning. The rectangle is the body:
+ * 4.50 x 1.80 m, no pad, no gaps.
+ *
+ * A body may carry its own `hull` = { front, rear, half } (metres from its
+ * origin); the tank uses the default, as it used the default probes.
  */
+const HULL = { front: 2.3, rear: 2.2, half: 0.9 };
+const SLIP = 0.25;       // m: a corner overlap shallower than this is shouldered aside (see the axis choice)
 export function resolveBoxes(car, boxes) {
   if (!boxes || !boxes.length) return;
-  const PAD = 0.42;                     // hull radius the probe points stand for
+  const H = car.hull || HULL;
+  const HL = (H.front + H.rear) / 2, HW = H.half, off = (H.front - H.rear) / 2;
 
   for (let pass = 0; pass < 3; pass++) {
     const cy = Math.cos(car.yaw), sy = Math.sin(car.yaw);
@@ -111,43 +160,85 @@ export function resolveBoxes(car, boxes) {
          has no base to be above, and must keep blocking at every height. */
       if (b.baseY !== undefined && (car.y ?? 0) + 1.7 < b.baseY) continue;
       /* Broad phase first, trig after (2026-09-22). hw+hd >= hypot(hw, hd), so
-         this L1 reject keeps every box the old circle kept and the exact
-         probe-in-box test below still decides -- same contacts, same pushes.
-         What it saves is cos+sin+sqrt on every box the hull cannot reach: the
-         list is nearbyBuildings' 60 m window (~100-300 boxes a substep, x120
-         substeps a second). Bench, scratchpad/rec/collision-bench.mjs, N=300,
-         identical state hash over 60,000 steps: 18.2 -> 4.9 us per resolve. */
-      const hw = b.hw + PAD, hd = b.hd + PAD;
+         this L1 reject keeps every box the hull can reach (3.2 > its 2.48 m
+         half-diagonal) and the exact test below still decides. What it saves
+         is cos+sin on every box out of reach: the list is nearbyBuildings'
+         60 m window (~100-300 boxes a substep, x120 substeps a second). */
+      const hw = b.hw, hd = b.hd;
       const rough = hw + hd + 3.2;
       if (Math.abs(b.x - car.x) > rough || Math.abs(b.z - car.z) > rough) continue;
       const ca = Math.cos(b.angle), sa = Math.sin(b.angle);
+      // hull centre and forward axis in the box's frame (l along its +X, w across)
+      const cxw = car.x + fx * off, czw = car.z + fz * off;
+      const hx = cxw - b.x, hz = czw - b.z;
+      const dl = hx * ca + hz * sa, dw = -hx * sa + hz * ca;
+      const fl = fx * ca + fz * sa, fw = -fx * sa + fz * ca;
+      const afl = Math.abs(fl), afw = Math.abs(fw);       // right is forward turned 90 deg: |r.l| = |f.w|, |r.w| = |f.l|
+      // separating axes: the box's two faces...
+      const o1 = hw + HL * afl + HW * afw - Math.abs(dl);
+      if (o1 <= 0) continue;
+      const o2 = hd + HL * afw + HW * afl - Math.abs(dw);
+      if (o2 <= 0) continue;
+      // ...and the hull's two
+      const df = hx * fx + hz * fz, dr = hx * rx + hz * rz;
+      const o3 = HL + hw * afl + hd * afw - Math.abs(df);
+      if (o3 <= 0) continue;
+      const o4 = HW + hw * afw + hd * afl - Math.abs(dr);
+      if (o4 <= 0) continue;
 
-      for (const [ppx, ppz] of HULL_PROBES) {
-        const px = car.x + fx * ppx + rx * ppz;
-        const pz = car.z + fz * ppx + rz * ppz;
-        // into the box's own frame
-        const dx = px - b.x, dz = pz - b.z;
-        const lx = dx * ca + dz * sa;
-        const lz = -dx * sa + dz * ca;
-        if (Math.abs(lx) >= hw || Math.abs(lz) >= hd) continue;
-
-        // least-penetration axis
-        const ox = hw - Math.abs(lx), oz = hd - Math.abs(lz);
-        let nlx = 0, nlz = 0, pen;
-        if (ox < oz) { nlx = lx < 0 ? -1 : 1; pen = ox; }
-        else { nlz = lz < 0 ? -1 : 1; pen = oz; }
-        // back to world
-        const nx = nlx * ca - nlz * sa;
-        const nz = nlx * sa + nlz * ca;
-
-        car.x += nx * pen;
-        car.z += nz * pen;
-        const into = absorb(car, -nx, -nz, 1.0, px, pz);
-        car.yawRate *= 0.6;
-        scrape(car, into, pen);
-        hit = true;
-        break;                          // one correction per box per pass
+      /* Least overlap; n points from the box at the car. One exception, for
+         a corner CLIPPED by a hand's width: there two axes both overlap by
+         centimetres (how far the nose is past the front face this step, how
+         far the flank is inside the side face), and which is smaller is an
+         accident of where the step landed -- 10 cm of overlap at 50 km/h
+         was a dead stop or a shrug depending on the frame. Among axes that
+         overlap by less than SLIP the one the car is closing on LEAST wins:
+         it is shouldered aside, not stopped. Anything deeper is a crash. */
+      let pen = Infinity, nx = 0, nz = 0, best = Infinity;
+      for (let i = 0; i < 4; i++) {
+        const o = i === 0 ? o1 : i === 1 ? o2 : i === 2 ? o3 : o4;
+        const ax = i === 0 ? ca : i === 1 ? -sa : i === 2 ? fx : rx;
+        const az = i === 0 ? sa : i === 1 ? ca : i === 2 ? fz : rz;
+        const sgn = (i === 0 ? dl : i === 1 ? dw : i === 2 ? df : dr) < 0 ? -1 : 1;
+        // score: the overlap itself, or for a shallow one the closing speed scaled well under any overlap
+        /* Only between the BOX's two faces. The hull's own axes separate it
+           from this box alone: along a wall built of abutting boxes (a
+           parapet is one every 8 m) 'away from this box's centre along the
+           car's side axis' can point through the next box. */
+        const score = i < 2 && o < SLIP ? Math.max(0, -(car.vx * ax + car.vz * az) * sgn) * 1e-4 + o * 1e-6 : o;
+        if (score < best) { best = score; pen = o; nx = ax * sgn; nz = az * sgn; }
       }
+
+      /* Where they touch: every hull corner inside the box and every box
+         corner inside the hull, weighted by how deep it sits along n. Flat
+         against a wall both corners of that side weigh the same and the
+         contact is the middle of the side: no torque, and no flip-flop
+         between corners as the car settles parallel. */
+      const boxTop = b.x * nx + b.z * nz + hw * Math.abs(ca * nx + sa * nz) + hd * Math.abs(ca * nz - sa * nx);   // the box's reach along n
+      const hullLow = cxw * nx + czw * nz - HL * Math.abs(fx * nx + fz * nz) - HW * Math.abs(rx * nx + rz * nz);  // the hull's reach along -n
+      let sw = 0, px = 0, pz = 0;
+      for (let i = 0; i < 4; i++) {
+        const sf = i & 1 ? HL : -HL, sr = i & 2 ? HW : -HW;
+        const qx = cxw + fx * sf + rx * sr, qz = czw + fz * sf + rz * sr;
+        const lx = (qx - b.x) * ca + (qz - b.z) * sa, lz = -(qx - b.x) * sa + (qz - b.z) * ca;
+        if (Math.abs(lx) > hw + 1e-6 || Math.abs(lz) > hd + 1e-6) continue;
+        const qn = qx * nx + qz * nz, wgt = Math.min(boxTop - qn, qn - hullLow) + 1e-4;
+        if (wgt > 0) { sw += wgt; px += qx * wgt; pz += qz * wgt; }
+      }
+      for (let i = 0; i < 4; i++) {
+        const sl = i & 1 ? hw : -hw, sd = i & 2 ? hd : -hd;
+        const qx = b.x + ca * sl - sa * sd, qz = b.z + sa * sl + ca * sd;
+        const lf = (qx - cxw) * fx + (qz - czw) * fz, lr = (qx - cxw) * rx + (qz - czw) * rz;
+        if (Math.abs(lf) > HL + 1e-6 || Math.abs(lr) > HW + 1e-6) continue;
+        const qn = qx * nx + qz * nz, wgt = Math.min(boxTop - qn, qn - hullLow) + 1e-4;
+        if (wgt > 0) { sw += wgt; px += qx * wgt; pz += qz * wgt; }
+      }
+      if (sw > 0) { px /= sw; pz /= sw; } else { px = car.x; pz = car.z; }   // crossed like a plus sign: no corner of either inside the other
+
+      car.x += nx * pen;
+      car.z += nz * pen;
+      contactImpulse(car, nx, nz, px + nx * pen, pz + nz * pen, pen);
+      hit = true;
     }
     if (!hit) return;
   }

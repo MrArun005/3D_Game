@@ -221,7 +221,12 @@ test('gta: walls still scrape and stop', () => {
     for (const p of ['muscle', 'street']) {
       CAR.profile = VEHICLE_PROFILES[p];
       const s = scrape(60, 6);
-      assert.ok(s.after > 35 && s.after < 58, `${p}: scrape left ${s.after.toFixed(0)} km/h, want 35-58`);
+      /* 35-58 until 2026-11-11: the wall never turned the car, so it leaned on the masonry at 6 deg for the
+         whole 3 s and friction held it under 58. A contact now acts at the nose with its lever arm: the car is
+         swung parallel in ~0.1 s and drives on (98-105 km/h). What the wall costs is paid AT the hit. */
+      assert.ok(s.after > 35, `${p}: scrape left ${s.after.toFixed(0)} km/h, want > 35`);
+      assert.ok(s.costKmh > 0.3 && s.costKmh < 8, `${p}: the 6 deg contact took ${s.costKmh.toFixed(2)} km/h, want 0.3-8`);
+      assert.ok(Math.abs(s.yawDeg) < 1.5, `${p}: left the wall heading ${s.yawDeg.toFixed(1)} deg off it, want parallel`);
       // ...and the unloaded rear must not burn out against the wall (2.7x the road under a peak-sized drive cap)
       assert.ok(s.spin < 1.3, `${p}: a rear wheel ran ${s.spin.toFixed(2)}x the road speed along the wall, want < 1.3`);
     }

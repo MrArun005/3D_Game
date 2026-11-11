@@ -61,7 +61,7 @@ export function settled() {
     goes, + = moving to the RIGHT of the nose (the tail out in a left turn). */
 export const beta = (c) => Math.atan2(c.vx * Math.sin(c.yaw) + c.vz * Math.cos(c.yaw), c.fwdSpeed);
 
-function accelerateTo(c, kmh) {
+export function accelerateTo(c, kmh) {
   c.wantsForward = true; c.throttle = 1;
   let n = 0;
   while (c.fwdSpeed * KMH < kmh && n++ < 120 * 60) stepVehicle(c, H);
@@ -353,13 +353,15 @@ export function scrape(kmh = 60, deg = 6) {
   const wall = [{ x: c.x + 80, z: -2.4, angle: 0, hw: 80, hd: 1.0 }];
   c.buildings = () => wall;
   c.throttle = 1; c.steerTarget = 0;
-  const s0 = c.speed; let peakImpact = 0, spin = 0;
+  const s0 = c.speed; let peakImpact = 0, spin = 0, cost = 0;
   for (let i = 0; i < 360; i++) {
+    const sp = c.speed;
     stepVehicle(c, H); peakImpact = Math.max(peakImpact, c.impact);
+    if (i < 60) cost += Math.max(0, sp - c.speed);       // what the contact itself took, in the half second it lasts
     spin = Math.max(spin, Math.max(c.wheelW[2], c.wheelW[3]) * WHEEL_R / Math.max(1, c.fwdSpeed));
   }
   // spin: the fastest a rear wheel's surface ran relative to the road (the scrape unloads the one by the wall)
-  return { before: s0 * KMH, after: c.speed * KMH, lostKmh: (s0 - c.speed) * KMH, peakImpact, yawDeg: c.yaw * 180 / Math.PI, spin };
+  return { before: s0 * KMH, after: c.speed * KMH, lostKmh: (s0 - c.speed) * KMH, costKmh: cost * KMH, peakImpact, yawDeg: c.yaw * 180 / Math.PI, spin };
 }
 
 /** Straight into a wall at 60 km/h: speed 0.5 s after contact (must be a stop). */
