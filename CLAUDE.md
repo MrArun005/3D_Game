@@ -108,6 +108,53 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
 
 ## Current state
 
+- **Smoothness pass (2026-11-11, branch `claude/smooth-streaming-physics`).**
+  Measured with `tools/perf/drive-bench.mjs` (the F9 route under a virtual
+  30 fps clock, GL draws stubbed, `PROFILE=a,b` CPU-profiles frames, `HIST=1`
+  buckets uploads; unminified build, software GL -- CPU ms, programs and
+  uploads, never fps). Nobody has driven it on a GPU. What three r185 does,
+  found the hard way:
+  - **A shader per InstancedMesh.** Instance matrices go in a uniform block
+    named by node id and sized by count when they fit the uniform-buffer
+    limit (`nodes/accessors/Instance.js`): 67 new programs at one chunk
+    border. `core/renderer.js tuneBackend()` (called after `renderer.init()`)
+    reports a limit of 0, so everything takes the shared attribute path
+    (`?ubo` = three's default).
+  - **A node build per InstancedMesh OBJECT.** `RenderObject.
+    getMaterialCacheKey` appends `object.uuid` for instanced meshes and for
+    Sprites with count > 1, so each new one is a full TSL build on first
+    draw, per render context (main pass, shadow pass), whatever its material.
+    The render objects survive removal from the scene, so `world/instPool.js`
+    RECYCLES a released chunk's meshes: `take(geo, mat, n, shadow, colour)`
+    for shared geometry, `takeOwned(kind, makeGeo, mat, n, attrs)` +
+    `InstPool.fill` for meshes with their own per-instance attributes (the
+    geometry travels with the mesh). Rules: write ALL n matrices / colours /
+    attributes (a recycled array holds the last chunk's data); capacity is
+    `instanceMatrix.count`, the drawn count is `mesh.count`; never create a
+    material or an InstancedMesh per chunk outside the pool (the signal lens
+    made a MeshBasicMaterial per chunk, the glare sprite a material per chunk
+    that nothing disposed -- `glare.js releaseGlare`). The pool hands out the
+    WARMEST fit (`pooled.main` = drawn, `pooled.cast` = has cast a shadow).
+  - **Cold meshes start two a frame.** A mesh that was never drawn joins its
+    chunk on no camera layer (`userData.coldMask`) and `districtWorld
+    #warmCold` lets `COLD_PER_FRAME` in per frame; a parked car's first
+    shadow (`castShadow` turning on at d === 0) uses the same budget.
+  - **One write per uniform block.** Both backends upload a block once per
+    run of changed uniforms (9,691 writes a frame for ~850 blocks);
+    `tuneBackend` merges the ranges (`?ranges` = three's own).
+  - `compileAsync(scene, camera)` warms PROGRAMS only: the game draws through
+    the post pipeline's MRT pass, a different render context, so node builds
+    are redone on the first real draw.
+  - Release: two chunks a frame, `#rerecordAll` once a frame. Frame loop: dt
+    cap 1/15 s, the car catches up to 0.1 s (collision is inside each step).
+  - Physics (`vehicle/collision.js`, `tools/sim/contact.mjs`,
+    `test/contact-walls.test.js`, `test/contact-cars.test.js`): the hull is
+    the real 4.5 x 1.8 m rectangle, wall contacts apply an impulse at the
+    contact point (a nose hit swings the car along the wall), car-to-car is
+    one contact per body with friction by the normal impulse, traffic hit
+    from behind is pushed (`traffic.js`).
+  Before/after numbers and the owner's checklist: TASKS.md, last section.
+
 - **Regent Street, the Quadrant, London markings (2026-09-24).** All node-
   verified, headless renders checked; nobody has driven it on a GPU.
   - **Regent Street** = the Kingsway boundary road (1907,1769)-(2880,1763),
@@ -447,7 +494,7 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
     `mergeDrive`; mobile forces the lite tier; `body.touch` CSS in style.css;
     no pointer lock on touch, TAP TO START, rotate card in portrait.
 
-- Tests: `npm test` — 536/536 passing (2026-09-23, after the Shibuya set pieces). Node's built-in runner, no framework.
+- Tests: `npm test` — 638/638 passing (2026-11-11, after the smoothness pass). Node's built-in runner, no framework.
 - Deploy (2026-09-03): Vercel project `halstead-bay`, public at
   https://halstead-bay.vercel.app. Git-triggered builds never leave UNKNOWN;
   deploy with `vercel --prod --yes` run detached (>6 min upload), then check

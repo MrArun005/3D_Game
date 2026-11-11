@@ -2,7 +2,7 @@
 
 The live checklist for the owner's goal. Read this file, not the chat
 scrollback, to see where the run is. Tick items as they land (with the commit),
-add anything new that is found. Last updated 2026-09-25 (afternoon).
+add anything new that is found. Last updated 2026-11-11 (the smoothness pass, at the end).
 
 **Goal (Arun):** GTA-level graphics — stylised, "GTA IV-era geometry under
 modern lighting" (`docs/ART_BIBLE.md`) — running smoothly on Arun's M2 Air,
@@ -82,3 +82,60 @@ going, and put status in the same message as the next action.
 - [ ] Cloudflare Worker `3d-game`: production branch `main`, deploy command
       must be `npx wrangler deploy` (`versions upload` never goes live);
       other branches stay `versions upload` previews
+
+### Smoothness pass, 2026-11-11 (branch `claude/smooth-streaming-physics`)
+
+The owner: "as I drive forward the city loads but it freezes the car", "so
+many physics issues". Measured in a GPU-less container with
+`tools/perf/drive-bench.mjs` (the F9 benchmark route under a virtual 30 fps
+clock, GL draws stubbed, balanced tier, WebGL2 fallback): CPU milliseconds of
+JS per frame, shader programs, uploads. Those transfer to the M2; fps does not.
+Nothing below has been driven on a real GPU.
+
+- [x] **The freeze at a chunk border.** Worst frame at a border, same drive:
+      3729 ms -> ~210 ms. Frames over 250 ms while driving past four
+      borders: 12 (with only the first fix below) -> 0; the price is ~30
+      frames of 110-215 ms while a new block's cars and trees join.
+      Three causes, three fixes:
+      - three compiled a NEW shader for every small InstancedMesh of a new
+        chunk (67 programs at one border): instancing now takes the shared
+        attribute path (`core/renderer.js tuneBackend`, `?ubo` for the old way).
+      - three also builds its node state per InstancedMesh OBJECT (~90 builds
+        a border): released chunks' meshes are recycled (`world/instPool.js`),
+        glare sprites and the signal-lens material too.
+      - what is still new starts two a frame instead of thirty on the frame
+        the chunk lands (`districtWorld #warmCold`, `COLD_PER_FRAME`).
+- [x] Pulling away from a stop freed 16 chunks on one frame (358 buffer
+      deletes, a 231 ms GC pause): two chunks a frame now.
+- [x] Uniform uploads: 9,691 -> ~640 buffer writes a frame (one write per
+      uniform block); steady frame 57 -> ~46 ms in the harness.
+- [x] Slow frames no longer slow the GAME: the world keeps real time down to
+      15 fps and the car catches up to 0.1 s through a hitch (was a 0.05 s
+      clamp: slow motion under 20 fps, a dead car on every hitch).
+- [x] Physics (`node tools/sim/contact.mjs` prints the table): walls deflect
+      (20/30/45 deg hit at 60 km/h, speed 1 s later 31/13/1 -> 73/62/40 km/h),
+      a building corner with air beside the body is no longer a dead stop,
+      brushing a parked car costs no speed (was a 7.5 m shove), traffic can be
+      pushed from behind (rear-end at 60 into 40: both dropped to 16 km/h).
+- [x] `tools/smoke-boot.mjs` runs again (`npm run smoke`): finds Playwright,
+      starts and stops its own preview server, `?nowarm` skips the warm-up.
+- [ ] `[owner]` **fn + F9 on the M2 Air** (screenshot the panel), then drive
+      Little Tokyo -> Regent Street at speed and watch for a stall each time a
+      new block of city appears (every 256 m). If it still hitches: note
+      whether parked cars / trees of the far block pop in over a second (they
+      now arrive two a frame) -- that is the knob (`COLD_PER_FRAME`).
+- [ ] `[owner]` hit a wall at 30-45 degrees with the throttle held (should
+      slide along it), squeeze past a building corner, brush a parked car,
+      rear-end traffic, a handbrake turn into a kerb. Tell me what feels wrong.
+- [ ] `[owner]` at night: lamp glare, traffic-light colours and shop windows
+      look right after driving a few blocks (those meshes are recycled now).
+- [ ] Not done: a wall hit at 60-70 degrees with the throttle held still
+      stops the car (steer or reverse frees it); a building corner overlapped
+      by 0.3 m+ is still a crash stop; no gravity along slopes (a parked car
+      on a 10% grade does not roll); police cruisers cannot be pushed.
+- [ ] Not done: the first frame after the loading screen (5.2 s of CPU in
+      software GL while late assets land); the benchmark / respawn teleport
+      frame (the whole ring builds in one frame, ~3.5 s in the harness).
+- [ ] Not measured: WebGPU itself (the harness runs the WebGL2 fallback);
+      `kingsway-corner` on `high`.
+
