@@ -142,6 +142,13 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
   - **One write per uniform block.** Both backends upload a block once per
     run of changed uniforms (9,691 writes a frame for ~850 blocks);
     `tuneBackend` merges the ranges (`?ranges` = three's own).
+  - **Every visible light is in every lit fragment** (no clustering), and a
+    change in the SET of visible lights rebuilds every material. The scene
+    had 27 point/spot lights; eight were the raceway floodlights, 1.5 km
+    from the city: `raceTrack.js updateRacewayLights` shows them only near
+    the island (steady CPU frame 50.4 -> 42.0 ms in the harness; GPU side
+    unmeasured). 19 slots remain, most at intensity 0 -- count them
+    (`scene.traverse(o => o.isLight)`) before adding another.
   - `compileAsync(scene, camera)` warms PROGRAMS only: the game draws through
     the post pipeline's MRT pass, a different render context, so node builds
     are redone on the first real draw.

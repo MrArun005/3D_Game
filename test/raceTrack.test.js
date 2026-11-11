@@ -147,3 +147,24 @@ test('raceCircuit: stages race, spawns rivals, runs countdown, and settles finis
   assert.equal(circuit.state, 'finished', 'race should be finished after 3 laps');
   assert.ok(cashEarned >= PURSE[1], 'winner should receive 1st place purse');
 });
+
+/* The eight raceway floodlights are real SpotLights; three evaluates every
+   visible light in every lit fragment of the whole map, so they are only
+   visible near the island (2026-11-11). */
+test('raceway floodlights are lights only near the island, with hysteresis', async () => {
+  const { updateRacewayLights } = await import('../src/world/raceTrack.js');
+  const spots = Array.from({ length: 8 }, () => ({ visible: true }));
+  const group = { userData: { floodSpots: spots } };
+  assert.equal(updateRacewayLights(group, 2354, 1408), true, 'Little Tokyo is 1.5 km away: off');
+  assert.ok(spots.every((s) => !s.visible));
+  assert.equal(updateRacewayLights(group, 2354, 1408), false, 'no change, nothing touched');
+  assert.equal(updateRacewayLights(group, 3440 - 500, 2700), false, '500 m out: still off (turns on inside 450 m)');
+  assert.equal(updateRacewayLights(group, 3440 - 400, 2700), true);
+  assert.ok(spots.every((s) => s.visible));
+  assert.equal(updateRacewayLights(group, 3440 - 600, 2700), false, '600 m out: still on (turns off beyond 650 m)');
+  assert.equal(updateRacewayLights(group, 3800, 2700), false, 'on the island: on');
+  assert.equal(updateRacewayLights(group, 3440 - 700, 2700), true);
+  assert.ok(spots.every((s) => !s.visible));
+  assert.equal(updateRacewayLights(group, 2354, 1408, true), true, 'the race run forces them on');
+  assert.equal(updateRacewayLights(null, 0, 0), false);
+});

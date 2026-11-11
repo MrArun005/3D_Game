@@ -530,6 +530,7 @@ export function buildRaceTrack(scene, district) {
     { x: 3460, z: 2520 }, // Parabolica
   ];
 
+  const floodSpots = [];
   for (const tp of towerPositions) {
     // Lattice pylon
     const pylon = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 1.1, 24, 6), towerMat);
@@ -552,8 +553,10 @@ export function buildRaceTrack(scene, district) {
     spot.target.position.set(tp.x, RACEWAY_ELEVATION, tp.z + (tp.z < 2600 ? 30 : -30));
     floodlightGroup.add(spot);
     floodlightGroup.add(spot.target);
+    floodSpots.push(spot);
   }
   group.add(floodlightGroup);
+  group.userData.floodSpots = floodSpots;   // gated by distance: updateRacewayLights()
 
   // 9. ISLAND FOUNDATION DECK & CONCRETE SEA WALL
   // Concrete perimeter deck underneath the raceway (sits 8cm below track surface to prevent Z-fighting)
@@ -587,6 +590,28 @@ export function buildRaceTrack(scene, district) {
 
   scene.add(group);
   return group;
+}
+
+/**
+ * The eight floodlight SpotLights only exist for the frame while you are near
+ * the island (2026-11-11). three's forward pass has no light clustering: every
+ * light in the scene is a full BRDF evaluation in EVERY lit fragment, and
+ * these eight (range 180 m, 1.5 km from the city) ran in every shader of the
+ * whole map, day and night -- 8 of the scene's 27 point/spot lights. Changing
+ * the set of visible lights makes three rebuild every material (a stall of
+ * seconds), so the switch has 200 m of hysteresis and only ever happens on
+ * the trip out to the raceway; `force` keeps them on for the race run.
+ * Returns true when the set changed.
+ */
+export function updateRacewayLights(group, x, z, force = false) {
+  const spots = group?.userData?.floodSpots;
+  if (!spots || !spots.length) return false;
+  const dx = Math.max(3440 - x, 0, x - 4220), dz = Math.max(2420 - z, 0, z - 3040);
+  const d = Math.hypot(dx, dz), on = spots[0].visible;
+  const want = force || (on ? d < 650 : d < 450);
+  if (want === on) return false;
+  for (const sp of spots) sp.visible = want;
+  return true;
 }
 
 /** Determines if (x, z) falls within the Halstead Raceway island or access causeway. */

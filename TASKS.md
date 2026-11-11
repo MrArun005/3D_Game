@@ -109,6 +109,14 @@ Nothing below has been driven on a real GPU.
       deletes, a 231 ms GC pause): two chunks a frame now.
 - [x] Uniform uploads: 9,691 -> ~640 buffer writes a frame (one write per
       uniform block); steady frame 57 -> ~46 ms in the harness.
+- [x] The raceway's eight floodlight SpotLights were being evaluated in every
+      lit pixel of the whole map (three has no light clustering): they are
+      real lights only within ~450 m of the island now. CPU side measured
+      (steady frame 50.4 -> 42.0 ms in the harness); the GPU side is the
+      bigger half and is `[owner]` to see on the M2. Cost: a one-off stall
+      when you drive or teleport out to the raceway (every shader rebuilds).
+      Still in the scene: 11 point + 8 spot light slots, most at intensity 0
+      (pool, headlamps, muzzle flashes) -- each one is a per-pixel cost too.
 - [x] Slow frames no longer slow the GAME: the world keeps real time down to
       15 fps and the car catches up to 0.1 s through a hitch (was a 0.05 s
       clamp: slow motion under 20 fps, a dead car on every hitch).

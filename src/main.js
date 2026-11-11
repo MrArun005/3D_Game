@@ -73,7 +73,7 @@ import { Navigation } from './game/navigation.js';
 import { GameClock } from './game/clock.js';
 import { Mission } from './game/mission.js';
 import { HALSTEAD_MILE, DEFAULT_HOUR, startYaw, missionPoints, drivingLine } from './game/scenicRoute.js';
-import { buildRaceTrack, registerRaceTrackPhysics, isRacewayArea } from './world/raceTrack.js';
+import { buildRaceTrack, registerRaceTrackPhysics, isRacewayArea, updateRacewayLights } from './world/raceTrack.js';
 import { RaceCircuit } from './game/raceCircuit.js';
 import { Multiplayer, roomFromUrl, createRoom } from './game/multiplayer.js';
 import { Weapon } from './game/weapon.js';
@@ -1690,6 +1690,8 @@ Promise.all([districtReady, catalogueReady, moduleReady, new URLSearchParams(loc
   districtRef = district;
 
   const racewayGroup = buildRaceTrack(scene, district);
+  racewayTrackGroup = racewayGroup;
+  updateRacewayLights(racewayGroup, car.x, car.z, RACE_MODE);   // off before the first frame unless the run starts there: no shader ever compiles with the eight floodlights in the city
   raceCircuit = new RaceCircuit(scene, hud, traffic, audio, garage);
   raceCircuit.setTrackGroup(racewayGroup);
   hud.useCircuit(raceCircuit);
@@ -3179,6 +3181,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   const streamVz = photo?.on ? 0 : (currentVehicle.vz || 0);
   mark('stream-start');
   world.update(streamX, streamZ, streamVx, streamVz);
+  if (racewayTrackGroup) updateRacewayLights(racewayTrackGroup, streamX, streamZ, RACE_MODE);   // raceTrack.js: the floodlights are real lights only near the island
   mark('stream-end');
   resolution(dt);
   /* One render: the pipeline owns the frame (scene MRT pass, GTAO, bloom,
