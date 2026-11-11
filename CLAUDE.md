@@ -154,6 +154,14 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
     the island (steady CPU frame 50.4 -> 42.0 ms in the harness; GPU side
     unmeasured). 19 slots remain, most at intensity 0 -- count them
     (`scene.traverse(o => o.isLight)`) before adding another.
+  - **The light set must not change mid-game**: a light under a hidden
+    parent, or toggled with `.visible`, changes it and rebuilds every
+    material (395 builds when the police helicopter arrived). Keep lights in
+    the scene at intensity 0 (helicopter.js searchlight, damage.js fire).
+  - `world.bootWarm` (main.js, while the loading screen is up, plus two real
+    frames after the warm-up): every parked LOD drawn, every parked car
+    casting, so their node state is built there. WebGPU on SwiftShader boots
+    with draws stubbed: `tools/perf/drive-webgpu.mjs`.
   - `compileAsync(scene, camera)` warms PROGRAMS only: the game draws through
     the post pipeline's MRT pass, a different render context, so node builds
     are redone on the first real draw.
@@ -506,7 +514,7 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
     `mergeDrive`; mobile forces the lite tier; `body.touch` CSS in style.css;
     no pointer lock on touch, TAP TO START, rotate card in portrait.
 
-- Tests: `npm test` — 640/640 passing (2026-11-11, after the smoothness pass). Node's built-in runner, no framework.
+- Tests: `npm test` — 644/644 passing (2026-11-11, after the smoothness pass). Node's built-in runner, no framework.
 - Deploy (2026-09-03): Vercel project `halstead-bay`, public at
   https://halstead-bay.vercel.app. Git-triggered builds never leave UNKNOWN;
   deploy with `vercel --prod --yes` run detached (>6 min upload), then check

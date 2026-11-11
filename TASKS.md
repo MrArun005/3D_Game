@@ -127,6 +127,20 @@ Nothing below has been driven on a real GPU.
       pushed from behind (rear-end at 60 into 40: both dropped to 16 km/h).
 - [x] `tools/smoke-boot.mjs` runs again (`npm run smoke`): finds Playwright,
       starts and stops its own preview server, `?nowarm` skips the warm-up.
+- [x] Round 2 (same day). Shared geometry was being disposed with every
+      released chunk (`clone()` shares `userData`); signal colours upload on
+      change. Parked-car LODs and shadow casters are built behind the loading
+      screen: worst frame per border 206/214/111/180 -> 81/55/110/155 ms,
+      frames over 100 ms 32 -> 11 of 1500, steady median now 37.6 ms (58.9 at
+      the start). The light set never changes mid-game (police helicopter
+      arriving: 395 material rebuilds -> 68). Physics: a 60-80 degree wall hit
+      slides off (was pinned), a building corner overlapped by up to 0.7 m
+      wedges the car round it, cruisers can be pushed.
+- [x] The WebGPU backend, on a software adapter (`tools/perf/drive-webgpu.mjs`,
+      draws stubbed): with the fixes boot 82 s / 242 pipelines, ~550-900 buffer
+      writes a frame, 0 pipelines created while driving, worst frame 122 ms;
+      with three's defaults (`?ubo&ranges`) boot 243 s / 1393 pipelines, 7,291
+      writes a frame, 5 pipelines and two ~950 ms frames at the border.
 - [ ] `[owner]` **fn + F9 on the M2 Air** (screenshot the panel), then drive
       Little Tokyo -> Regent Street at speed and watch for a stall each time a
       new block of city appears (every 256 m). If it still hitches: note
@@ -137,13 +151,13 @@ Nothing below has been driven on a real GPU.
       rear-end traffic, a handbrake turn into a kerb. Tell me what feels wrong.
 - [ ] `[owner]` at night: lamp glare, traffic-light colours and shop windows
       look right after driving a few blocks (those meshes are recycled now).
-- [ ] Not done: a wall hit at 60-70 degrees with the throttle held still
-      stops the car (steer or reverse frees it); a building corner overlapped
-      by 0.3 m+ is still a crash stop; no gravity along slopes (a parked car
-      on a 10% grade does not roll); police cruisers cannot be pushed.
+- [ ] Not done: a building corner overlapped by 0.8 m+ is still a crash
+      stop; no gravity along slopes (a parked car on a 10% grade does not
+      roll); a part-overlap hit on a parked car jumps from a shrug to a crash
+      at 0.25 m. Build-ahead along the velocity, splitting the long chunk
+      steps and `stepVehicle`'s per-step allocations were not done either.
 - [ ] Not done: the first frame after the loading screen (5.2 s of CPU in
       software GL while late assets land); the benchmark / respawn teleport
       frame (the whole ring builds in one frame, ~3.5 s in the harness).
-- [ ] Not measured: WebGPU itself (the harness runs the WebGL2 fallback);
-      `kingsway-corner` on `high`.
+- [ ] Not measured: a real GPU; `kingsway-corner` on `high`.
 
