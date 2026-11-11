@@ -417,10 +417,10 @@ export function createLights(scene, day = false, liteOrOpts = false) {
 }
 
 /**
- * How three's backend talks to the GPU, adjusted once after `renderer.init()`
- * (2026-11-11). Holds for WebGPU and the WebGL2 fallback.
+ * Two changes to how three's backend talks to the GPU, applied once after
+ * `renderer.init()` (2026-11-11). Both hold for WebGPU and the WebGL2 fallback.
  */
-export function tuneBackend(renderer, { ubo = false } = {}) {
+export function tuneBackend(renderer, { ubo = false, ranges = false } = {}) {
   const be = renderer.backend;
   /* Instance matrices as shared vertex attributes, never as a per-mesh uniform
      buffer (2026-11-11). three r185 (nodes/accessors/Instance.js) puts an
@@ -434,4 +434,25 @@ export function tuneBackend(renderer, { ubo = false } = {}) {
      shader per material + geometry layout. `?ubo` restores three's default
      for an A/B. Readers of the limit in r185: Instance.js and RangeNode. */
   if (!ubo && be.capabilities) be.capabilities.getUniformBufferLimit = () => 0;
+  /* One upload per uniform block, not one per changed uniform. three keeps an
+     update range per uniform and both backends issue a bufferSubData /
+     queue.writeBuffer for every run of contiguous ranges: the lights + camera
+     block ('render', 178 uniforms, 2112 bytes) has one copy per shader and
+     went up in ~30 pieces each -- measured driving the benchmark route,
+     balanced tier: 9,700 buffer writes a frame for 850 block updates. The
+     ranges are merged into one span (first changed byte to last) before the
+     backend sees them; a block is at most ~2 kB, so the bytes saved by the
+     fine ranges never paid for the calls. `?ranges` restores three's own. */
+  if (!ranges && typeof be.updateBinding === 'function') {
+    const real = be.updateBinding;
+    be.updateBinding = function (binding) {
+      const r = binding.updateRanges;
+      if (r && r.length > 1) {
+        let lo = Infinity, hi = -Infinity;
+        for (let i = 0; i < r.length; i++) { const s = r[i].start, e = s + r[i].count; if (s < lo) lo = s; if (e > hi) hi = e; }
+        r[0].start = lo; r[0].count = hi - lo; r.length = 1;   // range objects are per-uniform scratch, rewritten on every add
+      }
+      return real.call(this, binding);
+    };
+  }
 }
