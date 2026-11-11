@@ -415,3 +415,23 @@ export function createLights(scene, day = false, liteOrOpts = false) {
 
   return { hemi, sun, fill };
 }
+
+/**
+ * How three's backend talks to the GPU, adjusted once after `renderer.init()`
+ * (2026-11-11). Holds for WebGPU and the WebGL2 fallback.
+ */
+export function tuneBackend(renderer, { ubo = false } = {}) {
+  const be = renderer.backend;
+  /* Instance matrices as shared vertex attributes, never as a per-mesh uniform
+     buffer (2026-11-11). three r185 (nodes/accessors/Instance.js) puts an
+     InstancedMesh's matrices in a uniform block NAMED BY NODE ID and SIZED BY
+     INSTANCE COUNT whenever they fit the backend's uniform-buffer limit, so
+     every small InstancedMesh in a newly streamed chunk had a vertex shader of
+     its own that no warm-up could have compiled: 67 and 89 new programs at two
+     chunk borders, 1.25 s of node building + 0.5 s of link wait in the worst
+     frame. Reporting a limit of 0 sends every InstancedMesh down the path the
+     big ones (> 1024 instances) always took -- four vec4 attributes, one
+     shader per material + geometry layout. `?ubo` restores three's default
+     for an A/B. Readers of the limit in r185: Instance.js and RangeNode. */
+  if (!ubo && be.capabilities) be.capabilities.getUniformBufferLimit = () => 0;
+}

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { additive } from './core/additive.js';
 import './style.css';
 
-import { autoResolution, createRenderer, createScene, createLights, DAY_SUN, renderScale } from './core/renderer.js';
+import { autoResolution, createRenderer, createScene, createLights, DAY_SUN, renderScale, tuneBackend } from './core/renderer.js';
 import { detectGpuInfo, resolveQualityMode } from './core/gpu.js';
 import { createSky } from './core/sky.js';
 import { createGrade } from './core/grade.js';
@@ -232,6 +232,7 @@ let moduleDone;
 const moduleReady = new Promise((r) => { moduleDone = r; });
 districtReady.catch(() => {});   // handled where it is awaited; this only stops an early 'unhandled rejection' before that
 await renderer.init();
+tuneBackend(renderer, { ubo: new URLSearchParams(location.search).has('ubo') });   // core/renderer.js: instance matrices as shared attributes
 /* Safari's WebGPU throws "Range consisting of offset and length are out of
    bounds" from getMappedRange on a zero-byte buffer (Chrome allows it), and
    three maps every vertex buffer at creation -- so ONE empty attribute
