@@ -63,23 +63,23 @@ export function corner(kmh = 50, gap = 0.1) {
 }
 
 const parked = (x, z, yaw = 0) => ({ x, z, yaw, offsets: [-1.45, 0, 1.45], radius: 0.98, reach: 2.9, tag: 'parked' });
-/** Side-brushing a parked car on the right: `overlap` m of the two hulls' circles laterally, throttle held. */
+/** Side-brushing a parked car on the right: the two bodies (0.9 m from centre to flank each) overlap `overlap` m laterally, throttle held. */
 export function brush(kmh = 60, overlap = 0.2) {
   const c = accelerateTo(settled(), kmh);
   c.x = 0; c.z = 0; aim(c, 0);
-  const o = [parked(12, 0.95 + 0.98 - overlap)];
+  const o = [parked(12, 0.9 + 0.9 - overlap)];
   c.obstacles = () => o; c.buildings = () => [];
   c.throttle = 1; c.steerTarget = 0;
-  const s0 = c.speed; let tHit = null, t = 0, at03 = null, peak = 0, minSp = Infinity;
+  let tHit = null, sHit = c.speed, t = 0, at03 = null, peak = 0, minSp = Infinity;
   for (let i = 0; i < 360; i++) {
-    const z0 = c.z;
+    const z0 = c.z, sp0 = c.speed;
     stepVehicle(c, H); t += H; peak = Math.max(peak, c.impact || 0);
-    if (tHit === null && (c.impact > 0 || Math.abs(c.z - z0) > 1e-4)) tHit = t;
+    if (tHit === null && (c.impact > 0 || Math.abs(c.z - z0) > 1e-3)) { tHit = t; sHit = sp0; }
     c.impact *= Math.exp(-8 * H);
     if (tHit !== null) minSp = Math.min(minSp, c.speed);
     if (tHit !== null && at03 === null && t - tHit >= 0.3) at03 = c.speed * KMH;
   }
-  return { before: s0 * KMH, at03s: at03 ?? c.speed * KMH, min: minSp * KMH, end: c.speed * KMH, shove: -c.z, yawDeg: c.yaw * DEG, peakImpact: peak };
+  return { touched: tHit !== null, before: sHit * KMH, at03s: at03 ?? c.speed * KMH, min: (tHit === null ? c.speed : minSp) * KMH, end: c.speed * KMH, shove: -c.z, yawDeg: c.yaw * DEG, peakImpact: peak };
 }
 
 /** Rear-ending traffic doing `their` km/h at `ours`, throttle held. The traffic car is a path follower: speed along +x, easing back to its limit. */
@@ -137,7 +137,7 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop()
   console.log('CORNER pass: gap m | min km/h | z shift | yaw');
   for (const kmh of [50, 100]) for (const gap of [0.05, 0.1, 0.2, 0.35, -0.1, -0.3]) { const r = corner(kmh, gap); console.log(`  ${kmh} gap ${f(gap, 2)}   min ${f(r.min)}  z ${f(r.zShift, 2)}  yaw ${f(r.yawDeg)}  impact ${f(r.peakImpact)}`); }
   console.log('PARKED-CAR brush @60: overlap | 0.3 s after | min | end | shove m | yaw');
-  for (const ov of [0.05, 0.2, 0.5]) { const r = brush(60, ov); console.log(`  overlap ${f(ov, 2)}   ${f(r.before)} -> ${f(r.at03s)} | ${f(r.min)} | ${f(r.end)} | shove ${f(r.shove, 2)} | yaw ${f(r.yawDeg)}  impact ${f(r.peakImpact)}`); }
+  for (const ov of [0.05, 0.2, 0.3, 0.5, 0.9]) { const r = brush(60, ov); console.log(`  overlap ${f(ov, 2)}   ${f(r.before)} -> ${f(r.at03s)} | ${f(r.min)} | ${f(r.end)} | shove ${f(r.shove, 2)} | yaw ${f(r.yawDeg)}  impact ${f(r.peakImpact)}`); }
   { const r = rearEnd(); console.log(`REAR-END 60 into 40: ours ${f(r.ours)} (min ${f(r.oursMin)})  theirs ${f(r.theirs)} (min ${f(r.theirMin)}, max ${f(r.theirMax)})  impact ${f(r.peakImpact)}  gap ${f(r.gap, 2)}`); }
   console.log('HEAD-ON: nose past the near face m | rebound km/h');
   for (const [kmh, thick, dt] of [[60, 2, H], [150, 2, H], [250, 2, H], [250, 0.3, H], [150, 2, 1 / 30], [150, 2, 1 / 10], [250, 0.3, 1 / 30]]) {

@@ -45,8 +45,9 @@ test('a resting contact under throttle adds no impact after the first step and d
 
 test('nudging a car that is moving with you is not a crash: closing speed is relative', () => {
   // traffic ahead at 10 m/s, us at 11 m/s, already overlapping by 1 cm
+  // (bodies are rectangles since 2026-11-11: our nose is 2.30 m out, its tail 1.45 + 0.98 - 0.10 = 2.33 m back -> touching at 4.63)
   const traffic = { speed: 10, panic: 0 };
-  const body = { x: 4.79, z: 0, yaw: 0, offsets: [-1.45, 0, 1.45], radius: 0.98, reach: 2.9, tag: 'traffic', car: traffic };
+  const body = { x: 4.62, z: 0, yaw: 0, offsets: [-1.45, 0, 1.45], radius: 0.98, reach: 2.9, tag: 'traffic', car: traffic };
   const car = hero(11);
   resolveObstacles(car, [body]);
   assert.equal(car.impact, 0, 'a 1 m/s closing nudge is below the 1.2 m/s event threshold');
@@ -54,7 +55,7 @@ test('nudging a car that is moving with you is not a crash: closing speed is rel
   assert.equal(traffic.speed, 10);
   // the same geometry against a PARKED car is the full 11 m/s crash
   const car2 = hero(11);
-  resolveObstacles(car2, [parked(4.79, 0)]);
+  resolveObstacles(car2, [parked(4.62, 0)]);
   assert.ok(car2.impact > 10.5, `parked impact ${car2.impact}`);
 });
 
@@ -86,9 +87,9 @@ test('camera shake is kicked once by an impact event, capped, and decays', () =>
 });
 
 test('being hit is not a crime: a cruiser closing on us from behind sets impact but no hitTag/hitRef', () => {
-  // we drive +x at 5 m/s; a cruiser doing 10 m/s sits on our rear bumper (its front circle overlaps our rear circle by 1 cm)
+  // we drive +x at 5 m/s; a cruiser doing 10 m/s sits on our rear bumper (its nose overlaps our tail, 2.20 m back, by 1 cm)
   const cruiser = { speed: 10, panic: 0 };
-  const body = { x: -4.79, z: 0, yaw: 0, offsets: [-1.45, 0, 1.45], radius: 0.98, reach: 2.9, tag: 'police', car: cruiser };
+  const body = { x: -4.52, z: 0, yaw: 0, offsets: [-1.45, 0, 1.45], radius: 0.98, reach: 2.9, tag: 'police', car: cruiser };
   const car = hero(5);
   resolveObstacles(car, [body]);
   assert.ok(car.impact > 4.5, `the shove is felt: impact ${car.impact}`);
@@ -97,7 +98,7 @@ test('being hit is not a crime: a cruiser closing on us from behind sets impact 
   assert.ok(car.vx > 5, `we are shoved forward, vx ${car.vx}`);
   // the mirror case -- we drive into a cruiser ahead doing 5 while we do 10 -- IS ours
   const car2 = hero(10);
-  resolveObstacles(car2, [{ x: 4.79, z: 0, yaw: 0, offsets: [-1.45, 0, 1.45], radius: 0.98, reach: 2.9, tag: 'police', car: { speed: 5, panic: 0 } }]);
+  resolveObstacles(car2, [{ x: 4.62, z: 0, yaw: 0, offsets: [-1.45, 0, 1.45], radius: 0.98, reach: 2.9, tag: 'police', car: { speed: 5, panic: 0 } }]);
   assert.equal(car2.hitTag, 'police');
   assert.ok(car2.hitForce > 4.5 && car2.hitForce < 5.5, `hitForce is the closing speed, ${car2.hitForce}`);
 });
@@ -110,7 +111,9 @@ test('a glancing hit slews the nose AWAY from what it clipped, not into it', () 
      wrapped the car round the obstacle (yawRate -0.24, 2026-09-23). */
   const car = { x: 0, z: 0, yaw: 0, vx: 10, vz: 3, yawRate: 0, impact: 0 };
   resolveObstacles(car, [{ x: 3.2, z: 1.4, yaw: 0, offsets: [-1.6, 0, 1.6], radius: 0.95, reach: 2.6, tag: 'parked' }]);
-  assert.ok(car.vz < 0.5, `pushed away to the left, vz ${car.vz}`);
+  /* (vz < 0.5 until 2026-11-11, when the push cancelled the whole closing speed at the centre of gravity. The
+     impulse acts at the corner now: part of it stops the drift, part turns the car -- 3 -> 1.2 m/s, yaw +0.75.) */
+  assert.ok(car.vz < 1.5, `pushed away to the left, vz ${car.vz}`);
   assert.ok(car.yawRate > 0.1, `nose turns left, away from it: yawRate ${car.yawRate}`);
   // mirrored: clipped on the front-LEFT, the nose turns right
   const car2 = { x: 0, z: 0, yaw: 0, vx: 10, vz: -3, yawRate: 0, impact: 0 };
@@ -118,6 +121,6 @@ test('a glancing hit slews the nose AWAY from what it clipped, not into it', () 
   assert.ok(car2.yawRate < -0.1, `nose turns right, away from it: yawRate ${car2.yawRate}`);
   // and a shove on the REAR-right swings the tail away (nose right): a PIT spins you the way a PIT does
   const car3 = { x: 0, z: 0, yaw: 0, vx: 0, vz: 3, yawRate: 0, impact: 0 };
-  resolveObstacles(car3, [{ x: -3.2, z: 1.8, yaw: 0, offsets: [-1.6, 0, 1.6], radius: 0.95, reach: 2.6, tag: 'parked' }]);
+  resolveObstacles(car3, [{ x: -3.2, z: 1.6, yaw: 0, offsets: [-1.6, 0, 1.6], radius: 0.95, reach: 2.6, tag: 'parked' }]);
   assert.ok(car3.yawRate < -0.05, `rear pushed left turns the nose right: yawRate ${car3.yawRate}`);
 });
