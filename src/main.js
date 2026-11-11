@@ -3220,7 +3220,9 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
        and compiles ~1,350 pipelines up front -- on an iPhone that is the heat
        and a good share of the memory that got the tab killed. Pipelines
        compile when first drawn instead: a hitch, not a crash. */
-    if (TOUCH) { setBootProgress(100, 'Ready!'); if (boot) { boot.remove(); boot = null; } }
+    /* `?nowarm` skips it too (2026-11-11): it only skipped the asset pre-cache,
+       so tools/smoke-boot.mjs sat through ~1,350 software-GL compiles. */
+    if (TOUCH || new URLSearchParams(location.search).has('nowarm')) { setBootProgress(100, 'Ready!'); if (boot) { boot.remove(); boot = null; } }
     else {
     setBootProgress(95, 'Warming shaders…');
     const dummyGroup = new THREE.Group();
