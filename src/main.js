@@ -3332,8 +3332,17 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
       if (boot) { boot.remove(); boot = null; }
       if (window._startBackgroundAssetStream) window._startBackgroundAssetStream();
     };
+    /* Then two REAL frames before the overlay goes (2026-11-11). compileAsync
+       links programs, but the game draws through the post pipeline's own
+       render context, so every node state is built again on the first real
+       draw -- of the dummies above, and of the parked-car LODs and shadow
+       casters world.bootWarm shows meanwhile. Behind the loading screen that
+       is free; mid-drive each was a hitch. */
+    world.bootWarm = true;
     Promise.race([renderer.compileAsync(scene, camera), new Promise((r) => setTimeout(r, 1500))])
-      .catch((e) => console.warn('warm-up:', e.message)).then(drop);
+      .catch((e) => console.warn('warm-up:', e.message))
+      .then(() => new Promise((r) => { requestAnimationFrame(() => requestAnimationFrame(r)); setTimeout(r, 1500); }))   // the timer: a hidden tab gets no frames
+      .then(() => { world.bootWarm = false; drop(); });
     }
   }
   stats.sample(renderer);

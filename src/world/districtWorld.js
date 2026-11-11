@@ -597,7 +597,14 @@ export class DistrictWorld {
   update(x, z, vx = 0, vz = 0) {
     const ix = Math.floor(x / CHUNK), iz = Math.floor(z / CHUNK);
     const speed = Math.hypot(vx, vz);
-    this.coldBudget = COLD_PER_FRAME;   // first-draw node builds this frame may start (#warmCold, the parked shadow switch)
+    /* bootWarm (main.js holds it while the loading screen is up): every parked
+       LOD is drawn and every parked car casts, so the frames behind the
+       overlay build the node state of meshes that would otherwise pay for it
+       mid-drive -- the far LOD the first time a chunk is two rings out, the
+       shadow pass the first time you enter one. They go into the pool warm. */
+    const warm = !!this.bootWarm;
+    if (warm !== this._warmWas) { this._warmWas = warm; this.#rerecordAll(); }
+    this.coldBudget = warm ? Infinity : COLD_PER_FRAME;   // first-draw node builds this frame may start (#warmCold, the parked shadow switch)
     this.#warmCold();
     /* Compact city: photo mode lifts the clip (every preset still renders),
        and dropping it again releases whatever it built outside -- below. A
@@ -798,19 +805,19 @@ export class DistrictWorld {
            nearer. Shadows still cast only from the standing chunk. */
         const drawn = !!this.chunks.get(key)?.visible;
         for (const m of pl.near) {
-          m.visible = d <= 1;
+          m.visible = warm || d <= 1;
           const p = m.userData.pooled;
           /* Casting from the chunk you stand in. A mesh that has never cast
              builds its shadow-pass nodes the frame it starts: twelve at once
              on the frame you cross into a chunk. Those start a couple a frame
              (coldBudget); one that has cast before switches at once. */
-          const cast = d === 0;
+          const cast = warm || d === 0;
           if (cast && !m.castShadow && p && !p.cast && drawn) {
             if (this.coldBudget > 0) { this.coldBudget--; m.castShadow = true; m.parent && (this.chunks.get(key).needsUpdate = true); }
           } else m.castShadow = cast;
-          if (p && drawn && d <= 1 && m.userData.coldMask === undefined) { p.main = true; if (m.castShadow) p.cast = true; }   // instPool.js: which recycled mesh is warm
+          if (p && drawn && m.visible && m.userData.coldMask === undefined) { p.main = true; if (m.castShadow) p.cast = true; }   // instPool.js: which recycled mesh is warm
         }
-        for (const m of pl.far) { m.visible = d > 1; if (drawn && d > 1 && m.userData.pooled) m.userData.pooled.main = true; }
+        for (const m of pl.far) { m.visible = warm || d > 1; if (drawn && m.visible && m.userData.pooled) m.userData.pooled.main = true; }
         /* Shadows from the chunk you are standing in, and nowhere else.
            389 near parked cars were casting 950k triangles into the cascades
            -- more than the entire authored prop kit -- to draw a row of
