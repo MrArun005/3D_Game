@@ -369,9 +369,33 @@ export function resolveObstacles(car, obstacles) {
          costing THEIR engine (main.js damageVehicle on hitRef). */
       const ours = -(car.vx * nx + car.vz * nz);
       if (ours > 0 && into > (car.hitForce || 0)) { car.hitForce = into; car.hitTag = o.tag || 'prop'; car.hitRef = o.car || null; }   // hitRef: the traffic car behind the body, for ram damage
-      if (o.car) {
-        o.car.panic = 4.0;
-        o.car.speed = Math.max(0, o.car.speed - into * 0.4 * (car.ramForce || 1.0));
+      if (o.car) o.car.panic = 4.0;
+    }
+    /* A traffic car takes its part of the hit along its own path (it is a
+       path follower: one speed, along its heading). al = how much of the
+       normal lies along its travel: -1 = we are behind it, pushing; +1 = it
+       runs into us; 0 = a side hit.
+       From BEHIND it is shoved forward by half of the closing speed and we
+       lose only the other half (two cars of a mass, no bounce). Until
+       2026-11-11 a hit from any direction SLOWED it and we lost everything:
+       rear-end a 40 km/h car at 60 with the throttle down and both were
+       doing 16 km/h. Head-on and side hits slow it as before (0.4 of the
+       closing speed, x ramForce: the PIT), above the 1.2 m/s event line. */
+    let share = 1;                                                    // the part of the closing speed WE lose
+    if (o.car) {
+      const al = nx * ofx + nz * ofz;
+      const ram = car.ramForce || 1.0;
+      /* ...up to half as fast again as it cruises: it steers on rails, and a
+         follower shoved round its corners at any speed we can reach is not a
+         car any more. Past that it is as immovable as it used to be. */
+      const top = (o.car.cruise ?? ov) * 1.5 + 2;
+      if (al < -0.7) {
+        const give = Math.max(0, Math.min(0.6, 0.5 * ram, (top - ov) / into));
+        o.car.speed += into * give;
+        o.car.shoved = 0.8;                                           // s: traffic.js lets a shoved car roll on instead of braking back into our bumper
+        share = 1 - give;
+      } else if (into > 1.2) {
+        o.car.speed = Math.max(0, o.car.speed - into * 0.4 * ram);
       }
     }
     /* The impulse acts at the contact, so a glancing blow slews the car
@@ -379,9 +403,10 @@ export function resolveObstacles(car, obstacles) {
        j * (arm x n)_y / K2, + = nose left (the sign was once the negative
        and wrapped the car round the obstacle: 2026-09-23, test/contact). */
     const rn = az * nx - ax * nz;
-    const j = into / (1 + rn * rn / K2_CAR);
-    car.vx += nx * j * 1.05;    // a parked car gives a little, a wall none
-    car.vz += nz * j * 1.05;
+    const j = into * share / (1 + rn * rn / K2_CAR);
+    const e = share < 1 ? 1 : 1.05;                                   // a parked car gives a little, a wall none; a shoved car has already taken its half
+    car.vx += nx * j * e;
+    car.vz += nz * j * e;
     let w1 = w + j * rn / K2_CAR;
     if (Math.abs(w1) > W_MAX && Math.abs(w1) > Math.abs(w)) w1 = Math.sign(w1) * Math.max(W_MAX, Math.abs(w));
     car.yawRate = w1;

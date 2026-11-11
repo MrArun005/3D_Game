@@ -52,7 +52,8 @@ test('nudging a car that is moving with you is not a crash: closing speed is rel
   resolveObstacles(car, [body]);
   assert.equal(car.impact, 0, 'a 1 m/s closing nudge is below the 1.2 m/s event threshold');
   assert.ok(car.vx > 9.5, `we keep riding with it, vx ${car.vx}`);   // before the fix vx went to ~0: a dead stop in the lane
-  assert.equal(traffic.speed, 10);
+  // not slowed -- and, from behind, nudged along by half the closing speed (2026-11-11: traffic is pushable)
+  assert.ok(traffic.speed >= 10 && traffic.speed <= 10.51, `traffic speed ${traffic.speed}`);
   // the same geometry against a PARKED car is the full 11 m/s crash
   const car2 = hero(11);
   resolveObstacles(car2, [parked(4.62, 0)]);

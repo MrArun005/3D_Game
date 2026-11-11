@@ -1389,7 +1389,13 @@ export class Traffic {
         car.lane = Math.max(car.lane, Math.max(1, this.E[car.edge]?.lanes || 1) - 1);   // car.edge is an INDEX into E
       }
 
-      const accel = limit > car.speed ? 4.5 : 9.0;
+      /* Shoved from behind by the player (vehicle/collision.js sets car.shoved
+         and adds the speed): it rolls on for a moment, easing off, instead
+         of braking at 20 m/s2 back into the bumper that pushed it -- unless
+         what holds it is ahead of it (a leader, a light, a give-way). */
+      if (car.shoved > 0) car.shoved -= step;
+      const rolling = car.shoved > 0 && lead > car.speed && hold === null;
+      const accel = limit > car.speed ? 4.5 : rolling ? 0.9 : 9.0;
       car.speed += Math.max(-accel, Math.min(accel, limit - car.speed)) * step * 2.2;
       car.stopped = car.speed < 0.4;
       if (car.laneCooldown > 0) {

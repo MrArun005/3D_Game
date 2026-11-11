@@ -79,9 +79,36 @@ test('an angled hit on a parked car turns the nose along it instead of holding t
   assert.ok(car.vx > 10, `keeps its speed along the row: ${car.vx.toFixed(1)} of 12`);
 });
 
-test('rear-ending slower traffic is survivable for now: a hit is registered against the right car', () => {
+test('rear-ending slower traffic pushes it along; neither car is stopped', () => {
+  // 60 km/h (71 by the time we reach it, throttle down) into a car doing 40. Was: BOTH at 15.7 km/h at the worst, then 40.
   const r = rearEnd(60, 40);
   assert.equal(r.hitTag, 'traffic');
   assert.ok(r.peakImpact > 3 && r.peakImpact < 20, `impact ${r.peakImpact.toFixed(1)}`);
+  assert.ok(r.oursMin > 50, `we were slowed to ${r.oursMin.toFixed(0)} km/h`);
+  assert.ok(r.theirMin > 39.9, `it was slowed to ${r.theirMin.toFixed(0)} km/h by being hit from behind`);
+  assert.ok(r.theirMax > 50 && r.theirMax < 40 * 1.5 + 7.3, `pushed to ${r.theirMax.toFixed(0)} km/h: above its 40, capped at 1.5x + 2 m/s`);
   assert.ok(r.gap > 4.5, `we end behind it, not in it: gap ${r.gap.toFixed(2)}`);
+});
+
+test('pushable only from behind: a head-on or a side hit slows traffic (the PIT), a nudge below 1.2 m/s leaves it alone', () => {
+  const body = (x, z, yaw, speed) => ({ x, z, yaw, offsets: [-1.45, 0, 1.45], radius: 0.98, reach: 2.9, tag: 'traffic', car: { speed, panic: 0, cruise: 12 } });
+  const hero = (vx, vz = 0) => ({ x: 0, z: 0, yaw: 0, vx, vz, yawRate: 0, impact: 0 });
+  // head-on: it comes at us at 8 m/s, we do 8
+  const ho = body(4.62, 0, Math.PI, 8); resolveObstacles(hero(8), [ho]);
+  assert.ok(ho.car.speed < 8 && ho.car.shoved === undefined, `head-on: its speed ${ho.car.speed}`);
+  // T-bone: it crosses ahead of our nose, we drive into its flank
+  const tb = body(2.3 + 0.9 - 0.01, 0, Math.PI / 2, 8); resolveObstacles(hero(10), [tb]);
+  assert.ok(tb.car.speed < 8 && tb.car.shoved === undefined, `side hit: its speed ${tb.car.speed}`);
+  // from behind at +6 m/s: half each
+  const re = body(4.62, 0, 0, 6), me = hero(12); resolveObstacles(me, [re]);
+  assert.ok(Math.abs(re.car.speed - 9) < 0.01 && re.car.shoved > 0, `shoved to ${re.car.speed}`);
+  assert.ok(Math.abs(me.vx - 9) < 0.05, `we keep ${me.vx}: the pair leaves at the common speed`);
+  assert.equal(me.hitTag, 'traffic');                      // still our hit, for the wanted level and the damage
+  // the cap: already at 1.5x cruise + 2 it takes nothing more and we lose it all
+  const fast = body(4.62, 0, 0, 20), me2 = hero(24); resolveObstacles(me2, [fast]);
+  assert.equal(fast.car.speed, 20);
+  assert.ok(me2.vx < 20.3, `against a car that cannot be pushed further we drop to its speed: ${me2.vx}`);
+  // a ram bar (ramForce 1.6) gives it more of the hit
+  const rb = body(4.62, 0, 0, 6), me3 = hero(12); me3.ramForce = 1.6; resolveObstacles(me3, [rb]);
+  assert.ok(rb.car.speed > 9.5, `ram bar: shoved to ${rb.car.speed}`);
 });
