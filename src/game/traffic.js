@@ -15,6 +15,27 @@ import { roofsNear } from '../world/districtWorld.js';
 import { glow } from '../core/additive.js';
 import { setLondonNight, fleetStyle } from '../world/londonVehicles.js';
 
+/**
+ * A cruiser's speed toward `target`, at most `up` / `down` m/s2 -- except that
+ * one the player has just shoved from behind (vehicle/collision.js adds the
+ * speed and sets `shoved`, seconds) rolls on, easing off at SHOVE_COAST, for
+ * as long as the flag lasts. Until 2026-11-11 only civilians honoured it: a
+ * cruiser hit from behind braked at 14-26 m/s2 straight back into the bumper
+ * that pushed it, so it was a wall on wheels. `cap` is an optional ceiling; a
+ * shoved car may exceed it by half, the bound collision.js already shoves to.
+ * (The road-graph path, #driveRoad, keeps its own proportional line and
+ * applies the same rule there.)
+ */
+const SHOVE_COAST = 2;
+export function cruiserSpeed(c, target, dt, up, down, cap = Infinity) {
+  const rolling = c.shoved > 0;
+  if (rolling) c.shoved -= dt;
+  const dn = rolling && target < c.speed ? Math.min(down, SHOVE_COAST) : down;
+  c.speed += Math.max(-dn * dt, Math.min(up * dt, target - c.speed));
+  c.speed = Math.max(0, Math.min(rolling ? cap * 1.5 + 2 : cap, c.speed));
+  return c.speed;
+}
+
 /* Every officer's muzzle-flash sphere shares one geometry and one material;
    a redeploy used to allocate both and never dispose them. */
 let _flashGeo = null, _flashMat = null;
@@ -205,7 +226,7 @@ export class Traffic {
     c.yaw += Math.max(-2.2 * dt, Math.min(2.2 * dt, d));
     const reach = Math.hypot(aimX - c.x, aimZ - c.z);
     const target = reach < 8 ? reach * 1.1 : speedCap;
-    c.speed += Math.max(-14 * dt, Math.min(9 * dt, target - c.speed));
+    cruiserSpeed(c, target, dt, 9, 14);
     c.x += Math.cos(c.yaw) * c.speed * dt;
     c.z -= Math.sin(c.yaw) * c.speed * dt;
   }
@@ -216,9 +237,13 @@ export class Traffic {
     while (c.pathLen - c.s < LOOKAHEAD && guard++ < 40) this.#extendGraph(c);
     while (c.gates.length && c.gates[0].s < c.s - 2) c.gates.shift();
     const limit = Math.min(c.cruise, this.#leaderLimit(c, player));
-    const accel = limit > c.speed ? 6.5 : 11;
+    // a leader or a light ahead (limit under its cruise) holds it whatever pushed it; otherwise a shoved cruiser rolls on
+    if (limit < c.cruise) c.shoved = 0;
+    const rolling = c.shoved > 0;
+    if (rolling) c.shoved -= dt;
+    const accel = limit > c.speed ? 6.5 : rolling ? 0.9 : 11;      // the civilians' rule (update(): 0.9 while it rolls on from a shove)
     c.speed += Math.max(-accel, Math.min(accel, limit - c.speed)) * dt * 2.4;
-    c.speed = Math.max(0, Math.min(c.cruise, c.speed));
+    c.speed = Math.max(0, Math.min(rolling ? c.cruise * 1.5 + 2 : c.cruise, c.speed));   // its cruise is the ceiling, except for the moment after a shove
     c.s += c.speed * dt;
     this.#place(c);
   }
@@ -1849,7 +1874,7 @@ export class Traffic {
         // a free-mode cruiser sitting still far from you has no other way out (stale is road-mode, lost needs 150 m): six seconds, then it re-spawns
         c.stuckT = (c.speed < 0.5 && gap > 40) ? (c.stuckT ?? 0) + dt : 0;
         if (c.stuckT > 6) { c.live = false; c.mesh.visible = false; c.mode = 'road'; c.stuckT = 0; continue; }
-        c.speed += Math.max(-14 * dt, Math.min(9 * dt, target - c.speed));
+        cruiserSpeed(c, target, dt, 9, 14);
         c.x += Math.cos(c.yaw) * c.speed * dt;
         c.z -= Math.sin(c.yaw) * c.speed * dt;
 

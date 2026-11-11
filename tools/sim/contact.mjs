@@ -14,6 +14,7 @@
 import { stepVehicle } from '../../src/vehicle/dynamics.js';
 import { HANDLING, VEHICLE_PROFILES } from '../../src/vehicle/config.js';
 import { settled, accelerateTo, openField, CAR, H } from './handling.mjs';
+import { cruiserSpeed } from '../../src/game/traffic.js';
 
 const KMH = 3.6, DEG = 180 / Math.PI;
 export function gtaMuscle() { CAR.assist = HANDLING.gta; CAR.profile = VEHICLE_PROFILES.muscle; openField(true); }
@@ -85,19 +86,24 @@ export function brush(kmh = 60, overlap = 0.2) {
 }
 
 /** Rear-ending traffic doing `their` km/h at `ours`, throttle held. The traffic car is a path follower: speed along +x, easing back to its limit. */
-export function rearEnd(ours = 60, their = 40, seconds = 4, ram = 1) {
+export function rearEnd(ours = 60, their = 40, seconds = 4, ram = 1, model = 'civilian') {
   const c = accelerateTo(settled(), ours);
   c.x = 0; c.z = 0; aim(c, 0);
   const tc = { speed: their / KMH, panic: 0, cruise: their / KMH }, limit = their / KMH;
-  const body = { x: 14, z: 0, yaw: 0, offsets: [-1.45, 0, 1.45], radius: 0.98, reach: 2.9, tag: 'traffic', car: tc };
+  const body = { x: 14, z: 0, yaw: 0, offsets: [-1.45, 0, 1.45], radius: 0.98, reach: 2.9, tag: model === 'civilian' ? 'traffic' : 'police', car: tc };
   c.obstacles = () => [body]; c.buildings = () => [];
   c.throttle = 1; c.steerTarget = 0; c.ramForce = ram;
   let peak = 0, theirMax = 0, theirMin = Infinity, oursMin = Infinity, hit = false;
   for (let i = 0; i < seconds * 120; i++) {
     // traffic.js's follower, reduced (its civilian speed line): 4.5 up, 9.0 down -- 0.9 while it rolls on from a shove -- x 2.2
-    if (tc.shoved > 0) tc.shoved -= H;
-    const acc = limit > tc.speed ? 4.5 : tc.shoved > 0 ? 0.9 : 9.0;
-    tc.speed += Math.max(-acc, Math.min(acc, limit - tc.speed)) * H * 2.2;
+    // ...or a police cruiser in free pursuit (traffic.js cruiserSpeed: 9 up, 14 down), or that line as it was before cruisers honoured the shove
+    if (model === 'cruiser') cruiserSpeed(tc, limit, H, 9, 14);
+    else if (model === 'cruiserOld') tc.speed += Math.max(-14 * H, Math.min(9 * H, limit - tc.speed));
+    else {
+      if (tc.shoved > 0) tc.shoved -= H;
+      const acc = limit > tc.speed ? 4.5 : tc.shoved > 0 ? 0.9 : 9.0;
+      tc.speed += Math.max(-acc, Math.min(acc, limit - tc.speed)) * H * 2.2;
+    }
     body.x += tc.speed * H;
     stepVehicle(c, H); peak = Math.max(peak, c.impact || 0); c.impact *= Math.exp(-8 * H);
     if (peak > 0) hit = true;
@@ -148,6 +154,7 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop()
   console.log('PARKED-CAR brush @60: overlap | 0.3 s after | min | end | shove m | yaw');
   for (const ov of [0.05, 0.2, 0.3, 0.5, 0.9]) { const r = brush(60, ov); console.log(`  overlap ${f(ov, 2)}   ${f(r.before)} -> ${f(r.at03s)} | ${f(r.min)} | ${f(r.end)} | shove ${f(r.shove, 2)} | yaw ${f(r.yawDeg)}  impact ${f(r.peakImpact)}`); }
   { const r = rearEnd(); console.log(`REAR-END 60 into 40: ours ${f(r.ours)} (min ${f(r.oursMin)})  theirs ${f(r.theirs)} (min ${f(r.theirMin)}, max ${f(r.theirMax)})  impact ${f(r.peakImpact)}  gap ${f(r.gap, 2)}`); }
+  for (const m of ['cruiserOld', 'cruiser']) { const r = rearEnd(60, 40, 4, 1, m); console.log(`REAR-END a police cruiser (${m}) 60 into 40: ours ${f(r.ours)} (min ${f(r.oursMin)})  theirs ${f(r.theirs)} (min ${f(r.theirMin)}, max ${f(r.theirMax)})  impact ${f(r.peakImpact)}  gap ${f(r.gap, 2)}  tag ${r.hitTag}`); }
   console.log('HEAD-ON: nose past the near face m | rebound km/h');
   for (const [kmh, thick, dt] of [[60, 2, H], [150, 2, H], [250, 2, H], [250, 0.3, H], [150, 2, 1 / 30], [150, 2, 1 / 10], [250, 0.3, 1 / 30]]) {
     const r = headOn(kmh, thick, dt); console.log(`  ${kmh} km/h, ${thick} m wall, dt 1/${Math.round(1 / dt)}   ${r.through ? 'THROUGH' : 'held'}  nose ${f(r.nose, 2)}  rebound ${f(r.rebound)}  end ${f(r.end)}  ${r.finite ? '' : 'NaN'}`);

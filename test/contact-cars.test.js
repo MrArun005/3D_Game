@@ -112,3 +112,30 @@ test('pushable only from behind: a head-on or a side hit slows traffic (the PIT)
   const rb = body(4.62, 0, 0, 6), me3 = hero(12); me3.ramForce = 1.6; resolveObstacles(me3, [rb]);
   assert.ok(rb.car.speed > 9.5, `ram bar: shoved to ${rb.car.speed}`);
 });
+
+test('a police cruiser hit from behind is pushed along like traffic, and still brakes hard when nothing pushed it', async () => {
+  const { cruiserSpeed } = await import('../src/game/traffic.js');
+  /* Was: collision.js added the shove, and the cruiser's own speed line took it
+     straight back at 14 m/s2 (26 on the road graph): rear-ended at 60 doing 40
+     it held us at 40.2 km/h for as long as the throttle was down. */
+  const old = rearEnd(60, 40, 4, 1, 'cruiserOld'), now = rearEnd(60, 40, 4, 1, 'cruiser');
+  assert.ok(old.ours < 42, `the old line holds us at its speed: ${old.ours.toFixed(1)} km/h`);
+  assert.ok(now.ours > 55 && now.theirMax > 55, `pushed along: we do ${now.ours.toFixed(0)}, it reached ${now.theirMax.toFixed(0)} km/h`);
+  assert.ok(now.gap > 4.5, `behind it, not in it: gap ${now.gap.toFixed(2)}`);
+  assert.equal(now.hitTag, 'police');                         // still our hit on a cruiser: the star is unchanged
+  // not shoved: the pursuit's own accelerations, exactly (9 up, 14 down)
+  const c = { speed: 20 }; cruiserSpeed(c, 0, 0.1, 9, 14);
+  assert.ok(Math.abs(c.speed - 18.6) < 1e-9, `unshoved braking: ${c.speed}`);
+  cruiserSpeed(c, 30, 0.1, 9, 14);
+  assert.ok(Math.abs(c.speed - 19.5) < 1e-9, `unshoved accelerating: ${c.speed}`);
+  // shoved: it coasts (2 m/s2) while the flag lasts, then brakes as before
+  const s = { speed: 20, shoved: 0.15 }; cruiserSpeed(s, 0, 0.1, 9, 14);
+  assert.ok(Math.abs(s.speed - 19.8) < 1e-9 && s.shoved > 0, `coasting: ${s.speed}`);
+  cruiserSpeed(s, 0, 0.1, 9, 14); cruiserSpeed(s, 0, 0.1, 9, 14);
+  assert.ok(s.speed < 18.3 && !(s.shoved > 0), `flag spent, braking again: ${s.speed}`);
+  // with a ceiling: hard, except while it rolls on from a shove (up to 1.5x + 2, the bound collision.js shoves to)
+  const r = { speed: 16, shoved: 0.5 }; cruiserSpeed(r, 12, 0.01, 15.6, 26.4, 12);
+  assert.ok(r.speed > 15.9, `a shoved cruiser keeps ${r.speed} over its cruise of 12`);
+  const u = { speed: 16 }; cruiserSpeed(u, 12, 0.01, 15.6, 26.4, 12);
+  assert.equal(u.speed, 12);
+});
