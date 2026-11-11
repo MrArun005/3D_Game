@@ -105,10 +105,30 @@ function glareMaterial(posAttr, colAttr, phAttr, far = false, scAttr = null, kep
  * lamp heads without a colour glow sodium. Returns null for an empty list
  * (a zero-count buffer is a WebGPU error, see districtWorld's inst guard).
  */
+/* Near sprites are recycled (2026-11-11). Each chunk's sprite has a material
+   of its own (its instanced attributes are baked into the nodes), so a new
+   one is a full TSL build the first time it draws -- one per streamed chunk --
+   and the release sweep only frees Meshes, so the old one was never disposed
+   at all. A released chunk now hands its sprite back (releaseGlare) and the
+   next chunk rewrites its attribute arrays; capacity is rounded up so most
+   chunks fit a recycled one. */
+const FREE = [];
+const FREE_MAX = 24;
+const capFor = (n) => (n <= 64 ? 64 : 2 ** Math.ceil(Math.log2(n)));
+
 export function buildGlare(heads, seed = 1, far = false) {
   if (!heads.length) return null;
   const n = heads.length;
-  const pos = new Float32Array(n * 3), col = new Float32Array(n * 3), ph = new Float32Array(n), sc = new Float32Array(n);
+  let sp = null, cap = n;
+  if (!far) {
+    let best = -1;
+    for (let i = 0; i < FREE.length; i++) { const c = FREE[i].userData.glare.cap; if (c >= n && (best < 0 || c < FREE[best].userData.glare.cap)) best = i; }
+    if (best >= 0) sp = FREE.splice(best, 1)[0];
+    cap = sp ? sp.userData.glare.cap : capFor(n);
+  }
+  const g = sp?.userData.glare;
+  const pos = g ? g.pos.array : new Float32Array(cap * 3), col = g ? g.col.array : new Float32Array(cap * 3);
+  const ph = g ? g.ph.array : new Float32Array(cap), sc = g ? g.sc.array : new Float32Array(cap);
   const c = new THREE.Color();
   heads.forEach((h, i) => {
     pos[i * 3] = h.x; pos[i * 3 + 1] = h.y; pos[i * 3 + 2] = h.z;
@@ -118,14 +138,28 @@ export function buildGlare(heads, seed = 1, far = false) {
     ph[i] = ((seed * 7919 + i * 104729) % 628) / 100;
     sc[i] = h.glare ?? (h.neon ? 2.5 : 1.7);
   });
+  if (g) {
+    for (const a of [g.pos, g.col, g.ph, g.sc]) a.needsUpdate = true;
+    sp.count = n;
+    sp.visible = true;
+    return sp;
+  }
   const posAttr = new THREE.InstancedBufferAttribute(pos, 3), colAttr = new THREE.InstancedBufferAttribute(col, 3), phAttr = new THREE.InstancedBufferAttribute(ph, 1);
   const scAttr = far ? null : new THREE.InstancedBufferAttribute(sc, 1);
   // far heads that say whether their cell is ever built (compact city); absent = all kept, the old shader
   const keptAttr = far && heads.some((h) => h.kept === 0)
     ? new THREE.InstancedBufferAttribute(Float32Array.from(heads, (h) => (h.kept === 0 ? 0 : 1)), 1) : null;
-  const sp = new THREE.Sprite(glareMaterial(posAttr, colAttr, phAttr, far, scAttr, keptAttr));
+  sp = new THREE.Sprite(glareMaterial(posAttr, colAttr, phAttr, far, scAttr, keptAttr));
+  if (!far) sp.userData.glare = { cap, pos: posAttr, col: colAttr, ph: phAttr, sc: scAttr };
   sp.count = n;
   sp.frustumCulled = false;      // bundle contents are culled as a chunk
   sp.renderOrder = 3;
   return sp;
+}
+
+/** A released chunk's glare sprite: kept for the next chunk, or its material freed. The caller removes it from its parent. */
+export function releaseGlare(sp) {
+  if (!sp?.userData?.glare) return;
+  if (FREE.length < FREE_MAX) FREE.push(sp);
+  else sp.material.dispose();
 }

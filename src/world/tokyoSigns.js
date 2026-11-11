@@ -314,14 +314,22 @@ export function tokyoSignMaterial() {
 let ATLAS = null;
 const tokyoAtlas = () => (ATLAS ??= texTokyoAtlas());
 
-/** One InstancedMesh for a chunk's boards, [{ m: Matrix4, cell: [u0, v0, du, dv] }]: one draw for every Tokyo board in it. */
-export function tokyoBoardMesh(boards) {
-  const g = new THREE.PlaneGeometry(1, 1);
-  g.userData.owned = true;   // the chunk's release sweep frees it
+/** One InstancedMesh for a chunk's boards, [{ m: Matrix4, cell: [u0, v0, du, dv] }]: one draw for every Tokyo board in it.
+    `pool` (world/instPool.js) recycles a released chunk's mesh + geometry, so the new one draws without a node build. */
+const boardGeo = () => new THREE.PlaneGeometry(1, 1);
+export function tokyoBoardMesh(boards, pool = null) {
   const cells = new Float32Array(boards.length * 4);
-  const mesh = new THREE.InstancedMesh(g, tokyoSignMaterial(), boards.length);
+  let mesh;
+  if (pool) mesh = pool.takeOwned('tokyoBoard', boardGeo, tokyoSignMaterial(), boards.length, { aCell: 4 });
+  else {
+    const g = boardGeo();
+    g.userData.owned = true;   // the chunk's release sweep frees it
+    mesh = new THREE.InstancedMesh(g, tokyoSignMaterial(), boards.length);
+    g.setAttribute('aCell', new THREE.InstancedBufferAttribute(new Float32Array(boards.length * 4), 4));
+  }
   boards.forEach((b, i) => { mesh.setMatrixAt(i, b.m); cells.set(b.cell, i * 4); });
-  g.setAttribute('aCell', new THREE.InstancedBufferAttribute(cells, 4));
+  const attr = mesh.geometry.attributes.aCell;
+  attr.array.set(cells); attr.needsUpdate = true;
   mesh.instanceMatrix.needsUpdate = true;
   mesh.computeBoundingSphere();
   mesh.receiveShadow = true;   // no casting: a board's shadow is a smear on the wall behind it

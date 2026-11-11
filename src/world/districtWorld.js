@@ -19,7 +19,7 @@ import { loadTerraces, terraceFor, TERRACES } from './terraceModels.js';
 import { loadIndustrial, industrialYard, INDUSTRIAL } from './industrialYard.js';
 import { boardCell, tokyoBoardMesh } from './tokyoSigns.js';
 import { buildDecals, decalMaterial, decalGeometry } from './decals.js';
-import { buildGlare, setGlareRing, setGlareClip } from './glare.js';
+import { buildGlare, releaseGlare, setGlareRing, setGlareClip } from './glare.js';
 import { keptCellSet, wallProps, ringHides, segmentSplit, pieceHas } from './playArea.js';
 import { buildSpan, signatureBridge, deckProfile, profileAt } from './spans.js';
 import { skirtFoot } from './district.js';
@@ -27,6 +27,7 @@ import { treeColour, BARK } from './foliage.js';
 import { wallTint } from './wallPalette.js';
 import { styleFor, buildArt, artMaterial, ART_CAP } from './artBuildings.js';
 import { regentChunk, regentEnabled, regentPlan } from './regent.js';
+import { InstPool } from './instPool.js';
 
 /**
  * Halstead Bay in three dimensions.
@@ -40,6 +41,18 @@ const CHUNK = 256;
 const LOG_SLICES = typeof location !== 'undefined' && new URLSearchParams(location.search).has('slices');
 const BUILD_MS = 2.0;      // 2.0ms budget prevents micro-stutters and drops below 60fps
 const ck = (ix, iz) => `${ix},${iz}`;
+/* A chunk key back to its cell, parsed once per key. update() did
+   `k.split(',').map(Number)` for every chunk in four loops every frame: ~100
+   short-lived arrays a frame for nothing (2026-11-11, the GC pauses). */
+/* First-draw node builds allowed to START per frame once the game is running
+   (a cold recycled mesh joining the frame, a parked car's first shadow). */
+const COLD_PER_FRAME = 2;
+const CELLS = new Map();
+function cellOf(k) {
+  let c = CELLS.get(k);
+  if (!c) { const i = k.indexOf(','); c = [+k.slice(0, i), +k.slice(i + 1)]; CELLS.set(k, c); }
+  return c;
+}
 
 /* The file carries footprints, not heights — the 2D planner has no opinion on
    how tall anything is. Heights are derived here, deterministically from the
@@ -208,6 +221,8 @@ export class DistrictWorld {
     this.nodeDegreeById = new Map();    // node id -> how many roads meet there   // chunk key -> [{x,y,z,colour,intensity,range}] block hero lights (game/lighting.js)     // chunk key -> [{x,y,z}] lamp heads (night light pool)
     this.facadeGroups = new Map();
     this.regentMeshes = new Map();     // chunk key -> { mesh, proxy }: the Regent street wall, OUTSIDE the chunk bundle so three culls it by frustum (see the build step)
+    this.cold = [];                    // pooled meshes waiting to be let into the frame (#warmCold)
+    this.instPool = new InstPool();    // released chunks' InstancedMeshes, reused by the next chunk (instPool.js: no node build per new mesh)
     this.parkedLod = new Map();        // chunk key -> { near, far, byBody } parked-car LOD sets (#cullFar swaps them; #buildSteps sets, releaseChunk deletes). Dropped by the lite/radius constructor edit in 22c1c0c and every chunk build died on .set -- keep it.
     this.isLite = !!opts.lite;
     this.propRadius = opts.lite ? 1 : (opts.propRadius ?? 2);
@@ -582,6 +597,8 @@ export class DistrictWorld {
   update(x, z, vx = 0, vz = 0) {
     const ix = Math.floor(x / CHUNK), iz = Math.floor(z / CHUNK);
     const speed = Math.hypot(vx, vz);
+    this.coldBudget = COLD_PER_FRAME;   // first-draw node builds this frame may start (#warmCold, the parked shadow switch)
+    this.#warmCold();
     /* Compact city: photo mode lifts the clip (every preset still renders),
        and dropping it again releases whatever it built outside -- below. A
        change re-runs the far cull and the scan at once. */
@@ -674,6 +691,19 @@ export class DistrictWorld {
         if (wasPrimed && this.onChunkDone) this.onChunkDone(b.ms);
         // bundle rule: nothing inside a bundle is culled per object
         b.group.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+        /* A COLD mesh (new, or recycled without ever having been drawn) costs
+           a TSL node build the first frame it draws, and a chunk landing with
+           thirty of them put them all on one frame: the 0.7-1.0 s border
+           frames that were left once the pool had removed the rest (profile
+           2026-11-11). They join on no camera layer and are let in a couple a
+           frame by #warmCold(); a warm mesh draws at once. Not during the
+           boot prime: that is behind the loading screen. */
+        if (wasPrimed) {
+          b.group.traverse((o) => {
+            const p = o.isInstancedMesh && o.userData.pooled;
+            if (p && !p.main && o.userData.coldMask === undefined) { o.userData.coldMask = o.layers.mask; o.layers.mask = 0; this.cold.push(o); }
+          });
+        }
         b.group.needsUpdate = true;
         this.chunks.set(b.k, b.group);
         this.pending.delete(b.k);
@@ -695,12 +725,15 @@ export class DistrictWorld {
       const b = this.building;
       const maxAbandonR = (wasPrimed && speed < 1.0) ? this.radius + 1 : this.radius;
       if (Math.abs(b.cx - ix) > maxAbandonR || Math.abs(b.cz - iz) > maxAbandonR || (clipped && !this.keptCells.has(b.k))) {
+        const recycled = [];
         b.group.traverse((o) => {
           if (o.userData?.batched) this.catalogue.releaseBatched(o.userData.batched);
+          if (o.isSprite && o.userData.glare) { releaseGlare(o); recycled.push(o); return; }
           if (!o.isMesh) return;
-          if (o.isInstancedMesh) o.dispose();
+          if (o.isInstancedMesh) { if (this.instPool.give(o)) { recycled.push(o); return; } o.dispose(); }   // pooled (with its own geometry, if it has one), or freed
           if (o.geometry?.userData?.owned) o.geometry.dispose();
         });
+        for (const m of recycled) m.removeFromParent();
         for (const m of [this.propGroups, this.facadeGroups, this.parkedLod,
                          this.parkedByChunk, this.signalsByChunk,
                          this.solidsByChunk, this.poolsByChunk]) m.delete(b.k);
@@ -721,20 +754,21 @@ export class DistrictWorld {
     if (this.camera) {
       _frustum.setFromProjectionMatrix(_pv.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
       for (const [k, g] of this.chunks) {
-        const [a, b] = k.split(',').map(Number);
+        const c = cellOf(k), a = c[0], b = c[1];
         const d = Math.max(Math.abs(a - ix), Math.abs(b - iz));
-        if (d <= 1) { g.visible = true; continue; }
+        if (d <= 1) { g.visible = true; g.userData.seen = true; continue; }
         _box.min.set(a * CHUNK, -6, b * CHUNK); _box.max.set((a + 1) * CHUNK, 140, (b + 1) * CHUNK);
         g.visible = _frustum.intersectsBox(_box);
+        if (g.visible) g.userData.seen = true;   // drawn at least once: its meshes come out of the pool warm (instPool.js)
       }
     }
     // the Regent street wall casts its detailed shadow from the chunk you stand in only (the box proxies cast the far ones)
     for (const [key, r] of this.regentMeshes) {
-      const [a, b] = key.split(',').map(Number);
+      const c = cellOf(key), a = c[0], b = c[1];
       r.mesh.castShadow = Math.max(Math.abs(a - ix), Math.abs(b - iz)) === 0;
     }
     for (const [key, g] of this.propGroups) {
-      const [a, b] = key.split(',').map(Number);
+      const c = cellOf(key), a = c[0], b = c[1];
       const d = Math.max(Math.abs(a - ix), Math.abs(b - iz));
       const wasVisible = g.visible;
       g.visible = d <= this.propRadius;
@@ -762,8 +796,21 @@ export class DistrictWorld {
            line -- 'the cars are flickering'. The swap stays a street away;
            the saving has to come from a detail mesh that is cheaper, not
            nearer. Shadows still cast only from the standing chunk. */
-        for (const m of pl.near) { m.visible = d <= 1; m.castShadow = d === 0; }
-        for (const m of pl.far) m.visible = d > 1;
+        const drawn = !!this.chunks.get(key)?.visible;
+        for (const m of pl.near) {
+          m.visible = d <= 1;
+          const p = m.userData.pooled;
+          /* Casting from the chunk you stand in. A mesh that has never cast
+             builds its shadow-pass nodes the frame it starts: twelve at once
+             on the frame you cross into a chunk. Those start a couple a frame
+             (coldBudget); one that has cast before switches at once. */
+          const cast = d === 0;
+          if (cast && !m.castShadow && p && !p.cast && drawn) {
+            if (this.coldBudget > 0) { this.coldBudget--; m.castShadow = true; m.parent && (this.chunks.get(key).needsUpdate = true); }
+          } else m.castShadow = cast;
+          if (p && drawn && d <= 1 && m.userData.coldMask === undefined) { p.main = true; if (m.castShadow) p.cast = true; }   // instPool.js: which recycled mesh is warm
+        }
+        for (const m of pl.far) { m.visible = d > 1; if (drawn && d > 1 && m.userData.pooled) m.userData.pooled.main = true; }
         /* Shadows from the chunk you are standing in, and nowhere else.
            389 near parked cars were casting 950k triangles into the cascades
            -- more than the entire authored prop kit -- to draw a row of
@@ -787,8 +834,17 @@ export class DistrictWorld {
       }
     }
     const maxReleaseR = (this.primed && speed < 1.0) ? this.radius + 1 : this.radius;
-    for (const [k, g] of [...this.chunks]) {
-      const [a, b] = k.split(',').map(Number);
+    /* At most two chunks leave per frame (2026-11-11). Pulling away from a
+       stop drops the release radius by one ring, and all 16 pre-warmed chunks
+       went on the same frame: 358 buffer deletes, then a 231 ms GC pause
+       (measured). Spread over eight frames nobody sees it -- they are a ring
+       beyond what is drawn in detail. A chunk outside the compact city's clip
+       still goes at once (the far stand-ins would rise through it). */
+    let released = 0;
+    for (const [k, g] of this.chunks) {   // deleting the current key while iterating a Map is safe
+      const c = cellOf(k), a = c[0], b = c[1];
+      const outside = clipped && !this.keptCells.has(k);
+      if (released >= 2 && !outside) continue;
       /* ...and, in the compact city, a chunk photo mode built outside the
          clip goes the moment the clip is back: left standing, #cullFar would
          raise the far stand-ins through it (the pale-cube overlap). */
@@ -805,12 +861,16 @@ export class DistrictWorld {
           for (const m of [rgm.mesh, rgm.proxy]) if (m) { this.scene.remove(m); m.geometry.dispose(); }
           this.regentMeshes.delete(k);
         }
+        const recycled = [];
         g.traverse((o) => {
           if (o.userData?.batched) this.catalogue.releaseBatched(o.userData.batched);   // city-wide batches: free the ids
+          if (o.isSprite && o.userData.glare) { releaseGlare(o); recycled.push(o); return; }   // glare.js keeps it for the next chunk
           if (!o.isMesh) return;
-          if (o.isInstancedMesh) o.dispose();      // frees the instance buffers
+          const seen = !!g.userData.seen;
+          if (o.isInstancedMesh) { if (this.instPool.give(o, seen)) { recycled.push(o); return; } o.dispose(); }   // pooled for the next chunk (with its own geometry, if it has one), or its instance buffers freed
           if (o.geometry?.userData?.owned) o.geometry.dispose();
         });
+        for (const m of recycled) m.removeFromParent();
         this.chunks.delete(k);
         this.pending.delete(k);
         this.parkedByChunk.delete(k);
@@ -820,9 +880,10 @@ export class DistrictWorld {
         this.headsByChunk.delete(k);
         this.heroLightsByChunk.delete(k);
         this.onBreakablesGone?.(k);
-        this.#rerecordAll();
+        released++;
       }
     }
+    if (released) this.#rerecordAll();   // once per frame, not once per chunk
   }
 
   /**
@@ -1538,7 +1599,7 @@ export class DistrictWorld {
     inst(posts, A.mat.pole);
     inst(arms, A.mat.pole);
     if (zebra.length) {
-      const zm = new THREE.InstancedMesh(A.geo.plane, A.mat.paint, zebra.length);
+      const zm = this.instPool.take(A.geo.plane, A.mat.paint, zebra.length);
       zm.receiveShadow = true;
       zebra.forEach((mm, i) => zm.setMatrixAt(i, mm));
       zm.instanceMatrix.needsUpdate = true;
@@ -1546,14 +1607,16 @@ export class DistrictWorld {
       group.add(zm);
     }
 
-    const lensMesh = new THREE.InstancedMesh(
-      A.geo.lens ?? new THREE.SphereGeometry(0.11, 8, 6),
-      /* Basic, not Standard: instanceColor multiplies the DIFFUSE term, so an
-         emissive-white Standard material renders every lens white no matter
-         what colour the phase says it is. A lens is self-luminous anyway. */
-      new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
-      lens.length,
-    );
+    /* Basic, not Standard: instanceColor multiplies the DIFFUSE term, so an
+       emissive-white Standard material renders every lens white no matter
+       what colour the phase says it is. A lens is self-luminous anyway.
+       ONE material and geometry for every chunk (2026-11-11): each chunk made
+       its own MeshBasicMaterial -- never disposed, and a new material is a new
+       shader build at every chunk border. */
+    this.lensMat ??= new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
+    this.lensGeo ??= A.geo.lens ?? new THREE.SphereGeometry(0.11, 8, 6);
+    const lensMesh = this.instPool.take(this.lensGeo, this.lensMat, lens.length, false, true);
+    { const white = new THREE.Color(0xffffff); for (let i = 0; i < lens.length; i++) lensMesh.setColorAt(i, white); }   // a recycled mesh holds the last junction's colours until updateSignals repaints
     lens.forEach((mm, i) => lensMesh.setMatrixAt(i, mm));
     lensMesh.instanceMatrix.needsUpdate = true;
     // only the colours change per frame; the transforms are fixed
@@ -1842,12 +1905,10 @@ export class DistrictWorld {
       const wear = buildDecals(segs.map((id) => this.district.segments[id]), this.district, 0x5ea1,
         { bounds: { x0: ix * CHUNK, z0: iz * CHUNK, x1: (ix + 1) * CHUNK, z1: (iz + 1) * CHUNK } });
       if (wear.count) {
-        const dg = decalGeometry();
-        dg.userData.owned = true;
-        const dm = new THREE.InstancedMesh(dg, decalMaterial(), wear.count);
+        const dm = this.instPool.takeOwned('wear', decalGeometry, decalMaterial(), wear.count, { aTile: 2, aFade: 1 });   // recycled mesh + geometry (instPool.js)
         wear.matrices.forEach((m, i) => dm.setMatrixAt(i, m));
-        dg.setAttribute('aTile', new THREE.InstancedBufferAttribute(wear.tiles, 2));
-        dg.setAttribute('aFade', new THREE.InstancedBufferAttribute(wear.fades, 1));
+        InstPool.fill(dm, 'aTile', wear.tiles);
+        InstPool.fill(dm, 'aFade', wear.fades);
         dm.instanceMatrix.needsUpdate = true;
         dm.computeBoundingSphere();
         dm.receiveShadow = true;       // no cast: a 12 mm quad's shadow is the road's own
@@ -2348,12 +2409,10 @@ export class DistrictWorld {
          live in the facade group so they share its tighter visibility ring.
          No shadow: a 0.85m board's shadow is a smear on the wall behind it. */
       if (signs.length) {
-        const sg = A.geo.sign.clone();
-        sg.userData.owned = true;
         const tiles = new Float32Array(signs.length * 2);
-        const sm = new THREE.InstancedMesh(sg, A.mat.sign, signs.length);
+        const sm = this.instPool.takeOwned('sign', () => A.geo.sign.clone(), A.mat.sign, signs.length, { aTile: 2 });
         signs.forEach((s, i) => { sm.setMatrixAt(i, s.m); tiles[i * 2] = s.u; tiles[i * 2 + 1] = s.v; });
-        sg.setAttribute('aTile', new THREE.InstancedBufferAttribute(tiles, 2));
+        InstPool.fill(sm, 'aTile', tiles);
         sm.instanceMatrix.needsUpdate = true;
         sm.computeBoundingSphere();
         sm.receiveShadow = true;
@@ -2369,14 +2428,12 @@ export class DistrictWorld {
         faces.add(sm);
       }
       // Little Tokyo's boards: fascias, kanban, tenant signs and screens, all in one instanced draw
-      if (tokyoBoards.length) faces.add(tokyoBoardMesh(tokyoBoards));
+      if (tokyoBoards.length) faces.add(tokyoBoardMesh(tokyoBoards, this.instPool));
       if (windows.length) {
-        const wg = A.geo.sign.clone();
-        wg.userData.owned = true;
         const tints = new Float32Array(windows.length * 3);
-        const wm = new THREE.InstancedMesh(wg, A.mat.windowQuad, windows.length);
+        const wm = this.instPool.takeOwned('window', () => A.geo.sign.clone(), A.mat.windowQuad, windows.length, { aTint: 3 });
         windows.forEach((w, i) => { wm.setMatrixAt(i, w.m); tints.set(w.tint, i * 3); });
-        wg.setAttribute('aTint', new THREE.InstancedBufferAttribute(tints, 3));
+        InstPool.fill(wm, 'aTint', tints);
         wm.instanceMatrix.needsUpdate = true;
         wm.computeBoundingSphere();
         faces.add(wm);
@@ -2483,7 +2540,11 @@ export class DistrictWorld {
     yield* brk('instancing');
     const inst = (geo, mat, list, shadow, colours) => {
       if (!list.length) return;
-      const m = new THREE.InstancedMesh(geo, mat, list.length);
+      /* From the pool when a released chunk left one with this geometry and
+         material (instPool.js): its render objects are already built, so it
+         draws without a TSL node build. Shared geometry only -- every caller
+         of inst() passes assets.geo.* or the chunk-independent slab. */
+      const m = geo.userData?.owned ? new THREE.InstancedMesh(geo, mat, list.length) : this.instPool.take(geo, mat, list.length, !!shadow, !!colours);
       list.forEach((mm, i) => m.setMatrixAt(i, mm));
       m.instanceMatrix.needsUpdate = true;
       if (colours) {
@@ -2492,7 +2553,7 @@ export class DistrictWorld {
         m.instanceColor.needsUpdate = true;
       }
       m.receiveShadow = true;
-      if (shadow) m.castShadow = true;
+      m.castShadow = !!shadow;
       m.computeBoundingSphere();          // static for the life of the chunk
       group.add(m);
     };
@@ -2591,7 +2652,7 @@ export class DistrictWorld {
     }
     if (nearParked.length) this.parkedLod.set(k, { near: nearParked, far: farParked, byBody });
     if (pools.length) {
-      const pm = new THREE.InstancedMesh(A.geo.plane, A.mat.pool, pools.length);
+      const pm = this.instPool.take(A.geo.plane, A.mat.pool, pools.length);
       pm.frustumCulled = false; pm.renderOrder = 2;
       pools.forEach((m, i) => pm.setMatrixAt(i, m));
       pm.instanceMatrix.needsUpdate = true;
@@ -2607,13 +2668,11 @@ export class DistrictWorld {
        why every building here used to read as a plain grey box. */
     const tiled = (mat, bucket) => {
       if (!bucket.m.length) return;
-      const geo = slabGeo.clone();
-      geo.userData.owned = true;
-      const m = new THREE.InstancedMesh(geo, mat, bucket.m.length);
-      geo.setAttribute('aUvScale', new THREE.InstancedBufferAttribute(new Float32Array(bucket.uv), 2));
+      const m = this.instPool.takeOwned('shell', () => slabGeo.clone(), mat, bucket.m.length, { aUvScale: 2, aWall: 4 });
+      InstPool.fill(m, 'aUvScale', new Float32Array(bucket.uv));
       const wall = new Float32Array(bucket.m.length * 4).fill(1);   // city.js makeTileable: per-building wall tint + grime
       if (bucket.wall) wall.set(bucket.wall.slice(0, wall.length));
-      geo.setAttribute('aWall', new THREE.InstancedBufferAttribute(wall, 4));
+      InstPool.fill(m, 'aWall', wall);
       bucket.m.forEach((mm, i) => m.setMatrixAt(i, mm));
       m.instanceMatrix.needsUpdate = true;
       /* Culled. InstancedMesh bounds account for instance matrices now, and
@@ -2686,6 +2745,22 @@ export class DistrictWorld {
    * cheap, complete answer; chasing the exact shared buffer through three's
    * backend is not.
    */
+  /** Let a few cold meshes into the frame (see the chunk-completion note in update()). */
+  #warmCold() {
+    const q = this.cold;
+    while (q.length && this.coldBudget > 0) {
+      const m = q.shift();
+      if (m.userData.coldMask === undefined) continue;        // its chunk left first: the pool restored it
+      m.layers.mask = m.userData.coldMask;
+      delete m.userData.coldMask;
+      let g = m.parent;
+      while (g && !g.isBundleGroup && g.parent && g.parent !== this.scene) g = g.parent;
+      if (g) g.needsUpdate = true;                              // re-record the chunk's bundle with it in
+      for (let o = m.parent; o; o = o.parent) if (o.userData?.shadowRing !== undefined) o.userData.shadowRing = undefined;
+      this.coldBudget--;
+    }
+  }
+
   #rerecordAll() {
     for (const g of this.chunks.values()) g.needsUpdate = true;
   }

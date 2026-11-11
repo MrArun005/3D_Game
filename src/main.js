@@ -456,8 +456,8 @@ function benchTick(rawDt) {
   }
   bench.ms.push(rawDt * 1000);
   bench.recT += rawDt;
-  if (bench.label) bench.label.textContent = `BENCHMARK · ${Math.max(0, 30 - bench.recT).toFixed(0)} s`;
-  if (bench.recT >= 30) {
+  if (bench.label) bench.label.textContent = `BENCHMARK · ${Math.max(0, bench.len - bench.recT).toFixed(0)} s`;
+  if (bench.recT >= bench.len) {
     const r = benchStats(bench.ms), label = bench.label;
     bench = null;
     stopFilm({ download: false });
@@ -469,7 +469,7 @@ function benchTick(rawDt) {
       + `hitches (&lt;30 fps) ${r.over33} of ${r.frames} frames<br>quality ${quality.name.toUpperCase()} · ${px ? `${px.x}x${px.y}` : ''}<br><span style="opacity:.6">fn+F9 again to re-run · Esc to close · screenshot this for Claude</span>` : 'no frames recorded';
   }
 }
-function runBenchmark() {
+function runBenchmark(seconds = 30) {   // F9 measures 30 s; tools/perf/drive-bench.mjs asks for longer drives
   document.getElementById('bench')?.remove();
   if (bench) return;
   const label = document.createElement('div');
@@ -478,10 +478,10 @@ function runBenchmark() {
   document.body.appendChild(label);
   started = true; hud.dismiss();
   if (!film) startFilm({ record: false, bench: true });
-  bench = { t: 0, ms: [], label, phase: 'warm', calm: 0, recT: 0 };
+  bench = { t: 0, ms: [], label, phase: 'warm', calm: 0, recT: 0, len: +seconds || 30 };
 }
 addEventListener('keydown', (e) => {
-  if (e.code === 'F9') { e.preventDefault(); if (document.getElementById('bench') && !bench) document.getElementById('bench').remove(); else runBenchmark(); }
+  if (e.code === 'F9') { e.preventDefault(); if (document.getElementById('bench') && !bench) document.getElementById('bench').remove(); else runBenchmark(30); }
   else if (e.code === 'Escape' && !bench) document.getElementById('bench')?.remove();
 });
 window.runBenchmark = runBenchmark;   // seconds of hit-stop left (the frame loop, below the dt clamp)

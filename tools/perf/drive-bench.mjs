@@ -77,7 +77,7 @@ await page.evaluate(() => window.__goVirtual());
 const frames = [];
 const step = async () => { const r = await page.evaluate((ms) => window.__step(ms), 1000 / FPS); frames.push(r); return r; };
 for (let i = 0; i < 20; i++) await step();                       // settle on the virtual clock
-if ((process.env.SCENARIO || 'bench') === 'bench') await page.evaluate(() => window.runBenchmark());
+if ((process.env.SCENARIO || 'bench') === 'bench') await page.evaluate((sec) => window.runBenchmark(sec), Math.max(30, Math.ceil(FRAMES / FPS)));   // the route lasts ~90 s
 const mark = frames.length;
 const [pa, pb] = (process.env.PROFILE || '').split(',').map(Number);
 const cdp = process.env.PROFILE ? await page.context().newCDPSession(page) : null;
