@@ -130,7 +130,7 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop()
   gtaMuscle();
   const f = (v, d = 1) => (v == null ? '  -' : v.toFixed(d));
   console.log('WALL, full throttle, no steer (km/h): before | tangential | 1 s after hit (yaw) | min | after 6 s (yaw)');
-  for (const kmh of [60, 120]) for (const deg of [6, 20, 30, 45, 70]) {
+  for (const kmh of [60, 120]) for (const deg of [6, 20, 30, 45, 60, 70, 80, 86, 90]) {
     const r = wall(kmh, deg);
     console.log(`  ${kmh} @ ${String(deg).padStart(2)} deg   ${f(r.before, 0)} | ${f(r.tangential, 0)} | ${f(r.at1s)} (${f(r.yawAt1s)}) | ${f(r.min)} | ${f(r.end)} (${f(r.yawEnd)})  impact ${f(r.peakImpact)}  minZ ${f(r.minZ, 2)}`);
   }

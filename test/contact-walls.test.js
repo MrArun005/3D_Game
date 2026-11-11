@@ -47,8 +47,22 @@ test('a head-on is still a dead stop: no tunnelling, no rebound, at any step len
     assert.ok(r.rebound < 1, `${kmh} km/h: bounced back at ${r.rebound.toFixed(1)} km/h`);
     assert.ok(r.end < 2, `${kmh} km/h: still doing ${r.end.toFixed(1)} km/h against the wall`);
   }
-  // 70 deg is near enough head-on: it stops (and holds: no creep along the wall)
-  assert.ok(wall(60, 70).end < 3);
+  // square-on under throttle it stays put: 90 deg, and 86 (inside the 8 deg 'square' band of slideOff)
+  for (const deg of [86, 90]) for (const kmh of [60, 120]) assert.ok(wall(kmh, deg).end < 3, `${kmh} km/h at ${deg} deg crept away`);
+});
+
+test('a 60-80 deg wall hit with the throttle held slides off along the wall instead of staying pinned', () => {
+  /* Was: 60 or 120 km/h at 70 deg ended at 0.0 km/h, still 73-77 deg to the wall
+     after 6 s of throttle. collision.js slideOff walks the nose along the wall
+     while the car is pinned. Measured 1 s after the hit, 60 km/h at 60 / 70 / 80 deg:
+     14 / 4 / 5 km/h at 19 / 27 / 33 deg; after 6 s: 95 / 66 / 65 km/h, parallel. */
+  for (const kmh of [60, 120]) for (const deg of [60, 70, 80]) {
+    const r = wall(kmh, deg);
+    assert.ok(r.yawAt1s < 45, `${kmh} km/h at ${deg} deg: still ${r.yawAt1s.toFixed(0)} deg to the wall 1 s after the hit`);
+    assert.ok(r.end > 25 && Math.abs(r.yawEnd) < 5, `${kmh} km/h at ${deg} deg: ${r.end.toFixed(0)} km/h at ${r.yawEnd.toFixed(0)} deg after 6 s`);
+    assert.ok(r.peakImpact > 12, 'still a crash event');
+    assert.ok(r.minZ > -1.4 + 0.9 - 0.02 && r.finite, `${kmh} km/h at ${deg} deg: in the wall (z ${r.minZ.toFixed(2)})`);
+  }
 });
 
 test('a car parked against a wall does not creep or register impacts', () => {

@@ -61,7 +61,43 @@ function contactImpulse(car, nx, nz, px, pz, pen) {
   if (Math.abs(w1) > W_MAX && Math.abs(w1) > Math.abs(w)) w1 = Math.sign(w1) * Math.max(W_MAX, Math.abs(w));
   car.yawRate = w1;
   scrape(car, nx, nz, j, pen);
+  slideOff(car, nx, nz);
   return into;
+}
+
+/**
+ * Pinned against a wall with the throttle down: swing the nose along it.
+ *
+ * The impulse above turns a 20-45 deg hit along the wall, but at 60-70 deg
+ * the car has almost no speed along the wall left, stops, and the engine
+ * then holds one front corner against the masonry for as long as the pedal
+ * is down -- the tyres' own grip resists the pivot (60 or 120 km/h at 70 deg:
+ * 0.0 km/h and still at 73-77 deg after 6 s). In an arcade car that is a
+ * trap, so while it is (1) driving forward into the wall, (2) nearly stopped
+ * and (3) not square to it, the nose is walked toward the way it already
+ * leans at up to SLIDE_W; from ~45 deg the impulse and the engine take over.
+ * Square-on (within SQUARE of the normal) nothing happens: a head-on stays a
+ * dead stop. It sets a floor on the yaw rate rather than adding to it, so it
+ * does not depend on the step length. No throttle, no turn: a parked car
+ * does not creep.
+ */
+const SLIDE_W = 1.5;                 // rad/s
+const SLIDE_V = 7;                   // m/s: above this the car is not pinned
+const SQUARE = Math.sin(8 / 57.2958);   // |heading . tangent| below this is a head-on
+function slideOff(car, nx, nz) {
+  if (!((car.throttle || 0) > 0.3) || car.gear === 0) return;
+  const sp = Math.hypot(car.vx, car.vz);
+  if (sp > SLIDE_V) return;
+  const fx = Math.cos(car.yaw), fz = -Math.sin(car.yaw);
+  const into = -(fx * nx + fz * nz);            // how squarely the nose points at the wall
+  if (into < 0.5) return;                       // under 30 deg off the wall: it drives away by itself
+  const tx = -nz, tz = nx, along = fx * tx + fz * tz;
+  if (Math.abs(along) < SQUARE) return;
+  // +yaw turns the heading by (-sin, -cos): toward the tangent the nose already leans to
+  const dir = -(Math.sin(car.yaw) * tx + Math.cos(car.yaw) * tz) * Math.sign(along) > 0 ? 1 : -1;
+  const want = SLIDE_W * (1 - sp / SLIDE_V) * Math.min(1, (car.throttle || 0));
+  const w = (car.yawRate || 0) * dir;
+  if (w < want) car.yawRate = want * dir;
 }
 
 /**
