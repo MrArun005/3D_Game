@@ -89,7 +89,12 @@ export class InstPool {
     }
     if (!m) {
       const cap = capacityFor(n), geo = makeGeo();
-      geo.userData.owned = true;       // disposed with the mesh when the pool lets it go
+      /* Its OWN userData object: BufferGeometry.clone() SHARES the source's,
+         so `geo.userData.owned = true` on a clone of assets.geo.box / .sign
+         flagged the shared original as chunk-owned -- the release sweep then
+         disposed it under every live chunk (a re-upload each time), and
+         inst() refused to pool anything drawn with it. */
+      geo.userData = { ...geo.userData, owned: true };   // disposed with the mesh when the pool lets it go
       for (const name of Object.keys(attrs)) geo.setAttribute(name, new THREE.InstancedBufferAttribute(new Float32Array(cap * attrs[name]), attrs[name]));
       m = new THREE.InstancedMesh(geo, mat, cap);
       m.userData.pooled = { key, cap };

@@ -135,6 +135,11 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
     made a MeshBasicMaterial per chunk, the glare sprite a material per chunk
     that nothing disposed -- `glare.js releaseGlare`). The pool hands out the
     WARMEST fit (`pooled.main` = drawn, `pooled.cast` = has cast a shadow).
+  - **`BufferGeometry.clone()` SHARES `userData`.** `clone.userData.owned =
+    true` flags the shared original as chunk-owned (assets.geo.box, .sign:
+    disposed under every live chunk at each release). Give the clone its own
+    object: `g.userData = { ...g.userData, owned: true }`
+    (test/instPool.test.js).
   - **Cold meshes start two a frame.** A mesh that was never drawn joins its
     chunk on no camera layer (`userData.coldMask`) and `districtWorld
     #warmCold` lets `COLD_PER_FRAME` in per frame; a parked car's first
@@ -501,7 +506,7 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
     `mergeDrive`; mobile forces the lite tier; `body.touch` CSS in style.css;
     no pointer lock on touch, TAP TO START, rotate card in portrait.
 
-- Tests: `npm test` — 639/639 passing (2026-11-11, after the smoothness pass). Node's built-in runner, no framework.
+- Tests: `npm test` — 640/640 passing (2026-11-11, after the smoothness pass). Node's built-in runner, no framework.
 - Deploy (2026-09-03): Vercel project `halstead-bay`, public at
   https://halstead-bay.vercel.app. Git-triggered builds never leave UNKNOWN;
   deploy with `vercel --prod --yes` run detached (>6 min upload), then check

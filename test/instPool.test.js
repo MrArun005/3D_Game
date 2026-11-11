@@ -86,3 +86,14 @@ test('the pool is bounded, and a mesh it did not make is refused', () => {
   pool.dispose();
   assert.equal(pool.size, 0);
 });
+
+test('a clone marked owned does not mark the shared geometry it was cloned from', () => {
+  // BufferGeometry.clone() shares userData: `clone.userData.owned = true` flagged assets.geo.box itself
+  const shared = new THREE.BoxGeometry(1, 1, 1);
+  const pool = new InstPool();
+  const m = pool.takeOwned('shell', () => shared.clone(), mat, 4, { aUvScale: 2 });
+  assert.equal(m.geometry.userData.owned, true);
+  assert.equal(shared.userData.owned, undefined, 'the shared original stays unowned');
+  const plain = pool.take(shared, mat, 4);
+  assert.ok(plain.userData.pooled, 'and can still be pooled');
+});

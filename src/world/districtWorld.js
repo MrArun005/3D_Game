@@ -485,7 +485,7 @@ export class DistrictWorld {
        mountains, and at night they light up with the rest of the city. One
        material, one draw, and #cullFar's matrix bookkeeping is untouched. */
     const farGeo = box.clone();
-    farGeo.userData.owned = true;
+    farGeo.userData = { ...farGeo.userData, owned: true };   // its OWN userData: BufferGeometry.clone() shares the source's object, so `.owned = true` flagged the shared original and every released chunk disposed it
     farGeo.setAttribute('aUvScale', new THREE.InstancedBufferAttribute(new Float32Array(uvScale), 2));
     farGeo.setAttribute('aWall', new THREE.InstancedBufferAttribute(new Float32Array(farWall), 4));   // the far city in its districts' colours too
     /* Their OWN copy of the tower facade (2026-09-23): the near material lit
@@ -1630,8 +1630,11 @@ export class DistrictWorld {
     if (!this.signalsByChunk.size) return;
     const c = _colour;
     for (const { mesh, meta } of this.signalsByChunk.values()) {
+      let changed = false;
       for (const m of meta) {
         const state = signalState(m.node, 0, m.axis, t);
+        if (m.state === state) continue;     // colours only move when a phase does: no upload on the other ~99% of frames
+        m.state = state; changed = true;
         if (m.ped) {   // pedestrian pair: red man while cars flow, green man while they are held
           const walk = state === 'red';
           mesh.setColorAt(m.base, c.setHex(walk ? 0x2a0a08 : 0xff2a1c));
@@ -1641,7 +1644,7 @@ export class DistrictWorld {
         const cols = LAMP_COLOURS[state];
         for (let k = 0; k < 3; k++) mesh.setColorAt(m.base + k, c.setHex(cols[k]));
       }
-      mesh.instanceColor.needsUpdate = true;
+      if (changed) mesh.instanceColor.needsUpdate = true;
     }
   }
 
