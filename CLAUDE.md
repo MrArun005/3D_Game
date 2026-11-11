@@ -501,7 +501,7 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
     `mergeDrive`; mobile forces the lite tier; `body.touch` CSS in style.css;
     no pointer lock on touch, TAP TO START, rotate card in portrait.
 
-- Tests: `npm test` — 638/638 passing (2026-11-11, after the smoothness pass). Node's built-in runner, no framework.
+- Tests: `npm test` — 639/639 passing (2026-11-11, after the smoothness pass). Node's built-in runner, no framework.
 - Deploy (2026-09-03): Vercel project `halstead-bay`, public at
   https://halstead-bay.vercel.app. Git-triggered builds never leave UNKNOWN;
   deploy with `vercel --prod --yes` run detached (>6 min upload), then check
