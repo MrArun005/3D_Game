@@ -79,13 +79,40 @@ test('a building corner with air beside the body is not a contact at all', () =>
   }
 });
 
-test('a corner clipped by 10 cm shoulders the car aside; 30 cm of overlap is a crash', () => {
+test('a corner clipped by 10 cm shoulders the car aside at no cost', () => {
   for (const kmh of [50, 100]) {
     const r = corner(kmh, -0.1);
     assert.ok(r.min > kmh - 2, `${kmh} km/h clipping 10 cm: slowed to ${r.min.toFixed(1)} (was a dead stop)`);
     assert.ok(r.zShift < -0.09 && r.zShift > -0.2, `moved aside ${r.zShift.toFixed(2)} m`);
-    const deep = corner(kmh, -0.3);
-    assert.ok(deep.peakImpact > 10 && deep.min < 15, `${kmh} km/h into 30 cm of corner: impact ${deep.peakImpact.toFixed(1)}, slowest ${deep.min.toFixed(0)}`);
+  }
+});
+
+test('a building corner overlapped by 0.3-0.65 m wedges the car round it, at a price that grows with the depth; deeper is a crash stop', () => {
+  /* Was: 0.3 m of overlap was a dead stop with the nose turned 19-20 deg INTO
+     the building. Now (collision.js DEFLECT) at 100 km/h: 0.3 m -> 92 km/h,
+     0.5 m -> 63, 0.65 m -> 40, pushed aside by the overlap, heading kept;
+     0.8 m and more is the old crash stop. */
+  for (const kmh of [50, 100]) {
+    let last = Infinity;
+    for (const ov of [0.3, 0.5, 0.65]) {
+      const r = corner(kmh, -ov);
+      assert.ok(r.min > 0.35 * kmh, `${kmh} km/h, ${ov} m of corner: slowed to ${r.min.toFixed(0)}`);
+      assert.ok(r.min <= last + 1e-6, `${kmh} km/h: ${ov} m cost less than a shallower hit (${r.min.toFixed(1)} vs ${last.toFixed(1)})`);
+      last = r.min;
+      assert.ok(r.zShift < -ov + 0.02 && r.zShift > -ov - 0.1, `${kmh} km/h, ${ov} m: moved aside ${r.zShift.toFixed(2)} m`);
+      assert.ok(Math.abs(r.yawDeg) < 3, `${kmh} km/h, ${ov} m: nose turned ${r.yawDeg.toFixed(1)} deg`);
+      assert.ok(r.x > 30, `and it carried on past the corner (x ${r.x.toFixed(0)}, the corner is at 20)`);
+    }
+    assert.ok(corner(kmh, -0.5).peakImpact > 5, 'half a metre of corner is a crash event for the camera and the dents');
+    for (const ov of [0.8, 1.2]) { const deep = corner(kmh, -ov); assert.ok(deep.peakImpact > 10 && deep.min < 5, `${kmh} km/h into ${ov} m of corner: impact ${deep.peakImpact.toFixed(1)}, slowest ${deep.min.toFixed(0)}`); }
+  }
+});
+
+test('a wall built of abutting boxes scrapes like one wall: no snag at the seams', () => {
+  for (const kmh of [60, 120]) for (const deg of [6, 20, 45]) {
+    const row = wall(kmh, deg, { seg: 8 }), one = wall(kmh, deg);
+    assert.ok(Math.abs(row.end - one.end) < 1 && Math.abs(row.min - one.min) < 2, `${kmh} km/h at ${deg} deg: row ${row.end.toFixed(1)} (min ${row.min.toFixed(1)}), one piece ${one.end.toFixed(1)} (min ${one.min.toFixed(1)})`);
+    assert.ok(Math.abs(row.peakImpact - one.peakImpact) < 0.5 && Math.abs(row.yawEnd) < 3 && row.minZ > -1.4 + 0.9 - 0.02);
   }
 });
 

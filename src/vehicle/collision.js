@@ -159,7 +159,7 @@ export function resolveBuildings(car) {
  * hull's velocity RELATIVE to the box, used only to choose between two
  * shallow axes.
  */
-const _h = { nx: 0, nz: 0, px: 0, pz: 0 };
+const _h = { nx: 0, nz: 0, px: 0, pz: 0, wedge: 0 };
 function boxOverlap(cx, cz, fx, fz, rx, rz, HL, HW, bx, bz, ca, sa, hw, hd, vx, vz, R = 0) {
   // hull centre and forward axis in the box's frame (l along its +X, w across)
   const hx = cx - bx, hz = cz - bz;
@@ -186,7 +186,12 @@ function boxOverlap(cx, cz, fx, fz, rx, rz, HL, HW, bx, bz, ca, sa, hw, hd, vx, 
      was a dead stop or a shrug depending on the frame. When BOTH of the
      box's faces overlap by less than SLIP the one the car is closing on
      LEAST wins: it is shouldered aside, not stopped. Deeper is a crash. */
-  const shallow = o1 < SLIP && o2 < SLIP;
+  /* A BUILDING's corner (R = 0) is given more room than a hand's width:
+     up to DEFLECT of overlap on both faces the car is still wedged round
+     it (resolveBoxes charges speed for the depth). Before, 0.3 m of
+     overlap was a dead stop that turned the nose INTO the building. */
+  const lim = R > 0 ? SLIP : DEFLECT;
+  const shallow = o1 < lim && o2 < lim;
   let pen = Infinity, nx = 0, nz = 0, best = Infinity;
   for (let i = 0; i < 4; i++) {
     const o = i === 0 ? o1 : i === 1 ? o2 : i === 2 ? o3 : o4;
@@ -241,6 +246,7 @@ function boxOverlap(cx, cz, fx, fz, rx, rz, HL, HW, bx, bz, ca, sa, hw, hd, vx, 
   }
   if (sw > 0) { px /= sw; pz /= sw; } else { px = cx; pz = cz; }   // crossed like a plus sign: no corner of either inside the other
   _h.nx = nx; _h.nz = nz; _h.px = px; _h.pz = pz;
+  _h.wedge = shallow && R === 0 && pen > SLIP ? Math.min(1, (pen - SLIP) / (DEFLECT - SLIP)) : 0;   // how much of a corner it was wedged round, 0..1
   return pen;
 }
 
@@ -269,6 +275,8 @@ function boxOverlap(cx, cz, fx, fz, rx, rz, HL, HW, bx, bz, ca, sa, hw, hd, vx, 
  */
 const HULL = { front: 2.3, rear: 2.2, half: 0.9 };
 const SLIP = 0.25;       // m: a corner overlap shallower than this is shouldered aside (see the axis choice)
+const DEFLECT = 0.7;     // m: a BUILDING corner overlapped by up to this wedges the car round it, at a price; deeper is a crash stop
+const WEDGE_LOSS = 0.65; // the share of its speed a car wedged round by the full DEFLECT loses
 export function resolveBoxes(car, boxes) {
   if (!boxes || !boxes.length) return;
   const H = car.hull || HULL;
@@ -299,10 +307,23 @@ export function resolveBoxes(car, boxes) {
       const ca = Math.cos(b.angle), sa = Math.sin(b.angle);
       const pen = boxOverlap(car.x + fx * off, car.z + fz * off, fx, fz, rx, rz, HL, HW, b.x, b.z, ca, sa, hw, hd, car.vx, car.vz);
       if (pen <= 0) continue;
-      const nx = _h.nx, nz = _h.nz, px = _h.px, pz = _h.pz;
+      const nx = _h.nx, nz = _h.nz, px = _h.px, pz = _h.pz, wedge = _h.wedge;
       car.x += nx * pen;
       car.z += nz * pen;
       contactImpulse(car, nx, nz, px + nx * pen, pz + nz * pen, pen);
+      if (wedge > 0) {
+        /* Wedged round a building corner by more than a shrug: it happened
+           in one step, so the cost is charged here -- speed in proportion to
+           the depth, and a crash event of that size for the camera, the
+           dents and the sparks. */
+        const sp = Math.hypot(car.vx, car.vz), hitV = sp * wedge;
+        if (hitV > 1.2) {
+          if (hitV > (car.impact || 0)) car.hitAt = { x: px, z: pz };
+          car.impact = Math.max(car.impact || 0, hitV);
+        }
+        const k = 1 - WEDGE_LOSS * wedge;
+        car.vx *= k; car.vz *= k;
+      }
       hit = true;
     }
     if (!hit) return;

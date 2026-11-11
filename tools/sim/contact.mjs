@@ -24,10 +24,12 @@ function aim(c, deg) {
 }
 
 /** Into a long wall on the car's left (face at z = -1.4) at `deg`, full throttle, no steer (steer -1 = away). */
-export function wall(kmh = 60, deg = 30, { steer = 0, seconds = 6 } = {}) {
+export function wall(kmh = 60, deg = 30, { steer = 0, seconds = 6, seg = 0 } = {}) {
   const c = accelerateTo(settled(), kmh);
   c.x = 0; c.z = 2; aim(c, deg);
-  const box = [{ x: 200, z: -2.4, angle: 0, hw: 400, hd: 1.0 }];
+  // one long box, or (seg > 0) the same wall as a row of abutting boxes `seg` m long: a terrace, a parapet
+  const box = seg > 0 ? Array.from({ length: Math.ceil(600 / seg) }, (_, i) => ({ x: -200 + seg / 2 + i * seg, z: -2.4, angle: 0, hw: seg / 2, hd: 1.0 }))
+    : [{ x: 200, z: -2.4, angle: 0, hw: 400, hd: 1.0 }];
   c.buildings = () => box;
   c.throttle = 1; c.steerTarget = steer; c.steer = 0;
   const s0 = c.speed; let tHit = null, t = 0, at1 = null, minSp = Infinity, peak = 0, freeAt = null, deep = 0;
@@ -134,10 +136,15 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop()
     const r = wall(kmh, deg);
     console.log(`  ${kmh} @ ${String(deg).padStart(2)} deg   ${f(r.before, 0)} | ${f(r.tangential, 0)} | ${f(r.at1s)} (${f(r.yawAt1s)}) | ${f(r.min)} | ${f(r.end)} (${f(r.yawEnd)})  impact ${f(r.peakImpact)}  minZ ${f(r.minZ, 2)}`);
   }
+  console.log('WALL as a row of abutting 8 m boxes (must match the one-piece wall): after 6 s (yaw) | min | impact');
+  for (const kmh of [60, 120]) for (const deg of [6, 20, 45]) {
+    const r = wall(kmh, deg, { seg: 8 }), o = wall(kmh, deg);
+    console.log(`  ${kmh} @ ${String(deg).padStart(2)} deg   row ${f(r.end)} (${f(r.yawEnd)}) min ${f(r.min)} impact ${f(r.peakImpact)} minZ ${f(r.minZ, 2)}   one piece ${f(o.end)} (${f(o.yawEnd)}) min ${f(o.min)} impact ${f(o.peakImpact)}`);
+  }
   console.log('WALL, steering away: seconds until free (>20 km/h, heading within 3 deg of the wall)');
   for (const kmh of [60, 120]) for (const deg of [20, 30, 45]) console.log(`  ${kmh} @ ${deg} deg   ${f(wall(kmh, deg, { steer: -1 }).freeAt, 2)} s`);
   console.log('CORNER pass: gap m | min km/h | z shift | yaw');
-  for (const kmh of [50, 100]) for (const gap of [0.05, 0.1, 0.2, 0.35, -0.1, -0.3]) { const r = corner(kmh, gap); console.log(`  ${kmh} gap ${f(gap, 2)}   min ${f(r.min)}  z ${f(r.zShift, 2)}  yaw ${f(r.yawDeg)}  impact ${f(r.peakImpact)}`); }
+  for (const kmh of [50, 100]) for (const gap of [0.05, 0.1, 0.2, 0.35, -0.1, -0.3, -0.5, -0.65, -0.8, -1.2]) { const r = corner(kmh, gap); console.log(`  ${kmh} gap ${f(gap, 2)}   min ${f(r.min)}  z ${f(r.zShift, 2)}  yaw ${f(r.yawDeg)}  impact ${f(r.peakImpact)}`); }
   console.log('PARKED-CAR brush @60: overlap | 0.3 s after | min | end | shove m | yaw');
   for (const ov of [0.05, 0.2, 0.3, 0.5, 0.9]) { const r = brush(60, ov); console.log(`  overlap ${f(ov, 2)}   ${f(r.before)} -> ${f(r.at03s)} | ${f(r.min)} | ${f(r.end)} | shove ${f(r.shove, 2)} | yaw ${f(r.yawDeg)}  impact ${f(r.peakImpact)}`); }
   { const r = rearEnd(); console.log(`REAR-END 60 into 40: ours ${f(r.ours)} (min ${f(r.oursMin)})  theirs ${f(r.theirs)} (min ${f(r.theirMin)}, max ${f(r.theirMax)})  impact ${f(r.peakImpact)}  gap ${f(r.gap, 2)}`); }
