@@ -2571,7 +2571,17 @@ function frameBody() {
   const now = performance.now();
   const rawDt = (now - lastTime) / 1000;
   if (bench) benchTick(rawDt);
-  let dt = Math.min(rawDt, 0.05);
+  /* Game time per frame is capped, or one long frame would fling everything
+     a second forward. The cap was 0.05 s, which contradicted the physics
+     guard below (eight 1/120 steps, "covers down to 15 fps"): under 20 fps
+     the whole game ran in slow motion, and any hitch froze the car for the
+     hitch's full length. Now (2026-11-11) the world follows real time down
+     to 15 fps (1/15 s), and the CAR -- whose collision runs inside every
+     1/120 step, so more steps cannot tunnel (test/contact-walls.test.js,
+     the head-on test) -- catches up as far as 0.1 s, so a
+     100 ms hitch costs it nothing and a longer one 0.1 s less. */
+  let dt = Math.min(rawDt, 1 / 15);
+  const carCatchUp = dt > 0 ? Math.min(rawDt, 0.1) / dt : 1;   // 1 on every frame at 15 fps or better
   /* Hit-stop (2026-09-25): a big crash holds the world at a quarter speed
      for ~0.1 s, then eases back over 0.2 s -- the beat that makes an impact
      read as heavy instead of as a bump. Real time drives it, so it cannot
@@ -2711,8 +2721,8 @@ function frameBody() {
   // fixed-step physics keeps the tyre model stable; clamp accumulator to prevent death spirals on dt spikes
   mark('physics-start');
   const tPhys0 = performance.now();
-  if (rawDt > 0.05) physicsAccumulator = 0;   // Spike or tab-out: clear backlog to prevent death spiral
-  physicsAccumulator += dt;
+  if (rawDt > 0.25) physicsAccumulator = 0;   // tab-out or a long stall: drop the sub-step remainder
+  physicsAccumulator += dt * carCatchUp;
   let guard = 0;
   if (!activeVehicle || activeVehicle === carVehicle) {
     /* guard 8, not 4. Four steps of 1/120 is 33.3 ms of simulated time, so at
@@ -2724,7 +2734,8 @@ function frameBody() {
        eight of them is 14 us a frame -- the spiral it was guarding against
        does not exist. */
     let walled = false;
-    while (physicsAccumulator >= STEP && guard++ < 8) {
+    if (physicsAccumulator > 0.1 + STEP) physicsAccumulator = 0.1 + STEP;   // never more than the catch-up bound in the bank
+    while (physicsAccumulator >= STEP && guard++ < 13) {   // 12 steps = the 0.1 s bound, +1 for the remainder carried in
       stepVehicle(car, STEP);
       /* Every step, not every frame: at 80 m/s a frame is 1.3 m. Inset 2.6 m:
          the hull's nose probe sits at +2.25 m (collision.js), so the bumper
