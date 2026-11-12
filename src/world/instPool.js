@@ -23,7 +23,11 @@ import * as THREE from 'three';
  * Only for meshes whose geometry is SHARED (assets.geo.*): an owned,
  * per-chunk geometry carries per-instance attributes of its own.
  */
-const capacityFor = (n) => (n <= 16 ? 16 : 2 ** Math.ceil(Math.log2(n)));
+/* Capacity in a few coarse tiers, so that a recycled mesh nearly always fits
+   the next chunk's count: with 16 / next power of two, "17 parked vans" could
+   not take a 16-van mesh and a new, cold one was built (the last slow frames
+   of the four-border drive were exactly those). 64 bytes an instance. */
+const capacityFor = (n) => (n <= 32 ? 32 : n <= 512 ? 512 : n <= 2048 ? 2048 : 2 ** Math.ceil(Math.log2(n)));
 /* Which parked mesh to hand out: one that fits, and among those the WARMEST --
    a mesh that has been drawn (`main`) has its render object, one that has
    cast a shadow (`cast`) has the shadow pass's too; a mesh that sat hidden in

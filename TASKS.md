@@ -141,6 +141,14 @@ Nothing below has been driven on a real GPU.
       writes a frame, 0 pipelines created while driving, worst frame 122 ms;
       with three's defaults (`?ubo&ranges`) boot 243 s / 1393 pipelines, 7,291
       writes a frame, 5 pipelines and two ~950 ms frames at the border.
+- [x] Round 3. Every remaining slow frame was attributed (the harness now
+      records node builds and heap per frame): all were cold meshes joining,
+      because "17 parked vans" could not reuse a 16-van mesh. The pool's
+      capacity now comes in coarse tiers (32 / 512 / 2048). Four-border drive:
+      worst frame per border 70 / 78 / 87 / 63 ms; two driving frames over
+      twice the median (one a major GC at 90 ms, one unexplained at 106 ms).
+      `stepVehicle` allocates nothing per step (handling table bit-identical).
+      WebGPU recheck: 0 pipelines created while driving, worst frame 117 ms.
 - [ ] `[owner]` **fn + F9 on the M2 Air** (screenshot the panel), then drive
       Little Tokyo -> Regent Street at speed and watch for a stall each time a
       new block of city appears (every 256 m). If it still hitches: note

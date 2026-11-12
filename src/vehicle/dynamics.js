@@ -110,6 +110,10 @@ export function steerLimit(car, speed = Math.hypot(car.vx, car.vz)) {
   return Math.min(limit, Math.max(A.minLock, grip));
 }
 
+/* stepVehicle's per-step scratch: written in full before it is read, every step. */
+const OFF_A = [0, 0, 0, 0], OFF_Z = [0, 0, 0, 0], GRIP = [0, 0, 0, 0], DRAGS = [0, 0, 0, 0];
+const CONTACT_X = [0, 0, 0, 0], CONTACT_Z = [0, 0, 0, 0], FZ = [0, 0, 0, 0];
+
 export function stepVehicle(car, dt) {
   // Store previous step physics state for visual interpolation
   car.prevX = car.x;
@@ -179,50 +183,52 @@ export function stepVehicle(car, dt) {
      (roll +0.088; now -0.088). Grip and ground are sampled at the right
      corners now too: the mirrored side's surface was read before. */
   const cy = Math.cos(car.yaw), sy = Math.sin(car.yaw);
-  const fwd = { x: cy, z: -sy };
-  const lft = { x: -sy, z: -cy };
-  let u = car.vx * fwd.x + car.vz * fwd.z;   // longitudinal
-  let v = car.vx * lft.x + car.vz * lft.z;   // lateral, + = moving to the car's left
+  const fwdX = cy, fwdZ = -sy;     // scalars and module scratch below: this runs 120 times a second and used to
+  const lftX = -sy, lftZ = -cy;    // allocate two objects and ten arrays per step (2026-11-11)
+  let u = car.vx * fwdX + car.vz * fwdZ;   // longitudinal
+  let v = car.vx * lftX + car.vz * lftZ;   // lateral, + = moving to the car's left
   const r = car.yawRate;
 
   // --- where each corner sits: [forward, left] in the body frame ---
   // Index order stays FL FR RL RR on the world's left/right, which is what
   // main.js's wheel idx, car.flat and wheelGround consume.
-  const offsets = [
-    [V.a, V.track / 2], [V.a, -V.track / 2],
-    [-V.b, V.track / 2], [-V.b, -V.track / 2],
-  ];
-  const grip = [], drags = [];
+  const offA = OFF_A, offZ = OFF_Z;
+  offA[0] = V.a; offA[1] = V.a; offA[2] = -V.b; offA[3] = -V.b;
+  offZ[0] = V.track / 2; offZ[1] = -V.track / 2; offZ[2] = V.track / 2; offZ[3] = -V.track / 2;
+  const grip = GRIP, drags = DRAGS;
   let kerbCount = 0, offSum = 0;
-  const contactX = [], contactZ = [];
+  const contactX = CONTACT_X, contactZ = CONTACT_Z;
   for (let i = 0; i < 4; i++) {
-    const px = car.x + fwd.x * offsets[i][0] + lft.x * offsets[i][1];
-    const pz = car.z + fwd.z * offsets[i][0] + lft.z * offsets[i][1];
-    contactX.push(px); contactZ.push(pz);
+    const px = car.x + fwdX * offA[i] + lftX * offZ[i];
+    const pz = car.z + fwdZ * offA[i] + lftZ * offZ[i];
+    contactX[i] = px; contactZ[i] = pz;
     const sf = surfaceAt(px, pz);
     const flat = car.flat ? car.flat[i] : 0;
-    grip.push(sf.grip * (1 - 0.45 * flat) * (1 - 0.28 * (car.wet || 0))); drags.push(sf.drag + 6 * flat);
+    grip[i] = sf.grip * (1 - 0.45 * flat) * (1 - 0.28 * (car.wet || 0)); drags[i] = sf.drag + 6 * flat;
     if (sf.kerb) { kerbCount++; offSum += sf.off; }
   }
   car.offRoad = offSum / 4;
   car.kerb = kerbCount;
 
   /* --- four rays instead of a weight-transfer formula --- */
-  const Fz = [], comp = [], wheelGround = [];
+  // the two the car keeps (car.suspension, car.wheelGround) are the car's OWN arrays, reused: two cars never share one
+  const Fz = FZ;
+  const comp = car.suspension && car.suspension.length === 4 ? car.suspension : [0, 0, 0, 0];
+  const wheelGround = car.wheelGround && car.wheelGround.length === 4 ? car.wheelGround : [0, 0, 0, 0];
   const sinP = Math.sin(car.pitch), sinR = Math.sin(car.roll);
   for (let i = 0; i < 4; i++) {
-    const [ax, az] = offsets[i];
+    const ax = offA[i], az = offZ[i];
     const cornerY = car.y + ax * sinP + az * sinR;
     const ground = groundHeightAt(contactX[i], contactZ[i], car.y - 0.6);
-    wheelGround.push(ground);
+    wheelGround[i] = ground;
     let c = V.restLength - ((cornerY - WHEEL_R) - ground);
     c = Math.max(-0.02, Math.min(V.maxTravel, c));
-    comp.push(c);
+    comp[i] = c;
 
     const cornerVel = car.vy + ax * car.pitchRate + az * car.rollRate;
     const closing = -cornerVel;                       // + is compressing
     const damping = closing > 0 ? damperC : damperR;
-    Fz.push(c > 0 ? Math.max(0, springK * c + damping * closing) : 0);
+    Fz[i] = c > 0 ? Math.max(0, springK * c + damping * closing) : 0;
   }
   // anti-roll bars move load across an axle without adding any
   const arbF = (comp[0] - comp[1]) * antiRollF;
@@ -311,7 +317,7 @@ export function stepVehicle(car, dt) {
   const brakeT = car.brake * brakeMax;
   for (let i = 0; i < 4; i++) {
     const front = i < 2;
-    const [ax, az] = offsets[i];
+    const ax = offA[i], az = offZ[i];
     const uw = u - r * az;
     const vw = v + r * ax;
     /* mild Ackermann: the INSIDE wheel steers more. It was `1 + az * 0.1`,
@@ -474,7 +480,7 @@ export function stepVehicle(car, dt) {
     let Fx0 = -FxDrag, Mz0 = 0;
     let m11 = mass, m12 = 0, m22 = inertia, s1 = 0, s2 = 0;
     for (let i = 0; i < 4; i++) {
-      const [ax, az] = offsets[i];
+      const ax = offA[i], az = offZ[i];
       const cd = G_CD[i], sd = G_SD[i], K = G_K[i], I = G_I[i], bt = G_BT[i], T = G_T[i];
       const fx = G_FL[i] * cd - G_FC[i] * sd, fy = G_FL[i] * sd + G_FC[i] * cd;
       Fx0 += fx; Mz0 += fy * ax - fx * az;
@@ -497,7 +503,7 @@ export function stepVehicle(car, dt) {
     const det = m11 * m22 - m12 * m12;
     const du = (r1 * m22 - r2 * m12) / det, dr = (m11 * r2 - m12 * r1) / det;
     for (let i = 0; i < 4; i++) {
-      const [ax, az] = offsets[i];
+      const ax = offA[i], az = offZ[i];
       const cd = G_CD[i], sd = G_SD[i];
       const delta = G_A[i] - G_B[i] * (cd * du + (sd * ax - cd * az) * dr);
       // the implicit force, kept inside what the ellipse leaves beside the lateral
@@ -522,7 +528,7 @@ export function stepVehicle(car, dt) {
   /* --- heave, pitch and roll ------------------------------------------- */
   let FspringUp = 0, Mpitch = 0, Mroll = 0;
   for (let i = 0; i < 4; i++) {
-    const [ax_, az_] = offsets[i];
+    const ax_ = offA[i], az_ = offZ[i];
     const aeroCorner = i < 2 ? aeroF : aeroR;
     FspringUp += Math.max(0, Fz[i] - aeroCorner);
     Mpitch += Fz[i] * ax_;      // up at the front lifts the nose

@@ -17,14 +17,14 @@ const out = process.argv[2] || 'drive-bench.json';
 const FRAMES = +(process.env.FRAMES || 600), FPS = +(process.env.FPS || 30);
 const url = (process.env.URL || 'http://localhost:4174/') + (process.env.Q || '?quality=balanced&webgl&nodrs&debug');
 const b = await chromium.launch({ channel: 'chromium', headless: true,
-  args: ['--use-gl=angle', '--use-angle=gl-egl', '--ignore-gpu-blocklist', '--enable-gpu', '--js-flags=--expose-gc', '--autoplay-policy=no-user-gesture-required'],
+  args: ['--use-gl=angle', '--use-angle=gl-egl', '--ignore-gpu-blocklist', '--enable-gpu', '--js-flags=--expose-gc', '--enable-precise-memory-info', '--autoplay-policy=no-user-gesture-required'],
   env: { ...process.env, EGL_PLATFORM: 'surfaceless', GALLIUM_DRIVER: 'llvmpipe', LIBGL_ALWAYS_SOFTWARE: '1' } });
 const page = await b.newPage({ viewport: { width: 1280, height: 720 } });
 const logs = [];
 page.on('console', (m) => { if (m.type() === 'error') logs.push(`[error] ${m.text()}`.slice(0, 300)); });
 page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`.slice(0, 300)));
 await page.addInitScript((stubDraws) => {
-  const C = window.__gl = { link: 0, sub: 0, subBytes: 0, data: 0, dataBytes: 0, tex: 0, draws: 0, del: 0, stub: true };
+  const C = window.__gl = { builds: 0, kinds: [], link: 0, sub: 0, subBytes: 0, data: 0, dataBytes: 0, tex: 0, draws: 0, del: 0, stub: true };
   const P = WebGL2RenderingContext.prototype;
   const wrap = (name, fn) => { const real = P[name]; P[name] = function (...a) { return fn.call(this, real, a); }; };
   wrap('linkProgram', function (real, a) { C.link++; return real.apply(this, a); });
@@ -52,7 +52,8 @@ await page.addInitScript((stubDraws) => {
   window.MediaRecorder = undefined;
   window.__goVirtual = () => { vt = realNow(); virtual = true; C.stub = true; };
   window.__step = (ms) => {
-    const before = { ...C };
+    const before = { ...C }; C.kinds = [];
+    const heap0 = performance.memory ? performance.memory.usedJSHeapSize : 0;
     vt += ms; stepReal = realNow(); inStep = true;
     for (const [id, t] of [...timers]) if (t.due <= vt) { if (t.every) t.due += t.every; else timers.delete(id); try { t.cb(...t.a); } catch (e) { console.error('timer: ' + e.message); } }
     const cbs = rafQ.splice(0);
@@ -61,7 +62,8 @@ await page.addInitScript((stubDraws) => {
     const js = realNow() - stepReal, w = window._world, c = window.car;
     return [+js.toFixed(1), C.link - before.link, C.sub - before.sub, C.subBytes - before.subBytes, C.data - before.data, C.dataBytes - before.dataBytes,
       C.tex - before.tex, C.draws - before.draws, C.del - before.del, c ? Math.floor(c.x / 256) : 0, c ? Math.floor(c.z / 256) : 0, w?.chunks?.size ?? 0,
-      c ? +(Math.hypot(c.vx ?? 0, c.vz ?? 0) * 3.6).toFixed(0) : 0];
+      c ? +(Math.hypot(c.vx ?? 0, c.vz ?? 0) * 3.6).toFixed(0) : 0, C.builds - before.builds,
+      performance.memory ? +((performance.memory.usedJSHeapSize - heap0) / 1e6).toFixed(1) : 0, C.kinds.join(' ')];
   };
 }, !process.env.DRAW);
 const t0 = Date.now();
@@ -73,7 +75,12 @@ say('boot overlay gone');
 await page.waitForFunction(() => (window._world?.chunks?.size ?? 0) >= 9, null, { timeout: 1500000, polling: 2000 }).catch(() => say('chunks never 9'));
 const boot = await page.evaluate(() => ({ ...window.__gl, chunks: window._world?.chunks?.size }));
 say(`playable: ${JSON.stringify(boot)}`);
-await page.evaluate(() => window.__goVirtual());
+await page.evaluate(() => {
+  window.__goVirtual();
+  // TSL node builds per frame, and what was built: three builds one per new render object (see world/instPool.js)
+  const n = window.renderer?._nodes, C = window.__gl;
+  if (n?._createNodeBuilder) { const real = n._createNodeBuilder.bind(n); n._createNodeBuilder = (ro, mat) => { C.builds++; const o = ro.object; if (C.kinds.length < 12) C.kinds.push(`${o.isInstancedMesh ? 'inst' : o.isSprite ? 'sprite' : o.isSkinnedMesh ? 'skinned' : o.isMesh ? 'mesh' : o.type}:${mat.name || mat.type}${o.name ? '(' + o.name + ')' : ''}`); return real(ro, mat); }; }
+});
 const frames = [];
 const step = async () => { const r = await page.evaluate((ms) => window.__step(ms), 1000 / FPS); frames.push(r); return r; };
 for (let i = 0; i < 20; i++) await step();                       // settle on the virtual clock
@@ -126,7 +133,11 @@ const summary = {
   teleport: { worst3: F.slice(0, 40).map((f) => f[0]).sort((a, b) => b - a).slice(0, 3), programs: sum(1, F.slice(0, 40)) },
   borders: borders.map((i) => ({ frame: i, to: `${F[i][9]},${F[i][10]}`, kmh: F[i][12], worst3: F.slice(i, i + 45).map((f) => f[0]).sort((a, b) => b - a).slice(0, 3), programs: sum(1, F.slice(i, i + 45)), deletes: sum(8, F.slice(i, i + 45)) })),
   worstFrames: F.map((f, i) => [i, ...f]).filter((f) => f[0] >= 40).sort((a, b) => b[1] - a[1]).slice(0, 12).map((f) => ({ frame: f[0], ms: f[1], programs: f[2], sub: f[3], dataMB: +(f[6] / 1e6).toFixed(1), tex: f[7], del: f[9], chunk: `${f[10]},${f[11]}` })),
+  /* every driving frame over twice the median, with its cause: node builds (and of what), a heap that fell
+     (a major GC ran inside the frame), uploads, or the frames since the last chunk border */
+  slow: F.map((f, i) => [i, f]).filter(([i, f]) => i > 40 && f[0] > 2 * q(0.5)).map(([i, f]) => ({ frame: i, ms: f[0], sinceBorder: (() => { const b = borders.filter((x) => x <= i).pop(); return b === undefined ? null : i - b; })(), builds: f[13], heapMB: f[14], dataMB: +(f[5] / 1e6).toFixed(2), what: f[15] })),
+  heapDrops: F.filter((f, i) => i > 40 && f[14] < -20).map((f) => ({ ms: f[0], heapMB: f[14] })),
   info, logs: logs.slice(0, 10),
 };
-fs.writeFileSync(out, JSON.stringify({ summary, cols: ['jsMs', 'programs', 'bufferSubData', 'subBytes', 'bufferData', 'dataBytes', 'tex', 'draws', 'deletes', 'cx', 'cz', 'chunks', 'kmh'], frames }));
+fs.writeFileSync(out, JSON.stringify({ summary, cols: ['jsMs', 'programs', 'bufferSubData', 'subBytes', 'bufferData', 'dataBytes', 'tex', 'draws', 'deletes', 'cx', 'cz', 'chunks', 'kmh', 'builds', 'heapDeltaMB', 'built'], frames }));
 console.log(JSON.stringify(summary, null, 1));

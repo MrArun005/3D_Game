@@ -13,14 +13,14 @@ test('a released mesh is handed out again for the same geometry + material, and 
   const pool = new InstPool();
   const a = pool.take(geo, mat, 8, true, true);
   assert.equal(a.count, 8);
-  assert.ok(a.instanceMatrix.count >= 16, 'capacity is rounded up so eight can serve eleven');
+  assert.ok(a.instanceMatrix.count >= 32, 'capacity is rounded up so eight can serve seventeen');
   assert.equal(pool.give(a, true), true);
   const b = pool.take(geo, mat, 11, true, true);
   assert.equal(b, a, 'the same object comes back');
   assert.equal(b.count, 11);
   pool.give(b, true);
   const c = pool.take(geo, mat, 40, true, true);
-  assert.notEqual(c, a, '40 instances do not fit a 16-instance mesh');
+  assert.notEqual(c, a, '40 instances do not fit a 32-instance mesh');
   assert.ok(c.instanceMatrix.count >= 40);
   const d = pool.take(geo, mat, 8, false, true);
   assert.notEqual(d, a, 'a non-casting request is a different key');

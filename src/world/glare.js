@@ -114,7 +114,7 @@ function glareMaterial(posAttr, colAttr, phAttr, far = false, scAttr = null, kep
    chunks fit a recycled one. */
 const FREE = [];
 const FREE_MAX = 24;
-const capFor = (n) => (n <= 64 ? 64 : 2 ** Math.ceil(Math.log2(n)));
+const capFor = (n) => (n <= 256 ? 256 : 2 ** Math.ceil(Math.log2(n)));   // a chunk has 29-291 heads: one size fits nearly all, so a recycled sprite nearly always does
 
 export function buildGlare(heads, seed = 1, far = false) {
   if (!heads.length) return null;
