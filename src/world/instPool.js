@@ -33,6 +33,15 @@ const capacityFor = (n) => (n <= 32 ? 32 : n <= 512 ? 512 : n <= 2048 ? 2048 : 2
    cast a shadow (`cast`) has the shadow pass's too; a mesh that sat hidden in
    its last chunk (the near parked cars of a ring-2 chunk, say) is no better
    than a new one. Then the smallest capacity. */
+/* The truth about "warm": three calls onBeforeRender when it actually draws
+   (or records) the mesh, and the shadow pass is the one that
+   sets scene.overrideMaterial. Guessing from visibility flags marked meshes warm that
+   had never been through a pass (2026-11-12, the high tier's border frame). */
+function markDrawn(renderer, scene, camera, geometry, material) {
+  const p = this.userData.pooled;
+  if (!p) return;
+  if (scene && scene.overrideMaterial && scene.overrideMaterial.isShadowPassMaterial === true) p.cast = true; else p.main = true;   // the shadow pass draws through scene.overrideMaterial
+}
 const warmth = (p) => (p.cast ? 2 : 0) + (p.main ? 1 : 0);
 function pick(list, n) {
   let best = -1;
@@ -68,6 +77,7 @@ export class InstPool {
       const cap = capacityFor(n);
       m = new THREE.InstancedMesh(geo, mat, cap);
       m.userData.pooled = { key, cap };
+      m.onBeforeRender = markDrawn;
       this.stats.made++;
     }
     m.count = n;
@@ -102,6 +112,7 @@ export class InstPool {
       for (const name of Object.keys(attrs)) geo.setAttribute(name, new THREE.InstancedBufferAttribute(new Float32Array(cap * attrs[name]), attrs[name]));
       m = new THREE.InstancedMesh(geo, mat, cap);
       m.userData.pooled = { key, cap };
+      m.onBeforeRender = markDrawn;
       this.stats.made++;
     }
     m.count = n;
@@ -119,17 +130,12 @@ export class InstPool {
   /** A released chunk hands a mesh back. Returns false when it is not ours or the pool is full: the caller disposes it. */
   give(m, seen = false) {
     const p = m.userData?.pooled;
-    /* `seen`: its chunk was drawn at some point. A mesh that was visible then
-       has been through the main pass, a caster through the shadow pass.
-       (The parked LOD sets, whose visibility and casting change with the
-       ring, are marked by the streamer as it switches them.) */
-    if (m.userData?.coldMask !== undefined) { m.layers.mask = m.userData.coldMask; seen = false; }   // still waiting to be let in (districtWorld #warmCold): never drawn
-    if (p && seen) { if (m.visible) p.main = true; if (m.castShadow) p.cast = true; }
+    if (m.userData?.coldMask !== undefined) m.layers.mask = m.userData.coldMask;   // still waiting to be let in (districtWorld #warmCold)
     if (!p || this.size >= this.total) { if (p) this.stats.dropped++; return false; }
     let list = this.free.get(p.key);
     if (!list) this.free.set(p.key, list = []);
     if (list.length >= this.perKey) { this.stats.dropped++; return false; }
-    m.userData = { pooled: p };
+    m.userData = { pooled: p };   // p.main / p.cast were set by markDrawn when it was really drawn
     m.name = '';
     m.visible = true;
     m.renderOrder = 0;

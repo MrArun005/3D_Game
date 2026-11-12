@@ -28,15 +28,18 @@ test('a released mesh is handed out again for the same geometry + material, and 
   assert.notEqual(e, a, 'another material is a different key');
 });
 
-test('the warmest fitting mesh goes first: one that has cast, then one that was drawn, then a hidden one', () => {
+test('the warmest fitting mesh goes first: one that has cast, then one that was drawn, then one never drawn', () => {
   const pool = new InstPool();
   const cold = pool.take(geo, mat, 4, true), drawn = pool.take(geo, mat, 4, true), cast = pool.take(geo, mat, 4, true);
-  cold.visible = false;                       // sat hidden in its chunk (a ring-2 parked LOD)
-  drawn.castShadow = false; cast.castShadow = true;
+  // three calls onBeforeRender when it really draws a mesh, with the material of that pass
+  drawn.onBeforeRender(null, { overrideMaterial: null }, null, geo, mat);
+  cast.onBeforeRender(null, { overrideMaterial: null }, null, geo, mat);
+  cast.onBeforeRender(null, { overrideMaterial: { isShadowPassMaterial: true } }, null, geo, mat);   // the shadow pass overrides the scene's material
   pool.give(cold, true); pool.give(drawn, true); pool.give(cast, true);
   assert.equal(pool.take(geo, mat, 4, true), cast);
   assert.equal(pool.take(geo, mat, 4, true), drawn);
   assert.equal(pool.take(geo, mat, 4, true), cold);
+  assert.ok(!cold.userData.pooled.main, 'visible in a drawn chunk is not the same as drawn');
 });
 
 test('a mesh comes back clean: visible, default layers, no shadow flags, no stale userData', () => {

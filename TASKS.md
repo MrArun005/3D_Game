@@ -149,6 +149,29 @@ Nothing below has been driven on a real GPU.
       twice the median (one a major GC at 90 ms, one unexplained at 106 ms).
       `stepVehicle` allocates nothing per step (handling table bit-identical).
       WebGPU recheck: 0 pipelines created while driving, worst frame 117 ms.
+- [x] Round 4 ("fix what's open").
+      - Teleports: a 600 m warp was one 5.1-5.8 s frame, the benchmark start
+        2.5-3.5 s. Now 0.7-1.1 s and 0.2-0.3 s; the ring is in after 23
+        frames (was 42-49) and 7.5 s of CPU (was 12.7). The respawn fade
+        waits for the ring (4 s cap). Cause: the ring pre-built while you
+        stand still drew for the first time all at once.
+      - Recycled meshes are "warm" only when a pass has really drawn them
+        (`instPool.js markDrawn`), and one that was let in but not drawn goes
+        back to waiting. Four-border drive, balanced: 65 / 65 / 93 / 49 ms
+        worst per border, median 39.8 ms, 5 frames over twice the median
+        (two major GCs of 90-99 ms, one build, two unexplained).
+      - High tier (first time measured): `kingsway-corner` 1,736 draws /
+        6.22M triangles -> 1,202 / 4.90M (the pre-built ring is no longer
+        DRAWN on 5x5 tiers). Draws are inside the 1,400 budget; triangles are
+        still 0.9M over 4.0M -- not fixed. Benchmark start 3.6 s -> 0.5 s;
+        the 0.7-1.0 s border frame is gone, leaving ~25 frames of 170-220 ms
+        per border while cold meshes join two a frame.
+      - Slope gravity (sim and gta; flat-ground tables byte-identical): a
+        car in neutral rolls down a 10% grade, climbing costs speed, brake
+        and handbrake hold, the gta assist holds a stopped car in gear.
+      - Allocation: 1.65 MB a frame (three's uniform updates ~0.55, the
+        nearest-road lookup ~0.33). Not reduced: the one cut tried changed
+        nothing and was reverted.
 - [ ] `[owner]` **fn + F9 on the M2 Air** (screenshot the panel), then drive
       Little Tokyo -> Regent Street at speed and watch for a stall each time a
       new block of city appears (every 256 m). If it still hitches: note
@@ -160,12 +183,10 @@ Nothing below has been driven on a real GPU.
 - [ ] `[owner]` at night: lamp glare, traffic-light colours and shop windows
       look right after driving a few blocks (those meshes are recycled now).
 - [ ] Not done: a building corner overlapped by 0.8 m+ is still a crash
-      stop; no gravity along slopes (a parked car on a 10% grade does not
-      roll); a part-overlap hit on a parked car jumps from a shrug to a crash
+      stop; a part-overlap hit on a parked car jumps from a shrug to a crash
       at 0.25 m. Build-ahead along the velocity, splitting the long chunk
       steps and `stepVehicle`'s per-step allocations were not done either.
-- [ ] Not done: the first frame after the loading screen (5.2 s of CPU in
-      software GL while late assets land); the benchmark / respawn teleport
-      frame (the whole ring builds in one frame, ~3.5 s in the harness).
+- [ ] Not done: the first frame after the loading screen was not measured
+      separately; high-tier triangles at `kingsway-corner` (4.90M vs 4.0M).
 - [ ] Not measured: a real GPU; `kingsway-corner` on `high`.
 

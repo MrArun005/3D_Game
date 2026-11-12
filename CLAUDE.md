@@ -162,6 +162,20 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
     frames after the warm-up): every parked LOD drawn, every parked car
     casting, so their node state is built there. WebGPU on SwiftShader boots
     with draws stubbed: `tools/perf/drive-webgpu.mjs`.
+  - **Warm means DRAWN, and let in is not drawn** (round 4). The pool's
+    `onBeforeRender` hook (`markDrawn`) sets `pooled.main` / `pooled.cast`
+    when a pass really draws the mesh (the shadow pass is the one with
+    `scene.overrideMaterial.isShadowPassMaterial`); visibility flags lied.
+    `#warmCold` runs AFTER update()'s visibility passes, lets a cold mesh in
+    only where its chunk AND its LOD are showing, and keeps it on probation
+    until markDrawn confirms -- update() is also called outside the frame
+    loop. A cold parked LOD keeps the other LOD showing until it has joined.
+    The ring pre-built while stationary is drawn on 3x3 tiers only (it is
+    what stocks the pool with warm meshes) and hidden on 5x5 tiers (drawn,
+    kingsway-corner on high was 1,736 draws / 6.22M tris). A jump of >120 m
+    is a teleport: `world.catchUp` until `world.ringReady(x, z)`;
+    `hud.blackout(at, hold, ready)` waits for it. Harness: `SCENARIO=warp`,
+    `ALLOC=a,b`, `PRESET=name`, `TRACE=1`.
   - `compileAsync(scene, camera)` warms PROGRAMS only: the game draws through
     the post pipeline's MRT pass, a different render context, so node builds
     are redone on the first real draw.
@@ -514,7 +528,7 @@ docs/                  ART_BIBLE, PIPELINE, BUDGETS, ROADMAP
     `mergeDrive`; mobile forces the lite tier; `body.touch` CSS in style.css;
     no pointer lock on touch, TAP TO START, rotate card in portrait.
 
-- Tests: `npm test` — 644/644 passing (2026-11-11, after the smoothness pass). Node's built-in runner, no framework.
+- Tests: `npm test` — 650/650 passing (2026-11-12, after the smoothness pass). Node's built-in runner, no framework.
 - Deploy (2026-09-03): Vercel project `halstead-bay`, public at
   https://halstead-bay.vercel.app. Git-triggered builds never leave UNKNOWN;
   deploy with `vercel --prod --yes` run detached (>6 min upload), then check

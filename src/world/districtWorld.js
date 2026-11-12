@@ -222,6 +222,7 @@ export class DistrictWorld {
     this.nodeDegreeById = new Map();    // node id -> how many roads meet there   // chunk key -> [{x,y,z,colour,intensity,range}] block hero lights (game/lighting.js)     // chunk key -> [{x,y,z}] lamp heads (night light pool)
     this.facadeGroups = new Map();
     this.regentMeshes = new Map();     // chunk key -> { mesh, proxy }: the Regent street wall, OUTSIDE the chunk bundle so three culls it by frustum (see the build step)
+    this.probation = [];               // let in, not yet seen drawn (#warmCold)
     this.cold = [];                    // pooled meshes waiting to be let into the frame (#warmCold)
     this.instPool = new InstPool();    // released chunks' InstancedMeshes, reused by the next chunk (instPool.js: no node build per new mesh)
     this.parkedLod = new Map();        // chunk key -> { near, far, byBody } parked-car LOD sets (#cullFar swaps them; #buildSteps sets, releaseChunk deletes). Dropped by the lite/radius constructor edit in 22c1c0c and every chunk build died on .set -- keep it.
@@ -615,8 +616,8 @@ export class DistrictWorld {
     this._lastX = x; this._lastZ = z;
     if (this.catchUp && this.primed && this.ringReady(x, z)) this.catchUp = false;
     const catchUp = !!this.catchUp;
-    this.coldBudget = warm ? Infinity : catchUp ? COLD_CATCH_UP : COLD_PER_FRAME;   // first-draw node builds this frame may start (#warmCold, the parked shadow switch)
-    this.#warmCold();
+    if (this.primed) this._primedFrames = (this._primedFrames || 0) + 1;
+    this.coldBudget = (warm || !this.primed || this._primedFrames <= 3) ? Infinity : catchUp ? COLD_CATCH_UP : COLD_PER_FRAME;   // first-draw node builds this frame may start (#warmCold, the parked shadow switch)
     /* Compact city: photo mode lifts the clip (every preset still renders),
        and dropping it again releases whatever it built outside -- below. A
        change re-runs the far cull and the scan at once. */
@@ -714,12 +715,17 @@ export class DistrictWorld {
            thirty of them put them all on one frame: the 0.7-1.0 s border
            frames that were left once the pool had removed the rest (profile
            2026-11-11). They join on no camera layer and are let in a couple a
-           frame by #warmCold(); a warm mesh draws at once. Not during the
-           boot prime: that is behind the loading screen. */
-        if (wasPrimed) {
+           frame by #warmCold(); a warm mesh draws at once. The boot ring's too
+           (2026-11-12): what the boot camera can see joins at once (the budget
+           is unlimited for the first frames and under bootWarm), but a boot
+           chunk BEHIND the camera kept its cold meshes for the frame you first
+           turned to it or came a ring closer -- twelve builds in one frame at
+           the first border on the high tier, 86 at the benchmark start. */
+        {
           b.group.traverse((o) => {
             const p = o.isInstancedMesh && o.userData.pooled;
-            if (p && (!p.main || (o.castShadow && !p.cast)) && o.userData.coldMask === undefined) { o.userData.coldMask = o.layers.mask; o.layers.mask = 0; this.cold.push(o); }   // never drawn, or a caster that has never cast
+            const lod = o.name.startsWith('parked');   // a parked body casts only from the chunk you stand in: the LOD loop staggers that itself
+            if (p && (!p.main || (!lod && o.castShadow && !p.cast)) && o.userData.coldMask === undefined) { o.userData.coldMask = o.layers.mask; o.layers.mask = 0; this.cold.push(o); }   // never drawn, or a caster that has never cast
           });
         }
         b.group.needsUpdate = true;
@@ -775,6 +781,11 @@ export class DistrictWorld {
         const c = cellOf(k), a = c[0], b = c[1];
         const d = Math.max(Math.abs(a - ix), Math.abs(b - iz));
         if (d <= 1) { g.visible = true; g.userData.seen = true; continue; }
+        /* The ring pre-warmed while you stand still is BUILT ahead, not drawn:
+           drawn, it put kingsway-corner on the high tier at 1,736 draws and
+           6.22M triangles (budget 1,400 / 4.0M) with the far stand-ins still
+           standing inside it. It shows when it comes into the radius. */
+        if (d > this.radius && this.radius > 1) { g.visible = false; continue; }   // 5x5 tiers only: on a 3x3 tier the drawn pre-warm ring is what stocks the pool with WARM meshes for the first borders (hidden, the balanced drive's first two borders went from 0 node builds to ~25 staggered ones)
         _box.min.set(a * CHUNK, -6, b * CHUNK); _box.max.set((a + 1) * CHUNK, 140, (b + 1) * CHUNK);
         g.visible = _frustum.intersectsBox(_box);
         if (g.visible) g.userData.seen = true;   // drawn at least once: its meshes come out of the pool warm (instPool.js)
@@ -815,8 +826,16 @@ export class DistrictWorld {
            the saving has to come from a detail mesh that is cheaper, not
            nearer. Shadows still cast only from the standing chunk. */
         const drawn = !!this.chunks.get(key)?.visible;
+        /* A LOD that has never been drawn joins through the cold queue like any
+           other mesh, and until it has, the other LOD of that body keeps
+           showing: on the high tier a chunk coming one ring closer switched
+           twelve cold near bodies on in the frame of the border (1.0 s). */
+        const isCold = (m) => !!m && m.userData.coldMask !== undefined;
+        let farCold = false, nearCold = false;
+        for (const m of pl.far) if (isCold(m)) farCold = true;
+        for (const m of pl.near) if (isCold(m)) nearCold = true;
         for (const m of pl.near) {
-          m.visible = warm || d <= 1;
+          m.visible = warm || d <= 1 || farCold;
           const p = m.userData.pooled;
           /* Casting from the chunk you stand in. A mesh that has never cast
              builds its shadow-pass nodes the frame it starts: twelve at once
@@ -826,9 +845,8 @@ export class DistrictWorld {
           if (cast && !m.castShadow && p && !p.cast && drawn) {
             if (this.coldBudget > 0) { this.coldBudget--; m.castShadow = true; m.parent && (this.chunks.get(key).needsUpdate = true); }
           } else m.castShadow = cast;
-          if (p && drawn && m.visible && m.userData.coldMask === undefined) { p.main = true; if (m.castShadow) p.cast = true; }   // instPool.js: which recycled mesh is warm
         }
-        for (const m of pl.far) { m.visible = warm || d > 1; if (drawn && m.visible && m.userData.pooled) m.userData.pooled.main = true; }
+        for (const m of pl.far) m.visible = warm || d > 1 || nearCold;
         /* Shadows from the chunk you are standing in, and nowhere else.
            389 near parked cars were casting 950k triangles into the cascades
            -- more than the entire authored prop kit -- to draw a row of
@@ -851,6 +869,14 @@ export class DistrictWorld {
         for (const m of g.children) m.castShadow = m.userData.shell ? d <= 1 : cast;
       }
     }
+    /* After the visibility passes above, never before them: it lets a cold
+       mesh in only where it will be DRAWN this frame, and at the top of
+       update() it was reading last frame's flags -- on the first frames
+       every new chunk still had the default visible = true, so the whole
+       boot ring was let in and the chunks outside the boot camera's view kept
+       meshes that looked warm and were not (the high tier's 0.7-1.0 s border
+       frame and 3 s benchmark start, traced 2026-11-12). */
+    this.#warmCold();
     const maxReleaseR = (this.primed && speed < 1.0) ? this.radius + 1 : this.radius;
     /* At most two chunks leave per frame (2026-11-11). Pulling away from a
        stop drops the release radius by one ring, and all 16 pre-warmed chunks
@@ -2768,6 +2794,28 @@ export class DistrictWorld {
    */
   /** Let a few cold meshes into the frame (see the chunk-completion note in update()). */
   #warmCold() {
+    /* Let in is not drawn. update() is also called outside the frame loop
+       (the district callback, a film start), and a chunk can leave the view
+       before the frame that would have drawn what was just let in. So a mesh
+       stays on probation until the pool's onBeforeRender hook says a pass
+       really drew it (instPool.js markDrawn); if its chunk or its LOD is
+       hidden first, it goes back to waiting. */
+    const pr = this.probation;
+    let pk = 0;
+    for (let i = 0; i < pr.length; i++) {
+      const m = pr[i], p = m.userData.pooled, pb = m.userData.probation;
+      if (!p || !pb || m.userData.coldMask !== undefined || !m.parent) continue;       // recycled or re-queued meanwhile
+      pb.frames++;
+      if (pb.need === 'cast' ? (p.cast || (p.main && pb.frames > 3)) : p.main) { delete m.userData.probation; continue; }
+      let g = m.parent;
+      while (g && !g.isBundleGroup && g.parent && g.parent !== this.scene) g = g.parent;
+      if (m.visible && g && g.visible && g.parent === this.scene) { pr[pk++] = m; continue; }   // still due to be drawn
+      m.userData.coldMask = m.layers.mask; m.layers.mask = 0;                                   // never drawn: wait again
+      delete m.userData.probation;
+      if (g) g.needsUpdate = true;
+      this.cold.push(m);
+    }
+    pr.length = pk;
     const q = this.cold;
     let keep = 0;
     for (let i = 0; i < q.length; i++) {
@@ -2780,9 +2828,10 @@ export class DistrictWorld {
          then and everything on the frame you turned round or teleported
          beside it: 134 builds and a 5 s frame on a 600 m warp, 80 at the
          benchmark start (2026-11-12). It waits its turn instead. */
-      if (this.coldBudget <= 0 || !g || !g.visible || g.parent !== this.scene) { q[keep++] = m; continue; }
+      if (this.coldBudget <= 0 || !m.visible || !g || !g.visible || g.parent !== this.scene) { q[keep++] = m; continue; }   // (!m.visible: the parked LOD that is not showing yet waits for its turn too)
       m.layers.mask = m.userData.coldMask;
       delete m.userData.coldMask;
+      { const p = m.userData.pooled; m.userData.probation = { need: p && !p.main ? 'main' : 'cast', frames: 0 }; pr.push(m); }
       g.needsUpdate = true;                                     // re-record the chunk's bundle with it in
       for (let o = m.parent; o; o = o.parent) if (o.userData?.shadowRing !== undefined) o.userData.shadowRing = undefined;
       this.coldBudget--;
@@ -2805,7 +2854,7 @@ export class DistrictWorld {
       if (m.userData.coldMask === undefined) continue;
       let g = m.parent;
       while (g && !g.isBundleGroup && g.parent && g.parent !== this.scene) g = g.parent;
-      if (g && g.visible && g.parent === this.scene) return false;
+      if (m.visible && g && g.visible && g.parent === this.scene) return false;
     }
     return true;
   }

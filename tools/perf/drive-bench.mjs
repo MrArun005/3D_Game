@@ -75,12 +75,12 @@ say('boot overlay gone');
 await page.waitForFunction(() => (window._world?.chunks?.size ?? 0) >= 9, null, { timeout: 1500000, polling: 2000 }).catch(() => say('chunks never 9'));
 const boot = await page.evaluate(() => ({ ...window.__gl, chunks: window._world?.chunks?.size }));
 say(`playable: ${JSON.stringify(boot)}`);
-await page.evaluate(() => {
+await page.evaluate((process_trace) => {
   window.__goVirtual();
   // TSL node builds per frame, and what was built: three builds one per new render object (see world/instPool.js)
   const n = window.renderer?._nodes, C = window.__gl;
-  if (n?._createNodeBuilder) { const real = n._createNodeBuilder.bind(n); n._createNodeBuilder = (ro, mat) => { C.builds++; const o = ro.object; if (C.kinds.length < 12) C.kinds.push(`${o.isInstancedMesh ? 'inst' : o.isSprite ? 'sprite' : o.isSkinnedMesh ? 'skinned' : o.isMesh ? 'mesh' : o.type}:${mat.name || mat.type}${o.name ? '(' + o.name + ')' : ''}`); return real(ro, mat); }; }
-});
+  if (n?._createNodeBuilder) { const real = n._createNodeBuilder.bind(n); n._createNodeBuilder = (ro, mat) => { C.builds++; const o = ro.object; if (C.kinds.length < 12) C.kinds.push(`${o.isInstancedMesh ? 'inst' : o.isSprite ? 'sprite' : o.isSkinnedMesh ? 'skinned' : o.isMesh ? 'mesh' : o.type}:${mat.name || mat.type}${o.name ? '(' + o.name + ')' : ''}${process_trace ? ' ' + JSON.stringify({ ctx: ro.context?.id, p: o.userData?.pooled ? [o.userData.pooled.main ? 1 : 0, o.userData.pooled.cast ? 1 : 0] : null, cam: ro.camera?.type + (ro.camera?.isArrayCamera ? 'A' : ''), rt: ro.context?.renderTarget ? (ro.context.renderTarget.width + 'x' + ro.context.renderTarget.height + (ro.context.renderTarget.isShadow ? 's' : '')) : 'canvas', cast: o.castShadow, vis: o.visible, cold: o.userData?.coldMask !== undefined }) : ''}`); return real(ro, mat); }; }
+}, !!process.env.TRACE);
 const frames = [];
 const step = async () => { const r = await page.evaluate((ms) => window.__step(ms), 1000 / FPS); frames.push(r); return r; };
 for (let i = 0; i < 20; i++) await step();                       // settle on the virtual clock
@@ -132,7 +132,7 @@ for (let i = 0; i < FRAMES; i++) {
     console.log(`PROFILE frames ${pa}..${pb}\n self:\n  ${top(self, 30)}\n inclusive:\n  ${top(incl, 70)}`);
   }
   const r = await step();
-  if (i % 100 === 0) say(`frame ${i}/${FRAMES} js ${r[0]} ms chunk ${r[9]},${r[10]} live ${r[11]} ${r[12]} km/h`);
+  if (i % 100 === 0 || (process.env.TRACE && i % 10 === 0)) say(`frame ${i}/${FRAMES} js ${r[0]} ms chunk ${r[9]},${r[10]} live ${r[11]} ${r[12]} km/h ` + await page.evaluate(() => { const w = window._world; return `catchUp ${!!w.catchUp} cold ${w.cold?.length ?? '-'} builds ${window.__gl.builds}`; }));
 }
 if (process.env.HIST) {
   await page.evaluate(() => { window.__hist.on = true; });
@@ -142,6 +142,15 @@ if (process.env.HIST) {
   console.log('bufferSubData sizes over 30 frames (bytes: calls):', JSON.stringify(top(h.size, 14)));
   for (const [k, v] of top(h.stack, 12)) console.log(v, k);
   frames.length -= 30;
+}
+let preset = null;
+if (process.env.PRESET) {   // PRESET=kingsway-corner: go to a photo preset after the drive, let it stream in, read draws and triangles
+  await page.evaluate(() => { document.getElementById('bench')?.remove(); });
+  await page.evaluate((n) => { if (!window.photo.on) window.photo.toggle?.(); window.photo.goto(n); }, process.env.PRESET);
+  for (let i = 0; i < 500; i++) { await page.evaluate((ms) => window.__step(ms), 1000 / FPS); if (i > 40 && await page.evaluate(() => { const w = window._world; return !w.building && w.queue.length === 0 && (w.ringReady ? w.ringReady(window.photo.camera?.position.x ?? window.car.x, window.photo.camera?.position.z ?? window.car.z) : true); })) break; }
+  for (let i = 0; i < 10; i++) await page.evaluate((ms) => window.__step(ms), 1000 / FPS);
+  preset = await page.evaluate(() => ({ line: window.photo?.line?.(), on: window.photo?.on, chunks: window._world.chunks.size }));
+  console.log('PRESET', process.env.PRESET, JSON.stringify(preset));
 }
 const info = await page.evaluate(() => ({ bench: document.getElementById('bench')?.textContent?.slice(0, 200), line: window.photo?.line?.() }));
 await b.close();
