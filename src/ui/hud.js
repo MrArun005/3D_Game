@@ -762,7 +762,9 @@ export class Hud {
    * the world jump. Built here rather than in CSS because the HUD already owns
    * every other overlay and there is no stylesheet to add a class to.
    */
-  blackout(at, hold = 420) {
+  /** Fade to black, run `at` at full black, fade back after `hold` ms -- and, when `ready` is given, not before it
+      says so (the city round a respawn point is still streaming in), up to `maxWait` ms. */
+  blackout(at, hold = 420, ready = null, maxWait = 4000) {
     if (!this.fadeEl) {
       const el = document.createElement('div');
       el.style.cssText = 'position:fixed;inset:0;background:#000;opacity:0;'
@@ -774,7 +776,13 @@ export class Hud {
     el.style.opacity = '1';
     setTimeout(() => {
       at();
-      setTimeout(() => { el.style.opacity = '0'; }, hold);
+      const t0 = performance.now();
+      const lift = () => {
+        const waited = performance.now() - t0;
+        if (ready && waited < maxWait && !ready()) { setTimeout(lift, 60); return; }
+        el.style.opacity = '0';
+      };
+      setTimeout(lift, hold);
     }, 360);
   }
 

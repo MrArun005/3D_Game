@@ -732,6 +732,10 @@ function respawnCar(nearX = car.x, nearZ = car.z, kinds = null) {
  * Killed. Distinct from being arrested: the police take you to a station,
  * a fireball takes you to a hospital.
  */
+/* The fade over a respawn lifts when the city round the new spot is in
+   (districtWorld.ringReady), not on a fixed timer over a world still
+   streaming; world.catchUp gives streaming a bigger slice meanwhile. */
+const ringIn = () => { const v = activeVehicle || car; return world.ringReady ? world.ringReady(v.x, v.z) : true; };
 function onDeath() {
   if (story?.active && wastedAnim !== 1) { story.abandon?.(); hud.flash('MISSION FAILED'); }   // a heist does not continue from the hospital
   /* On foot, the body falls first and the fade follows: the Death clip runs,
@@ -742,7 +746,7 @@ function onDeath() {
     if (ms > 0) {
       wastedAnim = 1; controlsLockedUntil = performance.now() + ms + 300;
       traffic.holdFire = true;         // the officers lower their guns while you fall (the hit handler ignores the rest)
-      wastedTimer = setTimeout(() => { wastedTimer = 0; hud.blackout(() => { wastedAnim = 2; onDeath(); }); }, ms + 300);
+      wastedTimer = setTimeout(() => { wastedTimer = 0; hud.blackout(() => { wastedAnim = 2; onDeath(); }, 420, ringIn); }, ms + 300);
       return;
     }
   }
@@ -3505,7 +3509,7 @@ traffic.honk = (x, z) => {   // a stuck driver's horn, panned and faded from whe
   if (dying > 0) {
     dying -= dt;
     car.throttle = 0; car.brake = 1;
-    if (dying <= 0) { dying = 0; hud.blackout(onDeath); }
+    if (dying <= 0) { dying = 0; hud.blackout(onDeath, 420, ringIn); }
   }
   car.impact *= Math.exp(-dt * 8);
 

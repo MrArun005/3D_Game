@@ -84,12 +84,38 @@ await page.evaluate(() => {
 const frames = [];
 const step = async () => { const r = await page.evaluate((ms) => window.__step(ms), 1000 / FPS); frames.push(r); return r; };
 for (let i = 0; i < 20; i++) await step();                       // settle on the virtual clock
+if (process.env.SCENARIO === 'warp') {
+  /* A teleport (respawn at the hospital, /tp, a story warp): worst frame, and frames until the 3x3 ring is in and
+     nothing is waiting. WARP="x,z" (default the Quadrant, ~600 m from the spawn). */
+  const [wx, wz] = (process.env.WARP || '1934,1659').split(',').map(Number);
+  await page.evaluate(([x, z]) => window.__warp(x, z, 0), [wx, wz]);
+  const W = []; let ready = -1;
+  for (let i = 0; i < 600; i++) {
+    const r = await step(); W.push(r);
+    const st = await page.evaluate(() => { const w = window._world, c = window.car, ix = Math.floor(c.x / 256), iz = Math.floor(c.z / 256); let n = 0; for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) if (w.chunks.has(`${ix + a},${iz + b}`) || (w.keptCells && !w.keptCells.has(`${ix + a},${iz + b}`))) n++; return [n, w.queue.length, w.building ? 1 : 0, w.ringReady ? (w.ringReady(c.x, c.z) ? 0 : 1) : (w.cold ? w.cold.length : 0)]; });   // ringReady: built, and nothing DRAWN still waiting to join
+    if (ready < 0 && st[0] === 9 && st[3] === 0) ready = i;
+    if (ready >= 0 && i > ready + 30) break;
+  }
+  const ms = W.map((f) => f[0]);
+  console.log(JSON.stringify({ warp: [wx, wz], worstMs: Math.max(...ms), over250: ms.filter((m) => m > 250).length, over100: ms.filter((m) => m > 100).length, framesToRing: ready, cpuMsToRing: Math.round(ms.slice(0, ready + 1).reduce((a, b) => a + b, 0)), builds: W.reduce((a, f) => a + f[13], 0), first12: W.slice(0, 12).map((f) => `${f[0]}ms b${f[13]} ${(f[5] / 1e6).toFixed(1)}MB ch${f[11]} ${(f[15] || "").slice(0, 120)}`) }, null, 1));
+  await b.close(); process.exit(0);
+}
 if ((process.env.SCENARIO || 'bench') === 'bench') await page.evaluate((sec) => window.runBenchmark(sec), Math.max(30, Math.ceil(FRAMES / FPS)));   // the route lasts ~90 s
 const mark = frames.length;
 const [pa, pb] = (process.env.PROFILE || '').split(',').map(Number);
 const cdp = process.env.PROFILE ? await page.context().newCDPSession(page) : null;
 if (cdp) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 500 }); }
+const [ha, hb] = (process.env.ALLOC || '').split(',').map(Number);   // ALLOC=a,b: sampled allocation profile of frames a..b
+const hcdp = process.env.ALLOC ? await page.context().newCDPSession(page) : null;
 for (let i = 0; i < FRAMES; i++) {
+  if (hcdp && i === ha) await hcdp.send('HeapProfiler.startSampling', { samplingInterval: 16384, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true });
+  if (hcdp && i === hb) {
+    const { profile } = await hcdp.send('HeapProfiler.stopSampling');
+    const self = new Map(); let total = 0;
+    const walk = (n, path) => { const nm = `${n.callFrame.functionName || '(anon)'} :${n.callFrame.lineNumber}`; if (n.selfSize) { total += n.selfSize; const k = nm + '  <  ' + path.slice(-3).reverse().join(' < '); self.set(k, (self.get(k) || 0) + n.selfSize); } for (const c of n.children || []) walk(c, [...path, nm]); };
+    walk(profile.head, []);
+    console.log(`ALLOC frames ${ha}..${hb}: ${(total / 1e6 / (hb - ha)).toFixed(2)} MB per frame\n  ` + [...self].sort((x, y) => y[1] - x[1]).slice(0, 22).map(([k, v]) => `${(v / 1e6 / (hb - ha)).toFixed(3)} MB/frame  ${k}`).join('\n  '));
+  }
   if (cdp && i === pa) await cdp.send('Profiler.start');
   if (cdp && i === pb) {
     const { profile } = await cdp.send('Profiler.stop');

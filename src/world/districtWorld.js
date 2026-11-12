@@ -47,6 +47,7 @@ const ck = (ix, iz) => `${ix},${iz}`;
 /* First-draw node builds allowed to START per frame once the game is running
    (a cold recycled mesh joining the frame, a parked car's first shadow). */
 const COLD_PER_FRAME = 2;
+const COLD_CATCH_UP = 6, BUILD_MS_CATCH_UP = 10;   // while world.catchUp: behind a fade, so a bigger slice per frame
 const CELLS = new Map();
 function cellOf(k) {
   let c = CELLS.get(k);
@@ -604,7 +605,17 @@ export class DistrictWorld {
        shadow pass the first time you enter one. They go into the pool warm. */
     const warm = !!this.bootWarm;
     if (warm !== this._warmWas) { this._warmWas = warm; this.#rerecordAll(); }
-    this.coldBudget = warm ? Infinity : COLD_PER_FRAME;   // first-draw node builds this frame may start (#warmCold, the parked shadow switch)
+    /* catchUp (set below on any teleport: respawn, /tp, the benchmark start,
+       a photo preset): the ring round the new spot is missing and the player is behind
+       a fade or a loading label, so streaming takes a bigger slice of each
+       frame -- but still a slice: the old way was the whole ring's first
+       draw in one frame of seconds, with input, audio and the fade frozen.
+       It ends itself when the ring is in. */
+    if (this.primed && this._lastX !== undefined && Math.hypot(x - this._lastX, z - this._lastZ) > 120) this.catchUp = true;   // nothing drives 120 m in a frame: a teleport, whoever did it
+    this._lastX = x; this._lastZ = z;
+    if (this.catchUp && this.primed && this.ringReady(x, z)) this.catchUp = false;
+    const catchUp = !!this.catchUp;
+    this.coldBudget = warm ? Infinity : catchUp ? COLD_CATCH_UP : COLD_PER_FRAME;   // first-draw node builds this frame may start (#warmCold, the parked shadow switch)
     this.#warmCold();
     /* Compact city: photo mode lifts the clip (every preset still renders),
        and dropping it again releases whatever it built outside -- below. A
@@ -666,7 +677,7 @@ export class DistrictWorld {
        one gulp — a felt steering hitch at exactly the moment you cross a
        boundary at speed. The group only enters the scene when its generator
        finishes, so nobody ever sees half a chunk. */
-    const budget = wasPrimed ? BUILD_MS : Infinity;
+    const budget = wasPrimed ? (catchUp ? BUILD_MS_CATCH_UP : BUILD_MS) : Infinity;
     const t0 = performance.now();
     while (performance.now() - t0 < budget) {
       if (!this.building) {
@@ -708,7 +719,7 @@ export class DistrictWorld {
         if (wasPrimed) {
           b.group.traverse((o) => {
             const p = o.isInstancedMesh && o.userData.pooled;
-            if (p && !p.main && o.userData.coldMask === undefined) { o.userData.coldMask = o.layers.mask; o.layers.mask = 0; this.cold.push(o); }
+            if (p && (!p.main || (o.castShadow && !p.cast)) && o.userData.coldMask === undefined) { o.userData.coldMask = o.layers.mask; o.layers.mask = 0; this.cold.push(o); }   // never drawn, or a caster that has never cast
           });
         }
         b.group.needsUpdate = true;
@@ -716,7 +727,7 @@ export class DistrictWorld {
         this.pending.delete(b.k);
         this.building = null;
         // Hard cap of 1 chunk build in flight/completed per frame when primed to prevent burst overruns
-        if (wasPrimed) break;
+        if (wasPrimed && !catchUp) break;
       }
     }
     // what the budget line in the stats HUD actually promises: the time THIS
@@ -851,7 +862,7 @@ export class DistrictWorld {
     for (const [k, g] of this.chunks) {   // deleting the current key while iterating a Map is safe
       const c = cellOf(k), a = c[0], b = c[1];
       const outside = clipped && !this.keptCells.has(k);
-      if (released >= 2 && !outside) continue;
+      if (released >= (catchUp ? 6 : 2) && !outside) continue;
       /* ...and, in the compact city, a chunk photo mode built outside the
          clip goes the moment the clip is back: left standing, #cullFar would
          raise the far stand-ins through it (the pale-cube overlap). */
@@ -2758,17 +2769,45 @@ export class DistrictWorld {
   /** Let a few cold meshes into the frame (see the chunk-completion note in update()). */
   #warmCold() {
     const q = this.cold;
-    while (q.length && this.coldBudget > 0) {
-      const m = q.shift();
+    let keep = 0;
+    for (let i = 0; i < q.length; i++) {
+      const m = q[i];
       if (m.userData.coldMask === undefined) continue;        // its chunk left first: the pool restored it
-      m.layers.mask = m.userData.coldMask;
-      delete m.userData.coldMask;
       let g = m.parent;
       while (g && !g.isBundleGroup && g.parent && g.parent !== this.scene) g = g.parent;
-      if (g) g.needsUpdate = true;                              // re-record the chunk's bundle with it in
+      /* Only into a chunk that is being DRAWN. Let into a chunk behind the
+         camera (the ring pre-warmed while you stand still) it cost nothing
+         then and everything on the frame you turned round or teleported
+         beside it: 134 builds and a 5 s frame on a 600 m warp, 80 at the
+         benchmark start (2026-11-12). It waits its turn instead. */
+      if (this.coldBudget <= 0 || !g || !g.visible || g.parent !== this.scene) { q[keep++] = m; continue; }
+      m.layers.mask = m.userData.coldMask;
+      delete m.userData.coldMask;
+      g.needsUpdate = true;                                     // re-record the chunk's bundle with it in
       for (let o = m.parent; o; o = o.parent) if (o.userData?.shadowRing !== undefined) o.userData.shadowRing = undefined;
       this.coldBudget--;
     }
+    q.length = keep;
+  }
+
+  /** The 3x3 ring round (x, z) is built and nothing drawn is still waiting to join: a fade may lift. */
+  ringReady(x, z) {
+    const ix = Math.floor(x / CHUNK), iz = Math.floor(z / CHUNK);
+    const clipped = this.keptCells && !this.clipLifted;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+      const k = ck(ix + a, iz + b);
+      if (this.chunks.has(k)) continue;
+      if (clipped && !this.keptCells.has(k)) continue;
+      if (this.only && !this.#cellTouches(ix + a, iz + b)) continue;
+      return false;
+    }
+    for (const m of this.cold) {
+      if (m.userData.coldMask === undefined) continue;
+      let g = m.parent;
+      while (g && !g.isBundleGroup && g.parent && g.parent !== this.scene) g = g.parent;
+      if (g && g.visible && g.parent === this.scene) return false;
+    }
+    return true;
   }
 
   #rerecordAll() {
