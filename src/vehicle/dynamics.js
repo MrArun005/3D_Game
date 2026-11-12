@@ -279,7 +279,11 @@ export function stepVehicle(car, dt) {
       const sp = Math.hypot(car.vx, car.vz);
       const gLon = Math.max(-0.25, Math.min(0.25, dLon / (2 * (V.a + V.b))));
       const gLat = Math.max(-0.25, Math.min(0.25, dLat / (2 * V.track)));
-      const held = sp < 0.25 && (car.brake > 0.05 || car.hand > 0.1);
+      /* ...and the gta assist holds the car on a hill like an automatic with
+         hill-hold: stopped, in a gear (1 is neutral), off the throttle. The
+         raw model rolls back unless you hold a brake. */
+      const hillHold = !!car.assist && car.gear !== 1 && !(car.throttle > 0.02);
+      const held = sp < 0.25 && (car.brake > 0.05 || car.hand > 0.1 || hillHold);
       if (!held) slopeFx = -mass * GRAV * gLon / Math.sqrt(1 + gLon * gLon);               // m g sin(slope), downhill
       slopeFy = -mass * GRAV * gLat / Math.sqrt(1 + gLat * gLat) * Math.max(0, Math.min(1, sp - 0.5));
     }
