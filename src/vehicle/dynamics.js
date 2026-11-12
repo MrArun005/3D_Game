@@ -251,6 +251,40 @@ export function stepVehicle(car, dt) {
   car.wheelGround = wheelGround;
   car.airborne = Fz[0] + Fz[1] + Fz[2] + Fz[3] < mass * 2;
 
+  /* --- gravity along the slope (2026-11-12) ---
+     The road was flat as far as the force balance knew: the springs followed
+     a ramp, but nothing pulled the car down it (parked in neutral on a 10%
+     grade it rolled 0.00 m, and a bridge ramp cost no speed). The slope is
+     read off the four ground samples the suspension already took: front axle
+     against rear over the wheelbase, left side against right over the track.
+     - Only with all four wheels on tarmac and loaded. A kerb under one wheel
+       is a 0.15 m step, not a hill (it would read as a 3-5% grade and shove
+       a car parked half on the pavement), so any wheel on the kerb or beyond
+       switches it off; off the road the ground is level anyway.
+     - Clamped to a 25% grade: a wheel past the edge of a bridge's height band
+       must not read as a cliff.
+     - Exactly zero on level ground (equal samples give a difference of 0 and
+       nothing is added), so every flat-ground number is bit-identical.
+     - Static friction: the tyre model is slip-based, i.e. viscous at rest, so
+       a constant push would creep a car whose wheels are held. With the foot
+       brake or the handbrake on, and the car all but stopped, the tyres hold
+       it and the pull along the car is not applied; the pull ACROSS the car
+       fades in between 0.5 and 1.5 m/s for the same reason (a car does not
+       slide sideways off a cambered road at rest). */
+  let slopeFx = 0, slopeFy = 0;
+  if (kerbCount === 0 && comp[0] > 0 && comp[1] > 0 && comp[2] > 0 && comp[3] > 0) {
+    const dLon = (wheelGround[0] + wheelGround[1]) - (wheelGround[2] + wheelGround[3]);   // 2 x rise, rear to front
+    const dLat = (wheelGround[0] + wheelGround[2]) - (wheelGround[1] + wheelGround[3]);   // 2 x rise, right to left
+    if (dLon !== 0 || dLat !== 0) {
+      const sp = Math.hypot(car.vx, car.vz);
+      const gLon = Math.max(-0.25, Math.min(0.25, dLon / (2 * (V.a + V.b))));
+      const gLat = Math.max(-0.25, Math.min(0.25, dLat / (2 * V.track)));
+      const held = sp < 0.25 && (car.brake > 0.05 || car.hand > 0.1);
+      if (!held) slopeFx = -mass * GRAV * gLon / Math.sqrt(1 + gLon * gLon);               // m g sin(slope), downhill
+      slopeFy = -mass * GRAV * gLat / Math.sqrt(1 + gLat * gLat) * Math.max(0, Math.min(1, sp - 0.5));
+    }
+  }
+
   // --- driveline ---
   const ratio = gears[car.gear] * final;
   const wAvg = (car.wheelW[2] + car.wheelW[3]) / 2;
@@ -478,6 +512,7 @@ export function stepVehicle(car, dt) {
     let FxDrag = V.dragC * u * Math.abs(u) + V.rollC * u;
     for (let i = 0; i < 4; i++) FxDrag += drags[i] * u * 0.25;
     let Fx0 = -FxDrag, Mz0 = 0;
+    if (slopeFx !== 0) Fx0 += slopeFx;   // the implicit solve sees the hill too
     let m11 = mass, m12 = 0, m22 = inertia, s1 = 0, s2 = 0;
     for (let i = 0; i < 4; i++) {
       const ax = offA[i], az = offZ[i];
@@ -524,6 +559,8 @@ export function stepVehicle(car, dt) {
   Fx -= V.dragC * u * Math.abs(u) + V.rollC * u;   // FxDrag again, in sim's order so its numbers stay bit-identical
   Fy -= V.rollC * v * 1.4;
   for (let i = 0; i < 4; i++) Fx -= drags[i] * u * 0.25;
+  if (slopeFx !== 0) Fx += slopeFx;      // gravity along the slope (above); nothing is added on level ground
+  if (slopeFy !== 0) Fy += slopeFy;
 
   /* --- heave, pitch and roll ------------------------------------------- */
   let FspringUp = 0, Mpitch = 0, Mroll = 0;
